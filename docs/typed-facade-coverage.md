@@ -21,6 +21,8 @@ Coverage is organized by behavior family:
 - report export exercises both the simple and options XML shapes;
 - generic assets, host and operating-system aliases, and result queries assert
   every typed facade shape plus their shared wire-command inventory;
+- report import exercises the semantic create response plus malformed-response
+  context, while direct execution covers create and both deletion intents;
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.
