@@ -21,6 +21,7 @@ use gvm_gmp::commands::agents::{
     ModifyAgentControlScanConfigOpts, ModifyAgentControlScanConfigRequest, ModifyAgentOpts,
     ModifyAgentRequest, SyncAgentsRequest,
 };
+use gvm_gmp::commands::aggregates::GetAggregatesRequestOpts;
 use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts, TriggerAlertOpts};
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
@@ -32,6 +33,7 @@ use gvm_gmp::commands::credentials::{
 };
 use gvm_gmp::commands::filters::{FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
+use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigOpts,
@@ -58,6 +60,8 @@ use gvm_gmp::commands::scanners::{
 };
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::{GenericInfoType, GetInfoListOpts, GetSecInfoOpts};
+use gvm_gmp::commands::system::FilteredGetOpts;
+use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{
     CloneTargetRequest, GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts,
@@ -75,7 +79,7 @@ use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
-    GmpRequest, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
+    FeedType, GmpRequest, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
     ScheduleTimezone,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
@@ -378,6 +382,42 @@ const ASSET_HOST_RESULT_OVERRIDES: &[(&str, &str)] = &[
     (
         "get_results",
         r#"<get_results_response status="200" status_text="OK"><result_count>0<filtered>0</filtered></result_count></get_results_response>"#,
+    ),
+];
+
+const SYSTEM_DISCOVERY_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_aggregates",
+        r#"<get_aggregates_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_features",
+        r#"<get_features_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_feeds",
+        r#"<get_feeds_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_timezones",
+        r#"<get_timezones_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_settings",
+        r#"<get_settings_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_system_reports",
+        r#"<get_system_reports_response status="200" status_text="OK"/>"#,
+    ),
+    ("help", r#"<help_response status="200" status_text="OK"/>"#),
+    (
+        "describe_auth",
+        r#"<describe_auth_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_vulns",
+        r#"<get_vulns_response status="200" status_text="OK"/>"#,
     ),
 ];
 
@@ -874,6 +914,53 @@ async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade
 }
 
 #[tokio::test]
+async fn system_discovery_queries_execute_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, SYSTEM_DISCOVERY_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    assert_typed_success!(client.get_aggregates("task", GetAggregatesRequestOpts::default()));
+    assert_typed_success!(client.get_features_parsed());
+    assert_typed_success!(client.get_feeds());
+    assert_typed_success!(client.get_feed(FeedType::Nvt));
+    assert_typed_success!(client.get_timezones());
+    assert_typed_success!(client.get_settings());
+    assert_typed_success!(client.get_system_reports(GetSystemReportsOpts::default()));
+    assert_typed_success!(client.get_help());
+    assert_typed_success!(client.get_help_with_mode(HelpMode::BriefXml));
+    assert_typed_success!(client.describe_auth());
+    assert_typed_success!(client.get_vulnerabilities(FilteredGetOpts::default()));
+    assert_typed_success!(client.get_vulnerability("vuln-1"));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 12);
+    for (command, expected_count) in [
+        ("get_aggregates", 1),
+        ("get_features", 1),
+        ("get_feeds", 2),
+        ("get_timezones", 1),
+        ("get_settings", 1),
+        ("get_system_reports", 1),
+        ("help", 2),
+        ("describe_auth", 1),
+        ("get_vulns", 2),
+    ] {
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.command_name() == command)
+                .count(),
+            expected_count,
+            "unexpected facade inventory for {command}"
+        );
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn asset_and_result_facades_preserve_status_and_parse_context() {
     let Some(server) = fixture_server(
         MockVersion::V22_8,
@@ -911,6 +998,52 @@ async fn asset_and_result_facades_preserve_status_and_parse_context() {
         GvmError::Parse(ParseError::MissingElement(field)) if field == "result.id"
     ));
     server.shutdown().await;
+}
+
+#[tokio::test]
+async fn system_discovery_facades_preserve_status_and_parse_context() {
+    let Some(status_server) = fixture_server(
+        MockVersion::V22_8,
+        &[(
+            "get_system_reports",
+            r#"<get_system_reports_response status="503" status_text="metrics unavailable"/>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut status_client = client(&status_server).await;
+
+    assert_server_error!(
+        status_client.get_system_reports(GetSystemReportsOpts::default()),
+        503,
+        "metrics unavailable"
+    );
+    status_server.shutdown().await;
+
+    let Some(parse_server) = fixture_server(
+        MockVersion::V22_8,
+        &[(
+            "get_features",
+            r#"<get_features_response status="200" status_text="OK"><feature enabled="1"><name>ENABLE_AGENTS</name></feature></get_features_response>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut parse_client = client(&parse_server).await;
+    let parse_error = parse_client
+        .get_features_parsed()
+        .await
+        .expect_err("missing feature compiled-in state should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "feature.compiled_in"
+    ));
+
+    parse_server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2933,6 +3066,18 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
             version: GmpVersion(22, 7),
             required: "22.8",
         } if command == "get_report_export"
+    ));
+    let timezones_error = v227_client
+        .get_timezones()
+        .await
+        .expect_err("22.8 timezone gate should reject 22.7");
+    assert!(matches!(
+        timezones_error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "get_timezones"
     ));
     let oci_error = v227_client
         .get_oci_image_targets_parsed(GetOciImageTargetsOpts::default())

@@ -149,6 +149,17 @@ their GMP 22.8 pre-send gate, and installer instructions, identifier
 collections, integration secrets, and binary/base64 support bundles retain
 their established wire and decoding behavior.
 
+The system-discovery Phase 3 batch, tracked by
+[`#574`](https://github.com/greenbone-hive/rust-gvm/issues/574), migrates all 22
+public read-only builders across the aggregates, features, feed, help,
+system-report, and system compatibility modules. Current and legacy aggregate
+shapes, both feed and help representations, generic information and preference
+queries, resource-name list/detail requests, and both vulnerability aliases
+remain byte-identical delegations to their established builders. All 12 existing
+typed-returning facade helpers delegate through `execute`; `get_features`
+retains its GMP 22.6 gate and `get_timezones` its GMP 22.8 gate before
+transmission. Existing raw builders and compatibility APIs remain supported.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured

@@ -311,6 +311,29 @@ the respective creation command. All existing `_parsed` convenience methods
 for the two alternate-target families are thin `execute` wrappers. Raw builders
 and `send`/`call` remain available without introducing a second encoding path.
 
+## Read-only system discovery
+
+The system-discovery family adds semantic requests for all 22 public builders
+owned by the aggregates, features, feed, help, system-report, and system
+compatibility modules. Each request delegates to its original builder, including
+both current and legacy aggregate forms, the optional-feed compatibility form,
+both help representations, resource-name list/detail requests, and the
+byte-identical `get_vuln`/`get_vulnerability` aliases.
+
+The associated response remains the established domain model. In particular,
+the compatibility `get_preferences` builder uses
+`GetScanConfigPreferencesResponse`, generic system `get_info` uses
+`GetInfoResponse`, and the payload-free `get_license` response uses
+`ActionResponse`. The 12 existing typed-returning convenience methods for
+aggregates, features, feeds, timezones, settings, system reports, help,
+authentication description, and vulnerabilities are thin `execute` wrappers.
+
+Version policy is unchanged. `GetFeaturesRequest` requires GMP 22.6 and
+`GetTimezonesRequest` requires GMP 22.8; generic execution checks those semantic
+command identities before writing to the transport. All other requests in this
+read-only slice retain their existing baseline gates. Raw builders, `send`, and
+`call` remain available without introducing another XML encoder.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,
