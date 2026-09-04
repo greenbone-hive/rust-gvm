@@ -210,10 +210,11 @@ OCI-image, and web-application target lifecycles, credential/scanner
 lifecycles, scan-config, policy, and credential-store operations, alerts and
 schedules, filters, tags, notes, overrides, trashcan recovery, user, group,
 role, and permission lifecycles, plus irregular report retrieval, drill-down,
-and export operations and the complete NVT/SecInfo query surface. Generic
-assets, host and operating-system asset lifecycles, result list/detail queries,
-and the GMP 22.8 agent, agent-group, and integration-configuration families use
-the same execution contract, including binary/base64 support bundles:
+and export operations, create/import/delete report mutations, and the complete
+NVT/SecInfo query surface. Generic assets, host and operating-system asset
+lifecycles, result list/detail queries, and the GMP 22.8 agent, agent-group, and
+integration-configuration families use the same execution contract, including
+binary/base64 support bundles:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
