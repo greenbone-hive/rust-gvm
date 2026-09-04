@@ -21,6 +21,8 @@ Coverage is organized by behavior family:
 - report export exercises both the simple and options XML shapes;
 - generic assets, host and operating-system aliases, and result queries assert
   every typed facade shape plus their shared wire-command inventory;
+- report configuration, report format, and TLS certificate coverage exercises
+  all 23 existing builder shapes through fixed response associations;
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.

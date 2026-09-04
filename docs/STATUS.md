@@ -149,6 +149,15 @@ their GMP 22.8 pre-send gate, and installer instructions, identifier
 collections, integration secrets, and binary/base64 support bundles retain
 their established wire and decoding behavior.
 
+The report-configuration, report-format, and TLS-certificate Phase 3 batch,
+tracked by [`#573`](https://github.com/greenbone-hive/rust-gvm/issues/573),
+migrates all 23 existing builders to semantic typed execution. Default and
+option-bearing report-configuration builders retain byte-identical, distinct
+representations; report-format import preserves local XML validation; and TLS
+certificate inputs retain their existing content and private-key encoding.
+Existing typed helpers delegate to `execute`, with additive detail and mutation
+helpers exposing only operations already supported by public builders.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured
