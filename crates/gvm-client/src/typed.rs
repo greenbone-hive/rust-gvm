@@ -131,8 +131,8 @@ use gvm_gmp::commands::secinfo::{
 };
 use gvm_gmp::commands::system::{
     describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
-    get_vulns, modify_auth, modify_license_with_opts, run_wizard_with_opts, FilteredGetOpts,
-    ModifyLicenseOpts, RunWizardOpts,
+    get_vulns, FilteredGetOpts, ModifyAuthRequest, ModifyLicenseOpts, ModifyLicenseWithOptsRequest,
+    RunWizardOpts, RunWizardWithOptsRequest,
 };
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{
@@ -3203,10 +3203,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         group_name: &str,
         auth_conf_settings: &[(String, String)],
     ) -> Result<ModifyAuthResponse, GvmError> {
-        let response = self
-            .send(modify_auth(group_name, auth_conf_settings))
-            .await?;
-        ModifyAuthResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAuthRequest::new(
+            group_name,
+            auth_conf_settings.iter().cloned(),
+        ))
+        .await
     }
 
     /// Upload a base64-encoded license file and return a typed
@@ -3219,8 +3220,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         file: &str,
         opts: ModifyLicenseOpts,
     ) -> Result<ModifyLicenseResponse, GvmError> {
-        let response = self.send(modify_license_with_opts(file, opts)).await?;
-        ModifyLicenseResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyLicenseWithOptsRequest::new(file, opts))
+            .await
     }
 
     /// Run a gvmd wizard and return its typed response envelope.
@@ -3233,8 +3234,12 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         params: &[(String, String)],
         opts: RunWizardOpts,
     ) -> Result<RunWizardResponse, GvmError> {
-        let response = self.send(run_wizard_with_opts(name, params, opts)).await?;
-        RunWizardResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(RunWizardWithOptsRequest::new(
+            name,
+            params.iter().cloned(),
+            opts,
+        ))
+        .await
     }
 }
 
