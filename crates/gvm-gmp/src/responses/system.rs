@@ -10,7 +10,7 @@ use quick_xml::Reader;
 use crate::responses::common::{
     parse_document, parse_entity_id, status_from_response, ActionResponse, ParseError,
 };
-use crate::EntityId;
+use crate::{EntityId, GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -277,6 +277,12 @@ impl RunWizardResponse {
             status_text,
             response_xml: extract_wizard_response_xml(response.data())?,
         })
+    }
+}
+
+impl GmpResponse for RunWizardResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 
