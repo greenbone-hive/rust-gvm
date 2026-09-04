@@ -213,7 +213,9 @@ role, and permission lifecycles, plus irregular report retrieval, drill-down,
 and export operations and the complete NVT/SecInfo query surface. Generic
 assets, host and operating-system asset lifecycles, result list/detail queries,
 and the GMP 22.8 agent, agent-group, and integration-configuration families use
-the same execution contract, including binary/base64 support bundles:
+the same execution contract, including binary/base64 support bundles.
+Report-configuration, report-format, and TLS-certificate lifecycles are also
+fully covered:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
