@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-04
+Last updated: 2026-09-13
 
 ## Support Direction
 
@@ -10,14 +10,20 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 
 ## Crate Status
 
-The `next` Technology Preview lane now includes the first statically associated
-typed-execution slice. `GmpRequest` binds a semantic request to one
-`GmpResponse`, and `GmpClient::execute` preserves existing command gates,
-redacted tracing, parsing, and compatibility APIs. Version/authentication,
-target list/get/create/clone/modify/delete, and asynchronous report export prove the
-contract before family-by-family migration. See
+The `next` Technology Preview lane contains the completed additive typed
+request/associated-response implementation tracked by issue #523. `GmpRequest`
+binds a semantic request to one `GmpResponse`, and `GmpClient::execute`
+preserves existing command gates, redacted tracing, parsing, and compatibility
+APIs. Every current typed facade method is classified and integration-covered;
+retained non-ticket helpers delegate to `execute`, and their implementation is
+split into private resource-family modules without changing public paths. See
 [ADR 0001](adr/0001-typed-request-response-execution.md) and the
-[typed-execution guide](typed-execution.md).
+[typed-execution guide](typed-execution.md). Downstream API selection,
+compatibility, and release adoption are summarized in the
+[migration notes](typed-execution-migration.md).
+
+The sections below retain the bounded delivery history for each migrated
+family.
 
 The first focused Phase 2 batch, tracked by
 [`#539`](https://github.com/greenbone-hive/rust-gvm/issues/539), migrated the
@@ -59,8 +65,8 @@ The scanner-focused Phase 2 batch, tracked by
 scanner list/get/create/clone/modify/delete/verify lifecycle. Scanner builders
 remain the single byte-compatible encoders, and the existing convenience
 methods remain additive wrappers over generic typed execution. Scan
-configurations remain a separate later batch because they include larger and
-more specialized command surfaces.
+configurations were handled by a separate batch because they include larger
+and more specialized command surfaces.
 
 The scan-config/policy Phase 2 batch, tracked by
 [`#549`](https://github.com/greenbone-hive/rust-gvm/issues/549), migrates every
@@ -130,7 +136,7 @@ encodings. All corresponding facade helpers use `execute`, while raw builders,
 
 The alternate-target Phase 2 batch, tracked by
 [`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), completes the
-existing target command boundary with the remaining standard target clone plus
+existing target command boundary with standard target clone plus
 all OCI-image and web-application target list/detail/create/clone/modify/delete
 operations. Each operation has a distinct semantic request and delegates to its
 established public builder, preserving filters, relationship fields, mutation
@@ -199,7 +205,7 @@ helpers remain supported. Version policy stays explicit: audit operations are
 22.7+, scan/drill-down/synchronous-export operations are 22.8+, and
 `export_scan_report` still requires positive help discovery.
 
-The remaining report-mutation Phase 3 batch, tracked by
+The report-mutation Phase 3 batch, tracked by
 [`#576`](https://github.com/greenbone-hive/rust-gvm/issues/576), adds semantic
 requests for report creation, XML import, deletion, and audit-report deletion.
 Create and import retain distinct Rust request types over their shared

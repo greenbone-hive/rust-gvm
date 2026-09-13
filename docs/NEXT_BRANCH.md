@@ -26,3 +26,19 @@ The paired `greenbone-hive/rust-gvm-api` `next` branch consumes this branch with
 a branch-qualified Cargo dependency and an exact lockfile revision. Downstream
 lockfile refreshes are explicit integration events and run that repository's
 own CI, Security, and branch-specific E2E gates.
+
+## Typed-execution release gate
+
+The family migration and facade split tracked by issue #523 are complete on
+`next`. The remaining release sequence is deliberately explicit:
+
+1. publish and review the downstream [migration notes](typed-execution-migration.md);
+2. promote the bounded typed-execution change set through protected `main`;
+3. update the workspace version and lockfile through a reviewed `main` pull request;
+4. dispatch the orchestrated release workflow and verify its tag, artifacts,
+   checksums, SBOM, and attestations; and
+5. replace downstream branch-qualified dependencies with the exact released
+   revision and run the downstream CI, Security, and E2E gates.
+
+Neither a merge into `next` nor a downstream lockfile refresh substitutes for
+the protected promotion and release workflow.
