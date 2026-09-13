@@ -1,6 +1,7 @@
 # Typed request/response execution
 
-The `next` Technology Preview lane provides an additive typed execution API.
+The `next` Technology Preview lane provides the complete additive typed
+execution API described by issue #523.
 Each migrated semantic request implements `GmpRequest` and selects exactly one
 `GmpResponse` through an associated type:
 
@@ -44,8 +45,9 @@ typed-facade behavior and report non-2xx statuses through
 The Phase 1 public contract is owned by `gvm-gmp` (`GmpRequest` and
 `GmpResponse`) and `gvm-client` (`GmpClient::execute`). `gvm-client` re-exports
 the two traits for ergonomic imports. These names and ownership boundaries are
-stable within the additive `next` migration; later phases add command families
-without changing this execution shape.
+stable within the additive `next` implementation. See the downstream
+[migration notes](typed-execution-migration.md) for API selection,
+compatibility, and release adoption.
 
 ## Custom codecs
 
@@ -316,7 +318,7 @@ all four families.
 ## Alternate target lifecycles
 
 The target command boundary includes a semantic `CloneTargetRequest` for the
-remaining standard target clone operation and complete list, detail, create,
+standard target clone operation and complete list, detail, create,
 clone, modify, and delete request types for both OCI-image and web-application
 targets. Each request delegates to its existing builder, so filters, saved
 filter identifiers, trash and task flags, image/URL collections, credential

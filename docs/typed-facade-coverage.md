@@ -37,9 +37,9 @@ Coverage is organized by behavior family:
   are exercised through typed methods.
 
 The response-model expansion tracked by
-[#371](https://github.com/clawosiris/rust-gvm/issues/371),
-[#372](https://github.com/clawosiris/rust-gvm/issues/372),
-[#373](https://github.com/clawosiris/rust-gvm/issues/373), and
-[#374](https://github.com/clawosiris/rust-gvm/issues/374) is not duplicated
+[#371](https://github.com/greenbone-hive/rust-gvm/issues/371),
+[#372](https://github.com/greenbone-hive/rust-gvm/issues/372),
+[#373](https://github.com/greenbone-hive/rust-gvm/issues/373), and
+[#374](https://github.com/greenbone-hive/rust-gvm/issues/374) is not duplicated
 here. This inventory covers the public typed methods that exist now; those
 issues remain the authority for any further model/API acceptance work.
