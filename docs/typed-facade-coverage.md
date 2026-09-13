@@ -1,15 +1,17 @@
 # Typed Client Facade Coverage
 
 The public typed facade is the set of inherent `GmpClient` methods implemented
-in `crates/gvm-client/src/typed.rs`. Issue #398 called this surface
+in the private resource-family modules under `crates/gvm-client/src/typed/`.
+Issue #398 called this surface
 `GmpClientExt`; the project keeps the existing inherent-method API rather than
 introducing a compatibility-only extension trait.
 
 Every current method is classified as **integration covered** in
 `crates/gvm-client/tests/typed_facade_inventory.rs`. That inventory also has
 explicit (currently empty) **compile only** and **requires integration**
-classes. Its test extracts every `pub async fn` from `typed.rs`, rejects
-duplicates and unknown entries, and fails when a new helper is not classified.
+classes. Its test discovers every Rust source in the private facade module
+directory, extracts every `pub async fn`, rejects duplicate and unknown entries,
+and fails when a new helper is not classified.
 It additionally requires every integration-covered name to appear as a direct
 method call in the client/mock integration suite.
 
