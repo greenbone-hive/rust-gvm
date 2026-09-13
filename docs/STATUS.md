@@ -640,7 +640,10 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 
 ### Typed Client Methods
 
-Convenience methods on `GmpClient<C>` that combine `send()` + `XxxResponse::from_response()` into a single typed call. Implemented in `crates/gvm-client/src/typed.rs`.
+Convenience methods on `GmpClient<C>` that execute semantic requests and return
+typed responses in a single call. They are implemented in private resource-family
+modules under `crates/gvm-client/src/typed/`; only the frozen ticket surface keeps
+its explicit raw-send compatibility path.
 
 | Domain | Get | Create | Notes |
 |--------|-----|--------|-------|

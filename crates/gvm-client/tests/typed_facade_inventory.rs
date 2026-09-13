@@ -4,6 +4,8 @@
 #![allow(missing_docs)]
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::PathBuf;
 
 const INTEGRATION_COVERED: &[&str] = &[
     "get_version",
@@ -267,15 +269,50 @@ const INTEGRATION_COVERED: &[&str] = &[
 const COMPILE_ONLY: &[&str] = &[];
 const REQUIRES_INTEGRATION: &[&str] = &[];
 
-fn public_typed_methods() -> BTreeSet<&'static str> {
-    include_str!("../src/typed.rs")
-        .lines()
-        .filter_map(|line| {
+fn typed_facade_sources() -> Vec<(PathBuf, String)> {
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut paths = vec![source_root.join("typed.rs")];
+    paths.extend(
+        fs::read_dir(source_root.join("typed"))
+            .expect("typed facade module directory should be readable")
+            .map(|entry| {
+                entry
+                    .expect("typed facade module entry should be readable")
+                    .path()
+            })
+            .filter(|path| path.extension().is_some_and(|extension| extension == "rs")),
+    );
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let source = fs::read_to_string(&path).unwrap_or_else(|error| {
+                panic!(
+                    "failed to read typed facade source {}: {error}",
+                    path.display()
+                )
+            });
+            (path, source)
+        })
+        .collect()
+}
+
+fn public_typed_methods() -> BTreeSet<String> {
+    let mut methods = BTreeSet::new();
+    for (path, source) in typed_facade_sources() {
+        for method in source.lines().filter_map(|line| {
             line.trim_start()
                 .strip_prefix("pub async fn ")
                 .and_then(|rest| rest.split('(').next())
-        })
-        .collect()
+        }) {
+            assert!(
+                methods.insert(method.to_string()),
+                "{method} is declared in more than one typed facade module; duplicate found in {}",
+                path.display()
+            );
+        }
+    }
+    methods
 }
 
 fn normalized_integration_sources() -> String {
@@ -306,7 +343,7 @@ fn every_public_typed_helper_has_exactly_one_enforced_classification() {
     ] {
         for method in methods {
             assert!(
-                classified.insert(*method),
+                classified.insert((*method).to_string()),
                 "{method} appears in more than one typed-facade classification ({class})"
             );
         }
@@ -320,6 +357,46 @@ fn every_public_typed_helper_has_exactly_one_enforced_classification() {
         REQUIRES_INTEGRATION.is_empty(),
         "typed facade still has helpers requiring integration coverage: {REQUIRES_INTEGRATION:?}"
     );
+}
+
+#[test]
+fn execution_paths_preserve_the_typed_facade_contract() {
+    let sources = typed_facade_sources();
+    let direct_execute_count = sources
+        .iter()
+        .map(|(_, source)| source.matches("self.execute(").count())
+        .sum::<usize>();
+    let raw_send_sources = sources
+        .iter()
+        .filter(|(_, source)| source.contains("self.send("))
+        .collect::<Vec<_>>();
+    let raw_send_count = raw_send_sources
+        .iter()
+        .map(|(_, source)| source.matches("self.send(").count())
+        .sum::<usize>();
+
+    assert_eq!(direct_execute_count, 249);
+    assert_eq!(raw_send_count, 3);
+    assert_eq!(raw_send_sources.len(), 1);
+    assert_eq!(
+        raw_send_sources[0]
+            .0
+            .file_name()
+            .and_then(|name| name.to_str()),
+        Some("tickets.rs"),
+        "only the frozen ticket facade may bypass typed execution"
+    );
+
+    let scan = sources
+        .iter()
+        .find(|(path, _)| path.file_name().is_some_and(|name| name == "scan.rs"))
+        .map(|(_, source)| source)
+        .expect("scan facade module should be discovered");
+    assert!(
+        scan.contains("#[deprecated(note = \"use sync_config(), which has global semantics\")]")
+    );
+    assert!(scan.contains("pub async fn sync_scan_config("));
+    assert!(scan.contains("self.sync_config().await"));
 }
 
 #[test]
