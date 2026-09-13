@@ -31,6 +31,8 @@ const INTEGRATION_COVERED: &[&str] = &[
     "create_scan_config",
     "import_scan_config",
     "get_scan_config",
+    "get_scan_config_preferences",
+    "get_scan_config_preference",
     "get_policies",
     "get_policy",
     "import_policy",
@@ -375,7 +377,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 249);
+    assert_eq!(direct_execute_count, 251);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(
