@@ -7,6 +7,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.91 -> 0.1.92"
 notes = "Reviewed full crate delta: removes a redundant generated must_use attribute and updates metadata/tests; no unsafe or capability changes."
 
+[[audits.aws-lc-rs]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.17.0 -> 1.18.1"
+notes = "Reviewed the complete Rust-wrapper delta: AEAD scatter/TLS helpers, streaming-cipher restructuring, HKDF/key-wrap changes, validated RSA component construction, stable ML-DSA signing/verification, and version reporting. New unsafe operations remain confined to AWS-LC FFI and checked pointer/buffer conversions; ownership transfers use the existing LcPtr abstractions, output lengths are validated, and no ambient capabilities were added."
+
 [[audits.base64]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -36,6 +42,18 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "4.6.0 -> 4.6.1"
 notes = "Reviewed local diff: proc-macro changes are limited to package-name token handling and dependency bumps; no unsafe code added."
+
+[[audits.num-bigint]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.4.6 -> 0.5.1"
+notes = "Reviewed the complete source delta through the 0.4.7 and 0.5.x changes: inline small-value storage, radix/division and arithmetic updates, split rand integrations, and the 0.5.1 Burnikel-Ziegler regression fix. The new mutable-byte-slice conversion is bounded by the preallocated BigDigit capacity; existing add/sub intrinsics retain their safety conditions, and no ambient capabilities were added."
+
+[[audits.pkg-config]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+version = "0.3.34"
+notes = "Reviewed the complete published crate. It contains no unsafe code; its advertised build-script capability reads target/configuration environment variables, invokes the selected pkg-config executable, parses bounded process output into link metadata, and emits Cargo directives. It adds no runtime capability to deployed artifacts."
 
 [[audits.quick-xml]]
 who = "Thoth"
@@ -73,6 +91,12 @@ criteria = "safe-to-deploy"
 delta = "0.62.7 -> 0.63.1"
 notes = "Reviewed the complete 0.62.7 -> 0.63.1 delta: host-certificate negotiation and verification, strict-KEX enforcement, channel-ID validation, MAC negotiation, packet-length bounds, Curve25519 low-order point rejection, constant-time agent unlock, and malformed PKCS#8 handling. No new executable unsafe blocks or ambient filesystem/process/network capabilities were introduced. With rust-gvm's exact no-RSA feature set, 186 upstream tests passed; the two RSA-only tests are not feature-gated upstream and fail as expected when RSA support is disabled. rust-gvm gvm-connection all-feature tests and Clippy pass after adapting the host-key callback."
 
+[[audits.russh]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.63.1 -> 0.63.3"
+notes = "Reviewed the complete security-release delta: bounds rekey-phase reply queues, rejects connection-layer traffic after peer KEXINIT, preserves packet ordering across rekeys, fixes Pageant response bounds and sensitive debug output, makes RSA-without-feature failure explicit, fixes PTY mode framing, and enforces inactivity timeouts during stalled writes and shutdown. Added network use is test-only, no executable unsafe blocks were added, and the existing transport capabilities are unchanged."
+
 [[audits.rustls]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -84,6 +108,36 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "0.23.42 -> 0.23.43"
 notes = "Reviewed full source delta: tightens protocol/cipher-suite selection and hardens ticket, binder, and session-age arithmetic; no new unsafe blocks or ambient capabilities."
+
+[[audits.rustls]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.23.43 -> 0.23.44"
+notes = "Reviewed the complete source delta: corrects ECH rejection authentication, filters TLS-1.3-only signature schemes from TLS 1.2, sends the required fatal alert for mismatched key-exchange signatures, adds ML-DSA support, rejects empty OCSP payloads, and creates key-log files with owner-only Unix permissions. No unsafe blocks were added; the only ambient-capability change hardens the existing opt-in key-log file creation."
+
+[[audits.rustls-webpki]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.103.13 -> 0.103.15"
+notes = "Reviewed the complete source delta: ML-DSA verification moves from an unstable feature to aws-lc-rs's stable signature API, FIPS reporting delegates to the provider, and CRL iteration is simplified without semantic expansion. No unsafe code or ambient capabilities were added."
+
+[[audits.serde]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.0.228 -> 1.0.229"
+notes = "Reviewed the complete crate delta: dependency/MSRV metadata, lint naming, borrow spelling in in-place sequence decoding, and unstable-doc gating. No unsafe code, generated behavior, or ambient capability was added."
+
+[[audits.serde_core]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.0.228 -> 1.0.229"
+notes = "Reviewed the complete crate delta: dependency/MSRV metadata, lint naming, and borrow spelling in in-place sequence decoding. No unsafe code or ambient capability was added."
+
+[[audits.serde_derive]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.0.228 -> 1.0.229"
+notes = "Reviewed the complete proc-macro delta for the syn 3 migration. Changes adapt renamed/reshaped syntax nodes and replace iterator combinators with equivalent explicit loops; emitted serialization/deserialization control flow and error propagation remain equivalent. No unsafe code or ambient capabilities were added."
 
 [[audits.thiserror]]
 who = "Thoth"
@@ -115,6 +169,12 @@ criteria = "safe-to-deploy"
 delta = "2.6.1 -> 2.7.0"
 notes = "Reviewed local diff: macro docs/runtime-name support and local-runtime stabilization path; proc-macro surface remains expected."
 
+[[audits.tokio-rustls]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.26.4 -> 0.26.5"
+notes = "Reviewed the complete runtime-source delta: AsyncRead now drains additional already-decrypted records into the caller's remaining buffer while deferring non-transient follow-up errors to the next poll, plus rustdoc/formatting changes. Published-package test keys and fixtures were removed. No unsafe code or ambient capabilities were added."
+
 [[audits.tokio-stream]]
 who = "Thoth"
 criteria = "safe-to-run"
@@ -132,3 +192,9 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.24.0 -> 1.25.0"
 notes = "Reviewed full source delta: corrects non-ASCII parse diagnostics and adds a Serde byte-string adapter over the fixed 16-byte UUID representation; no unsafe or ambient capability changes."
+
+[[audits.uuid]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.25.0 -> 1.26.1"
+notes = "Reviewed the complete source delta: version-7 counter bits are placed below the version nibble while preserving ordering, configurable sub-millisecond precision is capped at 12 bits, and overflowing Timestamp-to-SystemTime conversion no longer panics. No unsafe code or ambient capabilities were added."

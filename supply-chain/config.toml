@@ -63,7 +63,7 @@ version = "1.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.aws-lc-sys]]
-version = "0.41.0"
+version = "0.45.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.base16ct]]
