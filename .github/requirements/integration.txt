@@ -227,7 +227,7 @@ cryptography==50.0.1 \
     --hash=sha256:fd3718b960d0b5dd213cdf03f3bcb7000e69dda0de8b956061947ff6bcff5558 \
     --hash=sha256:ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef
     # via
-    #   -r .github/requirements/integration.in
+    #   -r integration.in
     #   paramiko
 h11==0.16.0 \
     --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
@@ -245,7 +245,7 @@ httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
     # via httpx
-httpx==0.28.1 \
+httpx[http2]==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via python-gvm
@@ -476,11 +476,11 @@ pynacl==1.6.2 \
     --hash=sha256:d29bfe37e20e015a7d8b23cfc8bd6aa7909c92a1b8f41ee416bbb3e79ef182b2 \
     --hash=sha256:fe9847ca47d287af41e82be1dd5e23023d3c31a951da134121ab02e42ac218c9
     # via paramiko
-python-gvm==27.7.0 \
-    --hash=sha256:624ae8c6377c23bd5ba6f70f45c82327f2f7fdae8603aaa3a696447835843394 \
-    --hash=sha256:722f5252fdc0c5bac82b010968d878e49379e5fefbc3e0a60989007e38dcf449
-    # via -r .github/requirements/integration.in
+python-gvm==27.8.0 \
+    --hash=sha256:1829a85d97522a8f6b000fe4b4bac59847ab338e839d868c93ea28326cce4eb4 \
+    --hash=sha256:a0e049e169989fbed97330e494751b4f619551c118ae0f2a830aa34b62a504af
+    # via -r integration.in
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
-    # via anyio
+    # via -r integration.in
