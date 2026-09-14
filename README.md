@@ -437,7 +437,7 @@ cargo build --release -p gvm-mock-server
 
 ### Requirements
 
-- Rust 1.86+ (MSRV)
+- Rust 1.89+ (MSRV)
 - Python 3.10+ with `python-gvm` and `cryptography` (for integration tests only)
 
 ## CI/CD
