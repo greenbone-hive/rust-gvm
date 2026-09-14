@@ -29,9 +29,8 @@ use gvm_gmp::responses::{
     CreateCredentialResponse, DeleteCredentialResponse, GetCertBundAdvisoriesResponse,
     GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
     GetDfnCertAdvisoriesResponse, GetFeedsResponse, GetInfoResponse, GetNvtFamiliesResponse,
-    GetNvtsResponse, GetOperatingSystemsResponse, GetScanConfigPreferencesResponse,
-    GetTimezonesResponse, GetVulnerabilitiesResponse, ModifyCredentialResponse,
-    VerifyCredentialStoreResponse,
+    GetNvtsResponse, GetOperatingSystemsResponse, GetPreferencesResponse, GetTimezonesResponse,
+    GetVulnerabilitiesResponse, ModifyCredentialResponse, VerifyCredentialStoreResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, FeedType};
@@ -162,7 +161,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn get_nvt_preferences(
         &mut self,
         opts: GetNvtPreferencesOpts,
-    ) -> Result<GetScanConfigPreferencesResponse, GvmError> {
+    ) -> Result<GetPreferencesResponse, GvmError> {
         self.execute(GetNvtPreferencesRequest::new(opts)).await
     }
 
@@ -174,7 +173,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         name: &str,
         opts: GetNvtPreferencesOpts,
-    ) -> Result<GetScanConfigPreferencesResponse, GvmError> {
+    ) -> Result<GetPreferencesResponse, GvmError> {
         self.execute(GetNvtPreferenceRequest::new(name, opts)).await
     }
 

@@ -108,7 +108,7 @@ builders, raw execution APIs, typed convenience methods, transports, or
 response models. The facade's private resource-family modules are an internal
 maintenance boundary and do not create new public module paths.
 
-The facade inventory locks all 253 current public async methods: 249 delegate
+The facade inventory locks all 255 current public async methods: 251 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path, and the deprecated `sync_scan_config` alias delegates
 indirectly through `sync_config`.
