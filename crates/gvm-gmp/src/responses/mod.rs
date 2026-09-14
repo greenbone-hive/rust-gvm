@@ -94,7 +94,7 @@ pub use config::{
 pub use credential::{
     CreateCredentialResponse, Credential, CredentialKind, CredentialStore,
     DeleteCredentialResponse, GetCredentialStoresResponse, GetCredentialsResponse,
-    ModifyCredentialResponse, VerifyCredentialStoreResponse,
+    ModifyCredentialResponse, ModifyCredentialStoreResponse, VerifyCredentialStoreResponse,
 };
 pub use features::{Feature, GetFeaturesResponse};
 pub use feed::{Feed, GetFeedsResponse};
@@ -129,7 +129,8 @@ pub use permission::{
     ModifyPermissionResponse, Permission,
 };
 pub use port_list::{
-    CreatePortListResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
+    CreatePortListResponse, CreatePortRangeResponse, DeletePortListResponse,
+    DeletePortRangeResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
 };
 pub use preference::{GetPreferencesResponse, Preference, PreferenceNvt};
 pub use report::{
@@ -147,7 +148,7 @@ pub use report_config::{
 };
 pub use report_format::{
     CreateReportFormatResponse, DeleteReportFormatResponse, GetReportFormatsResponse,
-    ModifyReportFormatResponse, ReportFormat,
+    ModifyReportFormatResponse, ReportFormat, VerifyReportFormatResponse,
 };
 pub use resource_names::{GetResourceNamesResponse, ResourceName};
 pub use result::{GetResultsResponse, NvtRef, QodInfo, ScanResult};
@@ -155,8 +156,9 @@ pub use role::{
     CreateRoleResponse, DeleteRoleResponse, GetRolesResponse, ModifyRoleResponse, Role,
 };
 pub use scan_config::{
-    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigsResponse,
-    ModifyScanConfigResponse, ScanConfig, SyncConfigResponse,
+    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferencesResponse,
+    GetScanConfigsResponse, ModifyScanConfigResponse, ScanConfig, ScanConfigPreference,
+    ScanConfigPreferenceNvt, SyncConfigResponse,
 };
 pub use scan_report::{GetScanReportResponse, ScanReport, ScanReportResultCount};
 pub use scanner::{
@@ -168,9 +170,9 @@ pub use schedule::{
     Schedule,
 };
 pub use secinfo::{
-    CertBundAdvisory, Cpe, Cve, DfnCertAdvisory, GetCertBundAdvisoriesResponse, GetCpesResponse,
-    GetCvesResponse, GetDfnCertAdvisoriesResponse, GetOperatingSystemsResponse,
-    GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
+    CertBundAdvisory, Cpe, Cve, DfnCertAdvisory, GenericInfo, GetCertBundAdvisoriesResponse,
+    GetCpesResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetInfoResponse,
+    GetOperatingSystemsResponse, GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
 };
 pub use system::{
     AuthConfSetting, AuthGroup, DescribeAuthResponse, GetSettingsResponse, GetTimezonesResponse,

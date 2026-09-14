@@ -9,7 +9,7 @@ use crate::responses::common::{
     count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta,
     status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
-use crate::{CredentialStoreCredentialType, CredentialType};
+use crate::{CredentialStoreCredentialType, CredentialType, GmpResponse, GmpVersion};
 
 /// Credential kind observed in a `get_credentials` response.
 ///
@@ -223,6 +223,12 @@ impl GetCredentialsResponse {
     }
 }
 
+impl GmpResponse for GetCredentialsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CredentialStore {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
@@ -250,6 +256,12 @@ impl GetCredentialStoresResponse {
     }
 }
 
+impl GmpResponse for GetCredentialStoresResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateCredentialResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -267,7 +279,15 @@ impl CreateCredentialResponse {
     }
 }
 
+impl GmpResponse for CreateCredentialResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 pub type VerifyCredentialStoreResponse = ActionResponse;
+
+pub type ModifyCredentialStoreResponse = ActionResponse;
 
 pub type ModifyCredentialResponse = ActionResponse;
 pub type DeleteCredentialResponse = ActionResponse;
