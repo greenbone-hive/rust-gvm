@@ -2,8 +2,8 @@
 
 Rust client and protocol ecosystem for the [Greenbone Management Protocol (GMP)](https://docs.greenbone.net/API/GMP/gmp-22.5.html) and [Greenbone Vulnerability Manager (gvmd)](https://github.com/greenbone/gvmd), with type safety, async-first design, version-aware command builders, and a programmable mock server for testing.
 
-[![CI](https://github.com/clawosiris/rust-gvm/actions/workflows/ci.yml/badge.svg)](https://github.com/clawosiris/rust-gvm/actions/workflows/ci.yml)
-[![Security](https://github.com/clawosiris/rust-gvm/actions/workflows/security.yml/badge.svg)](https://github.com/clawosiris/rust-gvm/actions/workflows/security.yml)
+[![CI](https://github.com/greenbone-hive/rust-gvm/actions/workflows/ci.yml/badge.svg)](https://github.com/greenbone-hive/rust-gvm/actions/workflows/ci.yml)
+[![Security](https://github.com/greenbone-hive/rust-gvm/actions/workflows/security.yml/badge.svg)](https://github.com/greenbone-hive/rust-gvm/actions/workflows/security.yml)
 
 > [!WARNING]
 > **Technology Preview:** This code is provided as a Technology Preview only.
@@ -201,6 +201,43 @@ let response = client.call(targets::get_targets(Default::default())).await?;
 println!("Raw XML: {} bytes", response.data().len());
 ```
 
+#### Statically associated typed execution
+
+The Technology Preview client exposes semantic request values whose response
+type is selected at compile time. The completed migration covers version
+negotiation, authentication, standard and specialized task variants, standard,
+OCI-image, and web-application target lifecycles, credential/scanner
+lifecycles, scan-config, policy, and credential-store operations, alerts and
+schedules, filters, tags, notes, overrides, trashcan recovery, user, group,
+role, and permission lifecycles, plus irregular report retrieval, drill-down,
+export, create, import, and delete operations and the complete NVT/SecInfo query
+surface. Generic assets, host and operating-system asset lifecycles, result
+list/detail queries, and the GMP 22.8 agent, agent-group, and
+integration-configuration families use the same execution contract, including
+binary/base64 support bundles. Generic configuration and port-list/port-range
+lifecycles are also fully migrated, and report-configuration, report-format,
+and TLS-certificate lifecycles are fully covered. Read-only system discovery is
+covered as well, including aggregates, features, feeds, settings, timezones,
+help, system reports, generic information, preferences, resource names,
+vulnerabilities, license status, and authentication description. System
+authentication, license, and wizard mutations plus user-setting list, detail,
+and modification operations are also statically associated while retaining
+their existing builders and redaction guarantees:
+
+```rust
+use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
+
+let targets = client
+    .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+    .await?;
+```
+
+Existing convenience methods, builders, `send`, and `call` remain supported.
+See the downstream [migration notes](docs/typed-execution-migration.md) for API
+selection, compatibility, and release adoption, and the contributor-oriented
+[typed request/response execution guide](docs/typed-execution.md) for the raw
+escape hatch and command-authoring guidance.
+
 #### Version-aware client
 
 Use `GmpVersioned` when you need to branch on the server's GMP version:
@@ -221,6 +258,12 @@ match &client {
 // All versions share the same send/call API
 client.call(authentication::authenticate("admin", "admin")).await?;
 ```
+
+`GmpClient::command_support` and `GmpVersioned::command_support` distinguish
+commands that are supported, require explicit XML-help discovery, require a
+newer GMP version, were not advertised after discovery, or are unknown to the
+library. The same classification drives the pre-send execution gate. Unknown
+names remain available through raw `send`/`call` for custom commands.
 
 #### SSH transport
 
@@ -450,7 +493,7 @@ cargo build --release -p gvm-mock-server
 
 ### Pre-built Binaries
 
-Download from [GitHub Releases](https://github.com/clawosiris/rust-gvm/releases) or the rolling [nightly](https://github.com/clawosiris/rust-gvm/releases/tag/nightly) pre-release.
+Download from [GitHub Releases](https://github.com/greenbone-hive/rust-gvm/releases) or the rolling [nightly](https://github.com/greenbone-hive/rust-gvm/releases/tag/nightly) pre-release.
 
 | Platform | Binary |
 |----------|--------|

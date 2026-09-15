@@ -17,7 +17,7 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
 ///
 /// This returns `false` for commands that require positive XML `help`
 /// discovery even when their version floor is satisfied. Use
-/// [`crate::GmpClient::supports_command`] after discovery for the client's
+/// [`crate::GmpClient::command_support`] after discovery for the client's
 /// complete current knowledge.
 #[must_use]
 pub fn command_supported(command_name: &str, version: GmpVersion) -> bool {
@@ -263,6 +263,22 @@ mod tests {
             minimum_version_for_command("create_web_application_target"),
             Some(GmpVersion(22, 8))
         );
+    }
+
+    #[test]
+    fn specialized_task_semantic_aliases_require_next() {
+        for command in [
+            "create_agent_group_task",
+            "create_oci_image_target_task",
+            "create_web_application_task",
+        ] {
+            assert!(!command_supported(command, GmpVersion(22, 7)));
+            assert!(command_supported(command, GmpVersion(22, 8)));
+            assert_eq!(
+                minimum_version_for_command(command),
+                Some(GmpVersion(22, 8))
+            );
+        }
     }
 
     #[test]

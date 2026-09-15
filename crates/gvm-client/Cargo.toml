@@ -32,5 +32,11 @@ tokio-test.workspace = true
 tempfile.workspace = true
 gvm-mock-server.workspace = true
 
+# gvm-client remains a pre-1.0 Technology Preview. Adding an actionable error
+# variant therefore requires the next minor release (for example 0.6 -> 0.7),
+# not a 1.0 release. Remove this override when the public API stabilizes.
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_added = { required-update = "minor" }
+
 [lints]
 workspace = true
