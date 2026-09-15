@@ -91,8 +91,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// does not prove that the server implements this command.
     ///
     /// # Errors
-    /// Returns an error if positive help discovery is missing, the command is
-    /// unavailable, the request fails, or response parsing fails.
+    /// Returns [`crate::GvmError::CommandDiscoveryRequired`] before discovery,
+    /// [`crate::GvmError::CommandNotAdvertised`] when discovery omits the
+    /// command, or a request/response error after it is attempted.
     pub async fn export_scan_report(
         &mut self,
         report_id: &EntityId,

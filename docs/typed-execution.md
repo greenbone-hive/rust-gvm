@@ -420,6 +420,17 @@ alone:
 - asynchronous `export_scan_report` was added without a distinct GMP version
   and therefore continues to require positive XML-help discovery.
 
+`GmpClient::command_support` exposes the execution gate's actionable state.
+It distinguishes a registered command that still needs discovery from an
+unknown name, a version mismatch, and a completed discovery that omitted the
+command. Execution reports the same distinctions as
+`GvmError::CommandDiscoveryRequired`, `GvmError::UnsupportedCommand`, and
+`GvmError::CommandNotAdvertised`, respectively. `CommandSupport::Supported`
+only means that library version policy permits the operation and any required
+server advertisement exists; authorization and command success are still
+determined when gvmd executes it. Unknown names retain the raw `send`/`call`
+escape hatch.
+
 These checks run before transmission through the same `send` path used by raw
 and ordinary typed requests. The retained raw builders and helpers remain
 available when callers need unmodeled report details.

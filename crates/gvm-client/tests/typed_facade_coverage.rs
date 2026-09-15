@@ -4,12 +4,12 @@
 #![allow(missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
+use gvm_client::{CommandSupport, GmpClient, GvmError};
 use gvm_client::{
     CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, ExportScanReportOpts,
     GetOciImageTargetsOpts, GetReportExportOpts, GetWebApplicationTargetsOpts,
     ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
-use gvm_client::{GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::agent_groups::{
     CloneAgentGroupRequest, CreateAgentGroupOpts, CreateAgentGroupRequest, DeleteAgentGroupRequest,
@@ -3383,11 +3383,18 @@ async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
         return;
     };
     let mut client = client(&server).await;
-    assert_eq!(client.supports_command("export_scan_report"), None);
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::RequiresDiscovery
+    );
     client
         .discover_commands()
         .await
         .expect("help discovery should parse");
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::Supported
+    );
 
     let response = client
         .export_scan_report(
@@ -3420,7 +3427,10 @@ async fn asynchronous_scan_report_export_rejects_negative_help_discovery_on_22_8
         .discover_commands()
         .await
         .expect("negative help discovery should still parse");
-    assert_eq!(client.supports_command("export_scan_report"), Some(false));
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::NotAdvertised
+    );
     server.clear_history();
 
     let error = client
@@ -3433,11 +3443,8 @@ async fn asynchronous_scan_report_export_rejects_negative_help_discovery_on_22_8
 
     assert!(matches!(
         error,
-        GvmError::UnsupportedCommand {
-            command,
-            version: GmpVersion(22, 8),
-            required: "positive XML help discovery",
-        } if command == "export_scan_report"
+        GvmError::CommandNotAdvertised { command }
+            if command == "export_scan_report"
     ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;

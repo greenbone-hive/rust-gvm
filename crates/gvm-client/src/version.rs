@@ -17,7 +17,7 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
 ///
 /// This returns `false` for commands that require positive XML `help`
 /// discovery even when their version floor is satisfied. Use
-/// [`crate::GmpClient::supports_command`] after discovery for the client's
+/// [`crate::GmpClient::command_support`] after discovery for the client's
 /// complete current knowledge.
 #[must_use]
 pub fn command_supported(command_name: &str, version: GmpVersion) -> bool {

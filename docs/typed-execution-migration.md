@@ -82,6 +82,29 @@ check when an operation reuses another command's XML root, including
 specialized tasks and credential-store-backed credential operations. Requests
 that require GMP 22.8 are rejected before transport on older servers.
 
+`GmpClient::command_support` and `GmpVersioned::command_support` expose the
+same classification used by execution:
+
+| State | Caller action | Execution error |
+| --- | --- | --- |
+| `CommandSupport::Supported` | Attempt the command. This does not guarantee authorization or success. | Any later transport, server, or decode error. |
+| `CommandSupport::RequiresDiscovery` | Call `discover_commands()` and retry the query or operation. | `GvmError::CommandDiscoveryRequired`. |
+| `CommandSupport::UnsupportedVersion { required }` | Use a compatible operation or newer server. | `GvmError::UnsupportedCommand`. |
+| `CommandSupport::NotAdvertised` | Select an alternative; discovery has already answered negatively. | `GvmError::CommandNotAdvertised`. |
+| `CommandSupport::UnknownCommand` | Correct a possible typo or intentionally use the raw/custom escape hatch. | No pre-send rejection for raw custom commands. |
+
+The older `supports_command() -> Option<bool>` query remains as a deprecated
+source-compatible shim. It preserves its historical mapping: pending discovery
+and unknown names are `None`, while insufficient versions and negatively
+discovered commands are `Some(false)`. New code should use `command_support`
+so those states are not collapsed.
+
+Adding the two actionable `GvmError` variants expands an exhaustive public
+enum. While `gvm-client` remains a pre-1.0 Technology Preview, that change is
+classified as requiring the next minor release rather than a 1.0 release; the
+crate's `cargo-semver-checks` policy enforces that boundary. The separate #523
+release gate must therefore select a newer minor version before publication.
+
 The same protection applies when a known specialized shape is passed through
 the retained raw builders. Unknown custom command names remain possible
 through `send` and `call`.
@@ -111,6 +134,10 @@ The release is additive. It does not remove or rename the established command
 builders, raw execution APIs, typed convenience methods, transports, or
 response models. The facade's private resource-family modules are an internal
 maintenance boundary and do not create new public module paths.
+
+The actionable command-support correction adds error variants and therefore
+requires the next pre-1.0 minor release as described above. The legacy
+`supports_command` signature remains available during migration.
 
 The facade inventory locks all 255 current public async methods: 251 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw

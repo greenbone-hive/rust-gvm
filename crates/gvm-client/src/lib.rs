@@ -116,6 +116,46 @@ pub use version::{
     required_version_label,
 };
 
+/// The client's current knowledge of whether a registered GMP command can be
+/// attempted.
+///
+/// This classification combines the negotiated GMP version, rust-gvm's
+/// command registry, and cached XML-help discovery. [`Self::Supported`] means
+/// that library version policy permits the command and, when required, the
+/// server advertised it. It does not guarantee authorization or successful
+/// execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "command support states require different caller actions"]
+#[non_exhaustive]
+pub enum CommandSupport {
+    /// Library policy permits the command and any required discovery succeeded.
+    Supported,
+    /// The command is version-permitted but requires [`GmpClient::discover_commands`].
+    RequiresDiscovery,
+    /// The negotiated server version is older than the command's minimum.
+    UnsupportedVersion {
+        /// Minimum GMP version required by the command.
+        required: GmpVersion,
+    },
+    /// Discovery completed, but the server did not advertise the command.
+    NotAdvertised,
+    /// The name is absent from rust-gvm's command and semantic-alias registry.
+    ///
+    /// Unknown names remain permitted through raw [`GmpClient::send`] and
+    /// [`GmpClient::call`] for forward-compatible custom commands.
+    UnknownCommand,
+}
+
+impl CommandSupport {
+    const fn legacy_option(self) -> Option<bool> {
+        match self {
+            Self::Supported => Some(true),
+            Self::UnsupportedVersion { .. } | Self::NotAdvertised => Some(false),
+            Self::RequiresDiscovery | Self::UnknownCommand => None,
+        }
+    }
+}
+
 /// High-level async GMP client over an abstract transport.
 pub struct GmpClient<C: GvmConnection> {
     connection: C,
@@ -260,24 +300,50 @@ impl<C: GvmConnection> GmpClient<C> {
         Ok(parsed)
     }
 
-    /// Return the client's current knowledge of a known command's support.
+    /// Classify the client's current knowledge of a command's support.
     ///
-    /// Version-qualified commands return `Some` immediately. Commands marked
-    /// for help discovery return `None` until [`Self::discover_commands`] has
-    /// succeeded.
+    /// This is the same classification used by the execution gate. Discovery
+    /// remains explicit: [`CommandSupport::RequiresDiscovery`] instructs the
+    /// caller to invoke [`Self::discover_commands`] and retry. An
+    /// [`CommandSupport::UnknownCommand`] may still be sent through the raw
+    /// custom-command APIs.
+    pub fn command_support(&self, command_name: &str) -> CommandSupport {
+        if let Some(capability) = gvm_gmp::capabilities::command_capability(command_name) {
+            if let Some(required) = capability.min_version {
+                if self.version < required {
+                    return CommandSupport::UnsupportedVersion { required };
+                }
+            }
+            if capability.requires_help_discovery {
+                return match &self.discovered_commands {
+                    None => CommandSupport::RequiresDiscovery,
+                    Some(commands) if commands.contains(command_name) => CommandSupport::Supported,
+                    Some(_) => CommandSupport::NotAdvertised,
+                };
+            }
+            return CommandSupport::Supported;
+        }
+
+        if let Some(required) = version::minimum_version_for_command(command_name) {
+            return if self.version < required {
+                CommandSupport::UnsupportedVersion { required }
+            } else {
+                CommandSupport::Supported
+            };
+        }
+
+        CommandSupport::UnknownCommand
+    }
+
+    /// Return the legacy tri-state view of a command's support.
+    ///
+    /// This compatibility method maps both pending discovery and unknown names
+    /// to `None`. Use [`Self::command_support`] when those states need different
+    /// caller actions.
+    #[deprecated(since = "0.6.0", note = "use command_support for actionable states")]
     #[must_use]
     pub fn supports_command(&self, command_name: &str) -> Option<bool> {
-        let capability = gvm_gmp::capabilities::command_capability(command_name)?;
-        if capability.requires_help_discovery {
-            if !capability.permitted_in(self.version) {
-                return Some(false);
-            }
-            return self
-                .discovered_commands
-                .as_ref()
-                .map(|commands| commands.contains(command_name));
-        }
-        Some(capability.available_in(self.version))
+        self.command_support(command_name).legacy_option()
     }
 
     /// Enable redacted GMP wire tracing on this client.
@@ -414,45 +480,29 @@ impl<C: GvmConnection> GmpClient<C> {
 
         let semantic_command_name = semantic_command_name
             .or_else(|| next_only_semantic_command(command_name, request_bytes));
-        let unsupported_semantic =
-            semantic_command_name.filter(|name| !self.command_supported_with_discovery(name));
-        if unsupported_semantic.is_none() && self.command_supported_with_discovery(command_name) {
-            return Ok(());
+        if let Some(semantic_command_name) = semantic_command_name {
+            self.ensure_named_command_supported(semantic_command_name)?;
         }
 
-        let command = unsupported_semantic.unwrap_or(command_name);
-        let required = self.command_requirement(command);
-
-        Err(GvmError::UnsupportedCommand {
-            command: command.to_string(),
-            version: self.version,
-            required,
-        })
+        self.ensure_named_command_supported(command_name)
     }
 
-    fn command_supported_with_discovery(&self, command_name: &str) -> bool {
-        let Some(capability) = gvm_gmp::capabilities::command_capability(command_name) else {
-            return version::command_supported(command_name, self.version);
-        };
-        if !capability.permitted_in(self.version) {
-            return false;
+    fn ensure_named_command_supported(&self, command_name: &str) -> Result<(), GvmError> {
+        match self.command_support(command_name) {
+            CommandSupport::Supported | CommandSupport::UnknownCommand => Ok(()),
+            CommandSupport::RequiresDiscovery => Err(GvmError::CommandDiscoveryRequired {
+                command: command_name.to_string(),
+            }),
+            CommandSupport::UnsupportedVersion { .. } => Err(GvmError::UnsupportedCommand {
+                command: command_name.to_string(),
+                version: self.version,
+                required: version::required_version_label(command_name)
+                    .unwrap_or("a newer GMP version"),
+            }),
+            CommandSupport::NotAdvertised => Err(GvmError::CommandNotAdvertised {
+                command: command_name.to_string(),
+            }),
         }
-        if capability.requires_help_discovery {
-            return self
-                .discovered_commands
-                .as_ref()
-                .is_some_and(|commands| commands.contains(command_name));
-        }
-        true
-    }
-
-    fn command_requirement(&self, command_name: &str) -> &'static str {
-        if let Some(capability) = gvm_gmp::capabilities::command_capability(command_name) {
-            if capability.requires_help_discovery && capability.permitted_in(self.version) {
-                return "positive XML help discovery";
-            }
-        }
-        version::required_version_label(command_name).unwrap_or("a newer GMP version")
     }
 
     /// Get a single integration configuration.
@@ -897,9 +947,9 @@ impl<C: GvmConnection> GmpClient<C> {
     /// not sufficient evidence that the server implements this command.
     ///
     /// # Errors
-    /// Returns an error if positive help discovery is missing, the server does
-    /// not advertise the command, or request transmission or response handling
-    /// fails.
+    /// Returns [`GvmError::CommandDiscoveryRequired`] before discovery,
+    /// [`GvmError::CommandNotAdvertised`] when discovery omits the command, or
+    /// a request/response error after the command is attempted.
     pub async fn export_scan_report_raw(
         &mut self,
         report_id: &EntityId,
@@ -1577,11 +1627,19 @@ impl<C: GvmConnection> GmpVersioned<C> {
         self.inner_mut().discover_commands().await
     }
 
-    /// Return the versioned client's current knowledge of a known command's
-    /// support.
+    /// Classify the versioned client's current knowledge of command support.
+    pub fn command_support(&self, command_name: &str) -> CommandSupport {
+        self.inner().command_support(command_name)
+    }
+
+    /// Return the legacy tri-state view of command support.
+    ///
+    /// Use [`Self::command_support`] to distinguish pending discovery from an
+    /// unknown command name.
+    #[deprecated(since = "0.6.0", note = "use command_support for actionable states")]
     #[must_use]
     pub fn supports_command(&self, command_name: &str) -> Option<bool> {
-        self.inner().supports_command(command_name)
+        self.command_support(command_name).legacy_option()
     }
 
     /// Queue or reuse an asynchronous scan-report export.
@@ -1590,8 +1648,9 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// does not prove that the server implements this command.
     ///
     /// # Errors
-    /// Returns an error if positive help discovery is missing, the command is
-    /// unavailable, or request transmission or response handling fails.
+    /// Returns [`GvmError::CommandDiscoveryRequired`] before discovery,
+    /// [`GvmError::CommandNotAdvertised`] when discovery omits the command, or
+    /// a request/response error after the command is attempted.
     pub async fn export_scan_report(
         &mut self,
         report_id: &EntityId,
@@ -2290,6 +2349,90 @@ mod tests {
             GvmError::Server { status, message }
                 if status == expected_status && message == expected_message
         ));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn command_support_distinguishes_actionable_states() {
+        let undiscovered = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 7),
+            wire_trace: None,
+            discovered_commands: None,
+        };
+
+        assert_eq!(
+            undiscovered.command_support("get_tasks"),
+            CommandSupport::Supported
+        );
+        assert_eq!(
+            undiscovered.command_support("export_scan_report"),
+            CommandSupport::RequiresDiscovery
+        );
+        assert_eq!(
+            undiscovered.command_support("export_scan_reprot"),
+            CommandSupport::UnknownCommand
+        );
+        assert_eq!(undiscovered.supports_command("export_scan_report"), None);
+        assert_eq!(undiscovered.supports_command("export_scan_reprot"), None);
+        assert_eq!(
+            undiscovered.command_support("get_report_export"),
+            CommandSupport::UnsupportedVersion {
+                required: GmpVersion(22, 8),
+            }
+        );
+
+        let absent = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+            discovered_commands: Some(BTreeSet::from(["get_tasks".to_string()])),
+        };
+        assert_eq!(
+            absent.command_support("export_scan_report"),
+            CommandSupport::NotAdvertised
+        );
+        assert_eq!(absent.supports_command("export_scan_report"), Some(false));
+
+        let advertised = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+            discovered_commands: Some(BTreeSet::from(["export_scan_report".to_string()])),
+        };
+        assert_eq!(
+            advertised.command_support("export_scan_report"),
+            CommandSupport::Supported
+        );
+        assert_eq!(
+            advertised.supports_command("export_scan_report"),
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_raw_command_remains_forward_compatible() {
+        let connection = ScriptedConnection::new([
+            version_response("22.8"),
+            r#"<custom_command_response status="200" status_text="OK"/>"#.to_string(),
+        ]);
+        let sent = connection.sent();
+        let mut client = GmpClient::connect(connection)
+            .await
+            .expect("client connects");
+
+        assert_eq!(
+            client.command_support("custom_command"),
+            CommandSupport::UnknownCommand
+        );
+        client
+            .call(b"<custom_command/>".as_slice())
+            .await
+            .expect("unknown raw command reaches the transport");
+
+        let sent = sent.lock().expect("sent lock");
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[1], b"<custom_command/>");
     }
 
     #[tokio::test]

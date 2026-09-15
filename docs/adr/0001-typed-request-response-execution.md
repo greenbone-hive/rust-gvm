@@ -73,6 +73,28 @@ Version negotiation is the bootstrap exception. `GmpClient::connect` sends a
 negotiated `GmpVersion` exists. Later explicit `get_version` calls use
 `execute` normally.
 
+### Capability classification
+
+The client uses one `CommandSupport` classification for public support queries
+and the pre-send execution gate. It distinguishes supported, discovery-pending,
+insufficient-version, negatively discovered, and unknown command names.
+Discovery stays explicit. Pending discovery returns
+`GvmError::CommandDiscoveryRequired`; a completed XML-help inventory that omits
+the command returns `GvmError::CommandNotAdvertised`; version rejection retains
+`GvmError::UnsupportedCommand`. `Supported` means only that library version
+policy permits the command and any required server advertisement is present;
+it does not guarantee authorization or successful execution.
+
+The original `supports_command() -> Option<bool>` method remains as a
+deprecated compatibility shim. New callers use `command_support()` so pending
+discovery is not confused with an unknown name. Unknown raw command names are
+not rejected before transmission, preserving the custom-command escape hatch.
+The query migration is source-compatible. The two new execution-error variants
+expand the exhaustive `GvmError` enum, so `gvm-client`'s pre-1.0 SemVer policy
+requires a minor release and the later #523 release gate must select one before
+publication. `cargo-semver-checks` records that explicit Technology Preview
+policy; it must be removed when the API stabilizes at 1.0.
+
 ### Compatibility and security
 
 - Existing command-builder functions and typed convenience methods remain
@@ -80,8 +102,8 @@ negotiated `GmpVersion` exists. Later explicit `get_version` calls use
   construction and `execute`.
 - `send` and `call` remain the raw/custom escape hatch for commands that have
   not migrated or require caller-owned XML.
-- `execute` reuses `send`, preserving version/help gates and redacted wire
-  tracing before bytes reach observers.
+- `execute` reuses `send`, preserving the shared actionable version/help gate
+  and redacted wire tracing before bytes reach observers.
 - `AuthenticateRequest` has a custom redacted `Debug` implementation; request
   bytes still pass through the existing structural wire redactor.
 - Asynchronous report export uses the same typed contract but retains its
@@ -107,7 +129,7 @@ migrated command families remains intentionally incomplete until later phases.
 - Exact-byte tests compare every representative semantic request with its
   existing builder, including target validation and asynchronous report export.
 - Client integration tests exercise `execute`, compatibility wrappers,
-  non-success and malformed responses, command-version/help gates, and wire
-  redaction.
-- Workspace formatting, tests, strict Clippy, documentation, and additive API
-  checks remain required before merge.
+  non-success and malformed responses, every command-support state and
+  execution error, the unknown-command escape hatch, and wire redaction.
+- Workspace formatting, tests, strict Clippy, documentation, and documented
+  SemVer-policy checks remain required before merge.

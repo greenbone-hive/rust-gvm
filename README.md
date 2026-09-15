@@ -259,6 +259,12 @@ match &client {
 client.call(authentication::authenticate("admin", "admin")).await?;
 ```
 
+`GmpClient::command_support` and `GmpVersioned::command_support` distinguish
+commands that are supported, require explicit XML-help discovery, require a
+newer GMP version, were not advertised after discovery, or are unknown to the
+library. The same classification drives the pre-send execution gate. Unknown
+names remain available through raw `send`/`call` for custom commands.
+
 #### SSH transport
 
 Connect to a remote gvmd over SSH tunnel:

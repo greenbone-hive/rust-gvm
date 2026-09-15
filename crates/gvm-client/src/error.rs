@@ -71,6 +71,20 @@ pub enum GvmError {
         required: &'static str,
     },
 
+    /// Command support requires explicit XML-help discovery before execution.
+    #[error("command '{command}' requires XML help discovery before execution")]
+    CommandDiscoveryRequired {
+        /// Registered command that requires discovery.
+        command: String,
+    },
+
+    /// The server's discovered XML-help inventory omitted the command.
+    #[error("command '{command}' was not advertised by the server's XML help response")]
+    CommandNotAdvertised {
+        /// Registered command absent from the discovered server inventory.
+        command: String,
+    },
+
     /// Operation timed out.
     #[error("timeout after {0:?}")]
     Timeout(Duration),
@@ -128,5 +142,24 @@ mod tests {
             GvmError::Parse(ParseError::InvalidValue { field, value })
                 if field == "port" && value == "invalid"
         ));
+    }
+
+    #[test]
+    fn discovery_errors_describe_the_required_action_without_version_wording() {
+        let pending = GvmError::CommandDiscoveryRequired {
+            command: "export_scan_report".to_string(),
+        };
+        assert_eq!(
+            pending.to_string(),
+            "command 'export_scan_report' requires XML help discovery before execution"
+        );
+
+        let absent = GvmError::CommandNotAdvertised {
+            command: "export_scan_report".to_string(),
+        };
+        assert_eq!(
+            absent.to_string(),
+            "command 'export_scan_report' was not advertised by the server's XML help response"
+        );
     }
 }

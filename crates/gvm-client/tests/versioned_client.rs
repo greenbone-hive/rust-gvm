@@ -5,7 +5,7 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
+    AgentInstallerLanguage, CommandSupport, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
     CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
     CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
     ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands,
@@ -754,16 +754,20 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
         .expect_err("undiscovered export should fail");
     assert!(matches!(
         error,
-        GvmError::UnsupportedCommand {
-            command,
-            required: "positive XML help discovery",
-            ..
-        } if command == "export_scan_report"
+        GvmError::CommandDiscoveryRequired { command }
+            if command == "export_scan_report"
     ));
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::RequiresDiscovery
+    );
 
     let help = client.discover_commands().await.expect("help discovery");
     assert_eq!(help.supports_command("export_scan_report"), Some(true));
-    assert_eq!(client.supports_command("export_scan_report"), Some(true));
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::Supported
+    );
     let error = client
         .export_scan_report(&report_id, ExportScanReportOpts::default())
         .await

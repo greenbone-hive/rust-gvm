@@ -609,6 +609,8 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 |--------|-------------|
 | `GmpClient::connect(connection)` | Connect, get_version, negotiate — returns ready client |
 | `client.version()` | Returns negotiated `GmpVersion` |
+| `client.command_support(name)` | Distinguishes supported, discovery-pending, version-rejected, not-advertised, and unknown commands |
+| `client.discover_commands()` | Explicitly cache the server's XML-help command inventory |
 | `client.send(request)` | Send request, return raw `Response` |
 | `client.call(request)` | Send request, raise `GvmError::Server` on non-2xx |
 | `client.disconnect()` | Graceful transport shutdown |
@@ -642,6 +644,9 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 | `XmlParse(String)` | Malformed version/response XML |
 | `Parse(ParseError)` | Typed response model parsing failure |
 | `UnsupportedVersion(major, minor)` | Server GMP version too old |
+| `UnsupportedCommand { .. }` | Registered command requires a newer GMP version |
+| `CommandDiscoveryRequired { command }` | Registered command requires explicit XML-help discovery |
+| `CommandNotAdvertised { command }` | Completed discovery omitted the registered command |
 | `Timeout(Duration)` | Operation timeout |
 | `InvalidState(String)` | Client state error |
 
