@@ -20,7 +20,6 @@ use gvm_gmp::commands::credentials::{create_credential, verify_credential_store,
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
-use gvm_gmp::responses::ParseError;
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -612,10 +611,7 @@ async fn next_client_agent_groups_round_trip() {
         .get_agent_group(&agent_group_id)
         .await
         .expect_err("deleted agent group should not be found");
-    assert!(matches!(
-        error,
-        GvmError::Parse(ParseError::ServerError { status: 404, .. })
-    ));
+    assert!(matches!(error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }
@@ -839,7 +835,7 @@ async fn next_client_agent_commands_round_trip() {
         .expect_err("unseeded agent should not be found");
     assert!(matches!(
         missing_agent,
-        GvmError::Parse(ParseError::ServerError { status: 404, .. })
+        GvmError::Server { status: 404, .. }
     ));
 
     let agent_ids = [id("00000000-0000-0000-0000-000000000002")];

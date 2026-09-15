@@ -246,7 +246,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// or the server does not return a structured command listing.
     pub async fn discover_commands(&mut self) -> Result<HelpResponse, GvmError> {
         let response = self.call(help_with_mode(HelpMode::BriefXml)).await?;
-        let parsed = HelpResponse::from_response(&response).map_err(GvmError::Parse)?;
+        let parsed = HelpResponse::from_response(&response).map_err(GvmError::from)?;
         let schema = parsed.schema.as_ref().ok_or_else(|| {
             GvmError::XmlParse("help response did not include an XML command listing".to_string())
         })?;
@@ -317,7 +317,9 @@ impl<C: GvmConnection> GmpClient<C> {
     ///
     /// This uses [`Self::send`] so command/version/help-discovery checks,
     /// redacted wire tracing, transport behavior, and typed response errors are
-    /// identical to the compatibility convenience methods.
+    /// identical to the compatibility convenience methods. Valid non-success
+    /// GMP responses are normalized to [`GvmError::Server`]; malformed or
+    /// uninterpretable responses remain [`GvmError::Parse`].
     ///
     /// The request's associated response type is enforced at compile time:
     ///
@@ -341,7 +343,7 @@ impl<C: GvmConnection> GmpClient<C> {
     pub async fn execute<R: GmpRequest>(&mut self, request: R) -> Result<R::Response, GvmError> {
         let version = self.version;
         let response = self.send(request).await?;
-        R::Response::decode(&response, version).map_err(GvmError::Parse)
+        R::Response::decode(&response, version).map_err(GvmError::from)
     }
 
     /// Send a request and raise a server error on non-2xx responses.
@@ -2273,6 +2275,23 @@ mod tests {
         String::from_utf8(event.bytes.clone()).expect("trace event is utf-8")
     }
 
+    async fn connected_client_with_response(response: &str) -> GmpClient<ScriptedConnection> {
+        GmpClient::connect(ScriptedConnection::new([
+            version_response("22.8"),
+            response.to_string(),
+        ]))
+        .await
+        .expect("client connects")
+    }
+
+    fn assert_server_error(error: GvmError, expected_status: u16, expected_message: &str) {
+        assert!(matches!(
+            error,
+            GvmError::Server { status, message }
+                if status == expected_status && message == expected_message
+        ));
+    }
+
     #[tokio::test]
     async fn execute_redacts_wire_bytes_before_trace_observation() {
         let connection =
@@ -2331,6 +2350,104 @@ mod tests {
             .expect("client connects");
 
         assert!(client.wire_trace.is_none());
+    }
+
+    #[tokio::test]
+    async fn valid_non_success_responses_are_classified_consistently() {
+        let mut call_client = connected_client_with_response(
+            r#"<get_targets_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let call_error = call_client
+            .call(b"<get_targets/>".as_slice())
+            .await
+            .expect_err("call rejects non-success status");
+        assert_server_error(call_error, 503, "backend unavailable");
+
+        let mut execute_client = connected_client_with_response(
+            r#"<get_targets_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let execute_error = execute_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("execute rejects non-success status");
+        assert_server_error(execute_error, 503, "backend unavailable");
+
+        let mut agent_client = connected_client_with_response(
+            r#"<get_agents_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let agent_error = agent_client
+            .get_agents(GetAgentsOpts::default())
+            .await
+            .expect_err("migrated call-based helper rejects non-success status");
+        assert_server_error(agent_error, 503, "backend unavailable");
+
+        let mut report_client = connected_client_with_response(
+            r#"<get_scan_report_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let report_error = report_client
+            .get_scan_report(
+                &EntityId::new("report-1").expect("valid id"),
+                GetScanReportOpts::default(),
+            )
+            .await
+            .expect_err("migrated send-based helper rejects non-success status");
+        assert_server_error(report_error, 503, "backend unavailable");
+
+        let mut send_client = connected_client_with_response(
+            r#"<get_targets_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let raw = send_client
+            .send(b"<get_targets/>".as_slice())
+            .await
+            .expect("send exposes raw non-success response");
+        assert_eq!(raw.status_code(), Some(503));
+        assert_eq!(raw.status_text().as_deref(), Some("backend unavailable"));
+    }
+
+    #[tokio::test]
+    async fn malformed_and_structurally_invalid_responses_remain_parse_errors() {
+        let mut malformed_client = connected_client_with_response(
+            r#"<get_targets_response status="200" status_text="OK"><target>"#,
+        )
+        .await;
+        let malformed = malformed_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("malformed XML must fail");
+        assert!(matches!(malformed, GvmError::Parse(_)));
+
+        let mut missing_client = connected_client_with_response(
+            r#"<get_targets_response status="200" status_text="OK"><target><name>missing id</name></target></get_targets_response>"#,
+        )
+        .await;
+        let missing = missing_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("missing required field must fail");
+        assert!(matches!(
+            missing,
+            GvmError::Parse(gvm_gmp::responses::ParseError::MissingElement(field))
+                if field == "target.id"
+        ));
+
+        let mut invalid_client = connected_client_with_response(
+            r#"<get_targets_response status="200" status_text="OK"><target id="target-1"><name>invalid boolean</name><reverse_lookup_only>maybe</reverse_lookup_only></target></get_targets_response>"#,
+        )
+        .await;
+        let invalid = invalid_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("invalid value must fail");
+        assert!(matches!(
+            invalid,
+            GvmError::Parse(gvm_gmp::responses::ParseError::InvalidValue { field, value })
+                if field == "reverse_lookup_only" && value == "maybe"
+        ));
     }
 
     #[tokio::test]

@@ -37,10 +37,14 @@ let raw = client
     .await?;
 ```
 
-`send` returns any GMP status as a raw response. `call` raises
-`GvmError::Server` for a non-2xx status. Typed decoders preserve the existing
-typed-facade behavior and report non-2xx statuses through
-`GvmError::Parse(ParseError::ServerError { .. })`.
+`send` returns any GMP status as a raw response. `call`, `execute`, and typed
+convenience methods raise `GvmError::Server { status, message }` for an
+equivalent valid non-2xx GMP response. Malformed XML, missing required fields,
+invalid values, and other uninterpretable responses remain
+`GvmError::Parse`. This normalization corrects the initial typed-execution
+behavior; consumers that matched
+`GvmError::Parse(ParseError::ServerError { .. })` must now match
+`GvmError::Server { .. }`.
 
 The Phase 1 public contract is owned by `gvm-gmp` (`GmpRequest` and
 `GmpResponse`) and `gvm-client` (`GmpClient::execute`). `gvm-client` re-exports
@@ -97,7 +101,8 @@ impl GmpRequest for CustomRequest {
 ```
 
 Custom response codecs must reject non-2xx statuses as
-`ParseError::ServerError` and retain structural field context in other parse
+`ParseError::ServerError`; `gvm-client` promotes that decoder error to
+`GvmError::Server`. Codecs retain structural field context in other parse
 errors. `execute` still applies negotiated-version/help checks to registered
 commands and declared semantic aliases, while unknown custom names retain the
 raw path's forward compatibility. It also redacts wire bytes before invoking a

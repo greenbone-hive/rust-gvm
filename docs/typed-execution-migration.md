@@ -13,8 +13,8 @@ methods or raw command builders. It complements the contributor-oriented
 
 | API | Use it when | Result and non-success behavior |
 | --- | --- | --- |
-| `GmpClient::execute(request)` | A semantic request type exists and compile-time response association is desired. | Returns the request's associated response type; non-2xx GMP statuses are reported as `GvmError::Parse(ParseError::ServerError { .. })`. |
-| Typed convenience method | Existing code already uses methods such as `get_targets` or the method is more ergonomic. | Returns the same typed response and, for migrated non-ticket methods, delegates to `execute`. |
+| `GmpClient::execute(request)` | A semantic request type exists and compile-time response association is desired. | Returns the request's associated response type; valid non-2xx GMP statuses are reported as `GvmError::Server { status, message }`. |
+| Typed convenience method | Existing code already uses methods such as `get_targets` or the method is more ergonomic. | Returns the same typed response and, for migrated non-ticket methods, delegates to `execute`; valid non-2xx GMP statuses are reported as `GvmError::Server { status, message }`. |
 | `GmpClient::call(builder)` | Raw XML response details are needed. | Returns `gvm_protocol::Response`; non-2xx GMP statuses are reported as `GvmError::Server`. |
 | `GmpClient::send(builder)` | The caller must inspect every raw GMP status itself. | Returns `gvm_protocol::Response` for success and non-success statuses. |
 
@@ -66,10 +66,13 @@ let targets = client
     .await?;
 ```
 
-Review error matching during this change. `call` reports a non-2xx GMP status
-as `GvmError::Server`; typed response decoders preserve the existing typed
-facade contract and report it as
-`GvmError::Parse(ParseError::ServerError { .. })`.
+`call`, `execute`, and typed convenience methods report an equivalent valid
+non-2xx GMP response as `GvmError::Server { status, message }`. Malformed XML,
+missing required fields, invalid values, and other uninterpretable responses
+remain `GvmError::Parse`. This is a compatibility correction from the initial
+typed-execution implementation: consumers that matched
+`GvmError::Parse(ParseError::ServerError { .. })` must update that match to
+`GvmError::Server { .. }`.
 
 ## Version and capability checks
 
@@ -97,8 +100,9 @@ For commands outside the modeled surface, either:
   associated response type.
 
 Custom typed decoders must reject non-2xx statuses as
-`ParseError::ServerError` and preserve useful field context for malformed
-responses. Secret-bearing request diagnostics and observed wire bytes remain
+`ParseError::ServerError`; the high-level client normalizes that result to
+`GvmError::Server`. They preserve useful field context for malformed responses.
+Secret-bearing request diagnostics and observed wire bytes remain
 redacted before trace observers run.
 
 ## Compatibility boundary

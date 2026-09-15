@@ -53,12 +53,20 @@ extension; it must not hide version branching in transport code.
 `from_response` parser. This leaves room for explicitly version-dependent
 response shapes without moving protocol semantics into the client.
 
-`execute` intentionally follows the existing typed-facade path: it calls
-`send`, then invokes the associated response decoder. It does not call `call`.
-Consequently, non-2xx statuses continue to become
-`GvmError::Parse(ParseError::ServerError { .. })` for typed methods, while raw
-`call` continues to return `GvmError::Server`. Parse-error context and public
-error behavior remain compatible.
+`execute` calls `send`, then invokes the associated response decoder. It does
+not call `call`, because `send` is the shared raw transport path and response
+decoders still own status and payload interpretation. At the client boundary,
+`ParseError::ServerError { status, message }` is promoted to
+`GvmError::Server { status, message }`. `call`, `execute`, and typed convenience
+methods therefore classify an equivalent valid non-success GMP response the
+same way. Malformed XML, missing required fields, invalid values, and other
+uninterpretable responses remain `GvmError::Parse`, while raw `send` continues
+to return non-success responses for caller inspection.
+
+This normalization corrects an inconsistency in the initial typed-execution
+implementation. Consumers that matched the earlier nested
+`GvmError::Parse(ParseError::ServerError { .. })` representation must match
+`GvmError::Server { .. }` instead.
 
 Version negotiation is the bootstrap exception. `GmpClient::connect` sends a
 `GetVersionRequest`, but parses and validates the advertised version before a

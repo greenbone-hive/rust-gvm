@@ -66,8 +66,7 @@ use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::task::TaskObservers;
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, CredentialKind, GetConfigsResponse,
-    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, ParseError, Permission,
-    Target,
+    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, Permission, Target,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
@@ -3647,10 +3646,7 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
         )
         .await
         .expect_err("missing credential reference should be rejected");
-    assert!(matches!(
-        error,
-        GvmError::Parse(ParseError::ServerError { status: 404, .. })
-    ));
+    assert!(matches!(error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }
@@ -6112,10 +6108,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect_err("missing schedule create should fail");
     assert!(
-        matches!(
-            &create_error,
-            GvmError::Parse(ParseError::ServerError { status: 404, .. })
-        ),
+        matches!(&create_error, GvmError::Server { status: 404, .. }),
         "unexpected create error: {create_error:?}"
     );
     let modify_error = client
@@ -6129,10 +6122,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect_err("missing schedule replacement should fail");
     assert!(
-        matches!(
-            &modify_error,
-            GvmError::Parse(ParseError::ServerError { status: 404, .. })
-        ),
+        matches!(&modify_error, GvmError::Server { status: 404, .. }),
         "unexpected modify error: {modify_error:?}"
     );
     let after_failed_update = client
@@ -6159,7 +6149,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .expect_err("attached schedule deletion should fail");
     assert!(matches!(
         dependency_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, .. })
+        GvmError::Server { status: 409, .. }
     ));
     client
         .modify_task(
@@ -6207,7 +6197,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .expect_err("trashed dependent task should block permanent schedule deletion");
     assert!(matches!(
         trashed_dependency_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, .. })
+        GvmError::Server { status: 409, .. }
     ));
     client
         .delete_task(&scheduled.id, true)

@@ -21,7 +21,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: GetTicketsOpts,
     ) -> Result<GetTicketsResponse, GvmError> {
         let response = self.send(get_tickets(opts)).await?;
-        GetTicketsResponse::from_response(&response).map_err(GvmError::Parse)
+        GetTicketsResponse::from_response(&response).map_err(GvmError::from)
     }
 
     /// Send a `create_ticket` request and return a typed [`CreateTicketResponse`].
@@ -34,7 +34,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: CreateTicketOpts,
     ) -> Result<CreateTicketResponse, GvmError> {
         let response = self.send(create_ticket(result_id, opts)).await?;
-        CreateTicketResponse::from_response(&response).map_err(GvmError::Parse)
+        CreateTicketResponse::from_response(&response).map_err(GvmError::from)
     }
 
     /// Send a `modify_ticket` request and return a typed [`ModifyTicketResponse`].
@@ -47,6 +47,6 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: ModifyTicketOpts,
     ) -> Result<ModifyTicketResponse, GvmError> {
         let response = self.send(modify_ticket(ticket_id, opts)).await?;
-        ModifyTicketResponse::from_response(&response).map_err(GvmError::Parse)
+        ModifyTicketResponse::from_response(&response).map_err(GvmError::from)
     }
 }

@@ -623,7 +623,7 @@ macro_rules! assert_server_error {
         let error = $future.await.expect_err("typed helper should reject server error");
         assert!(matches!(
             error,
-            GvmError::Parse(ParseError::ServerError { status: $status, message })
+            GvmError::Server { status: $status, message }
                 if message == $message
         ));
     }};
@@ -1729,7 +1729,7 @@ async fn report_mutation_execution_preserves_server_status_and_parse_context() {
         .expect_err("server status should fail");
     assert!(matches!(
         status_error,
-        GvmError::Parse(ParseError::ServerError { status: 503, message })
+        GvmError::Server { status: 503, message }
             if message == "backend unavailable"
     ));
     status_server.shutdown().await;
@@ -1881,7 +1881,7 @@ async fn standard_task_execute_preserves_status_and_parse_context() {
         .expect_err("non-success task response should fail");
     assert!(matches!(
         status_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, message })
+        GvmError::Server { status: 409, message }
             if message == "task conflict"
     ));
 
@@ -2226,7 +2226,7 @@ async fn standard_credential_execute_preserves_status_and_parse_context() {
         .expect_err("non-success credential response should fail");
     assert!(matches!(
         status_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, message })
+        GvmError::Server { status: 409, message }
             if message == "credential conflict"
     ));
 
@@ -2338,7 +2338,7 @@ async fn scanner_execute_preserves_status_and_parse_context() {
         .expect_err("non-success scanner response should fail");
     assert!(matches!(
         status_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, message })
+        GvmError::Server { status: 409, message }
             if message == "scanner conflict"
     ));
 
@@ -2468,7 +2468,7 @@ async fn alert_and_schedule_execute_preserve_status_and_parse_context() {
         .expect_err("non-success alert response should fail");
     assert!(matches!(
         status_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, message })
+        GvmError::Server { status: 409, message }
             if message == "alert conflict"
     ));
 
@@ -2993,7 +2993,7 @@ async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
         .expect_err("non-success filter response should fail");
     assert!(matches!(
         filter_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, message })
+        GvmError::Server { status: 409, message }
             if message == "filter conflict"
     ));
 
@@ -3012,7 +3012,7 @@ async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
         .expect_err("non-success empty-trashcan response should fail");
     assert!(matches!(
         trashcan_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, message })
+        GvmError::Server { status: 409, message }
             if message == "trashcan conflict"
     ));
 
@@ -3187,7 +3187,7 @@ async fn notes_and_overrides_preserve_status_and_parse_context() {
         .expect_err("non-success note response should fail");
     assert!(matches!(
         note_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, message })
+        GvmError::Server { status: 409, message }
             if message == "note conflict"
     ));
 
@@ -3463,10 +3463,10 @@ async fn generic_execute_preserves_server_status_and_parse_error_context() {
         .expect_err("server status should fail");
     assert!(matches!(
         status_error,
-        GvmError::Parse(ParseError::ServerError {
+        GvmError::Server {
             status: 503,
             message
-        }) if message == "backend unavailable"
+        } if message == "backend unavailable"
     ));
     status_server.shutdown().await;
 
