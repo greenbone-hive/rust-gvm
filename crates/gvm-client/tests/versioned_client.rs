@@ -56,6 +56,22 @@ fn unix_connection(server: &MockGmpServer) -> UnixSocketConnection {
     UnixSocketConnection::with_path(server.socket_path().expect("unix socket path"))
 }
 
+async fn authenticated_next_client(server: &MockGmpServer) -> GmpNext<UnixSocketConnection> {
+    let mut client = GmpVersioned::connect(unix_connection(server))
+        .await
+        .expect("client should connect");
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+    match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    }
+}
+
 async fn typed_task_by_id(server: &MockGmpServer, task_id: &EntityId) -> gvm_gmp::responses::Task {
     let mut client = GmpClient::connect(unix_connection(server))
         .await
@@ -916,22 +932,7 @@ async fn next_client_oci_image_targets_round_trip() {
     let Some(server) = stateful_server(MockVersion::V22_8).await else {
         return;
     };
-    let connection = unix_connection(&server);
-    let mut client = GmpVersioned::connect(connection)
-        .await
-        .expect("client should connect");
-
-    client
-        .call(gvm_gmp::commands::authentication::authenticate(
-            "admin", "admin",
-        ))
-        .await
-        .expect("authenticate should succeed");
-
-    let mut client = match client {
-        GmpVersioned::Next(client) => client,
-        other => panic!("expected Next client, got {other:?}"),
-    };
+    let mut client = authenticated_next_client(&server).await;
 
     let create_response = client
         .create_oci_image_target(CreateOciImageTargetRequest {
@@ -1028,22 +1029,7 @@ async fn next_client_web_application_targets_round_trip() {
     let Some(server) = stateful_server(MockVersion::V22_8).await else {
         return;
     };
-    let connection = unix_connection(&server);
-    let mut client = GmpVersioned::connect(connection)
-        .await
-        .expect("client should connect");
-
-    client
-        .call(gvm_gmp::commands::authentication::authenticate(
-            "admin", "admin",
-        ))
-        .await
-        .expect("authenticate should succeed");
-
-    let mut client = match client {
-        GmpVersioned::Next(client) => client,
-        other => panic!("expected Next client, got {other:?}"),
-    };
+    let mut client = authenticated_next_client(&server).await;
 
     let create_response = client
         .create_web_application_target(CreateWebApplicationTargetRequest {

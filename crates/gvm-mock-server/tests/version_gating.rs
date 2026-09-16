@@ -76,7 +76,7 @@ async fn send_recv(stream: &mut UnixStream, request: impl Request) -> Response {
     Response::new(buf)
 }
 
-fn encode(request: impl GmpRequestCodec, version: GmpVersion) -> Vec<u8> {
+fn encode(request: &impl GmpRequestCodec, version: GmpVersion) -> Vec<u8> {
     request
         .encode(version.into())
         .expect("request should encode")
@@ -239,7 +239,7 @@ async fn version_22_7_rejects_next_commands() {
     let response = send_recv(
         &mut stream,
         encode(
-            GetWebApplicationTargetsRequest::default(),
+            &GetWebApplicationTargetsRequest::default(),
             GmpVersion::V22_7,
         ),
     )
@@ -252,7 +252,7 @@ async fn version_22_7_rejects_next_commands() {
 
     let response = send_recv(
         &mut stream,
-        encode(GetOciImageTargetsRequest::default(), GmpVersion::V22_7),
+        encode(&GetOciImageTargetsRequest::default(), GmpVersion::V22_7),
     )
     .await;
     assert_eq!(response.status_code(), Some(400));
@@ -275,7 +275,7 @@ async fn version_22_7_rejects_next_commands() {
     let response = send_recv(
         &mut stream,
         encode(
-            CreateOciImageTargetRequest::new(
+            &CreateOciImageTargetRequest::new(
                 "Rejected OCI Target",
                 vec!["registry.example/app:1".to_string()],
             ),
@@ -503,7 +503,7 @@ async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut Unix
     let web_target_response = send_recv(
         stream,
         encode(
-            CreateWebApplicationTargetRequest {
+            &CreateWebApplicationTargetRequest {
                 name: "Version Gated Web Target".into(),
                 urls: vec!["https://example.com".to_string()],
                 comment: Some("accepted on 22.8".into()),
@@ -519,7 +519,7 @@ async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut Unix
     let web_target_list = send_recv(
         stream,
         encode(
-            GetWebApplicationTargetsRequest::default(),
+            &GetWebApplicationTargetsRequest::default(),
             GmpVersion::V22_8,
         ),
     )
@@ -584,7 +584,7 @@ async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {
     let oci_target_response = send_recv(
         stream,
         encode(
-            CreateOciImageTargetRequest {
+            &CreateOciImageTargetRequest {
                 name: "Version Gated OCI Target".into(),
                 image_references: vec!["registry.example/app:1".to_string()],
                 comment: Some("accepted on 22.8".into()),
@@ -599,7 +599,7 @@ async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {
 
     let oci_target_list = send_recv(
         stream,
-        encode(GetOciImageTargetsRequest::default(), GmpVersion::V22_8),
+        encode(&GetOciImageTargetsRequest::default(), GmpVersion::V22_8),
     )
     .await;
     assert_eq!(oci_target_list.status_code(), Some(200));
@@ -611,7 +611,7 @@ async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {
     let modify_response = send_recv(
         stream,
         encode(
-            ModifyOciImageTargetRequest {
+            &ModifyOciImageTargetRequest {
                 oci_image_target_id: oci_target_id.clone(),
                 name: Some("Updated Version Gated OCI Target".into()),
                 comment: None,
@@ -626,7 +626,7 @@ async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {
 
     let modified_list = send_recv(
         stream,
-        encode(GetOciImageTargetsRequest::default(), GmpVersion::V22_8),
+        encode(&GetOciImageTargetsRequest::default(), GmpVersion::V22_8),
     )
     .await;
     let modified_xml = modified_list.as_str().expect("utf8");
@@ -639,7 +639,7 @@ async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {
     let delete_response = send_recv(
         stream,
         encode(
-            DeleteOciImageTargetRequest::new(oci_target_id, true),
+            &DeleteOciImageTargetRequest::new(oci_target_id, true),
             GmpVersion::V22_8,
         ),
     )
