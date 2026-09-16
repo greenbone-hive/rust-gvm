@@ -246,12 +246,12 @@ builder	crates/gvm-gmp/src/commands/tags.rs	delete_tag	transitional	Pending boun
 builder	crates/gvm-gmp/src/commands/tags.rs	get_tag	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tags.rs	get_tags	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tags.rs	modify_tag	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/targets.rs	clone_target	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/targets.rs	create_target	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/targets.rs	delete_target	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/targets.rs	get_target	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/targets.rs	get_targets	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/targets.rs	modify_target	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/targets.rs	clone_target	removed	Removed by #607; CloneTargetRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/targets.rs	create_target	removed	Removed by #607; CreateTargetRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/targets.rs	delete_target	removed	Removed by #607; DeleteTargetRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/targets.rs	get_target	removed	Removed by #607; GetTargetRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/targets.rs	get_targets	removed	Removed by #607; GetTargetsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/targets.rs	modify_target	removed	Removed by #607; ModifyTargetRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	clone_audit	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	clone_task	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_agent_group_task	transitional	Pending bounded family migration under #602.
@@ -546,19 +546,19 @@ facade	crates/gvm-client/src/typed/system.rs	run_wizard	transitional	Pending bou
 facade	crates/gvm-client/src/typed/targets.rs	clone_oci_image_target_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/targets.rs	clone_web_application_target_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/targets.rs	create_oci_image_target_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/targets.rs	create_target	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/targets.rs	create_target	retained-construction	Retained for discoverability; accepts the canonical CreateTargetRequest unchanged.
 facade	crates/gvm-client/src/typed/targets.rs	create_web_application_target_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/targets.rs	delete_oci_image_target_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/targets.rs	delete_target	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/targets.rs	delete_target	retained-construction	Retained for discoverability; accepts the canonical DeleteTargetRequest unchanged.
 facade	crates/gvm-client/src/typed/targets.rs	delete_web_application_target_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/targets.rs	get_oci_image_target_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/targets.rs	get_oci_image_targets_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/targets.rs	get_target	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/targets.rs	get_targets	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/targets.rs	get_target	retained-construction	Retained for discoverability; accepts the canonical GetTargetRequest unchanged.
+facade	crates/gvm-client/src/typed/targets.rs	get_targets	retained-construction	Retained for discoverability; accepts the canonical GetTargetsRequest unchanged.
 facade	crates/gvm-client/src/typed/targets.rs	get_web_application_target_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/targets.rs	get_web_application_targets_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/targets.rs	modify_oci_image_target_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/targets.rs	modify_target	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/targets.rs	modify_target	retained-construction	Retained for discoverability; accepts the canonical ModifyTargetRequest unchanged.
 facade	crates/gvm-client/src/typed/targets.rs	modify_web_application_target_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/tickets.rs	create_ticket	frozen-ticket	Ticket surface is frozen by product scope.
 facade	crates/gvm-client/src/typed/tickets.rs	get_tickets	frozen-ticket	Ticket surface is frozen by product scope.
@@ -655,9 +655,9 @@ options	crates/gvm-gmp/src/commands/system.rs	RunWizardOpts	transitional	Pending
 options	crates/gvm-gmp/src/commands/system_reports.rs	GetSystemReportsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/tags.rs	GetTagsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/tags.rs	TagOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/targets.rs	CreateTargetOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/targets.rs	GetTargetsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/targets.rs	ModifyTargetOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/targets.rs	CreateTargetOpts	removed	Removed by #607; fields now belong to CreateTargetRequest.
+options	crates/gvm-gmp/src/commands/targets.rs	GetTargetsOpts	removed	Removed by #607; fields now belong to GetTargetsRequest.
+options	crates/gvm-gmp/src/commands/targets.rs	ModifyTargetOpts	removed	Removed by #607; fields now belong to ModifyTargetRequest.
 options	crates/gvm-gmp/src/commands/tasks.rs	CreateAgentGroupTaskOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/tasks.rs	CreateOciImageTargetTaskOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/tasks.rs	CreateTaskOpts	transitional	Pending bounded family migration under #602.
@@ -869,12 +869,12 @@ request	crates/gvm-gmp/src/commands/tags.rs	CreateTagRequest	transitional	Pendin
 request	crates/gvm-gmp/src/commands/tags.rs	DeleteTagRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tags.rs	GetTagsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tags.rs	ModifyTagRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/targets.rs	CloneTargetRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/targets.rs	CreateTargetRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/targets.rs	DeleteTargetRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/targets.rs	GetTargetRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/targets.rs	GetTargetsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/targets.rs	ModifyTargetRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/targets.rs	CloneTargetRequest	canonical-request	Complete clone input, semantic alias metadata, direct validation/encoding, and typed response.
+request	crates/gvm-gmp/src/commands/targets.rs	CreateTargetRequest	canonical-request	Complete create input with final-value validation, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/targets.rs	DeleteTargetRequest	canonical-request	Complete delete input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/targets.rs	GetTargetRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/targets.rs	GetTargetsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/targets.rs	ModifyTargetRequest	canonical-request	Complete modify input with final-value validation, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/tasks.rs	CloneTaskRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateAgentGroupTaskRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateAuditRequest	transitional	Pending bounded family migration under #602.

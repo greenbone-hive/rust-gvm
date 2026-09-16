@@ -22,53 +22,91 @@ methods or raw command builders. It complements the contributor-oriented
 | `GmpClient::call(builder)` | Raw XML response details are needed. | Returns `gvm_protocol::Response`; non-2xx GMP statuses are reported as `GvmError::Server`. |
 | `GmpClient::send(builder)` | The caller must inspect every raw GMP status itself. | Returns `gvm_protocol::Response` for success and non-success statuses. |
 
-During the bounded migration, existing builders, options, and convenience
-methods remain available. The first downstream-ready release occurs only after
+During the bounded migration, unconverted builders and options remain
+available. Converted families remove redundant surfaces after their canonical
+replacement and migration notes exist. The first downstream-ready release occurs only after
 the disposition audit, so applications adopt the final canonical surface once.
 Raw `send`/`call`, transports, framing, response models, and wire formats remain
 supported.
 
 ## Moving from a convenience method
 
-Existing code remains valid:
+The standard target convenience accepts its complete canonical request:
 
 ```rust
-let targets = client.get_targets(Default::default()).await?;
+use gvm_gmp::commands::targets::GetTargetsRequest;
+
+let targets = client.get_targets(GetTargetsRequest::default()).await?;
 ```
 
 Use the semantic request directly when generic code or compile-time request and
 response association is useful:
 
 ```rust
-use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
+use gvm_gmp::commands::targets::GetTargetsRequest;
 
 let targets = client
-    .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+    .execute(GetTargetsRequest::default())
     .await?;
 ```
 
-Both forms use the same established builder and response decoder. Migrating
-one family does not require migrating another.
+Both forms execute the same request value and response decoder. Migrating one
+family does not require migrating another.
+
+## Standard target family
+
+The target reference slice removes `CreateTargetOpts`, `GetTargetsOpts`, and
+`ModifyTargetOpts`, together with the six standard-target free builders. Move
+all inputs onto the corresponding complete request. Required create inputs use
+the constructor; optional inputs remain directly editable:
+
+```rust
+use gvm_gmp::commands::targets::CreateTargetRequest;
+use gvm_gmp::{AliveTest, TargetHost, TargetHosts, TargetPortSelection};
+
+let hosts = TargetHosts::new(["192.0.2.1".parse::<TargetHost>()?], [])?;
+let ports = TargetPortSelection::PortRange("T:22, T:80-443".parse()?);
+let mut request = CreateTargetRequest::new("production", hosts, ports);
+request.comment = Some("primary scanner target".into());
+request.alive_test = Some(AliveTest::IcmpAndArpPing);
+
+let target = client.execute(request).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Modify inputs begin with the required target ID. `ScalarUpdate<T>` continues to
+distinguish omission, replacement, and supported detach/reset operations:
+
+```rust
+use gvm_gmp::commands::targets::ModifyTargetRequest;
+use gvm_gmp::ScalarUpdate;
+
+let mut request = ModifyTargetRequest::new(target.id.clone());
+request.name = Some("renamed".into());
+request.ssh_credential_id = ScalarUpdate::Clear;
+client.modify_target(request).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Construction does not freeze the value. `execute` validates the final request,
+so an invalid combination introduced by later mutation is still returned as
+`GvmError::Request` before capability checks or transport.
 
 ## Moving from a raw builder
 
 Raw execution remains available:
 
 ```rust
-use gvm_gmp::commands::targets;
-
-let raw = client
-    .call(targets::get_targets(Default::default()))
-    .await?;
+let raw = client.call(b"<get_targets/>".as_slice()).await?;
 ```
 
 Replacing it with a semantic request removes the manual parser choice:
 
 ```rust
-use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
+use gvm_gmp::commands::targets::GetTargetsRequest;
 
 let targets = client
-    .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+    .execute(GetTargetsRequest::default())
     .await?;
 ```
 

@@ -7,12 +7,10 @@
 use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
 use gvm_gmp::commands::reports::get_report;
 use gvm_gmp::commands::scan_configs::{get_scan_configs, GetScanConfigsOpts};
-use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
 use gvm_gmp::commands::tasks::{create_task, start_task, CreateTaskOpts};
 use gvm_gmp::types::EntityId;
-use gvm_gmp::TargetHost;
 use gvm_mock_server::{GmpVersion, LargeReportConfig, MockGmpServer, ServerMode};
-use gvm_protocol::{Request, Response};
+use gvm_protocol::{Request, Response, XmlCommand};
 
 async fn start_mock(config: LargeReportConfig) -> Option<MockGmpServer> {
     match MockGmpServer::builder()
@@ -64,27 +62,11 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
 
     let target_response = send(
         conn,
-        create_target(
-            "large-test",
-            CreateTargetOpts {
-                hosts: gvm_gmp::TargetHosts::new(
-                    [TargetHost::new("10.0.0.0/24").expect("valid target host")],
-                    [],
-                )
-                .expect("valid target hosts"),
-                ..CreateTargetOpts::new(
-                    gvm_gmp::TargetHosts::new(
-                        [TargetHost::new("127.0.0.1").expect("valid target host")],
-                        [],
-                    )
-                    .expect("valid target hosts"),
-                    gvm_gmp::TargetPortSelection::PortRange(
-                        "T:1-65535".parse().expect("valid port range"),
-                    ),
-                )
-            },
-        )
-        .expect("valid target"),
+        XmlCommand::new("create_target")
+            .child_with_text("name", "large-test")
+            .child_with_text("hosts", "10.0.0.0/24")
+            .child_with_text("exclude_hosts", "")
+            .child_with_text("port_range", "T:1-65535"),
     )
     .await;
     assert_eq!(target_response.status_code(), Some(201));

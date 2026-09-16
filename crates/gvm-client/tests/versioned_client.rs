@@ -19,7 +19,7 @@ use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
-use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
+use gvm_gmp::commands::targets::GetTargetsRequest;
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -793,7 +793,7 @@ async fn versioned_execute_forwards_and_decodes_the_associated_response() {
         .await
         .expect("authenticate should succeed");
     let response = client
-        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+        .execute(GetTargetsRequest::default())
         .await
         .expect("versioned execute should decode targets");
 

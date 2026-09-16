@@ -8,6 +8,7 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/ROADMAP.md`: support direction, compatibility policy, and issue tracking.
 - `docs/STATUS.md`: implementation status, version support snapshot, and coverage notes.
 - `docs/gvmd-transport-analysis.md`: gvmd transport model and why GMP is handled as XML over persistent sockets.
+- `docs/target-request-gvmd-evidence.md`: pinned public gvmd schema/source evidence for the canonical target reference slice.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -24,7 +25,7 @@ The main client path is:
 ## Crate Ownership
 
 - `crates/gvm-protocol`: XML command builder, raw response parser, `Request` trait, streaming XML completeness detection.
-- `crates/gvm-gmp`: GMP domain command builders, protocol enums, shared option types, typed response models.
+- `crates/gvm-gmp`: canonical typed requests, transitional command builders, protocol enums, reusable domain types, and typed response models.
 - `crates/gvm-client`: high-level async API, version negotiation, `GmpVersioned`, version-gated traits, typed convenience methods.
 - `crates/gvm-connection`: transport abstraction and concrete Unix/TLS/SSH connections.
 - `crates/gvm-mock-server`: programmable mock gvmd with echo, fixture, stateful, scenario, fault, history, and version behavior.
@@ -37,6 +38,9 @@ Adding or changing a GMP command:
 - Add shared enum/type support in `crates/gvm-gmp/src/enums.rs`, `types.rs`, or `common.rs` only when the value is reused.
 - Export the module or item through `crates/gvm-gmp/src/commands/mod.rs` or `crates/gvm-gmp/src/lib.rs` when public.
 - Add serialization tests in `crates/gvm-gmp/tests/test_<domain>.rs`.
+- For a converted family, put all required and optional inputs on one request,
+  implement `GmpRequestCodec` directly, and update
+  `docs/canonical-request-disposition.tsv`. Standard targets are the reference.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.
 - If version-gated, update `crates/gvm-client/src/version.rs` and any typed version traits in `crates/gvm-client/src/lib.rs`.

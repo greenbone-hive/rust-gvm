@@ -26,12 +26,11 @@ use gvm_gmp::commands::oci_image_targets::{
 };
 use gvm_gmp::commands::report_configs::{create_report_config, get_report_configs};
 use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
-use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
 use gvm_gmp::commands::tasks::{create_web_application_task, CreateWebApplicationTaskOpts};
 use gvm_gmp::commands::web_application_targets::{
     create_web_application_target, get_web_application_targets, CreateWebApplicationTargetOpts,
 };
-use gvm_gmp::{CredentialStoreCredentialType, TargetHost};
+use gvm_gmp::CredentialStoreCredentialType;
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -188,27 +187,11 @@ async fn base_commands_work_on_all_versions() {
 
         let response = send_recv(
             &mut stream,
-            create_target(
-                &format!("Base Target {}", version.as_str()),
-                CreateTargetOpts {
-                    hosts: gvm_gmp::TargetHosts::new(
-                        [TargetHost::new("127.0.0.1").expect("valid target host")],
-                        [],
-                    )
-                    .expect("valid target hosts"),
-                    ..CreateTargetOpts::new(
-                        gvm_gmp::TargetHosts::new(
-                            [TargetHost::new("127.0.0.1").expect("valid target host")],
-                            [],
-                        )
-                        .expect("valid target hosts"),
-                        gvm_gmp::TargetPortSelection::PortRange(
-                            "T:1-65535".parse().expect("valid port range"),
-                        ),
-                    )
-                },
-            )
-            .expect("valid target"),
+            XmlCommand::new("create_target")
+                .child_with_text("name", &format!("Base Target {}", version.as_str()))
+                .child_with_text("hosts", "127.0.0.1")
+                .child_with_text("exclude_hosts", "")
+                .child_with_text("port_range", "T:1-65535"),
         )
         .await;
         assert_eq!(response.status_code(), Some(201));

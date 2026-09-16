@@ -76,7 +76,8 @@ use gvm_gmp::commands::system::{
 use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{
-    CloneTargetRequest, GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts,
+    CloneTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
+    ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
     create_agent_group_task, create_container_image_task, create_oci_image_target_task,
@@ -1552,7 +1553,7 @@ async fn generic_execute_decodes_the_requests_associated_response() {
     let mut client = client(&server).await;
 
     let response = client
-        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+        .execute(GetTargetsRequest::default())
         .await
         .expect("associated response should decode");
 
@@ -2704,8 +2705,10 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     let version = assert_typed_success!(client.get_version());
     assert_eq!(version.version, "22.8");
 
-    assert_typed_success!(client.get_targets(GetTargetsOpts::default()));
-    assert_typed_success!(client.get_target(&id("11111111-1111-1111-1111-111111111111")));
+    assert_typed_success!(client.get_targets(GetTargetsRequest::default()));
+    assert_typed_success!(client.get_target(GetTargetRequest::new(id(
+        "11111111-1111-1111-1111-111111111111"
+    ))));
     assert_typed_success!(client.get_oci_image_targets_parsed(GetOciImageTargetsOpts::default()));
     assert_typed_success!(
         client.get_web_application_targets_parsed(GetWebApplicationTargetsOpts::default())
@@ -3222,22 +3225,20 @@ async fn remaining_mutation_families_use_typed_facade_and_scalar_relationship_up
     ));
     assert_typed_success!(client.delete_schedule(&resource_id, true));
 
-    assert_typed_success!(client.modify_target(&resource_id, ModifyTargetOpts::default()));
-    assert_typed_success!(client.modify_target(
-        &resource_id,
-        ModifyTargetOpts {
-            ssh_credential_id: ScalarUpdate::set(id("credential-1")),
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.modify_target(
-        &resource_id,
-        ModifyTargetOpts {
-            ssh_credential_id: ScalarUpdate::Clear,
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.delete_target(&resource_id, false));
+    assert_typed_success!(client.modify_target(ModifyTargetRequest::new(resource_id.clone())));
+    assert_typed_success!(client.modify_target({
+        let mut request = ModifyTargetRequest::new(resource_id.clone());
+        request.ssh_credential_id = ScalarUpdate::set(id("credential-1"));
+        request
+    }));
+    assert_typed_success!(client.modify_target({
+        let mut request = ModifyTargetRequest::new(resource_id.clone());
+        request.ssh_credential_id = ScalarUpdate::Clear;
+        request
+    }));
+    assert_typed_success!(
+        client.delete_target(DeleteTargetRequest::new(resource_id.clone(), false))
+    );
 
     assert_typed_success!(client.modify_task(&resource_id, ModifyTaskOpts::default()));
     assert_typed_success!(client.modify_task(
@@ -3307,7 +3308,11 @@ async fn remaining_mutation_families_surface_non_success_responses() {
         "conflict"
     );
     assert_server_error!(client.delete_schedule(&resource_id, false), 409, "conflict");
-    assert_server_error!(client.delete_target(&resource_id, false), 409, "conflict");
+    assert_server_error!(
+        client.delete_target(DeleteTargetRequest::new(resource_id.clone(), false)),
+        409,
+        "conflict"
+    );
     assert_server_error!(
         client.modify_task(&resource_id, ModifyTaskOpts::default()),
         409,
@@ -3465,7 +3470,7 @@ async fn generic_execute_preserves_server_status_and_parse_error_context() {
     };
     let mut status_client = client(&status_server).await;
     let status_error = status_client
-        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+        .execute(GetTargetsRequest::default())
         .await
         .expect_err("server status should fail");
     assert!(matches!(
@@ -3490,7 +3495,7 @@ async fn generic_execute_preserves_server_status_and_parse_error_context() {
     };
     let mut malformed_client = client(&malformed_server).await;
     let malformed_error = malformed_client
-        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+        .execute(GetTargetsRequest::default())
         .await
         .expect_err("malformed typed payload should fail");
     assert!(matches!(
