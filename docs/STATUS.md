@@ -29,8 +29,12 @@ separates fallible typed validation/encoding from raw `Request`, fixes execution
 precedence as validate → semantic support → encode → transport → decode, and
 makes #602 a pre-release gate. The checked
 [surface disposition ledger](canonical-request-disposition.md) currently tracks
-all public options, builder, request, and typed-facade symbols; no resource API
-is removed by the foundation slice.
+all public options, builder, request, and typed-facade symbols. The standard
+target family is the first converted reference slice: its six complete requests
+own validation, semantic metadata, encoding, and response association, while
+the three redundant options types and six free builders are removed. Its
+[pinned gvmd evidence](target-request-gvmd-evidence.md) is recorded separately
+from mock-server validation.
 
 The sections below retain the bounded delivery history for each migrated
 family.
@@ -544,14 +548,14 @@ Typed GMP command builders covering all entity types, system commands, and enums
 
 ### Target Port-List Updates
 
-`ModifyTargetOpts::port_list_id` models omission and replacement with
+`ModifyTargetRequest::port_list_id` models omission and replacement with
 `ScalarUpdate<EntityId>`. Current gvmd accepts a real port-list UUID when
 replacing the relationship, but it does not define a sentinel or other wire
 representation for detaching an existing port list. Consequently,
 `ScalarUpdate::Clear` is rejected locally with
-`ModifyTargetError::UnsupportedPortListClear`; no GMP request is sent.
+`GmpRequestError::InvalidField`; no capability check or GMP request is sent.
 
-`CreateTargetOpts` requires a `TargetPortSelection`, enforcing a typed one-of
+`CreateTargetRequest` requires a `TargetPortSelection`, enforcing a typed one-of
 choice between an existing `<port_list>` and a validated direct `<port_range>`.
 Raw GMP also permits both, with gvmd validating the range before giving the port
 list precedence. Direct ranges support gvmd's implicit TCP and protocol
@@ -560,7 +564,7 @@ range bounds before canonical serialization.
 
 ### Target Credential Service Ports
 
-`CreateTargetOpts` and `ModifyTargetOpts` expose the SSH service port next to
+`CreateTargetRequest` and `ModifyTargetRequest` expose the SSH service port next to
 the credential relationship. `ServicePort` validates the gvmd-supported
 range `1..=65535`; typed target observations reject zero, nonnumeric, and
 out-of-range backend values instead of losing malformed data. Both list and
@@ -568,14 +572,14 @@ single-target client reads preserve effective default and custom ports.
 
 This is an intentional pre-1.0 API break: create ports use
 `Option<ServicePort>`, modify ports use `ScalarUpdate<ServicePort>`, and the
-low-level `create_target` builder now returns `Result` so a port without an SSH
-credential ID fails explicitly. The high-level client exposes the same failure
-as `GvmError::CreateTarget` before any request is sent.
+complete request remains mutable, and final-value validation prevents a port
+without an SSH credential ID from reaching capability checks or transport. The
+high-level client exposes the failure as `GvmError::Request`.
 
 Modify requests distinguish leaving the binding untouched, setting or replacing
 the port, resetting it to gvmd's default port 22, and detaching the credential.
 The reset operation keeps gvmd's numeric sentinel internal to the command
-builder. The stateful mock mirrors these defaults and round trips SSH and SMB
+encoder. The stateful mock mirrors these defaults and round trips SSH and SMB
 credential identifiers, but rejects SMB service ports because current GMP/gvmd
 only defines a nested port for the SSH credential. It also rejects create-time
 detach sentinels and credential types that gvmd does not allow for SSH or SMB

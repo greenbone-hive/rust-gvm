@@ -9,8 +9,8 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetsRequest, ModifyOciImageTargetOpts, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::targets::{
-    CreateTargetOpts, CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsOpts,
-    GetTargetsRequest, ModifyTargetOpts, ModifyTargetRequest,
+    CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
+    ModifyTargetRequest,
 };
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetOpts,
@@ -35,9 +35,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_targets(
         &mut self,
-        opts: GetTargetsOpts,
+        request: GetTargetsRequest,
     ) -> Result<GetTargetsResponse, GvmError> {
-        self.execute(GetTargetsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a detailed `get_targets` request for one target and return a typed
@@ -47,9 +47,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_target(
         &mut self,
-        target_id: &EntityId,
+        request: GetTargetRequest,
     ) -> Result<GetTargetsResponse, GvmError> {
-        self.execute(GetTargetRequest::new(target_id.clone())).await
+        self.execute(request).await
     }
 
     /// Send a `create_target` request and return a typed [`CreateTargetResponse`].
@@ -58,10 +58,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_target(
         &mut self,
-        name: &str,
-        opts: CreateTargetOpts,
+        request: CreateTargetRequest,
     ) -> Result<CreateTargetResponse, GvmError> {
-        let request = CreateTargetRequest::new(name, opts)?;
         self.execute(request).await
     }
 
@@ -71,10 +69,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_target(
         &mut self,
-        target_id: &EntityId,
-        opts: ModifyTargetOpts,
+        request: ModifyTargetRequest,
     ) -> Result<ModifyTargetResponse, GvmError> {
-        let request = ModifyTargetRequest::new(target_id.clone(), opts)?;
         self.execute(request).await
     }
 
@@ -84,11 +80,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_target(
         &mut self,
-        target_id: &EntityId,
-        ultimate: bool,
+        request: DeleteTargetRequest,
     ) -> Result<DeleteTargetResponse, GvmError> {
-        self.execute(DeleteTargetRequest::new(target_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_oci_image_target` request and return a typed

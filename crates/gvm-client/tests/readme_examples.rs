@@ -7,7 +7,7 @@
 
 use gvm_client::GmpClient;
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
-use gvm_gmp::commands::targets::CreateTargetOpts;
+use gvm_gmp::commands::targets::{CreateTargetRequest, GetTargetsRequest};
 use gvm_gmp::commands::tasks::CreateTaskOpts;
 use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
 
@@ -21,11 +21,11 @@ async fn quick_start_compiles() -> Result<(), Box<dyn std::error::Error>> {
     let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
     let ports = TargetPortSelection::PortRange("T:1-65535".parse()?);
     let target = client
-        .create_target("My Target", CreateTargetOpts::new(hosts, ports))
+        .create_target(CreateTargetRequest::new("My Target", hosts, ports))
         .await?;
     println!("Created target: {}", target.id);
 
-    let targets = client.get_targets(Default::default()).await?;
+    let targets = client.get_targets(GetTargetsRequest::default()).await?;
     for target in &targets.items {
         println!("  {} — {}", target.meta.id, target.meta.name);
     }
@@ -49,13 +49,13 @@ async fn quick_start_compiles() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn quick_start_target_options_have_required_port_selection(
-) -> Result<(), Box<dyn std::error::Error>> {
+fn quick_start_target_request_has_required_port_selection() -> Result<(), Box<dyn std::error::Error>>
+{
     let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
     let ports = TargetPortSelection::PortRange("T:1-65535".parse()?);
-    let options = CreateTargetOpts::new(hosts, ports);
+    let request = CreateTargetRequest::new("My Target", hosts, ports);
 
-    assert_eq!(options.hosts.included()[0].as_str(), "192.168.1.0/24");
-    assert!(matches!(options.ports, TargetPortSelection::PortRange(_)));
+    assert_eq!(request.hosts.included()[0].as_str(), "192.168.1.0/24");
+    assert!(matches!(request.ports, TargetPortSelection::PortRange(_)));
     Ok(())
 }

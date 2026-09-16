@@ -57,7 +57,7 @@ The high-level client handles version negotiation automatically and exposes type
 ```rust
 use gvm_client::GmpClient;
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
-use gvm_gmp::commands::targets::CreateTargetOpts;
+use gvm_gmp::commands::targets::{CreateTargetRequest, GetTargetsRequest};
 use gvm_gmp::commands::tasks::CreateTaskOpts;
 use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
 
@@ -75,12 +75,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
     let ports = TargetPortSelection::PortRange("T:1-65535".parse()?);
     let target = client
-        .create_target("My Target", CreateTargetOpts::new(hosts, ports))
+        .create_target(CreateTargetRequest::new("My Target", hosts, ports))
         .await?;
     println!("Created target: {}", target.id);
 
     // 4. List all targets
-    let targets = client.get_targets(Default::default()).await?;
+    let targets = client.get_targets(GetTargetsRequest::default()).await?;
     for t in &targets.items {
         println!("  {} — {}", t.meta.id, t.meta.name);
     }
@@ -140,7 +140,7 @@ typed `first_run_at` and `next_run_at` values use gvmd's normalized response fie
 
 #### Validated target hosts
 
-Target create and modify options use [`TargetHost`](crates/gvm-gmp/src/target.rs)
+Canonical target create and modify requests use [`TargetHost`](crates/gvm-gmp/src/target.rs)
 and the non-empty [`TargetHosts`](crates/gvm-gmp/src/target.rs) aggregate, so
 invalid individual specifications, fully excluded host sets, and invalid request
 shapes are rejected before a GMP request is built or sent. Included and excluded
@@ -162,7 +162,7 @@ assert!(target_hosts.has_effective_hosts());
 
 This is a source-level change from the earlier `Vec<String>` fields. Callers
 should parse external text into `TargetHost` before constructing
-`CreateTargetOpts` or `ModifyTargetOpts`. IPv4 CIDR prefixes are limited to
+`CreateTargetRequest` or `ModifyTargetRequest`. IPv4 CIDR prefixes are limited to
 `/1` through `/30`; IPv6 prefixes are validated independently through `/128`.
 Hostname labels intentionally use an ASCII policy; Unicode case-fold lookalikes
 accepted incidentally by some GLib regex versions are rejected.
@@ -175,7 +175,7 @@ rules (excluding the first and last addresses except for IPv6 `/127` and `/128`)
 gvmd remains authoritative for DNS resolution and deployment policy such as its
 configured maximum number of IPs per target.
 
-The typed `CreateTargetOpts` models manual-host creation. Raw GMP callers can
+The typed `CreateTargetRequest` models manual-host creation. Raw GMP callers can
 still use gvmd's `<asset_hosts filter="..."/>` target form; stateful mock mode
 resolves matching host assets and gives that filter precedence over `<hosts>`,
 matching gvmd. Its shared asset-filter subset supports quoted values, equality,
@@ -185,19 +185,20 @@ Creation also requires a typed `TargetPortSelection`: either an existing port-li
 ID or a validated direct range such as `"T:22, U:53, T:80-443"`. This is an
 intentional one-of restriction in the typed API. Raw GMP permits both elements;
 gvmd validates the supplied range and gives `<port_list>` precedence. Existing
-callers should replace `CreateTargetOpts::port_list_id` with `ports` and pass that
-selection as the second argument to `CreateTargetOpts::new`.
+callers select the `ports` field when constructing `CreateTargetRequest`.
 
 #### Raw API (send/call)
 
-For full control you can use the underlying `send()` / `call()` methods directly with command builders from `gvm-gmp`:
+For full control you can use the underlying `send()` / `call()` methods directly
+with a raw request value. Canonical families intentionally do not keep parallel
+public builders:
 
 ```rust
-use gvm_gmp::commands::{authentication, targets};
+use gvm_gmp::commands::authentication;
 
 // call() raises GvmError::Server on non-2xx; send() returns the raw Response
 client.call(authentication::authenticate("admin", "admin")).await?;
-let response = client.call(targets::get_targets(Default::default())).await?;
+let response = client.call(b"<get_targets/>".as_slice()).await?;
 println!("Raw XML: {} bytes", response.data().len());
 ```
 
@@ -225,16 +226,17 @@ and modification operations are also statically associated while retaining
 their existing builders and redaction guarantees:
 
 ```rust
-use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
+use gvm_gmp::commands::targets::GetTargetsRequest;
 
 let targets = client
-    .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+    .execute(GetTargetsRequest::default())
     .await?;
 ```
 
-Existing convenience methods and builders remain available during the bounded
-canonical-request migration; the disposition audit may remove redundant
-Technology Preview surfaces before release. Raw `send` and `call` remain the
+The standard target family is the canonical reference slice: its requests own
+their complete input and encoding, and its redundant options types and free
+builders are removed. Other families continue through the bounded migration.
+Raw `send` and `call` remain the
 supported low-level escape hatch. See the downstream
 [migration notes](docs/typed-execution-migration.md) for API selection,
 compatibility, and release adoption, and the contributor-oriented

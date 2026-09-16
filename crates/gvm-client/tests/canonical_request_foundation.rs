@@ -9,8 +9,12 @@ use std::sync::Arc;
 
 use gvm_client::{CommandSupport, GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
+use gvm_gmp::commands::targets::CreateTargetRequest;
 use gvm_gmp::responses::ActionResponse;
-use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
+use gvm_gmp::{
+    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, ServicePort, TargetHost,
+    TargetHosts, TargetPortSelection,
+};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 struct CanonicalProbeRequest {
@@ -101,6 +105,36 @@ async fn final_value_validation_precedes_support_encoding_and_transport() {
             if reason == "must not be empty"
     ));
     assert!(!encode_attempted.load(Ordering::SeqCst));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn mutated_target_request_is_revalidated_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    let hosts = TargetHosts::new(["192.0.2.1".parse::<TargetHost>().expect("valid host")], [])
+        .expect("valid host selection");
+    let ports = TargetPortSelection::PortRange("T:1-65535".parse().expect("valid port range"));
+    let mut request = CreateTargetRequest::new("mutated", hosts, ports);
+    request.ssh_credential_port = Some(ServicePort::new(2222).expect("valid port"));
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("final mutated value should be rejected");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidCombination {
+            fields: &["ssh_credential_port", "ssh_credential_id"],
+            ..
+        })
+    ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;
 }

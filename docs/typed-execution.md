@@ -8,10 +8,10 @@ Each migrated semantic request implements `GmpRequest` and selects exactly one
 `GmpResponse` through an associated type:
 
 ```rust
-use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
+use gvm_gmp::commands::targets::GetTargetsRequest;
 
 let response = client
-    .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+    .execute(GetTargetsRequest::default())
     .await?;
 ```
 
@@ -20,25 +20,24 @@ the request to `execute` determines the result type at compile time.
 
 ## Compatibility APIs
 
-Existing typed convenience methods remain available during bounded family
-migration. For currently migrated commands they construct the same semantic
-request and delegate to `execute`:
+Typed convenience methods may remain during bounded family migration when they
+improve discoverability. Canonical methods accept the same complete request and
+delegate to `execute` without maintaining a parallel input model:
 
 ```rust
-let response = client.get_targets(GetTargetsOpts::default()).await?;
+use gvm_gmp::commands::targets::GetTargetsRequest;
+
+let response = client.get_targets(GetTargetsRequest::default()).await?;
 ```
 
-Existing command builders also remain available until their ledger disposition
-is reviewed. Raw `send` and `call` remain supported; use them for custom XML,
+Existing command builders in unconverted families remain available until their
+ledger disposition is reviewed. The standard target builders were removed with
+their canonical requests. Raw `send` and `call` remain supported; use them for custom XML,
 commands that have not migrated, or response details not yet represented by a
 typed model:
 
 ```rust
-use gvm_gmp::commands::targets;
-
-let raw = client
-    .call(targets::get_targets(GetTargetsOpts::default()))
-    .await?;
+let raw = client.call(b"<get_targets/>".as_slice()).await?;
 ```
 
 `send` returns any GMP status as a raw response. `call`, `execute`, and typed
@@ -131,7 +130,8 @@ checks from `GmpCommand`, then encodes and enters the shared redacted transport
 path. Unknown custom names retain the raw path's forward compatibility. A
 semantic alias supplied by `GmpCommand::with_semantic_name` is checked before
 its shared wire command. Existing builder-backed request wrappers use the
-temporary raw adapter until their family conversion.
+temporary raw adapter until their family conversion. The standard target
+family implements this contract directly and serves as the reference slice.
 
 ## Authoring a migrated command
 

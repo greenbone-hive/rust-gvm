@@ -1,5 +1,9 @@
 # RFC: Response Models for rust-gvm
 
+> Historical design record. ADR 0002 and issue #602 supersede its input-model
+> examples. Standard targets now use complete canonical request types; their
+> former options types and free builders have been removed.
+
 ## Problem Statement
 
 Currently, rust-gvm returns raw `gvm_protocol::Response` objects from all GMP commands. Consumers must:

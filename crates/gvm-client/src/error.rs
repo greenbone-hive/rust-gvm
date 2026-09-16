@@ -6,7 +6,6 @@
 use std::time::Duration;
 
 use gvm_connection::ConnectionError;
-use gvm_gmp::commands::targets::{CreateTargetError, ModifyTargetError};
 use gvm_gmp::commands::tasks::ModifyTaskError;
 use gvm_gmp::responses::ParseError;
 use gvm_gmp::types::GmpVersion;
@@ -27,14 +26,6 @@ pub enum GvmError {
     /// A semantic request failed final-value validation or encoding.
     #[error("request error: {0}")]
     Request(#[from] GmpRequestError),
-
-    /// A typed `create_target` input cannot be represented by GMP.
-    #[error("create_target request error: {0}")]
-    CreateTarget(#[from] CreateTargetError),
-
-    /// A typed `modify_target` update cannot be represented by gvmd.
-    #[error("modify_target request error: {0}")]
-    ModifyTarget(#[from] ModifyTargetError),
 
     /// A typed `modify_task` update cannot be represented safely by gvmd.
     #[error("modify_task request error: {0}")]

@@ -52,8 +52,8 @@ use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::system::ModifyLicenseOpts;
 use gvm_gmp::commands::system::RunWizardOpts;
 use gvm_gmp::commands::targets::{
-    create_target, delete_target, get_targets, CreateTargetError, CreateTargetOpts, GetTargetsOpts,
-    ModifyTargetError, ModifyTargetOpts,
+    CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
+    ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
     create_task, delete_task, get_task, start_task, stop_task, CreateTaskOpts, GetTasksOpts,
@@ -72,9 +72,9 @@ use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, AliveTest, CollectionUpdate, CredentialType, FeedType,
-    PermissionSubjectType, ScalarUpdate, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
-    ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone, ServicePort,
-    SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TargetHost, TargetHosts,
+    GmpRequestError, PermissionSubjectType, ScalarUpdate, ScheduleDefinition, ScheduleInput,
+    ScheduleRecurrence, ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone,
+    ServicePort, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TargetHost, TargetHosts,
     TargetPortSelection, TicketStatus,
 };
 use gvm_mock_server::{
@@ -305,7 +305,7 @@ async fn target_by_id(
     target_id: &EntityId,
 ) -> Target {
     client
-        .get_target(target_id)
+        .get_target(GetTargetRequest::new(target_id.clone()))
         .await
         .expect("target should be retrieved")
         .items
@@ -991,33 +991,27 @@ async fn create_target_and_get_targets_succeed() {
         .expect("authenticate should succeed");
 
     let create_response = client
-        .call(
-            create_target(
-                "Integration Target",
-                CreateTargetOpts {
-                    hosts: target_hosts(&["127.0.0.1"], &[]),
-                    ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
-                },
-            )
-            .expect("valid target"),
-        )
+        .execute(CreateTargetRequest::new(
+            "Integration Target",
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("create_target should succeed");
-    assert_eq!(create_response.status_code(), Some(201));
-    assert!(create_response.id().is_some());
+    assert_eq!(create_response.status, 201);
 
     let list_response = client
-        .call(get_targets(GetTargetsOpts {
+        .execute(GetTargetsRequest {
             details: Some(true),
-            ..GetTargetsOpts::default()
-        }))
+            ..Default::default()
+        })
         .await
         .expect("get_targets should succeed");
-    assert_eq!(list_response.status_code(), Some(200));
+    assert_eq!(list_response.status, 200);
     assert!(list_response
-        .as_str()
-        .expect("valid UTF-8 XML")
-        .contains("Integration Target"));
+        .items
+        .iter()
+        .any(|target| target.meta.name == "Integration Target"));
 
     server.shutdown().await;
 }
@@ -1032,7 +1026,7 @@ async fn typed_fixture_targets_use_stateful_observation_vocabulary() {
         .expect("client should connect");
 
     let targets = client
-        .get_targets(GetTargetsOpts::default())
+        .get_targets(GetTargetsRequest::default())
         .await
         .expect("fixture targets should parse");
     let target = targets.items.first().expect("fixture target should exist");
@@ -3344,13 +3338,11 @@ async fn typed_permission_lifecycle_uses_nested_references() {
         .await
         .expect("role should be created");
     let target = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Permission Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.1"], &[]),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
-            },
-        )
+            target_hosts(&["192.0.2.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("target should be created");
     server.clear_history();
@@ -3446,27 +3438,23 @@ async fn typed_target_host_updates_are_atomic_and_can_clear_exclusions() {
         .expect("authenticate should succeed");
 
     let target = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Collection Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.1", "192.0.2.2"], &["192.0.2.3"]),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
-            },
-        )
+            target_hosts(&["192.0.2.1", "192.0.2.2"], &["192.0.2.3"]),
+            target_ports(),
+        ))
         .await
         .expect("target should be created");
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                comment: Some("hosts omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.comment = Some("hosts omitted".into());
+            request
+        })
         .await
         .expect("target should be modified without changing hosts");
     let targets = client
-        .get_targets(GetTargetsOpts::default())
+        .get_targets(GetTargetsRequest::default())
         .await
         .expect("targets should be retrieved");
     let fetched_target = targets
@@ -3481,17 +3469,15 @@ async fn typed_target_host_updates_are_atomic_and_can_clear_exclusions() {
     assert_eq!(fetched_target.exclude_hosts, vec!["192.0.2.3".to_string()]);
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                hosts: Some(target_hosts(&["192.0.2.4"], &[])),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.hosts = Some(target_hosts(&["192.0.2.4"], &[]));
+            request
+        })
         .await
         .expect("target hosts should be atomically replaced");
     let targets = client
-        .get_targets(GetTargetsOpts::default())
+        .get_targets(GetTargetsRequest::default())
         .await
         .expect("modified targets should be retrieved");
     let fetched_target = targets
@@ -3526,14 +3512,15 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     let second_smb = create_test_smb_credential(&mut client, "Second SMB").await;
 
     let default_target = client
-        .create_target(
-            "Default Credential Port Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.9"], &[]),
-                ssh_credential_id: Some(first_ssh.clone()),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Default Credential Port Target",
+                target_hosts(&["192.0.2.9"], &[]),
+                target_ports(),
+            );
+            request.ssh_credential_id = Some(first_ssh.clone());
+            request
+        })
         .await
         .expect("target with default SSH port should be created");
     assert_eq!(
@@ -3545,16 +3532,17 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     );
 
     let target = client
-        .create_target(
-            "Credential Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.1"], &[]),
-                ssh_credential_id: Some(first_ssh.clone()),
-                ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
-                smb_credential_id: Some(first_smb.clone()),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Credential Target",
+                target_hosts(&["192.0.2.1"], &[]),
+                target_ports(),
+            );
+            request.ssh_credential_id = Some(first_ssh.clone());
+            request.ssh_credential_port = Some(ServicePort::new(2222).expect("valid port"));
+            request.smb_credential_id = Some(first_smb.clone());
+            request
+        })
         .await
         .expect("target should be created");
     let created = target_by_id(&mut client, &target.id).await;
@@ -3565,13 +3553,11 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     assert_target_credentials(&created, &first_ssh, 2222, &first_smb);
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                comment: Some("relationships omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.comment = Some("relationships omitted".into());
+            request
+        })
         .await
         .expect("omitted target fields should be preserved");
     let preserved = target_by_id(&mut client, &target.id).await;
@@ -3582,15 +3568,14 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     assert_target_credentials(&preserved, &first_ssh, 2222, &first_smb);
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                ssh_credential_id: ScalarUpdate::set(second_ssh.clone()),
-                ssh_credential_port: ScalarUpdate::set(ServicePort::new(2200).expect("valid port")),
-                smb_credential_id: ScalarUpdate::set(second_smb.clone()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.ssh_credential_id = ScalarUpdate::set(second_ssh.clone());
+            request.ssh_credential_port =
+                ScalarUpdate::set(ServicePort::new(2200).expect("valid port"));
+            request.smb_credential_id = ScalarUpdate::set(second_smb.clone());
+            request
+        })
         .await
         .expect("target relationships should be replaced");
     assert_target_credentials(
@@ -3601,14 +3586,12 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     );
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                ssh_credential_id: ScalarUpdate::set(second_ssh.clone()),
-                ssh_credential_port: ScalarUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.ssh_credential_id = ScalarUpdate::set(second_ssh.clone());
+            request.ssh_credential_port = ScalarUpdate::Clear;
+            request
+        })
         .await
         .expect("target SSH port should reset to gvmd's default");
     assert_target_credentials(
@@ -3619,14 +3602,12 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     );
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                ssh_credential_id: ScalarUpdate::Clear,
-                smb_credential_id: ScalarUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.ssh_credential_id = ScalarUpdate::Clear;
+            request.smb_credential_id = ScalarUpdate::Clear;
+            request
+        })
         .await
         .expect("target credentials should be cleared");
     let cleared = target_by_id(&mut client, &target.id).await;
@@ -3637,13 +3618,11 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     let missing_credential =
         EntityId::new("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("valid missing credential ID");
     let error = client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                ssh_credential_id: ScalarUpdate::set(missing_credential),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.ssh_credential_id = ScalarUpdate::set(missing_credential);
+            request
+        })
         .await
         .expect_err("missing credential reference should be rejected");
     assert!(matches!(error, GvmError::Server { status: 404, .. }));
@@ -3678,13 +3657,15 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
         .id;
 
     let created = client
-        .create_target(
-            "Extended Credential Target",
-            CreateTargetOpts {
-                ssh_credential_id: Some(ssh.clone()),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.20"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Extended Credential Target",
+                target_hosts(&["192.0.2.20"], &[]),
+                target_ports(),
+            );
+            request.ssh_credential_id = Some(ssh.clone());
+            request
+        })
         .await
         .expect("target should be created");
     let target = target_by_id(&mut client, &created.id).await;
@@ -3697,13 +3678,11 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
     assert!(target.allow_simultaneous_ips);
 
     client
-        .modify_target(
-            &created.id,
-            ModifyTargetOpts {
-                ssh_elevate_credential_id: ScalarUpdate::set(elevate.clone()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(created.id.clone());
+            request.ssh_elevate_credential_id = ScalarUpdate::set(elevate.clone());
+            request
+        })
         .await
         .expect("elevation should be added while the existing SSH binding is preserved");
     let elevated = target_by_id(&mut client, &created.id).await;
@@ -3720,13 +3699,11 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
     );
 
     client
-        .modify_target(
-            &created.id,
-            ModifyTargetOpts {
-                comment: Some("new fields omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(created.id.clone());
+            request.comment = Some("new fields omitted".into());
+            request
+        })
         .await
         .expect("omitted fields should be preserved");
     let preserved = target_by_id(&mut client, &created.id).await;
@@ -3740,16 +3717,14 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
     assert!(preserved.allow_simultaneous_ips);
 
     client
-        .modify_target(
-            &created.id,
-            ModifyTargetOpts {
-                ssh_credential_id: ScalarUpdate::Clear,
-                ssh_elevate_credential_id: ScalarUpdate::Clear,
-                krb5_credential_id: ScalarUpdate::set(krb5.clone()),
-                allow_simultaneous_ips: Some(false),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(created.id.clone());
+            request.ssh_credential_id = ScalarUpdate::Clear;
+            request.ssh_elevate_credential_id = ScalarUpdate::Clear;
+            request.krb5_credential_id = ScalarUpdate::set(krb5.clone());
+            request.allow_simultaneous_ips = Some(false);
+            request
+        })
         .await
         .expect("SSH credentials should detach while Kerberos is set");
     let kerberos_target = target_by_id(&mut client, &created.id).await;
@@ -3765,14 +3740,12 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
     assert!(!kerberos_target.allow_simultaneous_ips);
 
     client
-        .modify_target(
-            &created.id,
-            ModifyTargetOpts {
-                krb5_credential_id: ScalarUpdate::Clear,
-                smb_credential_id: ScalarUpdate::set(smb.clone()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(created.id.clone());
+            request.krb5_credential_id = ScalarUpdate::Clear;
+            request.smb_credential_id = ScalarUpdate::set(smb.clone());
+            request
+        })
         .await
         .expect("Kerberos should detach while SMB is set");
     let smb_target = target_by_id(&mut client, &created.id).await;
@@ -3799,19 +3772,20 @@ async fn typed_target_create_rejects_an_orphaned_ssh_port_before_send() {
         .count();
 
     let error = client
-        .create_target(
-            "Invalid Credential Port Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.11"], &[]),
-                ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.11"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Invalid Credential Port Target",
+                target_hosts(&["192.0.2.11"], &[]),
+                target_ports(),
+            );
+            request.ssh_credential_port = Some(ServicePort::new(2222).expect("valid port"));
+            request
+        })
         .await
         .expect_err("orphaned SSH port should fail locally");
     assert!(matches!(
         error,
-        GvmError::CreateTarget(CreateTargetError::SshPortWithoutCredential)
+        GvmError::Request(GmpRequestError::InvalidCombination { .. })
     ));
     let create_count_after = server
         .command_history()
@@ -3841,99 +3815,99 @@ async fn typed_target_credential_invariants_fail_before_send() {
     let before = command_count();
 
     let error = client
-        .create_target(
-            "Missing SSH",
-            CreateTargetOpts {
-                ssh_elevate_credential_id: Some(id("elevate")),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.12"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Missing SSH",
+                target_hosts(&["192.0.2.12"], &[]),
+                target_ports(),
+            );
+            request.ssh_elevate_credential_id = Some(id("elevate"));
+            request
+        })
         .await
         .expect_err("elevation without SSH should fail locally");
     assert!(matches!(
         error,
-        GvmError::CreateTarget(CreateTargetError::SshElevateWithoutSshCredential)
+        GvmError::Request(GmpRequestError::InvalidCombination { .. })
     ));
 
     let error = client
-        .create_target(
-            "Same SSH",
-            CreateTargetOpts {
-                ssh_credential_id: Some(id("same")),
-                ssh_elevate_credential_id: Some(id("same")),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.13"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Same SSH",
+                target_hosts(&["192.0.2.13"], &[]),
+                target_ports(),
+            );
+            request.ssh_credential_id = Some(id("same"));
+            request.ssh_elevate_credential_id = Some(id("same"));
+            request
+        })
         .await
         .expect_err("matching SSH credentials should fail locally");
     assert!(matches!(
         error,
-        GvmError::CreateTarget(CreateTargetError::SshElevateMatchesSshCredential)
+        GvmError::Request(GmpRequestError::InvalidCombination { .. })
     ));
 
     let error = client
-        .create_target(
-            "SMB and Kerberos",
-            CreateTargetOpts {
-                smb_credential_id: Some(id("smb")),
-                krb5_credential_id: Some(id("krb5")),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.14"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "SMB and Kerberos",
+                target_hosts(&["192.0.2.14"], &[]),
+                target_ports(),
+            );
+            request.smb_credential_id = Some(id("smb"));
+            request.krb5_credential_id = Some(id("krb5"));
+            request
+        })
         .await
         .expect_err("SMB and Kerberos should fail locally");
     assert!(matches!(
         error,
-        GvmError::CreateTarget(CreateTargetError::SmbAndKrb5Credentials)
+        GvmError::Request(GmpRequestError::InvalidCombination { .. })
     ));
 
     let target_id = id("target");
     let error = client
-        .modify_target(
-            &target_id,
-            ModifyTargetOpts {
-                ssh_credential_id: ScalarUpdate::Clear,
-                ssh_elevate_credential_id: ScalarUpdate::set(id("elevate")),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target_id.clone());
+            request.ssh_credential_id = ScalarUpdate::Clear;
+            request.ssh_elevate_credential_id = ScalarUpdate::set(id("elevate"));
+            request
+        })
         .await
         .expect_err("elevation with SSH detach should fail locally");
     assert!(matches!(
         error,
-        GvmError::ModifyTarget(ModifyTargetError::SshElevateWithoutSshCredential)
+        GvmError::Request(GmpRequestError::InvalidCombination { .. })
     ));
 
     let error = client
-        .modify_target(
-            &target_id,
-            ModifyTargetOpts {
-                ssh_credential_id: ScalarUpdate::set(id("same")),
-                ssh_elevate_credential_id: ScalarUpdate::set(id("same")),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target_id.clone());
+            request.ssh_credential_id = ScalarUpdate::set(id("same"));
+            request.ssh_elevate_credential_id = ScalarUpdate::set(id("same"));
+            request
+        })
         .await
         .expect_err("matching SSH credentials should fail locally");
     assert!(matches!(
         error,
-        GvmError::ModifyTarget(ModifyTargetError::SshElevateMatchesSshCredential)
+        GvmError::Request(GmpRequestError::InvalidCombination { .. })
     ));
 
     let error = client
-        .modify_target(
-            &target_id,
-            ModifyTargetOpts {
-                smb_credential_id: ScalarUpdate::set(id("smb")),
-                krb5_credential_id: ScalarUpdate::set(id("krb5")),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target_id.clone());
+            request.smb_credential_id = ScalarUpdate::set(id("smb"));
+            request.krb5_credential_id = ScalarUpdate::set(id("krb5"));
+            request
+        })
         .await
         .expect_err("SMB and Kerberos should fail locally");
     assert!(matches!(
         error,
-        GvmError::ModifyTarget(ModifyTargetError::SmbAndKrb5Credentials)
+        GvmError::Request(GmpRequestError::InvalidCombination { .. })
     ));
 
     assert_eq!(command_count(), before);
@@ -3959,25 +3933,24 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
     }
 
     let target = client
-        .create_target(
-            "Alive Test Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.1"], &[]),
-                alive_test: Some(AliveTest::ScanConfigDefault),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Alive Test Target",
+                target_hosts(&["192.0.2.1"], &[]),
+                target_ports(),
+            );
+            request.alive_test = Some(AliveTest::ScanConfigDefault);
+            request
+        })
         .await
         .expect("target should be created");
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                comment: Some("alive test omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.comment = Some("alive test omitted".into());
+            request
+        })
         .await
         .expect("omitted alive test should be preserved");
     let preserved = target_by_id(&mut client, &target.id).await;
@@ -3999,13 +3972,11 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
         AliveTest::ConsiderAlive,
     ] {
         client
-            .modify_target(
-                &target.id,
-                ModifyTargetOpts {
-                    alive_test: Some(alive_test),
-                    ..Default::default()
-                },
-            )
+            .modify_target({
+                let mut request = ModifyTargetRequest::new(target.id.clone());
+                request.alive_test = Some(alive_test);
+                request
+            })
             .await
             .expect("supported alive test should be accepted");
         assert_eq!(
@@ -4071,14 +4042,15 @@ async fn raw_singular_target_alive_test_matches_gvmd_behavior() {
     );
 
     let target = client
-        .create_target(
-            "Plural Alive Test",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.4"], &[]),
-                alive_test: Some(AliveTest::ConsiderAlive),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.4"], &[]), target_ports())
-            },
-        )
+        .create_target({
+            let mut request = CreateTargetRequest::new(
+                "Plural Alive Test",
+                target_hosts(&["192.0.2.4"], &[]),
+                target_ports(),
+            );
+            request.alive_test = Some(AliveTest::ConsiderAlive);
+            request
+        })
         .await
         .expect("plural alive test should be applied on create");
     assert_raw_server_error(
@@ -4126,29 +4098,24 @@ async fn typed_target_port_list_updates_preserve_omit_and_set_semantics() {
         .await
         .expect("second port list should be created");
     let target = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Port List Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.1"], &[]),
-                ports: TargetPortSelection::PortList(first_port_list.id.clone()),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
-            },
-        )
+            target_hosts(&["192.0.2.1"], &[]),
+            TargetPortSelection::PortList(first_port_list.id.clone()),
+        ))
         .await
         .expect("target should be created with a port list");
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                comment: Some("port list omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.comment = Some("port list omitted".into());
+            request
+        })
         .await
         .expect("omitting the port list should preserve it");
     let targets = client
-        .get_targets(GetTargetsOpts::default())
+        .get_targets(GetTargetsRequest::default())
         .await
         .expect("targets should be retrieved");
     let fetched_target = targets
@@ -4165,17 +4132,15 @@ async fn typed_target_port_list_updates_preserve_omit_and_set_semantics() {
     );
 
     client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                port_list_id: ScalarUpdate::set(second_port_list.id.clone()),
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.port_list_id = ScalarUpdate::set(second_port_list.id.clone());
+            request
+        })
         .await
         .expect("replacing the port list should succeed");
     let targets = client
-        .get_targets(GetTargetsOpts::default())
+        .get_targets(GetTargetsRequest::default())
         .await
         .expect("modified targets should be retrieved");
     let fetched_target = targets
@@ -4209,13 +4174,11 @@ async fn typed_target_port_list_clear_is_rejected_before_send() {
         .await
         .expect("authenticate should succeed");
     let target = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Port List Clear Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["192.0.2.1"], &[]),
-                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
-            },
-        )
+            target_hosts(&["192.0.2.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("target should be created");
 
@@ -4225,18 +4188,19 @@ async fn typed_target_port_list_clear_is_rejected_before_send() {
         .filter(|record| record.command_name() == "modify_target")
         .count();
     let error = client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                port_list_id: ScalarUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_target({
+            let mut request = ModifyTargetRequest::new(target.id.clone());
+            request.port_list_id = ScalarUpdate::Clear;
+            request
+        })
         .await
         .expect_err("clearing a target port list should be rejected locally");
     assert!(matches!(
         error,
-        GvmError::ModifyTarget(ModifyTargetError::UnsupportedPortListClear)
+        GvmError::Request(GmpRequestError::InvalidField {
+            field: "port_list_id",
+            ..
+        })
     ));
     let modify_count_after_clear = server
         .command_history()
@@ -4898,19 +4862,14 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("authenticate should succeed");
 
     let target_response = client
-        .call(
-            create_target(
-                "Lifecycle Target",
-                CreateTargetOpts {
-                    hosts: target_hosts(&["127.0.0.1"], &[]),
-                    ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
-                },
-            )
-            .expect("valid target"),
-        )
+        .execute(CreateTargetRequest::new(
+            "Lifecycle Target",
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("create_target should succeed");
-    let target_id = target_response.id().expect("target id");
+    let target_id = target_response.id;
 
     let config_id = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
@@ -4918,7 +4877,7 @@ async fn full_crud_lifecycle_succeeds() {
     let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("entity id");
-    let target_entity_id = target_id.parse().expect("entity id");
+    let target_entity_id = target_id;
 
     let task_response = client
         .call(create_task(
@@ -4978,10 +4937,10 @@ async fn full_crud_lifecycle_succeeds() {
     assert_eq!(delete_task_response.status_code(), Some(200));
 
     let delete_target_response = client
-        .call(delete_target(&target_entity_id, true))
+        .delete_target(DeleteTargetRequest::new(target_entity_id.clone(), true))
         .await
         .expect("delete_target should succeed");
-    assert_eq!(delete_target_response.status_code(), Some(200));
+    assert_eq!(delete_target_response.status, 200);
 
     server.shutdown().await;
 }
@@ -5017,10 +4976,11 @@ async fn typed_task_observers_round_trip_create_and_modify() {
         .expect("authenticate should succeed");
 
     let target = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Observer Target",
-            CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports()),
-        )
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("target create should succeed");
     let config_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
@@ -5170,13 +5130,11 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
     assert_eq!(empty_response.status, 200);
 
     let target_response = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Trashcan Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["127.0.0.1"], &[]),
-                ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
-            },
-        )
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("create_target should succeed");
     let target_id = target_response.id;
@@ -5237,13 +5195,11 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
         .expect("authenticate should succeed");
 
     let target_response = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Typed Resume Target",
-            CreateTargetOpts {
-                hosts: target_hosts(&["127.0.0.1"], &[]),
-                ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
-            },
-        )
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("create_target should succeed");
     let target_id = target_response.id;
@@ -5305,7 +5261,7 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
         .await
         .expect("delete_task should succeed");
     client
-        .call(delete_target(&target_id, true))
+        .delete_target(DeleteTargetRequest::new(target_id.clone(), true))
         .await
         .expect("delete_target should succeed");
 
@@ -5913,10 +5869,11 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .expect("authenticate should succeed");
 
     let target = client
-        .create_target(
+        .create_target(CreateTargetRequest::new(
             "Scheduled Task Target",
-            CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports()),
-        )
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
         .await
         .expect("target create should succeed");
     let config_id = "daba56c8-73ec-11df-a475-002264764cea"
@@ -6208,7 +6165,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect("schedule delete after dependent task should succeed");
     client
-        .delete_target(&target.id, true)
+        .delete_target(DeleteTargetRequest::new(target.id.clone(), true))
         .await
         .expect("target delete should succeed");
 
@@ -6251,7 +6208,7 @@ async fn send_after_disconnect_returns_connection_error() {
         .expect("disconnect should succeed");
 
     let error = client
-        .send(get_targets(Default::default()))
+        .send(b"<get_targets/>".as_slice())
         .await
         .expect_err("sending after disconnect should fail");
     match error {

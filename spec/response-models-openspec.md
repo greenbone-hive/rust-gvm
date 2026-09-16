@@ -7,6 +7,9 @@
 **RFC:** [PR #65](https://github.com/clawosiris/rust-gvm/pull/65)  
 **Phase 1 PR:** [PR #67](https://github.com/clawosiris/rust-gvm/pull/67)
 
+> Historical implementation record. ADR 0002 and issue #602 supersede its
+> input-model examples. Standard targets now use complete canonical requests.
+
 ---
 
 ## 1. Problem Statement
