@@ -1,6 +1,9 @@
 # ADR 0001: Typed request/response execution
 
-- Status: Accepted; typed-execution implementation promoted to `main`
+- Status: Accepted; superseded in part by
+  [ADR 0002](0002-canonical-request-ownership.md) for request ownership, typed
+  encoding, execution precedence, semantic capability metadata, and the
+  pre-release compatibility boundary
 - Date: 2026-08-31
 - Tracking issue: [#523](https://github.com/greenbone-hive/rust-gvm/issues/523)
 

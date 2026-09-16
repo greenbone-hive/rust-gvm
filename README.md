@@ -232,9 +232,12 @@ let targets = client
     .await?;
 ```
 
-Existing convenience methods, builders, `send`, and `call` remain supported.
-See the downstream [migration notes](docs/typed-execution-migration.md) for API
-selection, compatibility, and release adoption, and the contributor-oriented
+Existing convenience methods and builders remain available during the bounded
+canonical-request migration; the disposition audit may remove redundant
+Technology Preview surfaces before release. Raw `send` and `call` remain the
+supported low-level escape hatch. See the downstream
+[migration notes](docs/typed-execution-migration.md) for API selection,
+compatibility, and release adoption, and the contributor-oriented
 [typed request/response execution guide](docs/typed-execution.md) for the raw
 escape hatch and command-authoring guidance.
 

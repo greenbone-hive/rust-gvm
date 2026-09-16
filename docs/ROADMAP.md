@@ -72,8 +72,10 @@ Existing issues:
 
 - [#523](https://github.com/greenbone-hive/rust-gvm/issues/523) tracks the
   additive typed request/associated-response execution architecture, completed
-  family-by-family migration, protected-`main` promotion, and remaining release
-  gate documented in [`NEXT_BRANCH.md`](NEXT_BRANCH.md).
+  family-by-family migration, protected-`main` promotion, and the remaining
+  release program. [#602](https://github.com/greenbone-hive/rust-gvm/issues/602)
+  is its accepted pre-release canonical-request gate, recorded in
+  [ADR 0002](adr/0002-canonical-request-ownership.md).
 - [#172](https://github.com/greenbone-hive/rust-gvm/issues/172) tracks remaining rust-gvm vs gvmd GMP coverage gaps.
 - [#247](https://github.com/greenbone-hive/rust-gvm/issues/247) tracks report option drift where rust-gvm exposes an attribute gvmd ignores.
 - [#251](https://github.com/greenbone-hive/rust-gvm/issues/251) tracks response model drift around user host access and similar XML shape mismatches.
@@ -87,10 +89,11 @@ Follow-up issues or milestones should cover:
 
 ## Near-Term Implementation Order
 
-1. Complete the remaining #523 release gate: versioned release, artifact
-   verification, and downstream pinning. Migration notes and bounded
-   protected-`main` promotion are complete.
-2. Finish the remaining high-value GMP coverage gaps from #172.
-3. Fix known protocol drift in command options and response models.
-4. Add real gvmd conformance coverage.
-5. Expand migration documentation for python-gvm users.
+1. Complete #602 in bounded slices: execution foundation, targets reference
+   family, remaining resource families, and the final public-surface audit.
+2. Validate the canonical surface once through `rust-gvm-api#457`.
+3. Complete the remaining #523 release gate: versioned release, artifact
+   verification, and downstream pinning.
+4. Finish the remaining high-value GMP coverage gaps from #172 and known
+   protocol drift.
+5. Expand real-gvmd conformance and python-gvm migration documentation.

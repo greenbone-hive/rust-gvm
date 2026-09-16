@@ -10,6 +10,7 @@ use gvm_gmp::commands::targets::{CreateTargetError, ModifyTargetError};
 use gvm_gmp::commands::tasks::ModifyTaskError;
 use gvm_gmp::responses::ParseError;
 use gvm_gmp::types::GmpVersion;
+use gvm_gmp::GmpRequestError;
 use thiserror::Error;
 
 /// High-level client errors.
@@ -22,6 +23,10 @@ pub enum GvmError {
     /// Malformed or uninterpretable response-model failure.
     #[error("parse error: {0}")]
     Parse(#[source] ParseError),
+
+    /// A semantic request failed final-value validation or encoding.
+    #[error("request error: {0}")]
+    Request(#[from] GmpRequestError),
 
     /// A typed `create_target` input cannot be represented by GMP.
     #[error("create_target request error: {0}")]
