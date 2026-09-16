@@ -1,0 +1,333 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
+#![allow(missing_docs)]
+#![cfg(feature = "unix-socket-tests")]
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use gvm_client::{CommandSupport, GmpClient, GvmError};
+use gvm_connection::UnixSocketConnection;
+use gvm_gmp::responses::ActionResponse;
+use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
+use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
+
+struct CanonicalProbeRequest {
+    value: String,
+    command: GmpCommand,
+    encode_attempted: Arc<AtomicBool>,
+    fail_encoding: bool,
+}
+
+impl GmpRequestCodec for CanonicalProbeRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.value.is_empty() {
+            return Err(GmpRequestError::invalid_field("value", "must not be empty"));
+        }
+        Ok(())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(self.command)
+    }
+
+    fn encode(&self, version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.encode_attempted.store(true, Ordering::SeqCst);
+        if self.fail_encoding {
+            return Err(GmpRequestError::encoding(version, "probe encoder failed"));
+        }
+        Ok(format!("<{} />", self.command.wire_name()).into_bytes())
+    }
+}
+
+impl GmpRequest for CanonicalProbeRequest {
+    type Response = ActionResponse;
+}
+
+async fn fixture_server(version: MockVersion) -> Option<MockGmpServer> {
+    fixture_server_with_overrides(version, &[]).await
+}
+
+async fn fixture_server_with_overrides(
+    version: MockVersion,
+    overrides: &[(&str, &str)],
+) -> Option<MockGmpServer> {
+    let mut builder = MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .version(version)
+        .unix_socket_auto();
+    for (command, response) in overrides {
+        builder = builder.override_response(command, response);
+    }
+
+    match builder.build().await {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server should start: {error}"),
+    }
+}
+
+async fn client(server: &MockGmpServer) -> GmpClient<UnixSocketConnection> {
+    GmpClient::connect(UnixSocketConnection::with_path(
+        server.socket_path().expect("Unix socket path"),
+    ))
+    .await
+    .expect("client should connect")
+}
+
+#[tokio::test]
+async fn final_value_validation_precedes_support_encoding_and_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let encode_attempted = Arc::new(AtomicBool::new(false));
+
+    let error = client
+        .execute(CanonicalProbeRequest {
+            value: String::new(),
+            command: GmpCommand::new("get_features"),
+            encode_attempted: Arc::clone(&encode_attempted),
+            fail_encoding: false,
+        })
+        .await
+        .expect_err("validation should reject the final value");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field: "value", reason })
+            if reason == "must not be empty"
+    ));
+    assert!(!encode_attempted.load(Ordering::SeqCst));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn semantic_metadata_support_check_precedes_encoding_and_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let encode_attempted = Arc::new(AtomicBool::new(false));
+
+    let error = client
+        .execute(CanonicalProbeRequest {
+            value: "valid".to_string(),
+            command: GmpCommand::new("get_features"),
+            encode_attempted: Arc::clone(&encode_attempted),
+            fail_encoding: false,
+        })
+        .await
+        .expect_err("semantic metadata should reject the negotiated version");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 5),
+            required: "22.6",
+        } if command == "get_features"
+    ));
+    assert!(!encode_attempted.load(Ordering::SeqCst));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn encoding_failure_is_a_request_error_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_6).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let encode_attempted = Arc::new(AtomicBool::new(false));
+
+    let error = client
+        .execute(CanonicalProbeRequest {
+            value: "valid".to_string(),
+            command: GmpCommand::new("get_features"),
+            encode_attempted: Arc::clone(&encode_attempted),
+            fail_encoding: true,
+        })
+        .await
+        .expect_err("encoding should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::Encoding {
+            version: GmpVersion(22, 6),
+            reason: "probe encoder failed",
+        })
+    ));
+    assert!(encode_attempted.load(Ordering::SeqCst));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn semantic_alias_metadata_is_checked_without_encoding_xml() {
+    let Some(server) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let encode_attempted = Arc::new(AtomicBool::new(false));
+
+    let error = client
+        .execute(CanonicalProbeRequest {
+            value: "valid".to_string(),
+            command: GmpCommand::with_semantic_name("get_reports", "get_report_export"),
+            encode_attempted: Arc::clone(&encode_attempted),
+            fail_encoding: false,
+        })
+        .await
+        .expect_err("semantic alias should apply its own version policy");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "get_report_export"
+    ));
+    assert!(!encode_attempted.load(Ordering::SeqCst));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn semantic_metadata_preserves_pending_discovery_before_encoding() {
+    let Some(server) = fixture_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let encode_attempted = Arc::new(AtomicBool::new(false));
+
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::RequiresDiscovery
+    );
+    let error = client
+        .execute(CanonicalProbeRequest {
+            value: "valid".to_string(),
+            command: GmpCommand::new("export_scan_report"),
+            encode_attempted: Arc::clone(&encode_attempted),
+            fail_encoding: false,
+        })
+        .await
+        .expect_err("pending discovery should reject before encoding");
+
+    assert!(matches!(
+        error,
+        GvmError::CommandDiscoveryRequired { command }
+            if command == "export_scan_report"
+    ));
+    assert!(!encode_attempted.load(Ordering::SeqCst));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn semantic_metadata_preserves_negative_discovery_before_encoding() {
+    let Some(server) = fixture_server_with_overrides(
+        MockVersion::V22_8,
+        &[(
+            "help",
+            r#"<help_response status="200" status_text="OK"><schema format="XML"><command><name>get_targets</name></command></schema></help_response>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    client
+        .discover_commands()
+        .await
+        .expect("negative help discovery should parse");
+    server.clear_history();
+    let encode_attempted = Arc::new(AtomicBool::new(false));
+
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::NotAdvertised
+    );
+    let error = client
+        .execute(CanonicalProbeRequest {
+            value: "valid".to_string(),
+            command: GmpCommand::new("export_scan_report"),
+            encode_attempted: Arc::clone(&encode_attempted),
+            fail_encoding: false,
+        })
+        .await
+        .expect_err("negative discovery should reject before encoding");
+
+    assert!(matches!(
+        error,
+        GvmError::CommandNotAdvertised { command }
+            if command == "export_scan_report"
+    ));
+    assert!(!encode_attempted.load(Ordering::SeqCst));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn supported_and_unknown_custom_metadata_reach_transport() {
+    let Some(server) = fixture_server_with_overrides(
+        MockVersion::V22_8,
+        &[
+            (
+                "get_targets",
+                r#"<get_targets_response status="200" status_text="OK"/>"#,
+            ),
+            (
+                "unknown_future_command",
+                r#"<unknown_future_command_response status="200" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    assert_eq!(
+        client.command_support("get_targets"),
+        CommandSupport::Supported
+    );
+    assert_eq!(
+        client.command_support("unknown_future_command"),
+        CommandSupport::UnknownCommand
+    );
+
+    for command in ["get_targets", "unknown_future_command"] {
+        let encode_attempted = Arc::new(AtomicBool::new(false));
+        client
+            .execute(CanonicalProbeRequest {
+                value: "valid".to_string(),
+                command: GmpCommand::new(command),
+                encode_attempted: Arc::clone(&encode_attempted),
+                fail_encoding: false,
+            })
+            .await
+            .expect("supported and custom commands should reach transport");
+        assert!(encode_attempted.load(Ordering::SeqCst));
+    }
+
+    let commands = server
+        .command_history()
+        .into_iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(commands, ["get_targets", "unknown_future_command"]);
+    server.shutdown().await;
+}

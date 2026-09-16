@@ -28,7 +28,7 @@ pub mod types;
 /// Re-exported GMP enums.
 pub use enums::*;
 /// Re-exported typed execution contracts.
-pub use execution::{GmpRequest, GmpResponse};
+pub use execution::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse};
 /// Re-exported gvmd filter helpers.
 pub use filtering::{FilterFragment, FilterFragmentError, PaginatedFilter, Pagination};
 /// Re-exported typed schedule values.

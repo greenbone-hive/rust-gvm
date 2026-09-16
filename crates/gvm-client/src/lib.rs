@@ -110,7 +110,7 @@ pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
-pub use gvm_gmp::{GmpRequest, GmpResponse};
+pub use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse};
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,
@@ -381,11 +381,13 @@ impl<C: GvmConnection> GmpClient<C> {
 
     /// Execute a semantic request and decode its statically associated response.
     ///
-    /// This uses [`Self::send`] so command/version/help-discovery checks,
-    /// redacted wire tracing, transport behavior, and typed response errors are
-    /// identical to the compatibility convenience methods. Valid non-success
-    /// GMP responses are normalized to [`GvmError::Server`]; malformed or
-    /// uninterpretable responses remain [`GvmError::Parse`].
+    /// Canonical requests validate their final semantic value first, classify
+    /// support from explicit semantic metadata second, encode for the
+    /// negotiated version third, and only then enter the shared redacted
+    /// transport path. Existing builder-backed requests retain the legacy
+    /// encoded-root support gate until their resource family is converted.
+    /// Valid non-success GMP responses are normalized to [`GvmError::Server`];
+    /// malformed or uninterpretable responses remain [`GvmError::Parse`].
     ///
     /// The request's associated response type is enforced at compile time:
     ///
@@ -404,11 +406,26 @@ impl<C: GvmConnection> GmpClient<C> {
     /// ```
     ///
     /// # Errors
-    /// Returns an error if request transmission, command support checks, or
-    /// typed response decoding fails.
+    /// Returns an error if request validation/encoding, command support checks,
+    /// transmission, or typed response decoding fails.
     pub async fn execute<R: GmpRequest>(&mut self, request: R) -> Result<R::Response, GvmError> {
         let version = self.version;
-        let response = self.send(request).await?;
+        request.validate()?;
+        let command = request.command();
+        if let Some(command) = command {
+            self.ensure_typed_command_supported(command)?;
+        }
+        let legacy_semantic_command_name = request.legacy_semantic_command_name();
+        let request_bytes = request.encode(version)?;
+        if command.is_none() {
+            self.ensure_command_supported(&request_bytes, legacy_semantic_command_name)?;
+        }
+        let response = Self::send_on_bytes(
+            &mut self.connection,
+            request_bytes,
+            self.wire_trace.as_deref(),
+        )
+        .await?;
         R::Response::decode(&response, version).map_err(GvmError::from)
     }
 
@@ -503,6 +520,13 @@ impl<C: GvmConnection> GmpClient<C> {
                 command: command_name.to_string(),
             }),
         }
+    }
+
+    fn ensure_typed_command_supported(&self, command: GmpCommand) -> Result<(), GvmError> {
+        if let Some(semantic_name) = command.semantic_name() {
+            self.ensure_named_command_supported(semantic_name)?;
+        }
+        self.ensure_named_command_supported(command.wire_name())
     }
 
     /// Get a single integration configuration.

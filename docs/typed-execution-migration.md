@@ -1,9 +1,13 @@
 # Typed execution migration notes
 
-The typed request/response API is an additive execution path for GMP commands.
-Each semantic request implements `GmpRequest` and selects exactly one
-`GmpResponse` through its associated `Response` type. `GmpClient::execute`
-therefore prevents a caller from pairing a request with an unrelated parser.
+The typed request/response API began as the additive execution path from #523.
+ADR 0002 makes the canonical-request redesign in #602 a pre-release gate. Each
+semantic request still implements `GmpRequest` and selects exactly one
+`GmpResponse`, while converted complete request values also own final
+validation, semantic capability metadata, and fallible version-aware encoding.
+`GmpClient::execute` therefore prevents a caller from pairing a request with an
+unrelated parser and rejects invalid final values before support checks or
+transport.
 
 This guide is for downstream consumers moving from retained convenience
 methods or raw command builders. It complements the contributor-oriented
@@ -18,9 +22,11 @@ methods or raw command builders. It complements the contributor-oriented
 | `GmpClient::call(builder)` | Raw XML response details are needed. | Returns `gvm_protocol::Response`; non-2xx GMP statuses are reported as `GvmError::Server`. |
 | `GmpClient::send(builder)` | The caller must inspect every raw GMP status itself. | Returns `gvm_protocol::Response` for success and non-success statuses. |
 
-No application must migrate merely to consume the release. Existing builders,
-`send`, `call`, typed convenience methods, transports, framing, response
-models, and wire formats remain supported.
+During the bounded migration, existing builders, options, and convenience
+methods remain available. The first downstream-ready release occurs only after
+the disposition audit, so applications adopt the final canonical surface once.
+Raw `send`/`call`, transports, framing, response models, and wire formats remain
+supported.
 
 ## Moving from a convenience method
 
@@ -119,8 +125,8 @@ other irregular responses use explicit codecs while retaining the same
 For commands outside the modeled surface, either:
 
 - implement `gvm_protocol::Request` and use `send` or `call`; or
-- implement `Request` plus `GmpRequest`, and implement `GmpResponse` for the
-  associated response type.
+- implement `GmpRequestCodec` plus `GmpRequest`, and implement `GmpResponse` for
+  the associated response type.
 
 Custom typed decoders must reject non-2xx statuses as
 `ParseError::ServerError`; the high-level client normalizes that result to
@@ -130,10 +136,12 @@ redacted before trace observers run.
 
 ## Compatibility boundary
 
-The release is additive. It does not remove or rename the established command
-builders, raw execution APIs, typed convenience methods, transports, or
-response models. The facade's private resource-family modules are an internal
-maintenance boundary and do not create new public module paths.
+The promoted #523 baseline was additive, but it has not been published as the
+downstream-ready typed-execution release. #602 is an explicit Technology
+Preview breaking gate: redundant options, builders, and facade signatures may
+be removed only after their canonical replacements and migration notes exist.
+Raw execution APIs, transports, framing, protocol behavior, and response models
+remain supported.
 
 The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
@@ -151,11 +159,11 @@ to expose tickets.
 
 ## Release and downstream adoption
 
-The bounded typed-execution change set and these migration notes have completed
-their protected `next` review and protected-`main` promotion. A
-downstream-ready release still requires a separate reviewed workspace-version
-and lockfile update, followed by an orchestrated release whose tag and artifacts
-are verified.
+The bounded typed-execution change set completed protected-`main` promotion.
+A downstream-ready release now waits for the canonical-request family
+migrations, final disposition audit, `rust-gvm-api#457` validation, and then a
+reviewed workspace-version and lockfile update followed by verified release
+artifacts.
 
 Git-based consumers should replace a `branch = "next"` dependency with the
 exact released revision after publication and commit the resulting lockfile.

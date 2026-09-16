@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-14
+Last updated: 2026-09-16
 
 ## Support Direction
 
@@ -22,6 +22,15 @@ split into private resource-family modules without changing public paths. See
 [typed-execution guide](typed-execution.md). Downstream API selection,
 compatibility, and release adoption are summarized in the
 [migration notes](typed-execution-migration.md).
+
+The unreleased additive request wrappers are now the transition baseline for
+the canonical-request program in issue #602. [ADR 0002](adr/0002-canonical-request-ownership.md)
+separates fallible typed validation/encoding from raw `Request`, fixes execution
+precedence as validate → semantic support → encode → transport → decode, and
+makes #602 a pre-release gate. The checked
+[surface disposition ledger](canonical-request-disposition.md) currently tracks
+all public options, builder, request, and typed-facade symbols; no resource API
+is removed by the foundation slice.
 
 The sections below retain the bounded delivery history for each migrated
 family.

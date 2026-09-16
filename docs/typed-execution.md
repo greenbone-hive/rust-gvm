@@ -1,7 +1,9 @@
 # Typed request/response execution
 
-The Technology Preview client provides the complete additive typed execution
-API described by issue #523.
+The Technology Preview client provides typed execution described by issue
+#523. ADR 0002 makes issue #602 a pre-release convergence gate: the current
+builder-backed request wrappers remain available during bounded migration, but
+complete request values become the canonical input before publication.
 Each migrated semantic request implements `GmpRequest` and selects exactly one
 `GmpResponse` through an associated type:
 
@@ -18,16 +20,18 @@ the request to `execute` determines the result type at compile time.
 
 ## Compatibility APIs
 
-Existing typed convenience methods remain supported. For migrated commands they
-construct the same semantic request and delegate to `execute`:
+Existing typed convenience methods remain available during bounded family
+migration. For currently migrated commands they construct the same semantic
+request and delegate to `execute`:
 
 ```rust
 let response = client.get_targets(GetTargetsOpts::default()).await?;
 ```
 
-Existing command builders plus `send` and `call` also remain supported. Use
-them for custom XML, commands that have not migrated, or response details not
-yet represented by a typed model:
+Existing command builders also remain available until their ledger disposition
+is reviewed. Raw `send` and `call` remain supported; use them for custom XML,
+commands that have not migrated, or response details not yet represented by a
+typed model:
 
 ```rust
 use gvm_gmp::commands::targets;
@@ -46,11 +50,13 @@ behavior; consumers that matched
 `GvmError::Parse(ParseError::ServerError { .. })` must now match
 `GvmError::Server { .. }`.
 
-The Phase 1 public contract is owned by `gvm-gmp` (`GmpRequest` and
+The typed contract is owned by `gvm-gmp` (`GmpRequestCodec`, `GmpRequest`, and
 `GmpResponse`) and `gvm-client` (`GmpClient::execute`). `gvm-client` re-exports
-the two traits for ergonomic imports. These names and ownership boundaries are
-stable within the additive implementation. See the downstream
-[migration notes](typed-execution-migration.md) for API selection,
+those traits for ergonomic imports. `GmpRequestCodec` separates fallible final
+validation and version-aware encoding from the infallible raw `Request` escape
+hatch. See [ADR 0002](adr/0002-canonical-request-ownership.md), the checked
+[surface disposition ledger](canonical-request-disposition.md), and the
+downstream [migration notes](typed-execution-migration.md) for API selection,
 compatibility, and release adoption.
 
 ## Custom codecs
@@ -58,23 +64,40 @@ compatibility, and release adoption.
 Custom and irregular commands have two supported paths. If raw bytes are the
 right abstraction, implement `gvm_protocol::Request` (or pass `Vec<u8>`/a byte
 slice) and use `send` or `call`. If the command should participate in typed
-execution, implement `Request` plus `GmpRequest` on the request type and
+execution, implement `GmpRequestCodec` plus `GmpRequest` on the request type and
 `GmpResponse` on its associated response type:
 
 ```rust
-use gvm_gmp::{GmpRequest, GmpResponse, GmpVersion};
+use gvm_gmp::{
+    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse,
+    GmpVersion,
+};
 use gvm_gmp::responses::ParseError;
-use gvm_protocol::{Request, Response};
+use gvm_protocol::{Request as _, Response, XmlCommand};
 
-struct CustomRequest;
+struct CustomRequest {
+    resource_id: String,
+}
 
-impl Request for CustomRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        b"<custom_command/>".to_vec()
+impl GmpRequestCodec for CustomRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.resource_id.is_empty() {
+            return Err(GmpRequestError::invalid_field(
+                "resource_id",
+                "must not be empty",
+            ));
+        }
+        Ok(())
     }
 
-    fn semantic_command_name(&self) -> Option<&'static str> {
-        Some("custom_command")
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("custom_command"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("custom_command")
+            .attribute("resource_id", &self.resource_id)
+            .to_bytes())
     }
 }
 
@@ -103,27 +126,31 @@ impl GmpRequest for CustomRequest {
 Custom response codecs must reject non-2xx statuses as
 `ParseError::ServerError`; `gvm-client` promotes that decoder error to
 `GvmError::Server`. Codecs retain structural field context in other parse
-errors. `execute` still applies negotiated-version/help checks to registered
-commands and declared semantic aliases, while unknown custom names retain the
-raw path's forward compatibility. It also redacts wire bytes before invoking a
-trace observer. A semantic alias supplied by `Request::semantic_command_name`
-is checked before the XML root command.
+errors. `execute` validates the final request, applies negotiated-version/help
+checks from `GmpCommand`, then encodes and enters the shared redacted transport
+path. Unknown custom names retain the raw path's forward compatibility. A
+semantic alias supplied by `GmpCommand::with_semantic_name` is checked before
+its shared wire command. Existing builder-backed request wrappers use the
+temporary raw adapter until their family conversion.
 
 ## Authoring a migrated command
 
-1. Define a semantic request struct in the owning `gvm-gmp` command module.
-2. Validate fallible input in its constructor, reusing the legacy builder's
-   validation rather than delaying failures until transport execution.
-3. Implement `Request` by delegating to the existing builder so only one XML
-   encoding path exists. Preserve `semantic_command_name` metadata when the
-   wire root has a different capability name.
-4. Implement `GmpRequest` and associate exactly one response model.
-5. Implement `GmpResponse` on that existing response model. Use the negotiated
+1. Define one complete semantic request struct in the owning `gvm-gmp` command
+   module, containing required and optional inputs.
+2. Implement `GmpRequestCodec::validate` for final-value field and combination
+   constraints. Error reasons must not retain caller-provided secret values.
+3. Return `GmpCommand` metadata for the semantic operation and shared wire root,
+   without inspecting encoded XML.
+4. Implement fallible, version-aware encoding on the request. Keep private
+   shared encoding helpers where they avoid duplication.
+5. Implement `GmpRequest` and associate exactly one response model.
+6. Implement `GmpResponse` on that existing response model. Use the negotiated
    version only when the response wire shape genuinely differs by version.
-6. Convert the existing convenience method into a thin `execute` wrapper; do
-   not remove the builder or raw path.
-7. Add exact byte-equivalence, response parsing, version/help gating,
-   non-success, malformed-response, and redaction tests as applicable.
+7. Decide every options type, free builder, and convenience method in the
+   checked disposition ledger. Retain it only for concrete reuse or ergonomics.
+8. Add independent exact XML, final-validation precedence, response parsing,
+   all support states, non-success, malformed-response, and redaction tests as
+   applicable.
 
 Irregular commands are first-class. They may retain explicit XML codecs and do
 not need Serde derives. A request whose encoding genuinely differs by GMP
