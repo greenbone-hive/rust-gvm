@@ -34,7 +34,11 @@ target family is the first converted reference slice: its six complete requests
 own validation, semantic metadata, encoding, and response association, while
 the three redundant options types and six free builders are removed. Its
 [pinned gvmd evidence](target-request-gvmd-evidence.md) is recorded separately
-from mock-server validation.
+from mock-server validation. Issue #609 applies that contract to all twelve
+OCI-image and web-application target operations, removes their six redundant
+options types, twelve free builders, raw duplicate client signatures, and
+`_parsed` naming, and records separate
+[alternate-target gvmd evidence](alternate-target-request-gvmd-evidence.md).
 
 The sections below retain the bounded delivery history for each migrated
 family.
@@ -148,16 +152,16 @@ bytes. Result list/detail requests likewise retain their existing `get_results`
 encodings. All corresponding facade helpers use `execute`, while raw builders,
 `send`, and `call` remain supported.
 
-The alternate-target Phase 2 batch, tracked by
-[`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), completes the
-existing target command boundary with standard target clone plus
-all OCI-image and web-application target list/detail/create/clone/modify/delete
-operations. Each operation has a distinct semantic request and delegates to its
-established public builder, preserving filters, relationship fields, mutation
-behavior, and exact XML bytes. The OCI-image and web-application families
-retain their GMP 22.8 gates while standard target cloning remains baseline.
-All twelve existing `_parsed` facade helpers now delegate to `execute`;
-builders and raw/custom execution remain supported.
+The additive alternate-target Phase 2 batch, tracked by
+[`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), originally
+introduced semantic wrappers for OCI-image and web-application targets. The
+canonical follow-up in
+[`#609`](https://github.com/greenbone-hive/rust-gvm/issues/609) replaces those
+wrappers with complete list/detail/create/clone/modify/delete request values.
+They directly own filters, relationship fields, mutation behavior, semantic
+aliases, exact XML, and their GMP 22.8 gates. The clean named facade methods
+accept the same canonical values and delegate to `execute`; literal XML remains
+available through raw `send` and `call`.
 
 The agent-and-integration Phase 3 batch, tracked by
 [`#568`](https://github.com/greenbone-hive/rust-gvm/issues/568), migrates all 17

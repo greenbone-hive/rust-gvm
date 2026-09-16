@@ -5,12 +5,11 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AggregateMode, AggregateSort, AggregateSortStatistic, CreateOciImageTargetOpts,
-    CreateWebApplicationTargetOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
-    GetAggregatesRequestOpts, GetCredentialStoresOpts, GetScanReportOpts, GetSystemReportsOpts,
-    GmpClient, GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts,
-    ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
-    UsageType, WireTraceDirection, WireTraceEvent,
+    AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialOpts,
+    CredentialStoreCredentialType, GetAggregatesRequestOpts, GetCredentialStoresOpts,
+    GetScanReportOpts, GetSystemReportsOpts, GmpClient, GmpNextCommands, GmpVersioned, GvmError,
+    ImportReportOpts, ModifyCredentialStoreCredentialOpts, UsageType, WireTraceDirection,
+    WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
@@ -34,6 +33,10 @@ use gvm_gmp::commands::credentials::{
 };
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
+use gvm_gmp::commands::oci_image_targets::{
+    CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
+    GetOciImageTargetRequest, ModifyOciImageTargetRequest,
+};
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::permissions::{modify_permission, GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{GetPortListsOpts, ModifyPortListOpts, PortListOpts};
@@ -63,6 +66,11 @@ use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
 };
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
+use gvm_gmp::commands::web_application_targets::{
+    CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
+    DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
+    ModifyWebApplicationTargetRequest,
+};
 use gvm_gmp::responses::task::TaskObservers;
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, CredentialKind, GetConfigsResponse,
@@ -5387,19 +5395,19 @@ async fn typed_oci_image_target_lifecycle_succeeds() {
         .expect("authenticate should succeed");
 
     let created = client
-        .create_oci_image_target_parsed(
-            "OCI Target",
-            &["registry.example/app:1".to_string()],
-            CreateOciImageTargetOpts {
-                comment: Some("created".to_string()),
-                ..Default::default()
-            },
-        )
+        .create_oci_image_target(CreateOciImageTargetRequest {
+            name: "OCI Target".into(),
+            image_references: vec!["registry.example/app:1".into()],
+            comment: Some("created".into()),
+            credential_id: None,
+        })
         .await
         .expect("create_oci_image_target should succeed");
 
+    let mut get_request = GetOciImageTargetRequest::new(created.id.clone());
+    get_request.tasks = Some(true);
     let fetched = client
-        .get_oci_image_target_parsed(&created.id, Some(true))
+        .get_oci_image_target(get_request)
         .await
         .expect("get_oci_image_target should succeed");
     assert_eq!(fetched.items.len(), 1);
@@ -5410,26 +5418,25 @@ async fn typed_oci_image_target_lifecycle_succeeds() {
     );
 
     let modified = client
-        .modify_oci_image_target_parsed(
-            &created.id,
-            ModifyOciImageTargetOpts {
-                name: Some("OCI Target Updated".to_string()),
-                image_references: vec!["registry.example/app:2".to_string()],
-                ..Default::default()
-            },
-        )
+        .modify_oci_image_target(ModifyOciImageTargetRequest {
+            oci_image_target_id: created.id.clone(),
+            name: Some("OCI Target Updated".into()),
+            comment: None,
+            image_references: vec!["registry.example/app:2".into()],
+            credential_id: None,
+        })
         .await
         .expect("modify_oci_image_target should succeed");
     assert_eq!(modified.status, 200);
 
     let cloned = client
-        .clone_oci_image_target_parsed(&created.id)
+        .clone_oci_image_target(CloneOciImageTargetRequest::new(created.id.clone()))
         .await
         .expect("clone_oci_image_target should succeed");
     assert_eq!(cloned.status, 201);
 
     let deleted = client
-        .delete_oci_image_target_parsed(&created.id, true)
+        .delete_oci_image_target(DeleteOciImageTargetRequest::new(created.id, true))
         .await
         .expect("delete_oci_image_target should succeed");
     assert_eq!(deleted.status, 200);
@@ -5453,20 +5460,20 @@ async fn typed_web_application_target_lifecycle_succeeds() {
         .expect("authenticate should succeed");
 
     let created = client
-        .create_web_application_target_parsed(
-            "Web Target",
-            &["https://example.com".to_string()],
-            CreateWebApplicationTargetOpts {
-                comment: Some("created".to_string()),
-                exclude_urls: vec!["https://example.com/logout".to_string()],
-                ..Default::default()
-            },
-        )
+        .create_web_application_target(CreateWebApplicationTargetRequest {
+            name: "Web Target".into(),
+            urls: vec!["https://example.com".into()],
+            comment: Some("created".into()),
+            exclude_urls: vec!["https://example.com/logout".into()],
+            credential_id: None,
+        })
         .await
         .expect("create_web_application_target should succeed");
 
+    let mut get_request = GetWebApplicationTargetRequest::new(created.id.clone());
+    get_request.tasks = Some(true);
     let fetched = client
-        .get_web_application_target_parsed(&created.id, Some(true))
+        .get_web_application_target(get_request)
         .await
         .expect("get_web_application_target should succeed");
     assert_eq!(fetched.items.len(), 1);
@@ -5481,27 +5488,26 @@ async fn typed_web_application_target_lifecycle_succeeds() {
     );
 
     let modified = client
-        .modify_web_application_target_parsed(
-            &created.id,
-            ModifyWebApplicationTargetOpts {
-                name: Some("Web Target Updated".to_string()),
-                urls: vec!["https://example.com/app".to_string()],
-                exclude_urls: vec!["https://example.com/logout".to_string()],
-                ..Default::default()
-            },
-        )
+        .modify_web_application_target(ModifyWebApplicationTargetRequest {
+            web_application_target_id: created.id.clone(),
+            name: Some("Web Target Updated".into()),
+            comment: None,
+            urls: vec!["https://example.com/app".into()],
+            exclude_urls: vec!["https://example.com/logout".into()],
+            credential_id: None,
+        })
         .await
         .expect("modify_web_application_target should succeed");
     assert_eq!(modified.status, 200);
 
     let cloned = client
-        .clone_web_application_target_parsed(&created.id)
+        .clone_web_application_target(CloneWebApplicationTargetRequest::new(created.id.clone()))
         .await
         .expect("clone_web_application_target should succeed");
     assert_eq!(cloned.status, 201);
 
     let deleted = client
-        .delete_web_application_target_parsed(&created.id, true)
+        .delete_web_application_target(DeleteWebApplicationTargetRequest::new(created.id, true))
         .await
         .expect("delete_web_application_target should succeed");
     assert_eq!(deleted.status, 200);

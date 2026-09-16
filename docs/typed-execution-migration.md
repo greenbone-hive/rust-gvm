@@ -92,6 +92,52 @@ Construction does not freeze the value. `execute` validates the final request,
 so an invalid combination introduced by later mutation is still returned as
 `GvmError::Request` before capability checks or transport.
 
+## OCI-image and web-application target families
+
+The alternate-target slice removes the six `*Opts` types and all twelve free
+builders. It also replaces the raw-response client signatures and `_parsed`
+aliases with one discoverable convenience per operation. Each convenience
+accepts the same request value as `execute` and returns its statically
+associated response.
+
+Required create inputs use constructors; optional inputs are fields on the
+same request:
+
+```rust
+use gvm_gmp::commands::oci_image_targets::CreateOciImageTargetRequest;
+
+let mut request = CreateOciImageTargetRequest::new(
+    "registry target",
+    vec!["registry.example/app:stable".into()],
+);
+request.comment = Some("production image".into());
+request.credential_id = Some(credential_id);
+
+let created = client.create_oci_image_target(request).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+All-optional list requests implement `Default`. Detail and clone requests keep
+distinct semantic intent even though their XML roots are shared with list and
+create respectively:
+
+```rust
+use gvm_gmp::commands::web_application_targets::{
+    CloneWebApplicationTargetRequest, GetWebApplicationTargetsRequest,
+};
+
+let targets = client
+    .get_web_application_targets(GetWebApplicationTargetsRequest::default())
+    .await?;
+let clone = client
+    .clone_web_application_target(CloneWebApplicationTargetRequest::new(target_id))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+These operations require GMP 22.8. The client applies that gate from semantic
+metadata before encoding or transport, including detail and clone aliases.
+
 ## Moving from a raw builder
 
 Raw execution remains available:

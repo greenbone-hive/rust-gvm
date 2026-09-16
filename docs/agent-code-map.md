@@ -9,6 +9,7 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/STATUS.md`: implementation status, version support snapshot, and coverage notes.
 - `docs/gvmd-transport-analysis.md`: gvmd transport model and why GMP is handled as XML over persistent sockets.
 - `docs/target-request-gvmd-evidence.md`: pinned public gvmd schema/source evidence for the canonical target reference slice.
+- `docs/alternate-target-request-gvmd-evidence.md`: pinned gvmd evidence for canonical OCI-image and web-application target requests.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow

@@ -42,8 +42,8 @@ use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
 };
 use gvm_gmp::commands::oci_image_targets::{
-    clone_oci_image_target, create_oci_image_target, delete_oci_image_target, get_oci_image_target,
-    get_oci_image_targets, modify_oci_image_target,
+    CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
+    GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::report_configs::{
     clone_report_config, create_report_config, delete_report_config, get_report_configs,
@@ -60,14 +60,18 @@ use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_ta
 use gvm_gmp::commands::tasks::create_web_application_task;
 use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
-    clone_web_application_target, create_web_application_target, delete_web_application_target,
-    get_web_application_target, get_web_application_targets, modify_web_application_target,
+    CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
+    DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
+    GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
 use gvm_gmp::responses::{
-    CloneAgentGroupResponse, CreateAgentGroupResponse, DeleteAgentGroupResponse,
-    DeleteAgentResponse, GetAgentGroupsResponse, GetAgentInstallerInstructionResponse,
-    GetAgentSupportBundleResponse, GetAgentsResponse, GetScanReportResponse, HelpResponse,
-    ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse, ModifyAgentResponse,
+    CloneAgentGroupResponse, CreateAgentGroupResponse, CreateOciImageTargetResponse,
+    CreateWebApplicationTargetResponse, DeleteAgentGroupResponse, DeleteAgentResponse,
+    DeleteOciImageTargetResponse, DeleteWebApplicationTargetResponse, GetAgentGroupsResponse,
+    GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
+    GetOciImageTargetsResponse, GetScanReportResponse, GetWebApplicationTargetsResponse,
+    HelpResponse, ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse,
+    ModifyAgentResponse, ModifyOciImageTargetResponse, ModifyWebApplicationTargetResponse,
     SyncAgentsResponse,
 };
 use gvm_gmp::types::{EntityId, GmpVersion};
@@ -93,9 +97,6 @@ pub use gvm_gmp::commands::help::HelpMode;
 pub use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
 };
-pub use gvm_gmp::commands::oci_image_targets::{
-    CreateOciImageTargetOpts, GetOciImageTargetsOpts, ModifyOciImageTargetOpts,
-};
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{
     ExportScanReportOpts, GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts,
@@ -106,9 +107,6 @@ pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
 pub use gvm_gmp::commands::usage_type::UsageType;
-pub use gvm_gmp::commands::web_application_targets::{
-    CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
-};
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
 pub use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse};
 pub use version::{
@@ -768,175 +766,6 @@ impl<C: GvmConnection> GmpClient<C> {
         .await
     }
 
-    /// Create an OCI image target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn create_oci_image_target(
-        &mut self,
-        name: &str,
-        image_references: &[String],
-        opts: CreateOciImageTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(create_oci_image_target(name, image_references, opts))
-            .await
-    }
-
-    /// Clone an OCI image target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn clone_oci_image_target(
-        &mut self,
-        oci_image_target_id: &EntityId,
-    ) -> Result<Response, GvmError> {
-        self.call(clone_oci_image_target(oci_image_target_id)).await
-    }
-
-    /// Get a single OCI image target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_oci_image_target(
-        &mut self,
-        oci_image_target_id: &EntityId,
-        tasks: Option<bool>,
-    ) -> Result<Response, GvmError> {
-        self.call(get_oci_image_target(oci_image_target_id, tasks))
-            .await
-    }
-
-    /// List OCI image targets.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_oci_image_targets(
-        &mut self,
-        opts: GetOciImageTargetsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_oci_image_targets(opts)).await
-    }
-
-    /// Modify an OCI image target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn modify_oci_image_target(
-        &mut self,
-        oci_image_target_id: &EntityId,
-        opts: ModifyOciImageTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(modify_oci_image_target(oci_image_target_id, opts))
-            .await
-    }
-
-    /// Delete an OCI image target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn delete_oci_image_target(
-        &mut self,
-        oci_image_target_id: &EntityId,
-        ultimate: bool,
-    ) -> Result<Response, GvmError> {
-        self.call(delete_oci_image_target(oci_image_target_id, ultimate))
-            .await
-    }
-
-    /// Create a web application target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn create_web_application_target(
-        &mut self,
-        name: &str,
-        urls: &[String],
-        opts: CreateWebApplicationTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(create_web_application_target(name, urls, opts))
-            .await
-    }
-
-    /// Clone a web application target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn clone_web_application_target(
-        &mut self,
-        web_application_target_id: &EntityId,
-    ) -> Result<Response, GvmError> {
-        self.call(clone_web_application_target(web_application_target_id))
-            .await
-    }
-
-    /// Get a single web application target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_web_application_target(
-        &mut self,
-        web_application_target_id: &EntityId,
-        tasks: Option<bool>,
-    ) -> Result<Response, GvmError> {
-        self.call(get_web_application_target(web_application_target_id, tasks))
-            .await
-    }
-
-    /// List web application targets.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_web_application_targets(
-        &mut self,
-        opts: GetWebApplicationTargetsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_web_application_targets(opts)).await
-    }
-
-    /// Modify a web application target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn modify_web_application_target(
-        &mut self,
-        web_application_target_id: &EntityId,
-        opts: ModifyWebApplicationTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(modify_web_application_target(
-            web_application_target_id,
-            opts,
-        ))
-        .await
-    }
-
-    /// Delete a web application target.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn delete_web_application_target(
-        &mut self,
-        web_application_target_id: &EntityId,
-        ultimate: bool,
-    ) -> Result<Response, GvmError> {
-        self.call(delete_web_application_target(
-            web_application_target_id,
-            ultimate,
-        ))
-        .await
-    }
-
     /// Get one structured vulnerability report.
     ///
     /// # Errors
@@ -1244,10 +1073,8 @@ pub trait GmpNextCommands {
     /// Create an OCI image target.
     async fn create_oci_image_target(
         &mut self,
-        name: &str,
-        image_references: &[String],
-        opts: CreateOciImageTargetOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateOciImageTargetRequest,
+    ) -> Result<CreateOciImageTargetResponse, GvmError>;
 
     /// Create a task that scans an OCI image target.
     async fn create_oci_image_target_task(
@@ -1274,76 +1101,68 @@ pub trait GmpNextCommands {
     /// Clone an OCI image target.
     async fn clone_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-    ) -> Result<Response, GvmError>;
+        request: CloneOciImageTargetRequest,
+    ) -> Result<CreateOciImageTargetResponse, GvmError>;
 
     /// Get a single OCI image target.
     async fn get_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        tasks: Option<bool>,
-    ) -> Result<Response, GvmError>;
+        request: GetOciImageTargetRequest,
+    ) -> Result<GetOciImageTargetsResponse, GvmError>;
 
     /// List OCI image targets.
     async fn get_oci_image_targets(
         &mut self,
-        opts: GetOciImageTargetsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetOciImageTargetsRequest,
+    ) -> Result<GetOciImageTargetsResponse, GvmError>;
 
     /// Modify an OCI image target.
     async fn modify_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        opts: ModifyOciImageTargetOpts,
-    ) -> Result<Response, GvmError>;
+        request: ModifyOciImageTargetRequest,
+    ) -> Result<ModifyOciImageTargetResponse, GvmError>;
 
     /// Delete an OCI image target.
     async fn delete_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        ultimate: bool,
-    ) -> Result<Response, GvmError>;
+        request: DeleteOciImageTargetRequest,
+    ) -> Result<DeleteOciImageTargetResponse, GvmError>;
 
     /// Create a web application target.
     async fn create_web_application_target(
         &mut self,
-        name: &str,
-        urls: &[String],
-        opts: CreateWebApplicationTargetOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateWebApplicationTargetRequest,
+    ) -> Result<CreateWebApplicationTargetResponse, GvmError>;
 
     /// Clone a web application target.
     async fn clone_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-    ) -> Result<Response, GvmError>;
+        request: CloneWebApplicationTargetRequest,
+    ) -> Result<CreateWebApplicationTargetResponse, GvmError>;
 
     /// Get a single web application target.
     async fn get_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        tasks: Option<bool>,
-    ) -> Result<Response, GvmError>;
+        request: GetWebApplicationTargetRequest,
+    ) -> Result<GetWebApplicationTargetsResponse, GvmError>;
 
     /// List web application targets.
     async fn get_web_application_targets(
         &mut self,
-        opts: GetWebApplicationTargetsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetWebApplicationTargetsRequest,
+    ) -> Result<GetWebApplicationTargetsResponse, GvmError>;
 
     /// Modify a web application target.
     async fn modify_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        opts: ModifyWebApplicationTargetOpts,
-    ) -> Result<Response, GvmError>;
+        request: ModifyWebApplicationTargetRequest,
+    ) -> Result<ModifyWebApplicationTargetResponse, GvmError>;
 
     /// Delete a web application target.
     async fn delete_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        ultimate: bool,
-    ) -> Result<Response, GvmError>;
+        request: DeleteWebApplicationTargetRequest,
+    ) -> Result<DeleteWebApplicationTargetResponse, GvmError>;
 
     /// Create a scan task for a web application target.
     async fn create_web_application_task(
@@ -1855,13 +1674,9 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_oci_image_target(
         &mut self,
-        name: &str,
-        image_references: &[String],
-        opts: CreateOciImageTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .create_oci_image_target(name, image_references, opts)
-            .await
+        request: CreateOciImageTargetRequest,
+    ) -> Result<CreateOciImageTargetResponse, GvmError> {
+        self.0.create_oci_image_target(request).await
     }
 
     async fn create_oci_image_target_task(
@@ -1883,101 +1698,79 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn clone_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-    ) -> Result<Response, GvmError> {
-        self.0.clone_oci_image_target(oci_image_target_id).await
+        request: CloneOciImageTargetRequest,
+    ) -> Result<CreateOciImageTargetResponse, GvmError> {
+        self.0.clone_oci_image_target(request).await
     }
 
     async fn get_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        tasks: Option<bool>,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .get_oci_image_target(oci_image_target_id, tasks)
-            .await
+        request: GetOciImageTargetRequest,
+    ) -> Result<GetOciImageTargetsResponse, GvmError> {
+        self.0.get_oci_image_target(request).await
     }
 
     async fn get_oci_image_targets(
         &mut self,
-        opts: GetOciImageTargetsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.get_oci_image_targets(opts).await
+        request: GetOciImageTargetsRequest,
+    ) -> Result<GetOciImageTargetsResponse, GvmError> {
+        self.0.get_oci_image_targets(request).await
     }
 
     async fn modify_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        opts: ModifyOciImageTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .modify_oci_image_target(oci_image_target_id, opts)
-            .await
+        request: ModifyOciImageTargetRequest,
+    ) -> Result<ModifyOciImageTargetResponse, GvmError> {
+        self.0.modify_oci_image_target(request).await
     }
 
     async fn delete_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        ultimate: bool,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .delete_oci_image_target(oci_image_target_id, ultimate)
-            .await
+        request: DeleteOciImageTargetRequest,
+    ) -> Result<DeleteOciImageTargetResponse, GvmError> {
+        self.0.delete_oci_image_target(request).await
     }
 
     async fn create_web_application_target(
         &mut self,
-        name: &str,
-        urls: &[String],
-        opts: CreateWebApplicationTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.create_web_application_target(name, urls, opts).await
+        request: CreateWebApplicationTargetRequest,
+    ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
+        self.0.create_web_application_target(request).await
     }
 
     async fn clone_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .clone_web_application_target(web_application_target_id)
-            .await
+        request: CloneWebApplicationTargetRequest,
+    ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
+        self.0.clone_web_application_target(request).await
     }
 
     async fn get_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        tasks: Option<bool>,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .get_web_application_target(web_application_target_id, tasks)
-            .await
+        request: GetWebApplicationTargetRequest,
+    ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
+        self.0.get_web_application_target(request).await
     }
 
     async fn get_web_application_targets(
         &mut self,
-        opts: GetWebApplicationTargetsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.get_web_application_targets(opts).await
+        request: GetWebApplicationTargetsRequest,
+    ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
+        self.0.get_web_application_targets(request).await
     }
 
     async fn modify_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        opts: ModifyWebApplicationTargetOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .modify_web_application_target(web_application_target_id, opts)
-            .await
+        request: ModifyWebApplicationTargetRequest,
+    ) -> Result<ModifyWebApplicationTargetResponse, GvmError> {
+        self.0.modify_web_application_target(request).await
     }
 
     async fn delete_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        ultimate: bool,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .delete_web_application_target(web_application_target_id, ultimate)
-            .await
+        request: DeleteWebApplicationTargetRequest,
+    ) -> Result<DeleteWebApplicationTargetResponse, GvmError> {
+        self.0.delete_web_application_target(request).await
     }
 
     async fn create_web_application_task(

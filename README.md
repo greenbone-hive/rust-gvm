@@ -235,9 +235,21 @@ let targets = client
 
 The standard target family is the canonical reference slice: its requests own
 their complete input and encoding, and its redundant options types and free
-builders are removed. Other families continue through the bounded migration.
-Raw `send` and `call` remain the
-supported low-level escape hatch. See the downstream
+builders are removed. OCI-image and web-application targets follow the same
+contract on GMP 22.8:
+
+```rust
+use gvm_gmp::commands::oci_image_targets::CreateOciImageTargetRequest;
+
+let request = CreateOciImageTargetRequest::new(
+    "production image",
+    vec!["registry.example/app:stable".into()],
+);
+let target = client.create_oci_image_target(request).await?;
+```
+
+Other families continue through the bounded migration. Raw `send` and `call`
+remain the supported low-level escape hatch. See the downstream
 [migration notes](docs/typed-execution-migration.md) for API selection,
 compatibility, and release adoption, and the contributor-oriented
 [typed request/response execution guide](docs/typed-execution.md) for the raw
