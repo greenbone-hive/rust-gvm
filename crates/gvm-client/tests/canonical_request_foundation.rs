@@ -9,7 +9,16 @@ use std::sync::Arc;
 
 use gvm_client::{CommandSupport, GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
+use gvm_gmp::commands::oci_image_targets::{
+    CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
+    GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
+};
 use gvm_gmp::commands::targets::CreateTargetRequest;
+use gvm_gmp::commands::web_application_targets::{
+    CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
+    DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
+    GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
+};
 use gvm_gmp::responses::ActionResponse;
 use gvm_gmp::{
     GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, ServicePort, TargetHost,
@@ -78,6 +87,113 @@ async fn client(server: &MockGmpServer) -> GmpClient<UnixSocketConnection> {
     ))
     .await
     .expect("client should connect")
+}
+
+async fn assert_unsupported_22_8_request<R: GmpRequest>(
+    client: &mut GmpClient<UnixSocketConnection>,
+    request: R,
+    expected_command: &str,
+) {
+    let error = match client.execute(request).await {
+        Ok(_) => panic!("{expected_command} should be rejected on GMP 22.7"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == expected_command
+    ));
+}
+
+#[tokio::test]
+async fn every_alternate_target_request_is_version_gated_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let oci_id = gvm_gmp::EntityId::new("oci-1").expect("valid id");
+    let web_id = gvm_gmp::EntityId::new("web-1").expect("valid id");
+
+    assert_unsupported_22_8_request(
+        &mut client,
+        CreateOciImageTargetRequest::new("oci", vec!["registry.example/image:1".into()]),
+        "create_oci_image_target",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        CloneOciImageTargetRequest::new(oci_id.clone()),
+        "create_oci_image_target",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetOciImageTargetRequest::new(oci_id.clone()),
+        "get_oci_image_targets",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetOciImageTargetsRequest::default(),
+        "get_oci_image_targets",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        ModifyOciImageTargetRequest::new(oci_id.clone()),
+        "modify_oci_image_target",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        DeleteOciImageTargetRequest::new(oci_id, false),
+        "delete_oci_image_target",
+    )
+    .await;
+
+    assert_unsupported_22_8_request(
+        &mut client,
+        CreateWebApplicationTargetRequest::new("web", vec!["https://example.com".into()]),
+        "create_web_application_target",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        CloneWebApplicationTargetRequest::new(web_id.clone()),
+        "create_web_application_target",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetWebApplicationTargetRequest::new(web_id.clone()),
+        "get_web_application_targets",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetWebApplicationTargetsRequest::default(),
+        "get_web_application_targets",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        ModifyWebApplicationTargetRequest::new(web_id.clone()),
+        "modify_web_application_target",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        DeleteWebApplicationTargetRequest::new(web_id, false),
+        "delete_web_application_target",
+    )
+    .await;
+
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
 }
 
 #[tokio::test]

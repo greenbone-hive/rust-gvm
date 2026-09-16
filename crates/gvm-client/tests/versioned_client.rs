@@ -6,20 +6,26 @@
 
 use gvm_client::{
     AgentInstallerLanguage, CommandSupport, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
-    CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
-    CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
-    ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands,
-    GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts,
-    ModifyAgentOpts, ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts,
-    ModifyWebApplicationTargetOpts,
+    CreateOciImageTargetTaskOpts, CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts,
+    CredentialStoreCredentialType, ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts,
+    Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts,
+    ModifyAgentGroupOpts, ModifyAgentOpts, ModifyCredentialStoreCredentialOpts,
 };
 use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
-use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
+use gvm_gmp::commands::oci_image_targets::{
+    CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
+    GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
+};
 use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
 use gvm_gmp::commands::targets::GetTargetsRequest;
+use gvm_gmp::commands::web_application_targets::{
+    CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
+    DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
+    GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
+};
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -634,7 +640,7 @@ async fn versioned_client_rejects_oci_image_targets_before_next() {
         .expect("authenticate should succeed");
 
     let error = client
-        .call(get_oci_image_targets(Default::default()))
+        .execute(GetOciImageTargetsRequest::default())
         .await
         .expect_err("22.7 should reject next-only OCI image target command");
 
@@ -927,86 +933,86 @@ async fn next_client_oci_image_targets_round_trip() {
         other => panic!("expected Next client, got {other:?}"),
     };
 
-    let image_references = vec![
-        "registry.example/app:1".to_string(),
-        "registry.example/app:2".to_string(),
-    ];
     let create_response = client
-        .create_oci_image_target(
-            "Client OCI Target",
-            &image_references,
-            CreateOciImageTargetOpts {
-                comment: Some("created from versioned client".into()),
-                credential_id: Some(id("credential-oci-1")),
-            },
-        )
+        .create_oci_image_target(CreateOciImageTargetRequest {
+            name: "Client OCI Target".into(),
+            image_references: vec![
+                "registry.example/app:1".into(),
+                "registry.example/app:2".into(),
+            ],
+            comment: Some("created from versioned client".into()),
+            credential_id: Some(id("credential-oci-1")),
+        })
         .await
         .expect("create_oci_image_target should succeed");
-    assert_eq!(create_response.status_code(), Some(201));
-    let target_id = EntityId::new(create_response.id().expect("created id")).expect("valid id");
+    assert_eq!(create_response.status, 201);
+    let target_id = create_response.id;
 
     let task_id =
         assert_create_oci_image_target_task_round_trip(&mut client, &server, &target_id).await;
 
+    let mut get_request = GetOciImageTargetRequest::new(target_id.clone());
+    get_request.tasks = Some(true);
     let get_response = client
-        .get_oci_image_target(&target_id, Some(true))
+        .get_oci_image_target(get_request)
         .await
         .expect("get_oci_image_target should succeed");
-    let get_xml = get_response.as_str().expect("valid utf8");
-    assert!(get_xml.contains("<name>Client OCI Target</name>"));
-    assert!(get_xml.contains(
-        "<image_references>registry.example/app:1,registry.example/app:2</image_references>"
-    ));
-    assert!(get_xml.contains("<credential_id>credential-oci-1</credential_id>"));
+    assert_eq!(get_response.items.len(), 1);
+    assert_eq!(get_response.items[0].meta.name, "Client OCI Target");
+    assert_eq!(
+        get_response.items[0].image_references,
+        ["registry.example/app:1", "registry.example/app:2"]
+    );
 
     let clone_response = client
-        .clone_oci_image_target(&target_id)
+        .clone_oci_image_target(CloneOciImageTargetRequest::new(target_id.clone()))
         .await
         .expect("clone_oci_image_target should succeed");
-    assert_eq!(clone_response.status_code(), Some(201));
+    assert_eq!(clone_response.status, 201);
 
     let list_response = client
-        .get_oci_image_targets(Default::default())
+        .get_oci_image_targets(GetOciImageTargetsRequest::default())
         .await
         .expect("get_oci_image_targets should succeed");
-    let list_xml = list_response.as_str().expect("valid utf8");
-    assert!(list_xml.contains("<oci_image_target_count>2<filtered>2</filtered>"));
+    assert_eq!(list_response.items.len(), 2);
+    assert_eq!(list_response.counts.total, Some(2));
+    assert_eq!(list_response.counts.filtered, Some(2));
 
     let modify_response = client
-        .modify_oci_image_target(
-            &target_id,
-            ModifyOciImageTargetOpts {
-                name: Some("Updated OCI Target".into()),
-                comment: Some("updated from versioned client".into()),
-                image_references: vec!["registry.example/app:latest".into()],
-                credential_id: Some(id("credential-oci-2")),
-            },
-        )
+        .modify_oci_image_target(ModifyOciImageTargetRequest {
+            oci_image_target_id: target_id.clone(),
+            name: Some("Updated OCI Target".into()),
+            comment: Some("updated from versioned client".into()),
+            image_references: vec!["registry.example/app:latest".into()],
+            credential_id: Some(id("credential-oci-2")),
+        })
         .await
         .expect("modify_oci_image_target should succeed");
-    assert_eq!(modify_response.status_code(), Some(200));
+    assert_eq!(modify_response.status, 200);
 
     let modified_response = client
-        .get_oci_image_target(&target_id, None)
+        .get_oci_image_target(GetOciImageTargetRequest::new(target_id.clone()))
         .await
         .expect("modified OCI image target should be readable");
-    let modified_xml = modified_response.as_str().expect("valid utf8");
-    assert!(modified_xml.contains("<name>Updated OCI Target</name>"));
-    assert!(modified_xml.contains("<comment>updated from versioned client</comment>"));
-    assert!(
-        modified_xml.contains("<image_references>registry.example/app:latest</image_references>")
+    assert_eq!(modified_response.items[0].meta.name, "Updated OCI Target");
+    assert_eq!(
+        modified_response.items[0].meta.comment,
+        Some("updated from versioned client".into())
     );
-    assert!(modified_xml.contains("<credential_id>credential-oci-2</credential_id>"));
+    assert_eq!(
+        modified_response.items[0].image_references,
+        ["registry.example/app:latest"]
+    );
 
     delete_task(&server, &task_id).await;
     let delete_response = client
-        .delete_oci_image_target(&target_id, true)
+        .delete_oci_image_target(DeleteOciImageTargetRequest::new(target_id.clone(), true))
         .await
         .expect("delete_oci_image_target should succeed");
-    assert_eq!(delete_response.status_code(), Some(200));
+    assert_eq!(delete_response.status, 200);
 
     let deleted_error = client
-        .get_oci_image_target(&target_id, None)
+        .get_oci_image_target(GetOciImageTargetRequest::new(target_id))
         .await
         .expect_err("deleted OCI image target should be gone");
     assert!(matches!(
@@ -1039,86 +1045,96 @@ async fn next_client_web_application_targets_round_trip() {
         other => panic!("expected Next client, got {other:?}"),
     };
 
-    let urls = vec![
-        "https://example.com".to_string(),
-        "https://example.com/app".to_string(),
-    ];
     let create_response = client
-        .create_web_application_target(
-            "Client Web Target",
-            &urls,
-            CreateWebApplicationTargetOpts {
-                comment: Some("created from versioned client".into()),
-                exclude_urls: vec!["https://example.com/logout".into()],
-                credential_id: Some(id("credential-web-1")),
-            },
-        )
+        .create_web_application_target(CreateWebApplicationTargetRequest {
+            name: "Client Web Target".into(),
+            urls: vec![
+                "https://example.com".into(),
+                "https://example.com/app".into(),
+            ],
+            comment: Some("created from versioned client".into()),
+            exclude_urls: vec!["https://example.com/logout".into()],
+            credential_id: Some(id("credential-web-1")),
+        })
         .await
         .expect("create_web_application_target should succeed");
-    assert_eq!(create_response.status_code(), Some(201));
-    let target_id = EntityId::new(create_response.id().expect("created id")).expect("valid id");
+    assert_eq!(create_response.status, 201);
+    let target_id = create_response.id;
 
+    let mut get_request = GetWebApplicationTargetRequest::new(target_id.clone());
+    get_request.tasks = Some(true);
     let get_response = client
-        .get_web_application_target(&target_id, Some(true))
+        .get_web_application_target(get_request)
         .await
         .expect("get_web_application_target should succeed");
-    let get_xml = get_response.as_str().expect("valid utf8");
-    assert!(get_xml.contains("<name>Client Web Target</name>"));
-    assert!(get_xml.contains("<urls>https://example.com,https://example.com/app</urls>"));
-    assert!(get_xml.contains("<exclude_urls>https://example.com/logout</exclude_urls>"));
-    assert!(get_xml.contains("<credential_id>credential-web-1</credential_id>"));
+    assert_eq!(get_response.items.len(), 1);
+    assert_eq!(get_response.items[0].meta.name, "Client Web Target");
+    assert_eq!(
+        get_response.items[0].urls,
+        ["https://example.com", "https://example.com/app"]
+    );
+    assert_eq!(
+        get_response.items[0].exclude_urls,
+        ["https://example.com/logout"]
+    );
 
     let task_id =
         assert_create_web_application_task_round_trip(&mut client, &server, &target_id).await;
 
     let clone_response = client
-        .clone_web_application_target(&target_id)
+        .clone_web_application_target(CloneWebApplicationTargetRequest::new(target_id.clone()))
         .await
         .expect("clone_web_application_target should succeed");
-    assert_eq!(clone_response.status_code(), Some(201));
+    assert_eq!(clone_response.status, 201);
 
     let list_response = client
-        .get_web_application_targets(Default::default())
+        .get_web_application_targets(GetWebApplicationTargetsRequest::default())
         .await
         .expect("get_web_application_targets should succeed");
-    let list_xml = list_response.as_str().expect("valid utf8");
-    assert!(list_xml.contains("<web_application_target_count>2<filtered>2</filtered>"));
+    assert_eq!(list_response.items.len(), 2);
+    assert_eq!(list_response.counts.total, Some(2));
+    assert_eq!(list_response.counts.filtered, Some(2));
 
     let modify_response = client
-        .modify_web_application_target(
-            &target_id,
-            ModifyWebApplicationTargetOpts {
-                name: Some("Updated Web Target".into()),
-                comment: Some("updated from versioned client".into()),
-                urls: vec!["https://updated.example".into()],
-                exclude_urls: vec!["https://updated.example/logout".into()],
-                credential_id: Some(id("credential-web-2")),
-            },
-        )
+        .modify_web_application_target(ModifyWebApplicationTargetRequest {
+            web_application_target_id: target_id.clone(),
+            name: Some("Updated Web Target".into()),
+            comment: Some("updated from versioned client".into()),
+            urls: vec!["https://updated.example".into()],
+            exclude_urls: vec!["https://updated.example/logout".into()],
+            credential_id: Some(id("credential-web-2")),
+        })
         .await
         .expect("modify_web_application_target should succeed");
-    assert_eq!(modify_response.status_code(), Some(200));
+    assert_eq!(modify_response.status, 200);
 
     let modified_response = client
-        .get_web_application_target(&target_id, None)
+        .get_web_application_target(GetWebApplicationTargetRequest::new(target_id.clone()))
         .await
         .expect("modified web application target should be readable");
-    let modified_xml = modified_response.as_str().expect("valid utf8");
-    assert!(modified_xml.contains("<name>Updated Web Target</name>"));
-    assert!(modified_xml.contains("<comment>updated from versioned client</comment>"));
-    assert!(modified_xml.contains("<urls>https://updated.example</urls>"));
-    assert!(modified_xml.contains("<exclude_urls>https://updated.example/logout</exclude_urls>"));
-    assert!(modified_xml.contains("<credential_id>credential-web-2</credential_id>"));
+    assert_eq!(modified_response.items[0].meta.name, "Updated Web Target");
+    assert_eq!(
+        modified_response.items[0].meta.comment,
+        Some("updated from versioned client".into())
+    );
+    assert_eq!(modified_response.items[0].urls, ["https://updated.example"]);
+    assert_eq!(
+        modified_response.items[0].exclude_urls,
+        ["https://updated.example/logout"]
+    );
 
     delete_task(&server, &task_id).await;
     let delete_response = client
-        .delete_web_application_target(&target_id, true)
+        .delete_web_application_target(DeleteWebApplicationTargetRequest::new(
+            target_id.clone(),
+            true,
+        ))
         .await
         .expect("delete_web_application_target should succeed");
-    assert_eq!(delete_response.status_code(), Some(200));
+    assert_eq!(delete_response.status, 200);
 
     let deleted_error = client
-        .get_web_application_target(&target_id, None)
+        .get_web_application_target(GetWebApplicationTargetRequest::new(target_id))
         .await
         .expect_err("deleted web application target should be gone");
     assert!(matches!(

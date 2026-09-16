@@ -352,16 +352,18 @@ all four families.
 The target command boundary includes a semantic `CloneTargetRequest` for the
 standard target clone operation and complete list, detail, create,
 clone, modify, and delete request types for both OCI-image and web-application
-targets. Each request delegates to its existing builder, so filters, saved
-filter identifiers, trash and task flags, image/URL collections, credential
-relationships, ultimate deletion, and exact XML bytes remain unchanged.
+targets. The alternate-target requests directly own filters, saved-filter
+identifiers, trash and task flags, image/URL collections, credential
+relationships, ultimate deletion, and exact XML encoding.
 
 Standard target cloning retains the baseline `create_target` capability. The
 OCI-image and web-application request types keep their separate semantic intent
 and their existing GMP 22.8 command gates, including clone requests encoded by
-the respective creation command. All existing `_parsed` convenience methods
-for the two alternate-target families are thin `execute` wrappers. Raw builders
-and `send`/`call` remain available without introducing a second encoding path.
+the respective creation command. Their named convenience methods accept the
+same canonical request values and are thin `execute` wrappers. The redundant
+options types, free builders, raw duplicate client signatures, and `_parsed`
+aliases are removed. Raw `send`/`call` with literal XML remain the low-level
+escape hatch without introducing a second typed encoding path.
 
 ## Generic configurations and port lists
 

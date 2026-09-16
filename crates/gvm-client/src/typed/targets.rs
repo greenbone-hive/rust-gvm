@@ -4,19 +4,17 @@
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::oci_image_targets::{
-    CloneOciImageTargetRequest, CreateOciImageTargetOpts, CreateOciImageTargetRequest,
-    DeleteOciImageTargetRequest, GetOciImageTargetRequest, GetOciImageTargetsOpts,
-    GetOciImageTargetsRequest, ModifyOciImageTargetOpts, ModifyOciImageTargetRequest,
+    CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
+    GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::targets::{
     CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
     ModifyTargetRequest,
 };
 use gvm_gmp::commands::web_application_targets::{
-    CloneWebApplicationTargetRequest, CreateWebApplicationTargetOpts,
-    CreateWebApplicationTargetRequest, DeleteWebApplicationTargetRequest,
-    GetWebApplicationTargetRequest, GetWebApplicationTargetsOpts, GetWebApplicationTargetsRequest,
-    ModifyWebApplicationTargetOpts, ModifyWebApplicationTargetRequest,
+    CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
+    DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
+    GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
 use gvm_gmp::responses::{
     CreateOciImageTargetResponse, CreateTargetResponse, CreateWebApplicationTargetResponse,
@@ -24,7 +22,6 @@ use gvm_gmp::responses::{
     GetOciImageTargetsResponse, GetTargetsResponse, GetWebApplicationTargetsResponse,
     ModifyOciImageTargetResponse, ModifyTargetResponse, ModifyWebApplicationTargetResponse,
 };
-use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Targets ───────────────────────────────────────────────────────────────
@@ -90,18 +87,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn create_oci_image_target_parsed(
+    pub async fn create_oci_image_target(
         &mut self,
-        name: &str,
-        image_references: &[String],
-        opts: CreateOciImageTargetOpts,
+        request: CreateOciImageTargetRequest,
     ) -> Result<CreateOciImageTargetResponse, GvmError> {
-        self.execute(CreateOciImageTargetRequest::new(
-            name,
-            image_references.to_vec(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `clone_oci_image_target` request and return a typed
@@ -109,12 +99,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn clone_oci_image_target_parsed(
+    pub async fn clone_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
+        request: CloneOciImageTargetRequest,
     ) -> Result<CreateOciImageTargetResponse, GvmError> {
-        self.execute(CloneOciImageTargetRequest::new(oci_image_target_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_oci_image_targets` request for one target and return a typed
@@ -122,16 +111,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_oci_image_target_parsed(
+    pub async fn get_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        tasks: Option<bool>,
+        request: GetOciImageTargetRequest,
     ) -> Result<GetOciImageTargetsResponse, GvmError> {
-        self.execute(GetOciImageTargetRequest::new(
-            oci_image_target_id.clone(),
-            tasks,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `get_oci_image_targets` request and return a typed
@@ -139,11 +123,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_oci_image_targets_parsed(
+    pub async fn get_oci_image_targets(
         &mut self,
-        opts: GetOciImageTargetsOpts,
+        request: GetOciImageTargetsRequest,
     ) -> Result<GetOciImageTargetsResponse, GvmError> {
-        self.execute(GetOciImageTargetsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `modify_oci_image_target` request and return a typed
@@ -151,16 +135,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn modify_oci_image_target_parsed(
+    pub async fn modify_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        opts: ModifyOciImageTargetOpts,
+        request: ModifyOciImageTargetRequest,
     ) -> Result<ModifyOciImageTargetResponse, GvmError> {
-        self.execute(ModifyOciImageTargetRequest::new(
-            oci_image_target_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `delete_oci_image_target` request and return a typed
@@ -168,16 +147,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn delete_oci_image_target_parsed(
+    pub async fn delete_oci_image_target(
         &mut self,
-        oci_image_target_id: &EntityId,
-        ultimate: bool,
+        request: DeleteOciImageTargetRequest,
     ) -> Result<DeleteOciImageTargetResponse, GvmError> {
-        self.execute(DeleteOciImageTargetRequest::new(
-            oci_image_target_id.clone(),
-            ultimate,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `create_web_application_target` request and return a typed
@@ -185,18 +159,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn create_web_application_target_parsed(
+    pub async fn create_web_application_target(
         &mut self,
-        name: &str,
-        urls: &[String],
-        opts: CreateWebApplicationTargetOpts,
+        request: CreateWebApplicationTargetRequest,
     ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
-        self.execute(CreateWebApplicationTargetRequest::new(
-            name,
-            urls.to_vec(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `clone_web_application_target` request and return a typed
@@ -204,14 +171,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn clone_web_application_target_parsed(
+    pub async fn clone_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
+        request: CloneWebApplicationTargetRequest,
     ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
-        self.execute(CloneWebApplicationTargetRequest::new(
-            web_application_target_id.clone(),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `get_web_application_targets` request for one target and return a
@@ -219,16 +183,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_web_application_target_parsed(
+    pub async fn get_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        tasks: Option<bool>,
+        request: GetWebApplicationTargetRequest,
     ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
-        self.execute(GetWebApplicationTargetRequest::new(
-            web_application_target_id.clone(),
-            tasks,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `get_web_application_targets` request and return a typed
@@ -236,12 +195,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_web_application_targets_parsed(
+    pub async fn get_web_application_targets(
         &mut self,
-        opts: GetWebApplicationTargetsOpts,
+        request: GetWebApplicationTargetsRequest,
     ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
-        self.execute(GetWebApplicationTargetsRequest::new(opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_web_application_target` request and return a typed
@@ -249,16 +207,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn modify_web_application_target_parsed(
+    pub async fn modify_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        opts: ModifyWebApplicationTargetOpts,
+        request: ModifyWebApplicationTargetRequest,
     ) -> Result<ModifyWebApplicationTargetResponse, GvmError> {
-        self.execute(ModifyWebApplicationTargetRequest::new(
-            web_application_target_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `delete_web_application_target` request and return a typed
@@ -266,15 +219,10 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn delete_web_application_target_parsed(
+    pub async fn delete_web_application_target(
         &mut self,
-        web_application_target_id: &EntityId,
-        ultimate: bool,
+        request: DeleteWebApplicationTargetRequest,
     ) -> Result<DeleteWebApplicationTargetResponse, GvmError> {
-        self.execute(DeleteWebApplicationTargetRequest::new(
-            web_application_target_id.clone(),
-            ultimate,
-        ))
-        .await
+        self.execute(request).await
     }
 }

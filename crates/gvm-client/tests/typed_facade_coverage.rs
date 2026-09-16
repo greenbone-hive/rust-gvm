@@ -5,11 +5,7 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{CommandSupport, GmpClient, GvmError};
-use gvm_client::{
-    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, ExportScanReportOpts,
-    GetOciImageTargetsOpts, GetReportExportOpts, GetWebApplicationTargetsOpts,
-    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
-};
+use gvm_client::{ExportScanReportOpts, GetReportExportOpts};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::agent_groups::{
     CloneAgentGroupRequest, CreateAgentGroupOpts, CreateAgentGroupRequest, DeleteAgentGroupRequest,
@@ -45,6 +41,10 @@ use gvm_gmp::commands::integration_configs::{
 };
 use gvm_gmp::commands::notes::{GetNotesOpts, ModifyNoteOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
+use gvm_gmp::commands::oci_image_targets::{
+    CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
+    GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
+};
 use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
 use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
@@ -93,6 +93,11 @@ use gvm_gmp::commands::user_settings::{
     ModifyUserSettingRequest,
 };
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
+use gvm_gmp::commands::web_application_targets::{
+    CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
+    DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
+    GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
+};
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
@@ -958,34 +963,45 @@ async fn alternate_target_requests_execute_through_typed_facade() {
 
     assert_create_success!(client.execute(CloneTargetRequest::new(target_id.clone())));
 
-    assert_create_success!(client.create_oci_image_target_parsed(
-        "oci",
-        &["registry.example/image:latest".into()],
-        CreateOciImageTargetOpts::default()
-    ));
-    assert_create_success!(client.clone_oci_image_target_parsed(&target_id));
-    assert_typed_success!(client.get_oci_image_target_parsed(&target_id, Some(true)));
-    assert_typed_success!(client.get_oci_image_targets_parsed(GetOciImageTargetsOpts::default()));
-    assert_typed_success!(
-        client.modify_oci_image_target_parsed(&target_id, ModifyOciImageTargetOpts::default())
+    assert_create_success!(
+        client.create_oci_image_target(CreateOciImageTargetRequest::new(
+            "oci",
+            vec!["registry.example/image:latest".into()],
+        ))
     );
-    assert_typed_success!(client.delete_oci_image_target_parsed(&target_id, false));
+    assert_create_success!(
+        client.clone_oci_image_target(CloneOciImageTargetRequest::new(target_id.clone()))
+    );
+    assert_typed_success!(client.get_oci_image_target(GetOciImageTargetRequest {
+        oci_image_target_id: target_id.clone(),
+        tasks: Some(true),
+    }));
+    assert_typed_success!(client.get_oci_image_targets(GetOciImageTargetsRequest::default()));
+    assert_typed_success!(
+        client.modify_oci_image_target(ModifyOciImageTargetRequest::new(target_id.clone()))
+    );
+    assert_typed_success!(
+        client.delete_oci_image_target(DeleteOciImageTargetRequest::new(target_id.clone(), false))
+    );
 
-    assert_create_success!(client.create_web_application_target_parsed(
-        "web",
-        &["https://example.com".into()],
-        CreateWebApplicationTargetOpts::default()
+    assert_create_success!(client.create_web_application_target(
+        CreateWebApplicationTargetRequest::new("web", vec!["https://example.com".into()])
     ));
-    assert_create_success!(client.clone_web_application_target_parsed(&target_id));
-    assert_typed_success!(client.get_web_application_target_parsed(&target_id, Some(true)));
+    assert_create_success!(client
+        .clone_web_application_target(CloneWebApplicationTargetRequest::new(target_id.clone())));
     assert_typed_success!(
-        client.get_web_application_targets_parsed(GetWebApplicationTargetsOpts::default())
+        client.get_web_application_target(GetWebApplicationTargetRequest {
+            web_application_target_id: target_id.clone(),
+            tasks: Some(true),
+        })
     );
-    assert_typed_success!(client.modify_web_application_target_parsed(
-        &target_id,
-        ModifyWebApplicationTargetOpts::default()
-    ));
-    assert_typed_success!(client.delete_web_application_target_parsed(&target_id, false));
+    assert_typed_success!(
+        client.get_web_application_targets(GetWebApplicationTargetsRequest::default())
+    );
+    assert_typed_success!(client
+        .modify_web_application_target(ModifyWebApplicationTargetRequest::new(target_id.clone())));
+    assert_typed_success!(client
+        .delete_web_application_target(DeleteWebApplicationTargetRequest::new(target_id, false)));
 
     let history = server.command_history();
     assert_eq!(history.len(), 13);
@@ -1035,12 +1051,12 @@ async fn alternate_target_facades_preserve_status_and_parse_context() {
     let mut client = client(&server).await;
 
     assert_server_error!(
-        client.get_oci_image_target_parsed(&id("oci-1"), None),
+        client.get_oci_image_target(GetOciImageTargetRequest::new(id("oci-1"))),
         503,
         "registry unavailable"
     );
     let parse_error = client
-        .clone_web_application_target_parsed(&id("web-1"))
+        .clone_web_application_target(CloneWebApplicationTargetRequest::new(id("web-1")))
         .await
         .expect_err("missing cloned target id should fail");
     assert!(matches!(
@@ -2709,9 +2725,9 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_target(GetTargetRequest::new(id(
         "11111111-1111-1111-1111-111111111111"
     ))));
-    assert_typed_success!(client.get_oci_image_targets_parsed(GetOciImageTargetsOpts::default()));
+    assert_typed_success!(client.get_oci_image_targets(GetOciImageTargetsRequest::default()));
     assert_typed_success!(
-        client.get_web_application_targets_parsed(GetWebApplicationTargetsOpts::default())
+        client.get_web_application_targets(GetWebApplicationTargetsRequest::default())
     );
     assert_typed_success!(client.get_scan_configs(GetScanConfigsOpts::default()));
     assert_typed_success!(client.get_scanners(GetScannersOpts::default()));
@@ -3702,7 +3718,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         } if command == "get_timezones"
     ));
     let oci_error = v227_client
-        .get_oci_image_targets_parsed(GetOciImageTargetsOpts::default())
+        .get_oci_image_targets(GetOciImageTargetsRequest::default())
         .await
         .expect_err("22.8 registry gate should reject 22.7");
     assert!(matches!(
@@ -3714,7 +3730,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         } if command == "get_oci_image_targets"
     ));
     let oci_clone_error = v227_client
-        .clone_oci_image_target_parsed(&id("oci-1"))
+        .clone_oci_image_target(CloneOciImageTargetRequest::new(id("oci-1")))
         .await
         .expect_err("22.8 OCI-image-target clone gate should reject 22.7");
     assert!(matches!(
@@ -3726,7 +3742,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         } if command == "create_oci_image_target"
     ));
     let web_clone_error = v227_client
-        .clone_web_application_target_parsed(&id("web-1"))
+        .clone_web_application_target(CloneWebApplicationTargetRequest::new(id("web-1")))
         .await
         .expect_err("22.8 web-application-target clone gate should reject 22.7");
     assert!(matches!(
