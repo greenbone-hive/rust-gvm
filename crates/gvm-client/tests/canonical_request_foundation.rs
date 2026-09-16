@@ -9,6 +9,10 @@ use std::sync::Arc;
 
 use gvm_client::{CommandSupport, GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
+use gvm_gmp::commands::agent_groups::{
+    CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
+    GetAgentGroupsRequest, ModifyAgentGroupRequest,
+};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
@@ -189,6 +193,60 @@ async fn every_alternate_target_request_is_version_gated_before_transport() {
         &mut client,
         DeleteWebApplicationTargetRequest::new(web_id, false),
         "delete_web_application_target",
+    )
+    .await;
+
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn every_agent_group_request_is_version_gated_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let group_id = gvm_gmp::EntityId::new("group-1").expect("valid id");
+
+    assert_unsupported_22_8_request(
+        &mut client,
+        CreateAgentGroupRequest::new(
+            "agents",
+            vec![gvm_gmp::EntityId::new("agent-1").expect("valid id")],
+            "0 */5 * * *",
+        ),
+        "create_agent_group",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        CloneAgentGroupRequest::new(group_id.clone()),
+        "create_agent_group",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetAgentGroupRequest::new(group_id.clone()),
+        "get_agent_groups",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetAgentGroupsRequest::default(),
+        "get_agent_groups",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        ModifyAgentGroupRequest::new(group_id.clone(), "0 */5 * * *"),
+        "modify_agent_group",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        DeleteAgentGroupRequest::new(group_id, false),
+        "delete_agent_group",
     )
     .await;
 

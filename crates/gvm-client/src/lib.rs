@@ -79,9 +79,6 @@ use gvm_protocol::{Request, Response};
 use wire_trace::redact_wire_bytes;
 
 pub use error::GvmError;
-pub use gvm_gmp::commands::agent_groups::{
-    CreateAgentGroupOpts, GetAgentGroupsOpts, ModifyAgentGroupOpts,
-};
 pub use gvm_gmp::commands::agents::{
     AgentConfigOpts, AgentControlConfig, AgentHeartbeatConfig, AgentInstallerLanguage,
     AgentRetryConfig, AgentScriptExecutorConfig, GetAgentsOpts, ModifyAgentControlScanConfigOpts,
@@ -671,101 +668,6 @@ impl<C: GvmConnection> GmpClient<C> {
             .await
     }
 
-    /// Create an agent group.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn create_agent_group(
-        &mut self,
-        name: &str,
-        agent_ids: &[EntityId],
-        scheduler_cron_time: &str,
-        opts: CreateAgentGroupOpts,
-    ) -> Result<CreateAgentGroupResponse, GvmError> {
-        self.execute(CreateAgentGroupRequest::new(
-            name,
-            agent_ids.to_vec(),
-            scheduler_cron_time,
-            opts,
-        ))
-        .await
-    }
-
-    /// Clone an agent group.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn clone_agent_group(
-        &mut self,
-        agent_group_id: &EntityId,
-    ) -> Result<CloneAgentGroupResponse, GvmError> {
-        self.execute(CloneAgentGroupRequest::new(agent_group_id.clone()))
-            .await
-    }
-
-    /// Get a single agent group.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_agent_group(
-        &mut self,
-        agent_group_id: &EntityId,
-    ) -> Result<GetAgentGroupsResponse, GvmError> {
-        self.execute(GetAgentGroupRequest::new(agent_group_id.clone()))
-            .await
-    }
-
-    /// List agent groups.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_agent_groups(
-        &mut self,
-        opts: GetAgentGroupsOpts,
-    ) -> Result<GetAgentGroupsResponse, GvmError> {
-        self.execute(GetAgentGroupsRequest::new(opts)).await
-    }
-
-    /// Modify an agent group.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn modify_agent_group(
-        &mut self,
-        agent_group_id: &EntityId,
-        scheduler_cron_time: &str,
-        opts: ModifyAgentGroupOpts,
-    ) -> Result<ModifyAgentGroupResponse, GvmError> {
-        self.execute(ModifyAgentGroupRequest::new(
-            agent_group_id.clone(),
-            scheduler_cron_time,
-            opts,
-        ))
-        .await
-    }
-
-    /// Delete an agent group.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn delete_agent_group(
-        &mut self,
-        agent_group_id: &EntityId,
-        ultimate: bool,
-    ) -> Result<DeleteAgentGroupResponse, GvmError> {
-        self.execute(DeleteAgentGroupRequest::new(
-            agent_group_id.clone(),
-            ultimate,
-        ))
-        .await
-    }
-
     /// Get one structured vulnerability report.
     ///
     /// # Errors
@@ -1022,10 +924,7 @@ pub trait GmpNextCommands {
     /// Create an agent group.
     async fn create_agent_group(
         &mut self,
-        name: &str,
-        agent_ids: &[EntityId],
-        scheduler_cron_time: &str,
-        opts: CreateAgentGroupOpts,
+        request: CreateAgentGroupRequest,
     ) -> Result<CreateAgentGroupResponse, GvmError>;
 
     /// Create a task that scans an agent group.
@@ -1040,34 +939,31 @@ pub trait GmpNextCommands {
     /// Clone an agent group.
     async fn clone_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
+        request: CloneAgentGroupRequest,
     ) -> Result<CloneAgentGroupResponse, GvmError>;
 
     /// Get a single agent group.
     async fn get_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
+        request: GetAgentGroupRequest,
     ) -> Result<GetAgentGroupsResponse, GvmError>;
 
     /// List agent groups.
     async fn get_agent_groups(
         &mut self,
-        opts: GetAgentGroupsOpts,
+        request: GetAgentGroupsRequest,
     ) -> Result<GetAgentGroupsResponse, GvmError>;
 
     /// Modify an agent group.
     async fn modify_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
-        scheduler_cron_time: &str,
-        opts: ModifyAgentGroupOpts,
+        request: ModifyAgentGroupRequest,
     ) -> Result<ModifyAgentGroupResponse, GvmError>;
 
     /// Delete an agent group.
     async fn delete_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
-        ultimate: bool,
+        request: DeleteAgentGroupRequest,
     ) -> Result<DeleteAgentGroupResponse, GvmError>;
 
     /// Create an OCI image target.
@@ -1605,14 +1501,9 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_agent_group(
         &mut self,
-        name: &str,
-        agent_ids: &[EntityId],
-        scheduler_cron_time: &str,
-        opts: CreateAgentGroupOpts,
+        request: CreateAgentGroupRequest,
     ) -> Result<CreateAgentGroupResponse, GvmError> {
-        self.0
-            .create_agent_group(name, agent_ids, scheduler_cron_time, opts)
-            .await
+        self.0.create_agent_group(request).await
     }
 
     async fn create_agent_group_task(
@@ -1634,42 +1525,37 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn clone_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
+        request: CloneAgentGroupRequest,
     ) -> Result<CloneAgentGroupResponse, GvmError> {
-        self.0.clone_agent_group(agent_group_id).await
+        self.0.clone_agent_group(request).await
     }
 
     async fn get_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
+        request: GetAgentGroupRequest,
     ) -> Result<GetAgentGroupsResponse, GvmError> {
-        self.0.get_agent_group(agent_group_id).await
+        self.0.get_agent_group(request).await
     }
 
     async fn get_agent_groups(
         &mut self,
-        opts: GetAgentGroupsOpts,
+        request: GetAgentGroupsRequest,
     ) -> Result<GetAgentGroupsResponse, GvmError> {
-        self.0.get_agent_groups(opts).await
+        self.0.get_agent_groups(request).await
     }
 
     async fn modify_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
-        scheduler_cron_time: &str,
-        opts: ModifyAgentGroupOpts,
+        request: ModifyAgentGroupRequest,
     ) -> Result<ModifyAgentGroupResponse, GvmError> {
-        self.0
-            .modify_agent_group(agent_group_id, scheduler_cron_time, opts)
-            .await
+        self.0.modify_agent_group(request).await
     }
 
     async fn delete_agent_group(
         &mut self,
-        agent_group_id: &EntityId,
-        ultimate: bool,
+        request: DeleteAgentGroupRequest,
     ) -> Result<DeleteAgentGroupResponse, GvmError> {
-        self.0.delete_agent_group(agent_group_id, ultimate).await
+        self.0.delete_agent_group(request).await
     }
 
     async fn create_oci_image_target(

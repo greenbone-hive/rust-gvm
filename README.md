@@ -248,6 +248,11 @@ let request = CreateOciImageTargetRequest::new(
 let target = client.create_oci_image_target(request).await?;
 ```
 
+Agent groups also use complete canonical requests on GMP 22.8. Their six
+list/detail/create/clone/modify/delete helpers accept the same request values
+as `execute`; filters, scheduler data, repeated agent IDs, and mutation fields
+no longer require separate options values or free builders.
+
 Other families continue through the bounded migration. Raw `send` and `call`
 remain the supported low-level escape hatch. See the downstream
 [migration notes](docs/typed-execution-migration.md) for API selection,

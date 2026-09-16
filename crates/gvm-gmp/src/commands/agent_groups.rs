@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Agent group command builders.
+//! Canonical requests for agent-group operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::responses::{
@@ -11,52 +11,33 @@ use crate::responses::{
     GetAgentGroupsResponse, ModifyAgentGroupResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
-
-/// Optional fields for `create_agent_group` requests.
-#[derive(Debug, Clone, Default)]
-pub struct CreateAgentGroupOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-}
-
-/// Options for `get_agent_groups` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetAgentGroupsOpts {
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-    /// Whether to query trashcan resources.
-    pub trash: Option<bool>,
-}
-
-/// Optional fields for `modify_agent_group` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyAgentGroupOpts {
-    /// Optional resource name.
-    pub name: Option<String>,
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional agent ids to set for the group.
-    pub agent_ids: Vec<EntityId>,
-}
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
 /// Semantic request for cloning an agent group.
 #[derive(Debug, Clone)]
-pub struct CloneAgentGroupRequest(EntityId);
+pub struct CloneAgentGroupRequest {
+    /// Existing agent-group identifier to copy.
+    pub agent_group_id: EntityId,
+}
 
 impl CloneAgentGroupRequest {
     /// Create an agent-group clone request.
     #[must_use]
     pub fn new(agent_group_id: EntityId) -> Self {
-        Self(agent_group_id)
+        Self { agent_group_id }
     }
 }
 
-impl Request for CloneAgentGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        clone_agent_group(&self.0).to_bytes()
+impl GmpRequestCodec for CloneAgentGroupRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_agent_group",
+            "clone_agent_group",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(clone_agent_group_command(&self.agent_group_id).to_bytes())
     }
 }
 
@@ -67,39 +48,40 @@ impl GmpRequest for CloneAgentGroupRequest {
 /// Semantic request for creating an agent group.
 #[derive(Debug, Clone)]
 pub struct CreateAgentGroupRequest {
-    name: String,
-    agent_ids: Vec<EntityId>,
-    scheduler_cron_time: String,
-    opts: CreateAgentGroupOpts,
+    /// Resource name.
+    pub name: String,
+    /// Agents assigned to the group.
+    pub agent_ids: Vec<EntityId>,
+    /// Scheduler cron expression used to synchronize the group.
+    pub scheduler_cron_time: String,
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
 }
 
 impl CreateAgentGroupRequest {
-    /// Create an agent-group creation request.
+    /// Create an agent-group creation request with its required fields.
     #[must_use]
     pub fn new(
         name: impl Into<String>,
         agent_ids: Vec<EntityId>,
         scheduler_cron_time: impl Into<String>,
-        opts: CreateAgentGroupOpts,
     ) -> Self {
         Self {
             name: name.into(),
             agent_ids,
             scheduler_cron_time: scheduler_cron_time.into(),
-            opts,
+            comment: None,
         }
     }
 }
 
-impl Request for CreateAgentGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_agent_group(
-            &self.name,
-            &self.agent_ids,
-            &self.scheduler_cron_time,
-            self.opts.clone(),
-        )
-        .to_bytes()
+impl GmpRequestCodec for CreateAgentGroupRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_agent_group"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(create_agent_group_command(self).to_bytes())
     }
 }
 
@@ -109,19 +91,22 @@ impl GmpRequest for CreateAgentGroupRequest {
 
 /// Semantic request for listing agent groups.
 #[derive(Debug, Clone, Default)]
-pub struct GetAgentGroupsRequest(GetAgentGroupsOpts);
-
-impl GetAgentGroupsRequest {
-    /// Create an agent-group list request.
-    #[must_use]
-    pub fn new(opts: GetAgentGroupsOpts) -> Self {
-        Self(opts)
-    }
+pub struct GetAgentGroupsRequest {
+    /// Optional inline filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether to query trashcan resources.
+    pub trash: Option<bool>,
 }
 
-impl Request for GetAgentGroupsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_agent_groups(self.0.clone()).to_bytes()
+impl GmpRequestCodec for GetAgentGroupsRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_agent_groups"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_agent_groups_command(self).to_bytes())
     }
 }
 
@@ -131,19 +116,29 @@ impl GmpRequest for GetAgentGroupsRequest {
 
 /// Semantic request for one agent group.
 #[derive(Debug, Clone)]
-pub struct GetAgentGroupRequest(EntityId);
+pub struct GetAgentGroupRequest {
+    /// Agent-group identifier to retrieve.
+    pub agent_group_id: EntityId,
+}
 
 impl GetAgentGroupRequest {
     /// Create a single agent-group request.
     #[must_use]
     pub fn new(agent_group_id: EntityId) -> Self {
-        Self(agent_group_id)
+        Self { agent_group_id }
     }
 }
 
-impl Request for GetAgentGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_agent_group(&self.0).to_bytes()
+impl GmpRequestCodec for GetAgentGroupRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_agent_groups",
+            "get_agent_group",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_agent_group_command(&self.agent_group_id).to_bytes())
     }
 }
 
@@ -154,35 +149,39 @@ impl GmpRequest for GetAgentGroupRequest {
 /// Semantic request for modifying an agent group.
 #[derive(Debug, Clone)]
 pub struct ModifyAgentGroupRequest {
-    agent_group_id: EntityId,
-    scheduler_cron_time: String,
-    opts: ModifyAgentGroupOpts,
+    /// Agent-group identifier to modify.
+    pub agent_group_id: EntityId,
+    /// Scheduler cron expression used to synchronize the group.
+    pub scheduler_cron_time: String,
+    /// Optional resource name.
+    pub name: Option<String>,
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
+    /// Agents assigned to the group. An empty list omits the element.
+    pub agent_ids: Vec<EntityId>,
 }
 
 impl ModifyAgentGroupRequest {
-    /// Create an agent-group modification request.
+    /// Create an agent-group modification request with its required fields.
     #[must_use]
-    pub fn new(
-        agent_group_id: EntityId,
-        scheduler_cron_time: impl Into<String>,
-        opts: ModifyAgentGroupOpts,
-    ) -> Self {
+    pub fn new(agent_group_id: EntityId, scheduler_cron_time: impl Into<String>) -> Self {
         Self {
             agent_group_id,
             scheduler_cron_time: scheduler_cron_time.into(),
-            opts,
+            name: None,
+            comment: None,
+            agent_ids: Vec::new(),
         }
     }
 }
 
-impl Request for ModifyAgentGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_agent_group(
-            &self.agent_group_id,
-            &self.scheduler_cron_time,
-            self.opts.clone(),
-        )
-        .to_bytes()
+impl GmpRequestCodec for ModifyAgentGroupRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_agent_group"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(modify_agent_group_command(self).to_bytes())
     }
 }
 
@@ -193,8 +192,10 @@ impl GmpRequest for ModifyAgentGroupRequest {
 /// Semantic request for deleting an agent group.
 #[derive(Debug, Clone)]
 pub struct DeleteAgentGroupRequest {
-    agent_group_id: EntityId,
-    ultimate: bool,
+    /// Agent-group identifier to delete.
+    pub agent_group_id: EntityId,
+    /// Whether to delete permanently instead of moving the group to trash.
+    pub ultimate: bool,
 }
 
 impl DeleteAgentGroupRequest {
@@ -208,9 +209,13 @@ impl DeleteAgentGroupRequest {
     }
 }
 
-impl Request for DeleteAgentGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_agent_group(&self.agent_group_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteAgentGroupRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_agent_group"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_agent_group_command(self).to_bytes())
     }
 }
 
@@ -218,69 +223,48 @@ impl GmpRequest for DeleteAgentGroupRequest {
     type Response = DeleteAgentGroupResponse;
 }
 
-/// Build a clone request for an existing agent group.
-#[must_use]
-pub fn clone_agent_group(agent_group_id: &EntityId) -> impl Request {
+fn clone_agent_group_command(agent_group_id: &EntityId) -> XmlCommand {
     XmlCommand::new("create_agent_group").child_with_text("copy", agent_group_id.as_str())
 }
 
-/// Build a `create_agent_group` request.
-#[must_use]
-pub fn create_agent_group(
-    name: &str,
-    agent_ids: &[EntityId],
-    scheduler_cron_time: &str,
-    opts: CreateAgentGroupOpts,
-) -> impl Request {
+fn create_agent_group_command(request: &CreateAgentGroupRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("create_agent_group");
-    cmd.add_element_with_text("name", name);
-    cmd.add_element_with_text("scheduler_cron_time", scheduler_cron_time);
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_agent_elements(&mut cmd, agent_ids);
+    cmd.add_element_with_text("name", &request.name);
+    cmd.add_element_with_text("scheduler_cron_time", &request.scheduler_cron_time);
+    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    add_agent_elements(&mut cmd, &request.agent_ids);
     cmd
 }
 
-/// Build a `get_agent_groups` request.
-#[must_use]
-pub fn get_agent_groups(opts: GetAgentGroupsOpts) -> impl Request {
+fn get_agent_groups_command(request: &GetAgentGroupsRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_agent_groups");
     add_filter_attrs(
         &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
+    set_optional_bool_attr(&mut cmd, "trash", request.trash);
     cmd
 }
 
-/// Build a `get_agent_group` request.
-#[must_use]
-pub fn get_agent_group(agent_group_id: &EntityId) -> impl Request {
+fn get_agent_group_command(agent_group_id: &EntityId) -> XmlCommand {
     XmlCommand::new("get_agent_groups").attribute("agent_group_id", agent_group_id.as_str())
 }
 
-/// Build a `modify_agent_group` request.
-#[must_use]
-pub fn modify_agent_group(
-    agent_group_id: &EntityId,
-    scheduler_cron_time: &str,
-    opts: ModifyAgentGroupOpts,
-) -> impl Request {
-    let mut cmd =
-        XmlCommand::new("modify_agent_group").attribute("agent_group_id", agent_group_id.as_str());
-    cmd.add_element_with_text("scheduler_cron_time", scheduler_cron_time);
-    add_text_element(&mut cmd, "name", opts.name.as_deref());
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_agent_elements(&mut cmd, &opts.agent_ids);
+fn modify_agent_group_command(request: &ModifyAgentGroupRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_agent_group")
+        .attribute("agent_group_id", request.agent_group_id.as_str());
+    cmd.add_element_with_text("scheduler_cron_time", &request.scheduler_cron_time);
+    add_text_element(&mut cmd, "name", request.name.as_deref());
+    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    add_agent_elements(&mut cmd, &request.agent_ids);
     cmd
 }
 
-/// Build a `delete_agent_group` request.
-#[must_use]
-pub fn delete_agent_group(agent_group_id: &EntityId, ultimate: bool) -> impl Request {
+fn delete_agent_group_command(request: &DeleteAgentGroupRequest) -> XmlCommand {
     XmlCommand::new("delete_agent_group")
-        .attribute("agent_group_id", agent_group_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+        .attribute("agent_group_id", request.agent_group_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
 fn add_agent_elements(cmd: &mut XmlCommand, agent_ids: &[EntityId]) {
@@ -299,126 +283,116 @@ fn add_agent_elements(cmd: &mut XmlCommand, agent_ids: &[EntityId]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
-    use crate::responses::{
-        CreateAgentGroupResponse, DeleteAgentGroupResponse, GetAgentGroupsResponse,
-        ModifyAgentGroupResponse,
-    };
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
+    fn request_xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(
+            request
+                .encode(GmpVersion(22, 8))
+                .expect("valid agent-group request"),
+        )
+        .expect("valid UTF-8")
+    }
+
     #[test]
-    fn agent_group_create_and_clone_build_xml() {
+    fn requests_have_independent_exact_wire_shapes() {
+        let mut create = CreateAgentGroupRequest::new(
+            "agents",
+            vec![id("agent-1"), id("agent-2")],
+            "0 */5 * * *",
+        );
+        create.comment = Some("scheduled".into());
         assert_eq!(
-            xml(create_agent_group(
-                "agents",
-                &[id("agent-1"), id("agent-2")],
-                "0 */5 * * *",
-                CreateAgentGroupOpts {
-                    comment: Some("scheduled".into()),
-                },
-            )),
+            request_xml(&create),
             "<create_agent_group><name>agents</name><scheduler_cron_time>0 */5 * * *</scheduler_cron_time><comment>scheduled</comment><agents><agent id=\"agent-1\"/><agent id=\"agent-2\"/></agents></create_agent_group>"
         );
         assert_eq!(
-            xml(clone_agent_group(&id("group-1"))),
+            request_xml(&CloneAgentGroupRequest::new(id("group-1"))),
             "<create_agent_group><copy>group-1</copy></create_agent_group>"
         );
-    }
-
-    #[test]
-    fn agent_group_get_builds_xml() {
         assert_eq!(
-            xml(get_agent_groups(GetAgentGroupsOpts {
+            request_xml(&GetAgentGroupsRequest {
                 filter_string: Some("name=agents".into()),
                 filter_id: Some(id("filter-1")),
                 trash: Some(true),
-            })),
+            }),
             "<get_agent_groups filt_id=\"filter-1\" filter=\"name=agents\" trash=\"1\"/>"
         );
         assert_eq!(
-            xml(get_agent_group(&id("group-1"))),
+            request_xml(&GetAgentGroupRequest::new(id("group-1"))),
             "<get_agent_groups agent_group_id=\"group-1\"/>"
         );
-    }
-
-    #[test]
-    fn agent_group_modify_and_delete_build_xml() {
+        let mut modify = ModifyAgentGroupRequest::new(id("group-1"), "0 */10 * * *");
+        modify.name = Some("updated".into());
+        modify.comment = Some("changed".into());
+        modify.agent_ids = vec![id("agent-3")];
         assert_eq!(
-            xml(modify_agent_group(
-                &id("group-1"),
-                "0 */10 * * *",
-                ModifyAgentGroupOpts {
-                    name: Some("updated".into()),
-                    comment: Some("changed".into()),
-                    agent_ids: vec![id("agent-3")],
-                },
-            )),
+            request_xml(&modify),
             "<modify_agent_group agent_group_id=\"group-1\"><scheduler_cron_time>0 */10 * * *</scheduler_cron_time><name>updated</name><comment>changed</comment><agents><agent id=\"agent-3\"/></agents></modify_agent_group>"
         );
         assert_eq!(
-            xml(delete_agent_group(&id("group-1"), false)),
+            request_xml(&DeleteAgentGroupRequest::new(id("group-1"), false)),
             "<delete_agent_group agent_group_id=\"group-1\" ultimate=\"0\"/>"
         );
     }
 
     #[test]
-    fn semantic_requests_preserve_builder_bytes_and_response_associations() {
-        fn groups<R: GmpRequest<Response = GetAgentGroupsResponse>>(_: &R) {}
-        fn create<R: GmpRequest<Response = CreateAgentGroupResponse>>(_: &R) {}
-        fn modify<R: GmpRequest<Response = ModifyAgentGroupResponse>>(_: &R) {}
-        fn delete<R: GmpRequest<Response = DeleteAgentGroupResponse>>(_: &R) {}
+    fn requests_expose_semantic_capability_metadata() {
+        assert_eq!(
+            CloneAgentGroupRequest::new(id("group-1")).command(),
+            Some(GmpCommand::with_semantic_name(
+                "create_agent_group",
+                "clone_agent_group"
+            ))
+        );
+        assert_eq!(
+            CreateAgentGroupRequest::new("agents", vec![], "0 */5 * * *").command(),
+            Some(GmpCommand::new("create_agent_group"))
+        );
+        assert_eq!(
+            GetAgentGroupsRequest::default().command(),
+            Some(GmpCommand::new("get_agent_groups"))
+        );
+        assert_eq!(
+            GetAgentGroupRequest::new(id("group-1")).command(),
+            Some(GmpCommand::with_semantic_name(
+                "get_agent_groups",
+                "get_agent_group"
+            ))
+        );
+        assert_eq!(
+            ModifyAgentGroupRequest::new(id("group-1"), "0 */5 * * *").command(),
+            Some(GmpCommand::new("modify_agent_group"))
+        );
+        assert_eq!(
+            DeleteAgentGroupRequest::new(id("group-1"), false).command(),
+            Some(GmpCommand::new("delete_agent_group"))
+        );
+    }
 
-        let group_id = id("group-1");
-        let agent_ids = vec![id("agent-1"), id("agent-2")];
-        let create_opts = CreateAgentGroupOpts {
-            comment: Some("scheduled".into()),
-        };
-        let list_opts = GetAgentGroupsOpts {
-            filter_string: Some("name=agents".into()),
-            filter_id: Some(id("filter-1")),
-            trash: Some(true),
-        };
-        let modify_opts = ModifyAgentGroupOpts {
-            name: Some("updated".into()),
-            comment: Some("changed".into()),
-            agent_ids: vec![id("agent-3")],
-        };
+    #[test]
+    fn requests_remain_statically_associated_with_responses() {
+        fn assert_response<R: GmpRequest<Response = T>, T: GmpResponse>(_: &R) {}
 
-        let clone = CloneAgentGroupRequest::new(group_id.clone());
-        create(&clone);
-        assert_eq!(clone.to_bytes(), clone_agent_group(&group_id).to_bytes());
-        let create_request = CreateAgentGroupRequest::new(
+        assert_response::<_, CloneAgentGroupResponse>(&CloneAgentGroupRequest::new(id("group-1")));
+        assert_response::<_, CreateAgentGroupResponse>(&CreateAgentGroupRequest::new(
             "agents",
-            agent_ids.clone(),
+            vec![],
             "0 */5 * * *",
-            create_opts.clone(),
-        );
-        create(&create_request);
-        assert_eq!(
-            create_request.to_bytes(),
-            create_agent_group("agents", &agent_ids, "0 */5 * * *", create_opts).to_bytes()
-        );
-        let list = GetAgentGroupsRequest::new(list_opts.clone());
-        groups(&list);
-        assert_eq!(list.to_bytes(), get_agent_groups(list_opts).to_bytes());
-        let get = GetAgentGroupRequest::new(group_id.clone());
-        groups(&get);
-        assert_eq!(get.to_bytes(), get_agent_group(&group_id).to_bytes());
-        let modify_request =
-            ModifyAgentGroupRequest::new(group_id.clone(), "0 */10 * * *", modify_opts.clone());
-        modify(&modify_request);
-        assert_eq!(
-            modify_request.to_bytes(),
-            modify_agent_group(&group_id, "0 */10 * * *", modify_opts).to_bytes()
-        );
-        let delete_request = DeleteAgentGroupRequest::new(group_id.clone(), true);
-        delete(&delete_request);
-        assert_eq!(
-            delete_request.to_bytes(),
-            delete_agent_group(&group_id, true).to_bytes()
-        );
+        ));
+        assert_response::<_, GetAgentGroupsResponse>(&GetAgentGroupsRequest::default());
+        assert_response::<_, GetAgentGroupsResponse>(&GetAgentGroupRequest::new(id("group-1")));
+        assert_response::<_, ModifyAgentGroupResponse>(&ModifyAgentGroupRequest::new(
+            id("group-1"),
+            "0 */5 * * *",
+        ));
+        assert_response::<_, DeleteAgentGroupResponse>(&DeleteAgentGroupRequest::new(
+            id("group-1"),
+            false,
+        ));
     }
 }

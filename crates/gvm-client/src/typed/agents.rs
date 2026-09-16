@@ -3,14 +3,90 @@
 
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
+use gvm_gmp::commands::agent_groups::{
+    CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
+    GetAgentGroupsRequest, ModifyAgentGroupRequest,
+};
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsOpts, GetIntegrationConfigsRequest,
     ModifyIntegrationConfigOpts, ModifyIntegrationConfigRequest,
 };
-use gvm_gmp::responses::{GetIntegrationConfigsResponse, ModifyIntegrationConfigResponse};
+use gvm_gmp::responses::{
+    CloneAgentGroupResponse, CreateAgentGroupResponse, DeleteAgentGroupResponse,
+    GetAgentGroupsResponse, GetIntegrationConfigsResponse, ModifyAgentGroupResponse,
+    ModifyIntegrationConfigResponse,
+};
 use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
+    // ── Agent Groups ─────────────────────────────────────────────────────────
+
+    /// Send a `create_agent_group` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_agent_group(
+        &mut self,
+        request: CreateAgentGroupRequest,
+    ) -> Result<CreateAgentGroupResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Send a `clone_agent_group` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_agent_group(
+        &mut self,
+        request: CloneAgentGroupRequest,
+    ) -> Result<CloneAgentGroupResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Send a detailed `get_agent_groups` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_agent_group(
+        &mut self,
+        request: GetAgentGroupRequest,
+    ) -> Result<GetAgentGroupsResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Send a `get_agent_groups` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_agent_groups(
+        &mut self,
+        request: GetAgentGroupsRequest,
+    ) -> Result<GetAgentGroupsResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Send a `modify_agent_group` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_agent_group(
+        &mut self,
+        request: ModifyAgentGroupRequest,
+    ) -> Result<ModifyAgentGroupResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Send a `delete_agent_group` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_agent_group(
+        &mut self,
+        request: DeleteAgentGroupRequest,
+    ) -> Result<DeleteAgentGroupResponse, GvmError> {
+        self.execute(request).await
+    }
+
     // ── Integration Configurations ────────────────────────────────────────────
 
     /// Send a single `get_integration_config` request and return a typed response.

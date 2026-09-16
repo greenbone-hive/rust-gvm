@@ -10,7 +10,7 @@
 )]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_gmp::commands::agent_groups::{create_agent_group, get_agent_groups, CreateAgentGroupOpts};
+use gvm_gmp::commands::agent_groups::{CreateAgentGroupRequest, GetAgentGroupsRequest};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
     create_credential_store_credential, modify_credential_store_credential,
@@ -221,7 +221,11 @@ async fn version_22_7_rejects_next_commands() {
         .unwrap()
         .contains("get_integration_configs"));
 
-    let response = send_recv(&mut stream, get_agent_groups(Default::default())).await;
+    let response = send_recv(
+        &mut stream,
+        encode(&GetAgentGroupsRequest::default(), GmpVersion::V22_7),
+    )
+    .await;
     assert_eq!(response.status_code(), Some(400));
     assert!(response.status_text().unwrap().contains("get_agent_groups"));
 
@@ -374,17 +378,23 @@ async fn version_22_8_accepts_next_commands() {
 
     let agent_group_response = send_recv(
         &mut stream,
-        create_agent_group(
-            "Version Gated Agent Group",
-            &[id("agent-1")],
-            "0 */5 * * *",
-            CreateAgentGroupOpts::default(),
+        encode(
+            &CreateAgentGroupRequest::new(
+                "Version Gated Agent Group",
+                vec![id("agent-1")],
+                "0 */5 * * *",
+            ),
+            GmpVersion::V22_8,
         ),
     )
     .await;
     assert_eq!(agent_group_response.status_code(), Some(201));
 
-    let agent_groups_response = send_recv(&mut stream, get_agent_groups(Default::default())).await;
+    let agent_groups_response = send_recv(
+        &mut stream,
+        encode(&GetAgentGroupsRequest::default(), GmpVersion::V22_8),
+    )
+    .await;
     assert_eq!(agent_groups_response.status_code(), Some(200));
     assert!(agent_groups_response
         .as_str()
