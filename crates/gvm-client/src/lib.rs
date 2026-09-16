@@ -24,12 +24,13 @@ use std::sync::Arc;
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::agent_groups::{
-    clone_agent_group, create_agent_group, delete_agent_group, get_agent_group, get_agent_groups,
-    modify_agent_group,
+    CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
+    GetAgentGroupsRequest, ModifyAgentGroupRequest,
 };
 use gvm_gmp::commands::agents::{
-    delete_agent, get_agent, get_agent_installer_instruction, get_agent_support_bundle, get_agents,
-    modify_agent, modify_agent_control_scan_config, sync_agents,
+    DeleteAgentRequest, GetAgentInstallerInstructionRequest, GetAgentRequest,
+    GetAgentSupportBundleRequest, GetAgentsRequest, ModifyAgentControlScanConfigRequest,
+    ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::credentials::{
     create_credential_store_credential, get_credential_store, get_credential_stores,
@@ -51,13 +52,13 @@ use gvm_gmp::commands::report_configs::{
 use gvm_gmp::commands::reports::{
     export_scan_report, get_report_applications, get_report_closed_cves, get_report_cves,
     get_report_errors, get_report_hosts, get_report_operating_systems, get_report_ports,
-    get_report_tls_certificates, get_report_vulns, get_scan_report,
+    get_report_tls_certificates, get_report_vulns, get_scan_report, GetScanReportRequest,
 };
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::tasks::create_agent_group_task;
 use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_target_task;
 use gvm_gmp::commands::tasks::create_web_application_task;
-use gvm_gmp::commands::version::get_version;
+use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
     get_web_application_target, get_web_application_targets, modify_web_application_target,
@@ -109,10 +110,51 @@ pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
+pub use gvm_gmp::{GmpRequest, GmpResponse};
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,
 };
+
+/// The client's current knowledge of whether a registered GMP command can be
+/// attempted.
+///
+/// This classification combines the negotiated GMP version, rust-gvm's
+/// command registry, and cached XML-help discovery. [`Self::Supported`] means
+/// that library version policy permits the command and, when required, the
+/// server advertised it. It does not guarantee authorization or successful
+/// execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "command support states require different caller actions"]
+#[non_exhaustive]
+pub enum CommandSupport {
+    /// Library policy permits the command and any required discovery succeeded.
+    Supported,
+    /// The command is version-permitted but requires [`GmpClient::discover_commands`].
+    RequiresDiscovery,
+    /// The negotiated server version is older than the command's minimum.
+    UnsupportedVersion {
+        /// Minimum GMP version required by the command.
+        required: GmpVersion,
+    },
+    /// Discovery completed, but the server did not advertise the command.
+    NotAdvertised,
+    /// The name is absent from rust-gvm's command and semantic-alias registry.
+    ///
+    /// Unknown names remain permitted through raw [`GmpClient::send`] and
+    /// [`GmpClient::call`] for forward-compatible custom commands.
+    UnknownCommand,
+}
+
+impl CommandSupport {
+    const fn legacy_option(self) -> Option<bool> {
+        match self {
+            Self::Supported => Some(true),
+            Self::UnsupportedVersion { .. } | Self::NotAdvertised => Some(false),
+            Self::RequiresDiscovery | Self::UnknownCommand => None,
+        }
+    }
+}
 
 /// High-level async GMP client over an abstract transport.
 pub struct GmpClient<C: GvmConnection> {
@@ -207,7 +249,12 @@ impl<C: GvmConnection> GmpClient<C> {
     ) -> Result<Self, GvmError> {
         connection.connect().await?;
 
-        let response = Self::send_on(&mut connection, get_version(), wire_trace.as_deref()).await?;
+        let response = Self::send_on(
+            &mut connection,
+            GetVersionRequest::new(),
+            wire_trace.as_deref(),
+        )
+        .await?;
         let response = Self::raise_for_status(response)?;
         let version_text = response.child_text("version").ok_or_else(|| {
             GvmError::XmlParse("missing <version> in get_version response".to_string())
@@ -239,7 +286,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// or the server does not return a structured command listing.
     pub async fn discover_commands(&mut self) -> Result<HelpResponse, GvmError> {
         let response = self.call(help_with_mode(HelpMode::BriefXml)).await?;
-        let parsed = HelpResponse::from_response(&response).map_err(GvmError::Parse)?;
+        let parsed = HelpResponse::from_response(&response).map_err(GvmError::from)?;
         let schema = parsed.schema.as_ref().ok_or_else(|| {
             GvmError::XmlParse("help response did not include an XML command listing".to_string())
         })?;
@@ -253,24 +300,50 @@ impl<C: GvmConnection> GmpClient<C> {
         Ok(parsed)
     }
 
-    /// Return the client's current knowledge of a known command's support.
+    /// Classify the client's current knowledge of a command's support.
     ///
-    /// Version-qualified commands return `Some` immediately. Commands marked
-    /// for help discovery return `None` until [`Self::discover_commands`] has
-    /// succeeded.
+    /// This is the same classification used by the execution gate. Discovery
+    /// remains explicit: [`CommandSupport::RequiresDiscovery`] instructs the
+    /// caller to invoke [`Self::discover_commands`] and retry. An
+    /// [`CommandSupport::UnknownCommand`] may still be sent through the raw
+    /// custom-command APIs.
+    pub fn command_support(&self, command_name: &str) -> CommandSupport {
+        if let Some(capability) = gvm_gmp::capabilities::command_capability(command_name) {
+            if let Some(required) = capability.min_version {
+                if self.version < required {
+                    return CommandSupport::UnsupportedVersion { required };
+                }
+            }
+            if capability.requires_help_discovery {
+                return match &self.discovered_commands {
+                    None => CommandSupport::RequiresDiscovery,
+                    Some(commands) if commands.contains(command_name) => CommandSupport::Supported,
+                    Some(_) => CommandSupport::NotAdvertised,
+                };
+            }
+            return CommandSupport::Supported;
+        }
+
+        if let Some(required) = version::minimum_version_for_command(command_name) {
+            return if self.version < required {
+                CommandSupport::UnsupportedVersion { required }
+            } else {
+                CommandSupport::Supported
+            };
+        }
+
+        CommandSupport::UnknownCommand
+    }
+
+    /// Return the legacy tri-state view of a command's support.
+    ///
+    /// This compatibility method maps both pending discovery and unknown names
+    /// to `None`. Use [`Self::command_support`] when those states need different
+    /// caller actions.
+    #[deprecated(since = "0.6.0", note = "use command_support for actionable states")]
     #[must_use]
     pub fn supports_command(&self, command_name: &str) -> Option<bool> {
-        let capability = gvm_gmp::capabilities::command_capability(command_name)?;
-        if capability.requires_help_discovery {
-            if !capability.permitted_in(self.version) {
-                return Some(false);
-            }
-            return self
-                .discovered_commands
-                .as_ref()
-                .map(|commands| commands.contains(command_name));
-        }
-        Some(capability.available_in(self.version))
+        self.command_support(command_name).legacy_option()
     }
 
     /// Enable redacted GMP wire tracing on this client.
@@ -304,6 +377,39 @@ impl<C: GvmConnection> GmpClient<C> {
             self.wire_trace.as_deref(),
         )
         .await
+    }
+
+    /// Execute a semantic request and decode its statically associated response.
+    ///
+    /// This uses [`Self::send`] so command/version/help-discovery checks,
+    /// redacted wire tracing, transport behavior, and typed response errors are
+    /// identical to the compatibility convenience methods. Valid non-success
+    /// GMP responses are normalized to [`GvmError::Server`]; malformed or
+    /// uninterpretable responses remain [`GvmError::Parse`].
+    ///
+    /// The request's associated response type is enforced at compile time:
+    ///
+    /// ```compile_fail
+    /// use gvm_client::{GmpClient, GvmError};
+    /// use gvm_connection::GvmConnection;
+    /// use gvm_gmp::commands::version::GetVersionRequest;
+    /// use gvm_gmp::responses::AuthenticateResponse;
+    ///
+    /// async fn mismatched_response<C: GvmConnection>(
+    ///     client: &mut GmpClient<C>,
+    /// ) -> Result<(), GvmError> {
+    ///     let _: AuthenticateResponse = client.execute(GetVersionRequest::new()).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// Returns an error if request transmission, command support checks, or
+    /// typed response decoding fails.
+    pub async fn execute<R: GmpRequest>(&mut self, request: R) -> Result<R::Response, GvmError> {
+        let version = self.version;
+        let response = self.send(request).await?;
+        R::Response::decode(&response, version).map_err(GvmError::from)
     }
 
     /// Send a request and raise a server error on non-2xx responses.
@@ -374,60 +480,29 @@ impl<C: GvmConnection> GmpClient<C> {
 
         let semantic_command_name = semantic_command_name
             .or_else(|| next_only_semantic_command(command_name, request_bytes));
-        let unsupported_semantic =
-            semantic_command_name.filter(|name| !self.command_supported_with_discovery(name));
-        if unsupported_semantic.is_none() && self.command_supported_with_discovery(command_name) {
-            return Ok(());
+        if let Some(semantic_command_name) = semantic_command_name {
+            self.ensure_named_command_supported(semantic_command_name)?;
         }
 
-        let command = unsupported_semantic.unwrap_or(command_name);
-        let required = self.command_requirement(command);
-
-        Err(GvmError::UnsupportedCommand {
-            command: command.to_string(),
-            version: self.version,
-            required,
-        })
+        self.ensure_named_command_supported(command_name)
     }
 
-    pub(crate) fn ensure_semantic_command_supported(
-        &self,
-        command_name: &str,
-    ) -> Result<(), GvmError> {
-        if self.command_supported_with_discovery(command_name) {
-            return Ok(());
+    fn ensure_named_command_supported(&self, command_name: &str) -> Result<(), GvmError> {
+        match self.command_support(command_name) {
+            CommandSupport::Supported | CommandSupport::UnknownCommand => Ok(()),
+            CommandSupport::RequiresDiscovery => Err(GvmError::CommandDiscoveryRequired {
+                command: command_name.to_string(),
+            }),
+            CommandSupport::UnsupportedVersion { .. } => Err(GvmError::UnsupportedCommand {
+                command: command_name.to_string(),
+                version: self.version,
+                required: version::required_version_label(command_name)
+                    .unwrap_or("a newer GMP version"),
+            }),
+            CommandSupport::NotAdvertised => Err(GvmError::CommandNotAdvertised {
+                command: command_name.to_string(),
+            }),
         }
-
-        Err(GvmError::UnsupportedCommand {
-            command: command_name.to_string(),
-            version: self.version,
-            required: self.command_requirement(command_name),
-        })
-    }
-
-    fn command_supported_with_discovery(&self, command_name: &str) -> bool {
-        let Some(capability) = gvm_gmp::capabilities::command_capability(command_name) else {
-            return version::command_supported(command_name, self.version);
-        };
-        if !capability.permitted_in(self.version) {
-            return false;
-        }
-        if capability.requires_help_discovery {
-            return self
-                .discovered_commands
-                .as_ref()
-                .is_some_and(|commands| commands.contains(command_name));
-        }
-        true
-    }
-
-    fn command_requirement(&self, command_name: &str) -> &'static str {
-        if let Some(capability) = gvm_gmp::capabilities::command_capability(command_name) {
-            if capability.requires_help_discovery && capability.permitted_in(self.version) {
-                return "positive XML help discovery";
-            }
-        }
-        version::required_version_label(command_name).unwrap_or("a newer GMP version")
     }
 
     /// Get a single integration configuration.
@@ -476,8 +551,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the server does not support the command, the transport fails,
     /// parsing fails, or the server returns a non-success status.
     pub async fn get_agents(&mut self, opts: GetAgentsOpts) -> Result<GetAgentsResponse, GvmError> {
-        let response = self.call(get_agents(opts)).await?;
-        GetAgentsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentsRequest::new(opts)).await
     }
 
     /// Get a single agent.
@@ -486,8 +560,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the server does not support the command, the transport fails,
     /// parsing fails, or the server returns a non-success status.
     pub async fn get_agent(&mut self, agent_id: &EntityId) -> Result<GetAgentsResponse, GvmError> {
-        let response = self.call(get_agent(agent_id)).await?;
-        GetAgentsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentRequest::new(agent_id.clone())).await
     }
 
     /// Modify one or more agents.
@@ -500,8 +573,8 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_ids: &[EntityId],
         opts: ModifyAgentOpts,
     ) -> Result<ModifyAgentResponse, GvmError> {
-        let response = self.call(modify_agent(agent_ids, opts)).await?;
-        ModifyAgentResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAgentRequest::new(agent_ids.to_vec(), opts))
+            .await
     }
 
     /// Delete one or more agents.
@@ -513,8 +586,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         agent_ids: &[EntityId],
     ) -> Result<DeleteAgentResponse, GvmError> {
-        let response = self.call(delete_agent(agent_ids)).await?;
-        DeleteAgentResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteAgentRequest::new(agent_ids.to_vec()))
+            .await
     }
 
     /// Synchronize agents.
@@ -523,8 +596,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the server does not support the command, the transport fails,
     /// parsing fails, or the server returns a non-success status.
     pub async fn sync_agents(&mut self) -> Result<SyncAgentsResponse, GvmError> {
-        let response = self.call(sync_agents()).await?;
-        SyncAgentsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(SyncAgentsRequest::new()).await
     }
 
     /// Modify the agent-control scan configuration defaults.
@@ -537,10 +609,11 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_control_id: &EntityId,
         opts: ModifyAgentControlScanConfigOpts,
     ) -> Result<ModifyAgentControlScanConfigResponse, GvmError> {
-        let response = self
-            .call(modify_agent_control_scan_config(agent_control_id, opts))
-            .await?;
-        ModifyAgentControlScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAgentControlScanConfigRequest::new(
+            agent_control_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     /// Get agent installer instructions.
@@ -554,12 +627,12 @@ impl<C: GvmConnection> GmpClient<C> {
         language: AgentInstallerLanguage,
         origin_url: &str,
     ) -> Result<GetAgentInstallerInstructionResponse, GvmError> {
-        let response = self
-            .call(get_agent_installer_instruction(
-                scanner_id, language, origin_url,
-            ))
-            .await?;
-        GetAgentInstallerInstructionResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentInstallerInstructionRequest::new(
+            scanner_id.clone(),
+            language,
+            origin_url,
+        ))
+        .await
     }
 
     /// Get an agent support bundle.
@@ -572,10 +645,8 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_uuid: &EntityId,
         days: Option<u32>,
     ) -> Result<GetAgentSupportBundleResponse, GvmError> {
-        let response = self
-            .call(get_agent_support_bundle(agent_uuid, days))
-            .await?;
-        GetAgentSupportBundleResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentSupportBundleRequest::new(agent_uuid.clone(), days))
+            .await
     }
 
     /// Create an agent group.
@@ -590,15 +661,13 @@ impl<C: GvmConnection> GmpClient<C> {
         scheduler_cron_time: &str,
         opts: CreateAgentGroupOpts,
     ) -> Result<CreateAgentGroupResponse, GvmError> {
-        let response = self
-            .call(create_agent_group(
-                name,
-                agent_ids,
-                scheduler_cron_time,
-                opts,
-            ))
-            .await?;
-        CreateAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateAgentGroupRequest::new(
+            name,
+            agent_ids.to_vec(),
+            scheduler_cron_time,
+            opts,
+        ))
+        .await
     }
 
     /// Clone an agent group.
@@ -610,8 +679,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         agent_group_id: &EntityId,
     ) -> Result<CloneAgentGroupResponse, GvmError> {
-        let response = self.call(clone_agent_group(agent_group_id)).await?;
-        CloneAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CloneAgentGroupRequest::new(agent_group_id.clone()))
+            .await
     }
 
     /// Get a single agent group.
@@ -623,8 +692,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         agent_group_id: &EntityId,
     ) -> Result<GetAgentGroupsResponse, GvmError> {
-        let response = self.call(get_agent_group(agent_group_id)).await?;
-        GetAgentGroupsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentGroupRequest::new(agent_group_id.clone()))
+            .await
     }
 
     /// List agent groups.
@@ -636,8 +705,7 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         opts: GetAgentGroupsOpts,
     ) -> Result<GetAgentGroupsResponse, GvmError> {
-        let response = self.call(get_agent_groups(opts)).await?;
-        GetAgentGroupsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentGroupsRequest::new(opts)).await
     }
 
     /// Modify an agent group.
@@ -651,14 +719,12 @@ impl<C: GvmConnection> GmpClient<C> {
         scheduler_cron_time: &str,
         opts: ModifyAgentGroupOpts,
     ) -> Result<ModifyAgentGroupResponse, GvmError> {
-        let response = self
-            .call(modify_agent_group(
-                agent_group_id,
-                scheduler_cron_time,
-                opts,
-            ))
-            .await?;
-        ModifyAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAgentGroupRequest::new(
+            agent_group_id.clone(),
+            scheduler_cron_time,
+            opts,
+        ))
+        .await
     }
 
     /// Delete an agent group.
@@ -671,10 +737,11 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_group_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteAgentGroupResponse, GvmError> {
-        let response = self
-            .call(delete_agent_group(agent_group_id, ultimate))
-            .await?;
-        DeleteAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteAgentGroupRequest::new(
+            agent_group_id.clone(),
+            ultimate,
+        ))
+        .await
     }
 
     /// Create an OCI image target.
@@ -856,8 +923,8 @@ impl<C: GvmConnection> GmpClient<C> {
         scan_report_id: &EntityId,
         opts: GetScanReportOpts,
     ) -> Result<GetScanReportResponse, GvmError> {
-        let response = self.send(get_scan_report(scan_report_id, opts)).await?;
-        GetScanReportResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScanReportRequest::new(scan_report_id.clone(), opts))
+            .await
     }
 
     /// Get one structured vulnerability report without typed response parsing.
@@ -880,9 +947,9 @@ impl<C: GvmConnection> GmpClient<C> {
     /// not sufficient evidence that the server implements this command.
     ///
     /// # Errors
-    /// Returns an error if positive help discovery is missing, the server does
-    /// not advertise the command, or request transmission or response handling
-    /// fails.
+    /// Returns [`GvmError::CommandDiscoveryRequired`] before discovery,
+    /// [`GvmError::CommandNotAdvertised`] when discovery omits the command, or
+    /// a request/response error after the command is attempted.
     pub async fn export_scan_report_raw(
         &mut self,
         report_id: &EntityId,
@@ -1560,11 +1627,19 @@ impl<C: GvmConnection> GmpVersioned<C> {
         self.inner_mut().discover_commands().await
     }
 
-    /// Return the versioned client's current knowledge of a known command's
-    /// support.
+    /// Classify the versioned client's current knowledge of command support.
+    pub fn command_support(&self, command_name: &str) -> CommandSupport {
+        self.inner().command_support(command_name)
+    }
+
+    /// Return the legacy tri-state view of command support.
+    ///
+    /// Use [`Self::command_support`] to distinguish pending discovery from an
+    /// unknown command name.
+    #[deprecated(since = "0.6.0", note = "use command_support for actionable states")]
     #[must_use]
     pub fn supports_command(&self, command_name: &str) -> Option<bool> {
-        self.inner().supports_command(command_name)
+        self.command_support(command_name).legacy_option()
     }
 
     /// Queue or reuse an asynchronous scan-report export.
@@ -1573,8 +1648,9 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// does not prove that the server implements this command.
     ///
     /// # Errors
-    /// Returns an error if positive help discovery is missing, the command is
-    /// unavailable, or request transmission or response handling fails.
+    /// Returns [`GvmError::CommandDiscoveryRequired`] before discovery,
+    /// [`GvmError::CommandNotAdvertised`] when discovery omits the command, or
+    /// a request/response error after the command is attempted.
     pub async fn export_scan_report(
         &mut self,
         report_id: &EntityId,
@@ -1583,6 +1659,15 @@ impl<C: GvmConnection> GmpVersioned<C> {
         self.inner_mut()
             .export_scan_report_raw(report_id, opts)
             .await
+    }
+
+    /// Execute a semantic request and decode its statically associated response.
+    ///
+    /// # Errors
+    /// Returns an error if request transmission, command support checks, or
+    /// typed response decoding fails.
+    pub async fn execute<R: GmpRequest>(&mut self, request: R) -> Result<R::Response, GvmError> {
+        self.inner_mut().execute(request).await
     }
 
     /// Send a request and return the raw parsed response.
@@ -2082,6 +2167,7 @@ fn request_command_name(request_bytes: &[u8]) -> Option<&str> {
 
 fn next_only_semantic_command(command_name: &str, request_bytes: &[u8]) -> Option<&'static str> {
     match command_name {
+        "create_task" => specialized_task_semantic_command(request_bytes),
         "create_credential" if request_contains_credential_store_type(request_bytes) => {
             Some("create_credential_store_credential")
         }
@@ -2090,6 +2176,17 @@ fn next_only_semantic_command(command_name: &str, request_bytes: &[u8]) -> Optio
         }
         _ => None,
     }
+}
+
+fn specialized_task_semantic_command(request_bytes: &[u8]) -> Option<&'static str> {
+    let request = std::str::from_utf8(request_bytes).ok()?;
+    [
+        ("agent_group", "create_agent_group_task"),
+        ("oci_image_target", "create_oci_image_target_task"),
+        ("web_application_target", "create_web_application_task"),
+    ]
+    .into_iter()
+    .find_map(|(element, command)| request_contains_element(request, element).then_some(command))
 }
 
 fn request_contains_credential_store_type(request_bytes: &[u8]) -> bool {
@@ -2237,8 +2334,109 @@ mod tests {
         String::from_utf8(event.bytes.clone()).expect("trace event is utf-8")
     }
 
+    async fn connected_client_with_response(response: &str) -> GmpClient<ScriptedConnection> {
+        GmpClient::connect(ScriptedConnection::new([
+            version_response("22.8"),
+            response.to_string(),
+        ]))
+        .await
+        .expect("client connects")
+    }
+
+    fn assert_server_error(error: GvmError, expected_status: u16, expected_message: &str) {
+        assert!(matches!(
+            error,
+            GvmError::Server { status, message }
+                if status == expected_status && message == expected_message
+        ));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn command_support_distinguishes_actionable_states() {
+        let undiscovered = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 7),
+            wire_trace: None,
+            discovered_commands: None,
+        };
+
+        assert_eq!(
+            undiscovered.command_support("get_tasks"),
+            CommandSupport::Supported
+        );
+        assert_eq!(
+            undiscovered.command_support("export_scan_report"),
+            CommandSupport::RequiresDiscovery
+        );
+        assert_eq!(
+            undiscovered.command_support("export_scan_reprot"),
+            CommandSupport::UnknownCommand
+        );
+        assert_eq!(undiscovered.supports_command("export_scan_report"), None);
+        assert_eq!(undiscovered.supports_command("export_scan_reprot"), None);
+        assert_eq!(
+            undiscovered.command_support("get_report_export"),
+            CommandSupport::UnsupportedVersion {
+                required: GmpVersion(22, 8),
+            }
+        );
+
+        let absent = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+            discovered_commands: Some(BTreeSet::from(["get_tasks".to_string()])),
+        };
+        assert_eq!(
+            absent.command_support("export_scan_report"),
+            CommandSupport::NotAdvertised
+        );
+        assert_eq!(absent.supports_command("export_scan_report"), Some(false));
+
+        let advertised = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+            discovered_commands: Some(BTreeSet::from(["export_scan_report".to_string()])),
+        };
+        assert_eq!(
+            advertised.command_support("export_scan_report"),
+            CommandSupport::Supported
+        );
+        assert_eq!(
+            advertised.supports_command("export_scan_report"),
+            Some(true)
+        );
+    }
+
     #[tokio::test]
-    async fn connect_with_wire_trace_emits_redacted_typed_helper_events() {
+    async fn unknown_raw_command_remains_forward_compatible() {
+        let connection = ScriptedConnection::new([
+            version_response("22.8"),
+            r#"<custom_command_response status="200" status_text="OK"/>"#.to_string(),
+        ]);
+        let sent = connection.sent();
+        let mut client = GmpClient::connect(connection)
+            .await
+            .expect("client connects");
+
+        assert_eq!(
+            client.command_support("custom_command"),
+            CommandSupport::UnknownCommand
+        );
+        client
+            .call(b"<custom_command/>".as_slice())
+            .await
+            .expect("unknown raw command reaches the transport");
+
+        let sent = sent.lock().expect("sent lock");
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[1], b"<custom_command/>");
+    }
+
+    #[tokio::test]
+    async fn execute_redacts_wire_bytes_before_trace_observation() {
         let connection =
             ScriptedConnection::new([version_response("22.7"), auth_response().to_string()]);
         let sent = connection.sent();
@@ -2252,7 +2450,10 @@ mod tests {
         .expect("client connects");
 
         client
-            .authenticate("admin", "secret-password")
+            .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+                "admin",
+                "secret-password",
+            ))
             .await
             .expect("authenticate succeeds");
 
@@ -2292,6 +2493,104 @@ mod tests {
             .expect("client connects");
 
         assert!(client.wire_trace.is_none());
+    }
+
+    #[tokio::test]
+    async fn valid_non_success_responses_are_classified_consistently() {
+        let mut call_client = connected_client_with_response(
+            r#"<get_targets_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let call_error = call_client
+            .call(b"<get_targets/>".as_slice())
+            .await
+            .expect_err("call rejects non-success status");
+        assert_server_error(call_error, 503, "backend unavailable");
+
+        let mut execute_client = connected_client_with_response(
+            r#"<get_targets_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let execute_error = execute_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("execute rejects non-success status");
+        assert_server_error(execute_error, 503, "backend unavailable");
+
+        let mut agent_client = connected_client_with_response(
+            r#"<get_agents_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let agent_error = agent_client
+            .get_agents(GetAgentsOpts::default())
+            .await
+            .expect_err("migrated call-based helper rejects non-success status");
+        assert_server_error(agent_error, 503, "backend unavailable");
+
+        let mut report_client = connected_client_with_response(
+            r#"<get_scan_report_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let report_error = report_client
+            .get_scan_report(
+                &EntityId::new("report-1").expect("valid id"),
+                GetScanReportOpts::default(),
+            )
+            .await
+            .expect_err("migrated send-based helper rejects non-success status");
+        assert_server_error(report_error, 503, "backend unavailable");
+
+        let mut send_client = connected_client_with_response(
+            r#"<get_targets_response status="503" status_text="backend unavailable"/>"#,
+        )
+        .await;
+        let raw = send_client
+            .send(b"<get_targets/>".as_slice())
+            .await
+            .expect("send exposes raw non-success response");
+        assert_eq!(raw.status_code(), Some(503));
+        assert_eq!(raw.status_text().as_deref(), Some("backend unavailable"));
+    }
+
+    #[tokio::test]
+    async fn malformed_and_structurally_invalid_responses_remain_parse_errors() {
+        let mut malformed_client = connected_client_with_response(
+            r#"<get_targets_response status="200" status_text="OK"><target>"#,
+        )
+        .await;
+        let malformed = malformed_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("malformed XML must fail");
+        assert!(matches!(malformed, GvmError::Parse(_)));
+
+        let mut missing_client = connected_client_with_response(
+            r#"<get_targets_response status="200" status_text="OK"><target><name>missing id</name></target></get_targets_response>"#,
+        )
+        .await;
+        let missing = missing_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("missing required field must fail");
+        assert!(matches!(
+            missing,
+            GvmError::Parse(gvm_gmp::responses::ParseError::MissingElement(field))
+                if field == "target.id"
+        ));
+
+        let mut invalid_client = connected_client_with_response(
+            r#"<get_targets_response status="200" status_text="OK"><target id="target-1"><name>invalid boolean</name><reverse_lookup_only>maybe</reverse_lookup_only></target></get_targets_response>"#,
+        )
+        .await;
+        let invalid = invalid_client
+            .execute(gvm_gmp::commands::targets::GetTargetsRequest::default())
+            .await
+            .expect_err("invalid value must fail");
+        assert!(matches!(
+            invalid,
+            GvmError::Parse(gvm_gmp::responses::ParseError::InvalidValue { field, value })
+                if field == "reverse_lookup_only" && value == "maybe"
+        ));
     }
 
     #[tokio::test]
@@ -2349,6 +2648,79 @@ mod tests {
         assert!(request_contains_credential_store_type(
             b"<create_credential><type>\n  cs_future \t</type></create_credential>"
         ));
+    }
+
+    #[test]
+    fn specialized_task_semantic_detection_matches_next_shapes() {
+        for (element, semantic_command) in [
+            ("agent_group", "create_agent_group_task"),
+            ("oci_image_target", "create_oci_image_target_task"),
+            ("web_application_target", "create_web_application_task"),
+        ] {
+            let request = format!("<create_task><{element} id=\"target-1\"/></create_task>");
+            assert_eq!(
+                next_only_semantic_command("create_task", request.as_bytes()),
+                Some(semantic_command)
+            );
+        }
+
+        assert_eq!(
+            next_only_semantic_command(
+                "create_task",
+                b"<create_task><target id=\"target-1\"/></create_task>",
+            ),
+            None
+        );
+        assert_eq!(
+            next_only_semantic_command(
+                "modify_task",
+                b"<modify_task><agent_group id=\"agent-group-1\"/></modify_task>",
+            ),
+            None
+        );
+        assert_eq!(next_only_semantic_command("create_task", b"\xff"), None);
+    }
+
+    #[test]
+    fn specialized_task_shape_gate_uses_next_version_without_request_metadata() {
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 7),
+            wire_trace: None,
+            discovered_commands: None,
+        };
+
+        for (element, semantic_command) in [
+            ("agent_group", "create_agent_group_task"),
+            ("oci_image_target", "create_oci_image_target_task"),
+            ("web_application_target", "create_web_application_task"),
+        ] {
+            let request = format!("<create_task><{element} id=\"target-1\"/></create_task>");
+            let error = client
+                .ensure_command_supported(request.as_bytes(), None)
+                .expect_err("specialized task shape is gated before 22.8");
+            assert!(matches!(
+                error,
+                GvmError::UnsupportedCommand {
+                    ref command,
+                    version: GmpVersion(22, 7),
+                    required: "22.8",
+                } if command == semantic_command
+            ));
+        }
+
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+            discovered_commands: None,
+        };
+        client
+            .ensure_command_supported(
+                b"<create_task><agent_group id=\"agent-group-1\"/></create_task>",
+                None,
+            )
+            .expect("specialized task shape is available in 22.8");
     }
 
     #[test]
@@ -2465,10 +2837,6 @@ mod tests {
             GvmError::UnsupportedCommand { command, .. }
                 if command == "modify_credential_store_credential"
         ));
-        assert!(client
-            .ensure_semantic_command_supported("modify_credential_store_credential")
-            .is_err());
-
         let client = GmpClient {
             connection: ScriptedConnection::new(std::iter::empty::<&str>()),
             version: GmpVersion(22, 8),
@@ -2482,8 +2850,11 @@ mod tests {
             )
             .expect("credential-store modify is available in 22.8");
         client
-            .ensure_semantic_command_supported("modify_credential_store_credential")
-            .expect("semantic helper is available in 22.8");
+            .ensure_command_supported(
+                b"<modify_credential credential_id=\"credential-1\"/>",
+                Some("modify_credential_store_credential"),
+            )
+            .expect("semantic request metadata is available in 22.8");
     }
 
     #[tokio::test]

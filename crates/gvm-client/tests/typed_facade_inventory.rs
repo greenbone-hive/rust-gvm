@@ -4,6 +4,8 @@
 #![allow(missing_docs)]
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::PathBuf;
 
 const INTEGRATION_COVERED: &[&str] = &[
     "get_version",
@@ -51,17 +53,40 @@ const INTEGRATION_COVERED: &[&str] = &[
     "verify_scanner",
     "clone_scanner",
     "get_port_lists",
+    "get_port_list",
     "create_port_list",
+    "clone_port_list",
     "modify_port_list",
+    "delete_port_list",
+    "create_port_range",
+    "delete_port_range",
     "get_tasks",
+    "get_task",
     "create_task",
+    "clone_task",
     "create_import_task",
+    "create_container_task",
+    "create_agent_group_task",
+    "create_oci_image_target_task",
+    "create_container_image_task",
+    "create_web_application_task",
+    "move_task",
+    "get_audits",
+    "get_audit",
+    "create_audit",
+    "clone_audit",
+    "modify_audit",
+    "delete_audit",
+    "start_audit",
+    "stop_audit",
+    "resume_audit",
     "start_task",
     "resume_task",
     "modify_task",
     "stop_task",
     "delete_task",
     "empty_trashcan",
+    "restore",
     "restore_from_trashcan",
     "get_reports",
     "get_audit_report",
@@ -80,6 +105,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_report_export_with_opts",
     "export_scan_report",
     "get_results",
+    "get_result",
     "get_feeds",
     "get_feed",
     "get_timezones",
@@ -88,11 +114,14 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_credential_stores_with_opts",
     "get_credential_store",
     "get_nvts",
+    "get_nvt",
     "get_scan_config_nvts",
     "get_scan_config_nvt",
     "get_nvt_preferences",
     "get_nvt_preference",
     "get_nvt_families",
+    "get_info",
+    "get_info_list",
     "get_cves",
     "get_cve",
     "get_cpes",
@@ -101,11 +130,18 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_cert_bund_advisory",
     "get_dfn_cert_advisories",
     "get_dfn_cert_advisory",
+    "get_secinfo_operating_systems",
+    "get_secinfo_vulnerabilities",
     "get_vulnerabilities",
     "get_vulnerability",
     "get_alerts",
+    "get_alert",
     "create_alert",
+    "clone_alert",
     "modify_alert",
+    "delete_alert",
+    "test_alert",
+    "trigger_alert",
     "get_credentials",
     "create_credential",
     "modify_credential",
@@ -113,33 +149,69 @@ const INTEGRATION_COVERED: &[&str] = &[
     "create_credential_store_credential",
     "modify_credential_store_credential",
     "get_filters",
+    "get_filter",
     "create_filter",
+    "clone_filter",
+    "modify_filter",
+    "delete_filter",
     "get_notes",
+    "get_note",
     "create_note",
+    "clone_note",
+    "modify_note",
+    "delete_note",
     "get_overrides",
+    "get_override",
     "create_override",
+    "clone_override",
+    "modify_override",
+    "delete_override",
     "get_schedules",
+    "get_schedule",
     "create_schedule",
     "create_typed_schedule",
+    "clone_schedule",
     "modify_schedule",
     "modify_typed_schedule",
     "delete_schedule",
     "get_tags",
+    "get_tag",
     "create_tag",
+    "clone_tag",
+    "modify_tag",
+    "delete_tag",
     "get_tickets",
     "create_ticket",
     "modify_ticket",
     "get_users",
+    "get_user",
     "create_user",
+    "clone_user",
     "modify_user",
+    "delete_user",
     "get_groups",
+    "get_group",
     "create_group",
+    "clone_group",
+    "modify_group",
+    "delete_group",
     "get_roles",
+    "get_role",
     "create_role",
+    "clone_role",
+    "modify_role",
+    "delete_role",
     "get_permissions",
+    "get_permission",
     "create_permission",
+    "clone_permission",
+    "modify_permission",
+    "delete_permission",
     "get_hosts",
+    "get_host",
     "create_host",
+    "modify_host",
+    "delete_host",
     "get_integration_config_parsed",
     "get_integration_configs_parsed",
     "modify_integration_config_parsed",
@@ -150,6 +222,8 @@ const INTEGRATION_COVERED: &[&str] = &[
     "delete_asset",
     "get_operating_system_assets",
     "get_operating_system_asset",
+    "modify_operating_system_asset",
+    "delete_operating_system_asset",
     "get_configs",
     "get_config",
     "create_config",
@@ -157,14 +231,28 @@ const INTEGRATION_COVERED: &[&str] = &[
     "modify_config",
     "delete_config",
     "get_tls_certificates",
+    "get_tls_certificate",
     "create_tls_certificate",
+    "clone_tls_certificate",
+    "modify_tls_certificate",
+    "delete_tls_certificate",
     "get_report_formats",
+    "get_report_format",
     "create_report_format",
     "clone_report_format",
     "import_report_format",
+    "modify_report_format",
+    "delete_report_format",
+    "verify_report_format",
     "import_report",
     "get_report_configs_parsed",
+    "get_report_config",
+    "create_report_config",
+    "create_report_config_with_opts",
     "clone_report_config",
+    "modify_report_config",
+    "delete_report_config",
+    "delete_report_config_with_opts",
     "get_aggregates",
     "get_features_parsed",
     "get_settings",
@@ -183,15 +271,50 @@ const INTEGRATION_COVERED: &[&str] = &[
 const COMPILE_ONLY: &[&str] = &[];
 const REQUIRES_INTEGRATION: &[&str] = &[];
 
-fn public_typed_methods() -> BTreeSet<&'static str> {
-    include_str!("../src/typed.rs")
-        .lines()
-        .filter_map(|line| {
+fn typed_facade_sources() -> Vec<(PathBuf, String)> {
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut paths = vec![source_root.join("typed.rs")];
+    paths.extend(
+        fs::read_dir(source_root.join("typed"))
+            .expect("typed facade module directory should be readable")
+            .map(|entry| {
+                entry
+                    .expect("typed facade module entry should be readable")
+                    .path()
+            })
+            .filter(|path| path.extension().is_some_and(|extension| extension == "rs")),
+    );
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let source = fs::read_to_string(&path).unwrap_or_else(|error| {
+                panic!(
+                    "failed to read typed facade source {}: {error}",
+                    path.display()
+                )
+            });
+            (path, source)
+        })
+        .collect()
+}
+
+fn public_typed_methods() -> BTreeSet<String> {
+    let mut methods = BTreeSet::new();
+    for (path, source) in typed_facade_sources() {
+        for method in source.lines().filter_map(|line| {
             line.trim_start()
                 .strip_prefix("pub async fn ")
                 .and_then(|rest| rest.split('(').next())
-        })
-        .collect()
+        }) {
+            assert!(
+                methods.insert(method.to_string()),
+                "{method} is declared in more than one typed facade module; duplicate found in {}",
+                path.display()
+            );
+        }
+    }
+    methods
 }
 
 fn normalized_integration_sources() -> String {
@@ -222,7 +345,7 @@ fn every_public_typed_helper_has_exactly_one_enforced_classification() {
     ] {
         for method in methods {
             assert!(
-                classified.insert(*method),
+                classified.insert((*method).to_string()),
                 "{method} appears in more than one typed-facade classification ({class})"
             );
         }
@@ -236,6 +359,46 @@ fn every_public_typed_helper_has_exactly_one_enforced_classification() {
         REQUIRES_INTEGRATION.is_empty(),
         "typed facade still has helpers requiring integration coverage: {REQUIRES_INTEGRATION:?}"
     );
+}
+
+#[test]
+fn execution_paths_preserve_the_typed_facade_contract() {
+    let sources = typed_facade_sources();
+    let direct_execute_count = sources
+        .iter()
+        .map(|(_, source)| source.matches("self.execute(").count())
+        .sum::<usize>();
+    let raw_send_sources = sources
+        .iter()
+        .filter(|(_, source)| source.contains("self.send("))
+        .collect::<Vec<_>>();
+    let raw_send_count = raw_send_sources
+        .iter()
+        .map(|(_, source)| source.matches("self.send(").count())
+        .sum::<usize>();
+
+    assert_eq!(direct_execute_count, 251);
+    assert_eq!(raw_send_count, 3);
+    assert_eq!(raw_send_sources.len(), 1);
+    assert_eq!(
+        raw_send_sources[0]
+            .0
+            .file_name()
+            .and_then(|name| name.to_str()),
+        Some("tickets.rs"),
+        "only the frozen ticket facade may bypass typed execution"
+    );
+
+    let scan = sources
+        .iter()
+        .find(|(path, _)| path.file_name().is_some_and(|name| name == "scan.rs"))
+        .map(|(_, source)| source)
+        .expect("scan facade module should be discovered");
+    assert!(
+        scan.contains("#[deprecated(note = \"use sync_config(), which has global semantics\")]")
+    );
+    assert!(scan.contains("pub async fn sync_scan_config("));
+    assert!(scan.contains("self.sync_config().await"));
 }
 
 #[test]

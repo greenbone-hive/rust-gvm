@@ -30,7 +30,7 @@ use gvm_gmp::commands::credentials::{
     modify_credential_store_credential, CredentialOpts, CredentialStorePreference,
     ModifyCredentialOpts,
     ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
-    ModifyCredentialStoreOpts,
+    ModifyCredentialStoreOpts, ModifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
@@ -66,8 +66,7 @@ use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::task::TaskObservers;
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, CredentialKind, GetConfigsResponse,
-    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, ParseError, Permission,
-    Target,
+    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, Permission, Target,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
@@ -2663,12 +2662,34 @@ async fn typed_verify_credential_store_uses_next_command_shape() {
         .expect("verify_credential_store should parse");
     assert_eq!(response.status, 200);
 
+    let response = client
+        .execute(ModifyCredentialStoreRequest::new(
+            credential_store_id.clone(),
+            ModifyCredentialStoreOpts {
+                active: Some(true),
+                host: Some("store.example".into()),
+                preferences: vec![CredentialStorePreference {
+                    name: "token".into(),
+                    value: "secret".into(),
+                }],
+                ..Default::default()
+            },
+        ))
+        .await
+        .expect("modify_credential_store should parse");
+    assert_eq!(response.status, 200);
+
     let history = server.command_history();
-    assert_eq!(history.len(), 1);
+    assert_eq!(history.len(), 2);
     assert_eq!(history[0].command_name(), "verify_credential_store");
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 command"),
         "<verify_credential_store credential_store_id=\"credential-store-1\"/>"
+    );
+    assert_eq!(history[1].command_name(), "modify_credential_store");
+    assert_eq!(
+        std::str::from_utf8(history[1].raw_xml()).expect("valid UTF-8 command"),
+        "<modify_credential_store credential_store_id=\"credential-store-1\"><active>1</active><host>store.example</host><preferences><preference><name>token</name><value>secret</value></preference></preferences></modify_credential_store>"
     );
 
     server.shutdown().await;
@@ -3054,22 +3075,17 @@ async fn preference_getters_send_expected_mock_server_commands() {
         .expect("authenticate should succeed");
     server.clear_history();
 
+    let opts = GetScanConfigPreferencesOpts {
+        nvt_oid: Some("1.3.6.1".into()),
+        config_id: Some(EntityId::new("config-1").expect("valid id")),
+    };
     let responses = [
         client
-            .get_scan_config_preferences(GetScanConfigPreferencesOpts {
-                nvt_oid: Some("1.3.6.1".into()),
-                config_id: Some(EntityId::new("config-1").expect("valid id")),
-            })
+            .get_scan_config_preferences(opts.clone())
             .await
             .expect("scan-config preferences request should succeed"),
         client
-            .get_scan_config_preference(
-                "timeout",
-                GetScanConfigPreferencesOpts {
-                    nvt_oid: Some("1.3.6.1".into()),
-                    config_id: Some(EntityId::new("config-1").expect("valid id")),
-                },
-            )
+            .get_scan_config_preference("timeout", opts)
             .await
             .expect("scan-config preference request should succeed"),
         client
@@ -3088,7 +3104,9 @@ async fn preference_getters_send_expected_mock_server_commands() {
             .await
             .expect("nvt preference request should succeed"),
     ];
-    assert!(responses.iter().all(|response| response.status == 200));
+    assert!(responses
+        .iter()
+        .all(|response| response.status == 200 && response.items.is_empty()));
 
     let history = server.command_history();
     assert_eq!(history.len(), 4);
@@ -3628,10 +3646,7 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
         )
         .await
         .expect_err("missing credential reference should be rejected");
-    assert!(matches!(
-        error,
-        GvmError::Parse(ParseError::ServerError { status: 404, .. })
-    ));
+    assert!(matches!(error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }
@@ -6093,10 +6108,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect_err("missing schedule create should fail");
     assert!(
-        matches!(
-            &create_error,
-            GvmError::Parse(ParseError::ServerError { status: 404, .. })
-        ),
+        matches!(&create_error, GvmError::Server { status: 404, .. }),
         "unexpected create error: {create_error:?}"
     );
     let modify_error = client
@@ -6110,10 +6122,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect_err("missing schedule replacement should fail");
     assert!(
-        matches!(
-            &modify_error,
-            GvmError::Parse(ParseError::ServerError { status: 404, .. })
-        ),
+        matches!(&modify_error, GvmError::Server { status: 404, .. }),
         "unexpected modify error: {modify_error:?}"
     );
     let after_failed_update = client
@@ -6140,7 +6149,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .expect_err("attached schedule deletion should fail");
     assert!(matches!(
         dependency_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, .. })
+        GvmError::Server { status: 409, .. }
     ));
     client
         .modify_task(
@@ -6188,7 +6197,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .expect_err("trashed dependent task should block permanent schedule deletion");
     assert!(matches!(
         trashed_dependency_error,
-        GvmError::Parse(ParseError::ServerError { status: 409, .. })
+        GvmError::Server { status: 409, .. }
     ));
     client
         .delete_task(&scheduled.id, true)

@@ -37,7 +37,8 @@ Adding or changing a GMP command:
 - Add shared enum/type support in `crates/gvm-gmp/src/enums.rs`, `types.rs`, or `common.rs` only when the value is reused.
 - Export the module or item through `crates/gvm-gmp/src/commands/mod.rs` or `crates/gvm-gmp/src/lib.rs` when public.
 - Add serialization tests in `crates/gvm-gmp/tests/test_<domain>.rs`.
-- If exposed by the high-level client, update `crates/gvm-client/src/typed.rs`.
+- If exposed by the high-level client, update the matching private resource-family
+  module under `crates/gvm-client/src/typed/`.
 - If version-gated, update `crates/gvm-client/src/version.rs` and any typed version traits in `crates/gvm-client/src/lib.rs`.
 - If the mock server should understand it, update `crates/gvm-mock-server/src/handler.rs`, `response_gen.rs`, `store.rs`, or `fixtures.rs` as appropriate.
 
@@ -52,7 +53,9 @@ Changing response parsing:
 Changing client behavior:
 
 - `crates/gvm-client/src/lib.rs`: `GmpClient`, `GmpVersioned`, version-specific wrapper traits, raw `send`/`call`.
-- `crates/gvm-client/src/typed.rs`: typed convenience methods that combine command builders with typed response parsing.
+- `crates/gvm-client/src/typed/`: private resource-family modules containing
+  inherent typed convenience methods on `GmpClient`.
+- `crates/gvm-client/src/typed.rs`: private module root for the typed facade.
 - `crates/gvm-client/src/version.rs`: version parsing, mapping, command minimums, command support checks.
 - `crates/gvm-client/src/error.rs`: high-level error variants and display behavior.
 - Tests live under `crates/gvm-client/tests/`.

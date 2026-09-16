@@ -5,7 +5,7 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
+    AgentInstallerLanguage, CommandSupport, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
     CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
     CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
     ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands,
@@ -19,6 +19,7 @@ use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
+use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -610,10 +611,7 @@ async fn next_client_agent_groups_round_trip() {
         .get_agent_group(&agent_group_id)
         .await
         .expect_err("deleted agent group should not be found");
-    assert!(matches!(
-        error,
-        gvm_client::GvmError::Server { status: 404, .. }
-    ));
+    assert!(matches!(error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }
@@ -756,22 +754,51 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
         .expect_err("undiscovered export should fail");
     assert!(matches!(
         error,
-        GvmError::UnsupportedCommand {
-            command,
-            required: "positive XML help discovery",
-            ..
-        } if command == "export_scan_report"
+        GvmError::CommandDiscoveryRequired { command }
+            if command == "export_scan_report"
     ));
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::RequiresDiscovery
+    );
 
     let help = client.discover_commands().await.expect("help discovery");
     assert_eq!(help.supports_command("export_scan_report"), Some(true));
-    assert_eq!(client.supports_command("export_scan_report"), Some(true));
+    assert_eq!(
+        client.command_support("export_scan_report"),
+        CommandSupport::Supported
+    );
     let error = client
         .export_scan_report(&report_id, ExportScanReportOpts::default())
         .await
         .expect_err("missing report should reach the mock");
     assert!(matches!(error, GvmError::Server { status: 404, .. }));
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn versioned_execute_forwards_and_decodes_the_associated_response() {
+    let Some(server) = stateful_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = GmpVersioned::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+    let response = client
+        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+        .await
+        .expect("versioned execute should decode targets");
+
+    assert_eq!(response.status, 200);
+    assert!(response.items.is_empty());
     server.shutdown().await;
 }
 

@@ -8,7 +8,14 @@ use gvm_protocol::{Request, XmlCommand};
 use crate::commands::user_settings::{modify_user_setting, ModifyUserSettingOpts};
 use crate::common::add_filter_attrs;
 use crate::enums::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
+use crate::responses::{
+    ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeedsResponse, GetInfoResponse,
+    GetResourceNamesResponse, GetScanConfigPreferencesResponse, GetSettingsResponse,
+    GetTimezonesResponse, GetVulnerabilitiesResponse, HelpResponse, ModifyAuthResponse,
+    ModifyLicenseResponse, RunWizardResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 pub use super::system_reports::{get_system_reports, GetSystemReportsOpts};
 
@@ -91,6 +98,551 @@ pub struct RunWizardOpts {
     pub mode: Option<String>,
     /// Whether gvmd may only run a wizard marked as read-only.
     pub read_only: Option<bool>,
+}
+
+/// Semantic request for modifying a named authentication group.
+#[derive(Clone)]
+pub struct ModifyAuthRequest {
+    group_name: String,
+    auth_conf_settings: Vec<(String, String)>,
+}
+
+impl std::fmt::Debug for ModifyAuthRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModifyAuthRequest")
+            .field("group_name", &self.group_name)
+            .field("auth_conf_settings", &"<redacted>")
+            .finish()
+    }
+}
+
+impl ModifyAuthRequest {
+    /// Create an authentication-configuration modification request.
+    #[must_use]
+    pub fn new(
+        group_name: impl Into<String>,
+        auth_conf_settings: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
+        Self {
+            group_name: group_name.into(),
+            auth_conf_settings: auth_conf_settings.into_iter().collect(),
+        }
+    }
+}
+
+impl Request for ModifyAuthRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_auth(&self.group_name, &self.auth_conf_settings).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyAuthRequest {
+    type Response = ModifyAuthResponse;
+}
+
+/// Semantic request backed by [`modify_license`].
+#[derive(Clone)]
+pub struct ModifyLicenseRequest {
+    file: String,
+}
+
+impl std::fmt::Debug for ModifyLicenseRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModifyLicenseRequest")
+            .field("file", &"<redacted>")
+            .finish()
+    }
+}
+
+impl ModifyLicenseRequest {
+    /// Create a license modification with default options.
+    #[must_use]
+    pub fn new(file: impl Into<String>) -> Self {
+        Self { file: file.into() }
+    }
+}
+
+impl Request for ModifyLicenseRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_license(&self.file).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyLicenseRequest {
+    type Response = ModifyLicenseResponse;
+}
+
+/// Semantic request backed by [`modify_license_with_opts`].
+#[derive(Clone)]
+pub struct ModifyLicenseWithOptsRequest {
+    file: String,
+    opts: ModifyLicenseOpts,
+}
+
+impl std::fmt::Debug for ModifyLicenseWithOptsRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModifyLicenseWithOptsRequest")
+            .field("file", &"<redacted>")
+            .field("allow_empty", &self.opts.allow_empty)
+            .finish()
+    }
+}
+
+impl ModifyLicenseWithOptsRequest {
+    /// Create a license modification with explicit options.
+    #[must_use]
+    pub fn new(file: impl Into<String>, opts: ModifyLicenseOpts) -> Self {
+        Self {
+            file: file.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyLicenseWithOptsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_license_with_opts(&self.file, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyLicenseWithOptsRequest {
+    type Response = ModifyLicenseResponse;
+}
+
+/// Semantic compatibility request backed by [`modify_setting`].
+#[derive(Clone)]
+pub struct ModifySettingRequest {
+    setting_id: EntityId,
+    value: String,
+}
+
+impl std::fmt::Debug for ModifySettingRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModifySettingRequest")
+            .field("setting_id", &self.setting_id)
+            .field("value", &"<redacted>")
+            .finish()
+    }
+}
+
+impl ModifySettingRequest {
+    /// Create a system-module user-setting modification request.
+    #[must_use]
+    pub fn new(setting_id: EntityId, value: impl Into<String>) -> Self {
+        Self {
+            setting_id,
+            value: value.into(),
+        }
+    }
+}
+
+impl Request for ModifySettingRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_setting(&self.setting_id, &self.value).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifySettingRequest {
+    type Response = crate::responses::ModifyUserSettingResponse;
+}
+
+/// Semantic request backed by [`run_wizard`].
+#[derive(Clone)]
+pub struct RunWizardRequest {
+    name: String,
+    params: Vec<(String, String)>,
+}
+
+impl std::fmt::Debug for RunWizardRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunWizardRequest")
+            .field("name", &self.name)
+            .field("params", &"<redacted>")
+            .finish()
+    }
+}
+
+impl RunWizardRequest {
+    /// Create a wizard request with default options.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        params: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            params: params.into_iter().collect(),
+        }
+    }
+}
+
+impl Request for RunWizardRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        run_wizard(&self.name, &self.params).to_bytes()
+    }
+}
+
+impl GmpRequest for RunWizardRequest {
+    type Response = RunWizardResponse;
+}
+
+/// Semantic request backed by [`run_wizard_with_opts`].
+#[derive(Clone)]
+pub struct RunWizardWithOptsRequest {
+    name: String,
+    params: Vec<(String, String)>,
+    opts: RunWizardOpts,
+}
+
+impl std::fmt::Debug for RunWizardWithOptsRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunWizardWithOptsRequest")
+            .field("name", &self.name)
+            .field("params", &"<redacted>")
+            .field("mode", &self.opts.mode)
+            .field("read_only", &self.opts.read_only)
+            .finish()
+    }
+}
+
+impl RunWizardWithOptsRequest {
+    /// Create a wizard request with explicit options.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        params: impl IntoIterator<Item = (String, String)>,
+        opts: RunWizardOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            params: params.into_iter().collect(),
+            opts,
+        }
+    }
+}
+
+impl Request for RunWizardWithOptsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        run_wizard_with_opts(&self.name, &self.params, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for RunWizardWithOptsRequest {
+    type Response = RunWizardResponse;
+}
+
+/// Semantic compatibility request for the system-module [`help`] builder.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemHelpRequest(Option<HelpFormat>);
+
+impl SystemHelpRequest {
+    /// Create a system-module help request.
+    #[must_use]
+    pub const fn new(format: Option<HelpFormat>) -> Self {
+        Self(format)
+    }
+}
+
+impl Request for SystemHelpRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        help(self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for SystemHelpRequest {
+    type Response = HelpResponse;
+}
+
+/// Semantic compatibility request for the system-module [`get_feeds`] builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemFeedsRequest(GetFeedsOpts);
+
+impl GetSystemFeedsRequest {
+    /// Create a system-module feed request.
+    #[must_use]
+    pub fn new(opts: GetFeedsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemFeedsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_feeds(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemFeedsRequest {
+    type Response = GetFeedsResponse;
+}
+
+/// Semantic request for filtered setting discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetSettingsRequest(FilteredGetOpts);
+
+impl GetSettingsRequest {
+    /// Create a filtered setting request.
+    #[must_use]
+    pub fn new(opts: FilteredGetOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSettingsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_settings(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSettingsRequest {
+    type Response = GetSettingsResponse;
+}
+
+/// Semantic request for timezone discovery.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetTimezonesRequest;
+
+impl GetTimezonesRequest {
+    /// Create a timezone-discovery request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for GetTimezonesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_timezones().to_bytes()
+    }
+}
+
+impl GmpRequest for GetTimezonesRequest {
+    type Response = GetTimezonesResponse;
+}
+
+/// Semantic compatibility request for the legacy system aggregate builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemAggregatesRequest(GetAggregatesOpts);
+
+impl GetSystemAggregatesRequest {
+    /// Create a legacy system aggregate request.
+    #[must_use]
+    pub fn new(opts: GetAggregatesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemAggregatesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_aggregates(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemAggregatesRequest {
+    type Response = GetAggregatesResponse;
+}
+
+/// Semantic compatibility request for the system-module [`get_info`] builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemInfoRequest(GetInfoOpts);
+
+impl GetSystemInfoRequest {
+    /// Create a generic system information request.
+    #[must_use]
+    pub fn new(opts: GetInfoOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemInfoRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_info(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemInfoRequest {
+    type Response = GetInfoResponse;
+}
+
+/// Semantic compatibility request for the system-module preference builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemPreferencesRequest(FilteredGetOpts);
+
+impl GetSystemPreferencesRequest {
+    /// Create a filtered preference request.
+    #[must_use]
+    pub fn new(opts: FilteredGetOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemPreferencesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_preferences(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemPreferencesRequest {
+    type Response = GetScanConfigPreferencesResponse;
+}
+
+/// Semantic request for resource-name discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetResourceNamesRequest(GetResourceNamesOpts);
+
+impl GetResourceNamesRequest {
+    /// Create a resource-name list request.
+    #[must_use]
+    pub fn new(opts: GetResourceNamesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetResourceNamesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_resource_names(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetResourceNamesRequest {
+    type Response = GetResourceNamesResponse;
+}
+
+/// Semantic request for one resource name.
+#[derive(Debug, Clone)]
+pub struct GetResourceNameRequest {
+    resource_id: EntityId,
+    resource_type: ResourceType,
+}
+
+impl GetResourceNameRequest {
+    /// Create a single-resource name request.
+    #[must_use]
+    pub fn new(resource_id: EntityId, resource_type: ResourceType) -> Self {
+        Self {
+            resource_id,
+            resource_type,
+        }
+    }
+}
+
+impl Request for GetResourceNameRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_resource_name(&self.resource_id, self.resource_type).to_bytes()
+    }
+}
+
+impl GmpRequest for GetResourceNameRequest {
+    type Response = GetResourceNamesResponse;
+}
+
+/// Semantic request for vulnerability discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetVulnsRequest(FilteredGetOpts);
+
+impl GetVulnsRequest {
+    /// Create a vulnerability list request.
+    #[must_use]
+    pub fn new(opts: FilteredGetOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetVulnsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_vulns(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetVulnsRequest {
+    type Response = GetVulnerabilitiesResponse;
+}
+
+/// Semantic request for one vulnerability using [`get_vuln`].
+#[derive(Debug, Clone)]
+pub struct GetVulnRequest(String);
+
+impl GetVulnRequest {
+    /// Create a single-vulnerability request.
+    #[must_use]
+    pub fn new(vuln_id: impl Into<String>) -> Self {
+        Self(vuln_id.into())
+    }
+}
+
+impl Request for GetVulnRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_vuln(&self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for GetVulnRequest {
+    type Response = GetVulnerabilitiesResponse;
+}
+
+/// Semantic compatibility request for [`get_vulnerability`].
+#[derive(Debug, Clone)]
+pub struct GetVulnerabilityRequest(String);
+
+impl GetVulnerabilityRequest {
+    /// Create a descriptive-alias vulnerability request.
+    #[must_use]
+    pub fn new(vulnerability_id: impl Into<String>) -> Self {
+        Self(vulnerability_id.into())
+    }
+}
+
+impl Request for GetVulnerabilityRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_vulnerability(&self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for GetVulnerabilityRequest {
+    type Response = GetVulnerabilitiesResponse;
+}
+
+/// Semantic request for license discovery.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetLicenseRequest;
+
+impl GetLicenseRequest {
+    /// Create a license-discovery request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for GetLicenseRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_license().to_bytes()
+    }
+}
+
+impl GmpRequest for GetLicenseRequest {
+    type Response = ActionResponse;
+}
+
+/// Semantic request for authentication-configuration discovery.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DescribeAuthRequest;
+
+impl DescribeAuthRequest {
+    /// Create an authentication-description request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for DescribeAuthRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        describe_auth().to_bytes()
+    }
+}
+
+impl GmpRequest for DescribeAuthRequest {
+    type Response = DescribeAuthResponse;
 }
 
 /// Build a `help` request.
@@ -441,5 +993,119 @@ mod tests {
             )),
             "<run_wizard read_only=\"1\"><mode>step</mode><name>quick</name><params/></run_wizard>"
         );
+    }
+
+    #[test]
+    fn semantic_system_admin_requests_preserve_builder_bytes_and_associations() {
+        fn auth<R: GmpRequest<Response = ModifyAuthResponse>>(_: &R) {}
+        fn license<R: GmpRequest<Response = ModifyLicenseResponse>>(_: &R) {}
+        fn setting<R: GmpRequest<Response = crate::responses::ModifyUserSettingResponse>>(_: &R) {}
+        fn wizard<R: GmpRequest<Response = RunWizardResponse>>(_: &R) {}
+
+        let settings = vec![("enable".into(), "auth-secret".into())];
+        let auth_request = ModifyAuthRequest::new("method:ldap_connect", settings.clone());
+        assert_eq!(
+            auth_request.to_bytes(),
+            modify_auth("method:ldap_connect", &settings).to_bytes()
+        );
+        auth(&auth_request);
+
+        let license_request = ModifyLicenseRequest::new("license-secret");
+        assert_eq!(
+            license_request.to_bytes(),
+            modify_license("license-secret").to_bytes()
+        );
+        license(&license_request);
+
+        let license_opts = ModifyLicenseOpts {
+            allow_empty: Some(false),
+        };
+        let license_with_opts =
+            ModifyLicenseWithOptsRequest::new("license-secret", license_opts.clone());
+        assert_eq!(
+            license_with_opts.to_bytes(),
+            modify_license_with_opts("license-secret", license_opts).to_bytes()
+        );
+        license(&license_with_opts);
+
+        let setting_id = id("setting-1");
+        let setting_request = ModifySettingRequest::new(setting_id.clone(), "setting-secret");
+        assert_eq!(
+            setting_request.to_bytes(),
+            modify_setting(&setting_id, "setting-secret").to_bytes()
+        );
+        setting(&setting_request);
+
+        let params = vec![("hosts".into(), "wizard-secret".into())];
+        let wizard_request = RunWizardRequest::new("quick_first_scan", params.clone());
+        assert_eq!(
+            wizard_request.to_bytes(),
+            run_wizard("quick_first_scan", &params).to_bytes()
+        );
+        wizard(&wizard_request);
+
+        let wizard_opts = RunWizardOpts {
+            mode: Some("step".into()),
+            read_only: Some(false),
+        };
+        let wizard_with_opts =
+            RunWizardWithOptsRequest::new("quick_first_scan", params.clone(), wizard_opts.clone());
+        assert_eq!(
+            wizard_with_opts.to_bytes(),
+            run_wizard_with_opts("quick_first_scan", &params, wizard_opts).to_bytes()
+        );
+        wizard(&wizard_with_opts);
+    }
+
+    #[test]
+    fn semantic_system_admin_debug_redacts_values() {
+        let auth = format!(
+            "{:?}",
+            ModifyAuthRequest::new(
+                "method:ldap_connect",
+                [("password".into(), "auth-secret".into())]
+            )
+        );
+        let license = format!("{:?}", ModifyLicenseRequest::new("license-secret"));
+        let license_with_opts = format!(
+            "{:?}",
+            ModifyLicenseWithOptsRequest::new(
+                "license-secret",
+                ModifyLicenseOpts {
+                    allow_empty: Some(false),
+                }
+            )
+        );
+        let setting = format!(
+            "{:?}",
+            ModifySettingRequest::new(id("setting-1"), "setting-secret")
+        );
+        let wizard = format!(
+            "{:?}",
+            RunWizardRequest::new(
+                "quick_first_scan",
+                [("hosts".into(), "wizard-secret".into())]
+            )
+        );
+        let wizard_with_opts = format!(
+            "{:?}",
+            RunWizardWithOptsRequest::new(
+                "quick_first_scan",
+                [("hosts".into(), "wizard-secret".into())],
+                RunWizardOpts::default(),
+            )
+        );
+
+        for (debug, secret) in [
+            (&auth, "auth-secret"),
+            (&license, "license-secret"),
+            (&license_with_opts, "license-secret"),
+            (&setting, "setting-secret"),
+            (&wizard, "wizard-secret"),
+            (&wizard_with_opts, "wizard-secret"),
+        ] {
+            assert!(debug.contains("<redacted>"));
+            assert!(!debug.contains(secret));
+        }
     }
 }
