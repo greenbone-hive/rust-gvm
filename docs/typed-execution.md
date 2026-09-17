@@ -376,11 +376,14 @@ escape hatch without introducing a second typed encoding path.
 
 Generic configurations retain separate list, detail, create, clone, modify,
 and delete request values over the existing generic config builders. Port
-lists follow the same lifecycle and include semantic create/delete port-range
-requests. The associated response is fixed for every operation, including the
-action-shaped port-range responses. Existing filters, usage types, pagination,
-identifiers, and mutation options are passed unchanged to the legacy encoders;
-raw builders and execution remain supported.
+lists now use complete canonical requests for that lifecycle plus create and
+delete port ranges. The associated response is fixed for every operation,
+including the action-shaped port-range responses. List/detail and create/clone
+remain distinct semantic aliases over shared wire roots. The range request
+owns its optional comment and uses gvmd's child-element payload; ports outside
+1–65535 and descending ranges are rejected before support checks or transport.
+The three redundant options types and eight free builders are removed; raw
+`send`/`call` remains supported.
 
 ## Report configurations, report formats, and TLS certificates
 

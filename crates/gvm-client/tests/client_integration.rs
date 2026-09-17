@@ -42,7 +42,10 @@ use gvm_gmp::commands::oci_image_targets::{
 };
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::permissions::{modify_permission, GetPermissionsOpts, PermissionOpts};
-use gvm_gmp::commands::port_lists::{GetPortListsOpts, ModifyPortListOpts, PortListOpts};
+use gvm_gmp::commands::port_lists::{
+    ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
+    GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
+};
 use gvm_gmp::commands::reports::{
     get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
 };
@@ -83,10 +86,10 @@ use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, AliveTest, CollectionUpdate, CredentialType, FeedType,
-    GmpRequestError, PermissionSubjectType, ScalarUpdate, ScheduleDefinition, ScheduleInput,
-    ScheduleRecurrence, ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone,
-    ServicePort, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TargetHost, TargetHosts,
-    TargetPortSelection, TicketStatus,
+    GmpRequestError, PermissionSubjectType, PortRangeType, ScalarUpdate, ScheduleDefinition,
+    ScheduleInput, ScheduleRecurrence, ScheduleRecurrenceObservation, ScheduleTimestamp,
+    ScheduleTimezone, ServicePort, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TargetHost,
+    TargetHosts, TargetPortSelection, TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -2356,34 +2359,35 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
 
 #[tokio::test]
 async fn typed_port_list_replacement_round_trip() {
-    let Some(server) = stateful_server().await else {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
         return;
     };
-    let connection = unix_connection(&server);
-    let mut client = GmpClient::connect(connection)
-        .await
-        .expect("client should connect");
-    client
-        .authenticate("admin", "admin")
-        .await
-        .expect("authentication should succeed");
+    let mut client = authenticated_client(&server).await;
 
     let port_list = client
-        .create_port_list("Old Port List", PortListOpts::default())
+        .create_port_list(CreatePortListRequest::new("Old Port List"))
         .await
         .expect("port list creation should succeed");
+    let detail = client
+        .get_port_list(GetPortListRequest::new(port_list.id.clone()))
+        .await
+        .expect("port list detail should succeed");
+    assert_eq!(detail.items.len(), 1);
+    assert_eq!(detail.items[0].meta.id, port_list.id);
+
+    let clone = client
+        .clone_port_list(ClonePortListRequest::new(port_list.id.clone()))
+        .await
+        .expect("port list clone should succeed");
+    let mut rename = ModifyPortListRequest::new(port_list.id.clone());
+    rename.name = Some("Renamed Port List".into());
+    rename.comment = Some("renamed through typed client".into());
     client
-        .modify_port_list(
-            &port_list.id,
-            ModifyPortListOpts {
-                name: Some("Renamed Port List".into()),
-                comment: Some("renamed through typed client".into()),
-            },
-        )
+        .modify_port_list(rename)
         .await
         .expect("port list rename should succeed");
     let port_lists = client
-        .get_port_lists(GetPortListsOpts::default())
+        .get_port_lists(GetPortListsRequest::default())
         .await
         .expect("port list read-back should succeed");
     let renamed_port_list = port_lists
@@ -2398,18 +2402,14 @@ async fn typed_port_list_replacement_round_trip() {
     );
 
     server.clear_history();
+    let mut replace = ModifyPortListRequest::new(port_list.id.clone());
+    replace.name = Some("Name Only".into());
     client
-        .modify_port_list(
-            &port_list.id,
-            ModifyPortListOpts {
-                name: Some("Name Only".into()),
-                comment: None,
-            },
-        )
+        .modify_port_list(replace)
         .await
         .expect("port list replacement should succeed");
     let port_lists = client
-        .get_port_lists(GetPortListsOpts::default())
+        .get_port_lists(GetPortListsRequest::default())
         .await
         .expect("port list read-back should succeed");
     let replaced_port_list = port_lists
@@ -2419,6 +2419,24 @@ async fn typed_port_list_replacement_round_trip() {
         .expect("replaced port list should be present");
     assert_eq!(replaced_port_list.meta.name, "Name Only");
     assert_eq!(replaced_port_list.meta.comment, None);
+
+    let mut range = CreatePortRangeRequest::new(port_list.id.clone(), PortRangeType::Tcp, 80, 443);
+    range.comment = Some("web ports".into());
+    let created_range = client
+        .create_port_range(range)
+        .await
+        .expect("port range creation should succeed");
+    assert_eq!(created_range.status, 201);
+
+    client
+        .delete_port_list(DeletePortListRequest::new(clone.id, true))
+        .await
+        .expect("cloned port list deletion should succeed");
+    client
+        .delete_port_list(DeletePortListRequest::new(port_list.id.clone(), true))
+        .await
+        .expect("port list deletion should succeed");
+
     let history = server.command_history();
     assert_eq!(history[0].command_name(), "modify_port_list");
     assert_eq!(
@@ -2429,6 +2447,17 @@ async fn typed_port_list_replacement_round_trip() {
         )
         .as_bytes()
     );
+    assert_eq!(history[2].command_name(), "create_port_range");
+    assert_eq!(
+        history[2].raw_xml(),
+        format!(
+            "<create_port_range><comment>web ports</comment><port_list id=\"{}\"/><start>80</start><end>443</end><type>TCP</type></create_port_range>",
+            port_list.id
+        )
+        .as_bytes()
+    );
+    assert_eq!(history[3].command_name(), "delete_port_list");
+    assert_eq!(history[4].command_name(), "delete_port_list");
 
     server.shutdown().await;
 }
@@ -4107,11 +4136,11 @@ async fn typed_target_port_list_updates_preserve_omit_and_set_semantics() {
         .expect("authenticate should succeed");
 
     let first_port_list = client
-        .create_port_list("First Port List", PortListOpts::default())
+        .create_port_list(CreatePortListRequest::new("First Port List"))
         .await
         .expect("first port list should be created");
     let second_port_list = client
-        .create_port_list("Second Port List", PortListOpts::default())
+        .create_port_list(CreatePortListRequest::new("Second Port List"))
         .await
         .expect("second port list should be created");
     let target = client

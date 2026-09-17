@@ -66,6 +66,17 @@ operation and redacting service CA and OIDC secret values. Independent
 [integration-configuration gvmd evidence](integration-config-request-gvmd-evidence.md)
 records the list/detail, validation, and clear contracts.
 
+Issue #617 converts all eight baseline GMP 22.4 port-list and port-range
+operations to complete canonical requests. Three redundant options types and
+eight free builders are removed; the named methods accept the canonical values
+unchanged. List/detail and create/clone retain distinct semantic aliases over
+shared roots, port-list modification keeps full-replacement semantics, and
+invalid final ranges fail before support checks or transport. The range request
+also corrects the legacy Rust attribute payload to gvmd's child-element wire
+shape and now owns its optional comment. Independent
+[port-list gvmd evidence](port-list-request-gvmd-evidence.md) records that
+protocol correction and the server-side contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 

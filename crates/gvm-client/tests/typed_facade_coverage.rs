@@ -46,7 +46,10 @@ use gvm_gmp::commands::oci_image_targets::{
 use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
 use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
-use gvm_gmp::commands::port_lists::{GetPortListsOpts, ModifyPortListOpts, PortListOpts};
+use gvm_gmp::commands::port_lists::{
+    ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
+    DeletePortRangeRequest, GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
+};
 use gvm_gmp::commands::report_configs::{
     CreateReportConfigOpts, DeleteReportConfigOpts, GetReportConfigsOpts, GetReportConfigsRequest,
     ModifyReportConfigOpts,
@@ -1192,7 +1195,7 @@ async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade
 
 #[tokio::test]
 async fn generic_config_and_port_list_facades_cover_every_semantic_request() {
-    let Some(server) = fixture_server(MockVersion::V22_8, CONFIG_PORT_LIST_OVERRIDES).await else {
+    let Some(server) = fixture_server(MockVersion::V22_4, CONFIG_PORT_LIST_OVERRIDES).await else {
         return;
     };
     let mut client = client(&server).await;
@@ -1213,18 +1216,25 @@ async fn generic_config_and_port_list_facades_cover_every_semantic_request() {
     assert_typed_success!(client.modify_config(&config_id, ModifyConfigOpts::default()));
     assert_typed_success!(client.delete_config(&config_id, DeleteConfigOpts::default()));
 
-    assert_typed_success!(client.get_port_lists(GetPortListsOpts::default()));
-    assert_typed_success!(client.get_port_list(&port_list_id));
-    assert_create_success!(client.create_port_list("web", PortListOpts::default()));
-    assert_create_success!(client.clone_port_list(&port_list_id));
-    assert_typed_success!(client.modify_port_list(&port_list_id, ModifyPortListOpts::default()));
-    assert_typed_success!(client.delete_port_list(&port_list_id, false));
+    assert_typed_success!(client.get_port_lists(GetPortListsRequest::default()));
+    assert_typed_success!(client.get_port_list(GetPortListRequest::new(port_list_id.clone())));
+    assert_create_success!(client.create_port_list(CreatePortListRequest::new("web")));
+    assert_create_success!(client.clone_port_list(ClonePortListRequest::new(port_list_id.clone())));
+    assert_typed_success!(client.modify_port_list(ModifyPortListRequest::new(port_list_id.clone())));
+    assert_typed_success!(
+        client.delete_port_list(DeletePortListRequest::new(port_list_id.clone(), false))
+    );
     let created_range = client
-        .create_port_range(&port_list_id, PortRangeType::Tcp, 80, 443)
+        .create_port_range(CreatePortRangeRequest::new(
+            port_list_id.clone(),
+            PortRangeType::Tcp,
+            80,
+            443,
+        ))
         .await
         .expect("typed port-range creation should parse");
     assert_eq!(created_range.status, 201);
-    assert_typed_success!(client.delete_port_range(&port_range_id));
+    assert_typed_success!(client.delete_port_range(DeletePortRangeRequest::new(port_range_id)));
 
     let history = server.command_history();
     assert_eq!(history.len(), 14);
@@ -1540,7 +1550,7 @@ async fn generic_config_and_port_list_facades_preserve_status_and_parse_context(
         "configuration conflict"
     );
     let parse_error = client
-        .clone_port_list(&id("port-list-1"))
+        .clone_port_list(ClonePortListRequest::new(id("port-list-1")))
         .await
         .expect_err("missing cloned port-list id should fail");
     assert!(matches!(
@@ -2729,7 +2739,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     );
     assert_typed_success!(client.get_scan_configs(GetScanConfigsOpts::default()));
     assert_typed_success!(client.get_scanners(GetScannersOpts::default()));
-    assert_typed_success!(client.get_port_lists(GetPortListsOpts::default()));
+    assert_typed_success!(client.get_port_lists(GetPortListsRequest::default()));
     assert_typed_success!(client.get_tasks(GetTasksOpts::default()));
     assert_typed_success!(client.get_task(&id("11111111-1111-1111-1111-111111111111")));
     assert_typed_success!(client.get_reports(GetReportsOpts::default()));
@@ -2827,7 +2837,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     let mut client = client(&server).await;
     let related_id = id("22222222-2222-2222-2222-222222222222");
 
-    assert_create_success!(client.create_port_list("ports", PortListOpts::default()));
+    assert_create_success!(client.create_port_list(CreatePortListRequest::new("ports")));
     assert_create_success!(client.create_alert("alert", AlertOpts::default()));
     assert_create_success!(client.create_filter("filter", FilterOpts::default()));
     assert_create_success!(client.create_note("1.3.6.1.4.1.25623.1.0.1", NoteOpts::default()));
