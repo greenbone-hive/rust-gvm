@@ -27,6 +27,12 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_web_application_targets",
     "modify_web_application_target",
     "delete_web_application_target",
+    "create_agent_group",
+    "clone_agent_group",
+    "get_agent_group",
+    "get_agent_groups",
+    "modify_agent_group",
+    "delete_agent_group",
     "get_scan_configs",
     "create_scan_config",
     "import_scan_config",
@@ -377,7 +383,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 251);
+    assert_eq!(direct_execute_count, 257);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

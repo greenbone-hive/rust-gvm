@@ -8,8 +8,8 @@ use gvm_client::{CommandSupport, GmpClient, GvmError};
 use gvm_client::{ExportScanReportOpts, GetReportExportOpts};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::agent_groups::{
-    CloneAgentGroupRequest, CreateAgentGroupOpts, CreateAgentGroupRequest, DeleteAgentGroupRequest,
-    GetAgentGroupRequest, GetAgentGroupsRequest, ModifyAgentGroupOpts, ModifyAgentGroupRequest,
+    CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
+    GetAgentGroupsRequest, ModifyAgentGroupRequest,
 };
 use gvm_gmp::commands::agents::{
     AgentInstallerLanguage, DeleteAgentRequest, GetAgentInstallerInstructionRequest,
@@ -3628,7 +3628,6 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
             "group",
             vec![id("agent-1")],
             "0 */5 * * *",
-            CreateAgentGroupOpts::default(),
         )),
         "create_agent_group",
         GmpVersion(22, 7),
@@ -3653,11 +3652,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         "22.8"
     );
     assert_unsupported_command!(
-        v227_client.execute(ModifyAgentGroupRequest::new(
-            id("group-1"),
-            "0 */5 * * *",
-            ModifyAgentGroupOpts::default(),
-        )),
+        v227_client.execute(ModifyAgentGroupRequest::new(id("group-1"), "0 */5 * * *")),
         "modify_agent_group",
         GmpVersion(22, 7),
         "22.8"

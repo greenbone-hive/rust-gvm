@@ -39,6 +39,13 @@ OCI-image and web-application target operations, removes their six redundant
 options types, twelve free builders, raw duplicate client signatures, and
 `_parsed` naming, and records separate
 [alternate-target gvmd evidence](alternate-target-request-gvmd-evidence.md).
+Issue #611 applies the same ownership contract to the six GMP 22.8 agent-group
+operations. Their complete requests now own filters, identifiers, scheduler
+data, repeated agent relationships, mutation fields, semantic aliases, and XML
+encoding. Three options types and six forwarding builders are removed; the six
+named client helpers accept the canonical requests unchanged. Independent
+[agent-group gvmd evidence](agent-group-request-gvmd-evidence.md) records the
+server contract.
 
 The sections below retain the bounded delivery history for each migrated
 family.
@@ -172,6 +179,13 @@ methods, builders, and response models remain supported. All requests preserve
 their GMP 22.8 pre-send gate, and installer instructions, identifier
 collections, integration secrets, and binary/base64 support bundles retain
 their established wire and decoding behavior.
+
+The canonical follow-up in
+[`#611`](https://github.com/greenbone-hive/rust-gvm/issues/611) replaces the
+agent-group wrappers with complete list/detail/create/clone/modify/delete
+requests and removes that family's options types and free builders. Named
+client helpers now accept those request values directly; agent CRUD,
+integration configurations, and specialized task creation remain separate.
 
 The generic-configuration and port-list Phase 3 batch, tracked by
 [`#572`](https://github.com/greenbone-hive/rust-gvm/issues/572), migrates all

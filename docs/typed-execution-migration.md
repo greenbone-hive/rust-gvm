@@ -138,6 +138,41 @@ let clone = client
 These operations require GMP 22.8. The client applies that gate from semantic
 metadata before encoding or transport, including detail and clone aliases.
 
+## Agent-group family
+
+The agent-group slice removes `CreateAgentGroupOpts`, `GetAgentGroupsOpts`,
+`ModifyAgentGroupOpts`, and all six free builders. Required create fields use
+the constructor; optional and mutable fields live on the same request value:
+
+```rust
+use gvm_gmp::commands::agent_groups::{
+    CreateAgentGroupRequest, ModifyAgentGroupRequest,
+};
+
+let mut create = CreateAgentGroupRequest::new(
+    "scheduled agents",
+    vec![agent_id],
+    "0 */5 * * *",
+);
+create.comment = Some("production agents".into());
+let created = client.create_agent_group(create).await?;
+
+let mut modify =
+    ModifyAgentGroupRequest::new(created.id, "0 */10 * * *");
+modify.name = Some("renamed agents".into());
+modify.agent_ids = vec![replacement_agent_id];
+client.modify_agent_group(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+List requests implement `Default`; detail, clone, and delete requests use
+their resource identifier constructors. The six named client conveniences
+accept those canonical request values unchanged and return their associated
+typed responses. Every operation remains gated to GMP 22.8 before encoding or
+transport, including clone and detail semantic aliases over the create and
+list wire roots. Specialized `create_agent_group_task` remains in the task
+family and is not changed by this migration.
+
 ## Moving from a raw builder
 
 Raw execution remains available:
@@ -231,7 +266,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 255 current public async methods: 251 delegate
+The facade inventory locks all 261 current public async methods: 257 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path, and the deprecated `sync_scan_config` alias delegates
 indirectly through `sync_config`.

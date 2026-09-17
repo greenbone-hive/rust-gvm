@@ -178,12 +178,13 @@ behavior.
 ## Agents and integration configurations
 
 All agent, agent-group, and integration-configuration commands require GMP
-22.8. Their semantic requests delegate to the existing builders, so filters,
-identifier collections, scheduler values, nested agent defaults, and complete
-integration replacements remain byte-for-byte compatible. The typed agent and
-agent-group facade methods and the parsed integration helpers now use
-`execute`; the raw integration methods remain available for callers that need
-the unmodeled response.
+22.8. Agent-group list, detail, create, clone, modify, and delete requests are
+canonical: they directly own filters, identifiers, scheduler values, repeated
+agent relationships, mutation fields, semantic aliases, and exact XML. Their
+named facade methods accept the same requests and delegate to `execute`.
+Agent and integration-configuration requests remain transitional and delegate
+to existing builders; parsed integration helpers and raw integration methods
+retain their established behavior.
 
 Agent installer instructions retain their language and origin metadata.
 Support-bundle responses continue to decode base64 content into binary bytes

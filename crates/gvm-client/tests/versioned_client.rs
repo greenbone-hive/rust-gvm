@@ -5,14 +5,18 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AgentInstallerLanguage, CommandSupport, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
-    CreateOciImageTargetTaskOpts, CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts,
-    CredentialStoreCredentialType, ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts,
-    Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts,
-    ModifyAgentGroupOpts, ModifyAgentOpts, ModifyCredentialStoreCredentialOpts,
+    AgentInstallerLanguage, CommandSupport, CreateAgentGroupTaskOpts, CreateOciImageTargetTaskOpts,
+    CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
+    ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands,
+    GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentOpts,
+    ModifyCredentialStoreCredentialOpts,
 };
 use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
+use gvm_gmp::commands::agent_groups::{
+    CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
+    GetAgentGroupsRequest, ModifyAgentGroupRequest,
+};
 use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
 use gvm_gmp::commands::oci_image_targets::{
@@ -553,15 +557,11 @@ async fn next_client_agent_groups_round_trip() {
         EntityId::new("agent-1").expect("valid id"),
         EntityId::new("agent-2").expect("valid id"),
     ];
+    let mut create_request =
+        CreateAgentGroupRequest::new("Client Agent Group", agent_ids.to_vec(), "0 */5 * * *");
+    create_request.comment = Some("created through client".into());
     let create_response = client
-        .create_agent_group(
-            "Client Agent Group",
-            &agent_ids,
-            "0 */5 * * *",
-            CreateAgentGroupOpts {
-                comment: Some("created through client".into()),
-            },
-        )
+        .create_agent_group(create_request)
         .await
         .expect("create_agent_group should succeed");
     assert_eq!(create_response.status, 201);
@@ -571,13 +571,13 @@ async fn next_client_agent_groups_round_trip() {
         assert_create_agent_group_task_round_trip(&mut client, &server, &agent_group_id).await;
 
     let clone_response = client
-        .clone_agent_group(&agent_group_id)
+        .clone_agent_group(CloneAgentGroupRequest::new(agent_group_id.clone()))
         .await
         .expect("clone_agent_group should succeed");
     assert_eq!(clone_response.status, 201);
 
     let get_response = client
-        .get_agent_group(&agent_group_id)
+        .get_agent_group(GetAgentGroupRequest::new(agent_group_id.clone()))
         .await
         .expect("get_agent_group should succeed");
     assert_eq!(get_response.items.len(), 1);
@@ -588,28 +588,24 @@ async fn next_client_agent_groups_round_trip() {
     );
 
     let list_response = client
-        .get_agent_groups(Default::default())
+        .get_agent_groups(GetAgentGroupsRequest::default())
         .await
         .expect("get_agent_groups should succeed");
     assert_eq!(list_response.status, 200);
     assert_eq!(list_response.counts.total, Some(2));
 
+    let mut modify_request = ModifyAgentGroupRequest::new(agent_group_id.clone(), "0 */10 * * *");
+    modify_request.name = Some("Updated Agent Group".into());
+    modify_request.comment = Some("modified through client".into());
+    modify_request.agent_ids = vec![EntityId::new("agent-3").expect("valid id")];
     let modify_response = client
-        .modify_agent_group(
-            &agent_group_id,
-            "0 */10 * * *",
-            ModifyAgentGroupOpts {
-                name: Some("Updated Agent Group".into()),
-                comment: Some("modified through client".into()),
-                agent_ids: vec![EntityId::new("agent-3").expect("valid id")],
-            },
-        )
+        .modify_agent_group(modify_request)
         .await
         .expect("modify_agent_group should succeed");
     assert_eq!(modify_response.status, 200);
 
     let updated_response = client
-        .get_agent_group(&agent_group_id)
+        .get_agent_group(GetAgentGroupRequest::new(agent_group_id.clone()))
         .await
         .expect("updated get_agent_group should succeed");
     assert_eq!(updated_response.items[0].meta.name, "Updated Agent Group");
@@ -624,13 +620,13 @@ async fn next_client_agent_groups_round_trip() {
 
     delete_task(&server, &task_id).await;
     let delete_response = client
-        .delete_agent_group(&agent_group_id, true)
+        .delete_agent_group(DeleteAgentGroupRequest::new(agent_group_id.clone(), true))
         .await
         .expect("delete_agent_group should succeed");
     assert_eq!(delete_response.status, 200);
 
     let error = client
-        .get_agent_group(&agent_group_id)
+        .get_agent_group(GetAgentGroupRequest::new(agent_group_id.clone()))
         .await
         .expect_err("deleted agent group should not be found");
     assert!(matches!(error, GvmError::Server { status: 404, .. }));
