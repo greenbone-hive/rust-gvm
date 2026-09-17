@@ -20,6 +20,7 @@ use gvm_gmp::commands::agents::{
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::credentials::CreateCredentialStoreCredentialRequest;
+use gvm_gmp::commands::filters::CreateFilterRequest;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -412,6 +413,32 @@ async fn invalid_port_range_fails_before_transport() {
         GvmError::Request(GmpRequestError::InvalidCombination {
             fields: &["start", "end"],
             ..
+        })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn mutated_filter_name_fails_before_support_and_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_4).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let mut request = CreateFilterRequest::new("filter");
+    request.name.clear();
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("empty final name should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField {
+            field: "name",
+            reason: "must not be empty",
         })
     ));
     assert!(server.command_history().is_empty());

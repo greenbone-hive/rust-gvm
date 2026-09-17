@@ -793,6 +793,20 @@ impl SessionHandler {
             if let Ok(uuid) = Uuid::parse_str(&copy_id) {
                 match store.clone_typed(&uuid, resource_type) {
                     Ok(new_id) => {
+                        if resource_type == "filter" {
+                            let name = parse_element_text(raw_xml, "name");
+                            let comment = element_text_including_empty(cmd, raw_xml, "comment");
+                            if name.is_some() || comment.is_some() {
+                                store.modify_typed(&new_id, resource_type, |resource| {
+                                    if let Some(name) = name {
+                                        resource.name = name;
+                                    }
+                                    if let Some(comment) = comment {
+                                        resource.comment = comment;
+                                    }
+                                });
+                            }
+                        }
                         return format!(
                             "<{}_response status=\"201\" \
                              status_text=\"OK, resource created\" \
@@ -1074,6 +1088,9 @@ impl SessionHandler {
         if resource_type == "filter" {
             if let Some(term) = parse_element_text(raw_xml, "term") {
                 resource.set_attr("term", &term);
+            }
+            if let Some(filter_type) = parse_element_text(raw_xml, "type") {
+                resource.set_attr("type", &filter_type);
             }
         }
         if resource_type == "ticket" {
@@ -1678,7 +1695,11 @@ impl SessionHandler {
             parse_element_text(raw_xml, "name")
         };
         let new_text = parse_element_text(raw_xml, "text");
-        let new_comment = parse_element_text(raw_xml, "comment");
+        let new_comment = if resource_type == "filter" {
+            element_text_including_empty(cmd, raw_xml, "comment")
+        } else {
+            parse_element_text(raw_xml, "comment")
+        };
         let new_host = parse_element_text(raw_xml, "host");
         let (new_hosts, new_exclude_hosts) = if resource_type == "target" {
             let hosts = element_text_including_empty(cmd, raw_xml, "hosts");
@@ -1789,7 +1810,11 @@ impl SessionHandler {
         } else {
             new_value
         };
-        let new_term = parse_element_text(raw_xml, "term");
+        let new_term = if resource_type == "filter" {
+            element_text_including_empty(cmd, raw_xml, "term")
+        } else {
+            parse_element_text(raw_xml, "term")
+        };
         let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
         let new_vault_id = parse_element_text(raw_xml, "vault_id");
         let new_host_identifier = parse_element_text(raw_xml, "host_identifier");
@@ -1998,6 +2023,9 @@ impl SessionHandler {
             if resource_type == "filter" {
                 if let Some(ref term) = new_term {
                     r.set_attr("term", term);
+                }
+                if let Some(ref filter_type) = new_type {
+                    r.set_attr("type", filter_type);
                 }
             }
             if resource_type == "alert" {

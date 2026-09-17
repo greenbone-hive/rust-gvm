@@ -100,6 +100,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+#### Canonical filters
+
+Filter operations use complete request values; callers do not combine required
+arguments with a separate options bag:
+
+```rust
+use gvm_gmp::commands::filters::{CreateFilterRequest, GetFiltersRequest};
+use gvm_gmp::FilterType;
+
+let mut request = CreateFilterRequest::new("Recent tasks");
+request.term = Some("rows=10 sort-reverse=modified".into());
+request.filter_type = Some(FilterType::Task);
+let created = client.create_filter(request).await?;
+
+let filters = client
+    .get_filters(GetFiltersRequest {
+        details: Some(true),
+        alerts: Some(true),
+        ..Default::default()
+    })
+    .await?;
+```
+
 #### Typed schedules
 
 Common schedule recurrence does not require callers to construct or parse
