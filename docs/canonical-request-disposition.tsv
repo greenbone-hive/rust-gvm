@@ -107,14 +107,14 @@ builder	crates/gvm-gmp/src/commands/permissions.rs	delete_permission	transitiona
 builder	crates/gvm-gmp/src/commands/permissions.rs	get_permission	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/permissions.rs	get_permissions	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/permissions.rs	modify_permission	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	clone_port_list	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	create_port_list	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	create_port_range	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	delete_port_list	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	delete_port_range	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	get_port_list	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	get_port_lists	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/port_lists.rs	modify_port_list	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	clone_port_list	removed	Removed by #617; ClonePortListRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	create_port_list	removed	Removed by #617; CreatePortListRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	create_port_range	removed	Removed by #617; CreatePortRangeRequest owns validation and canonical encoding.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	delete_port_list	removed	Removed by #617; DeletePortListRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	delete_port_range	removed	Removed by #617; DeletePortRangeRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	get_port_list	removed	Removed by #617; GetPortListRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	get_port_lists	removed	Removed by #617; GetPortListsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/port_lists.rs	modify_port_list	removed	Removed by #617; ModifyPortListRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/report_configs.rs	clone_report_config	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/report_configs.rs	create_report_config	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/report_configs.rs	create_report_config_opts	transitional	Pending bounded family migration under #602.
@@ -428,18 +428,18 @@ facade	crates/gvm-client/src/typed/reports.rs	modify_report_format	transitional	
 facade	crates/gvm-client/src/typed/reports.rs	modify_tls_certificate	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	verify_report_format	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	clone_config	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	clone_port_list	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	clone_port_list	retained-construction	Retained for discoverability; accepts the canonical ClonePortListRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	create_asset	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	create_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	create_host	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	create_port_list	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	create_port_range	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	create_port_list	retained-construction	Retained for discoverability; accepts the canonical CreatePortListRequest unchanged.
+facade	crates/gvm-client/src/typed/resources.rs	create_port_range	retained-construction	Retained for discoverability; accepts the canonical CreatePortRangeRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	delete_asset	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	delete_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	delete_host	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	delete_operating_system_asset	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	delete_port_list	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	delete_port_range	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	delete_port_list	retained-construction	Retained for discoverability; accepts the canonical DeletePortListRequest unchanged.
+facade	crates/gvm-client/src/typed/resources.rs	delete_port_range	retained-construction	Retained for discoverability; accepts the canonical DeletePortRangeRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	get_asset	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	get_assets	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	get_config	transitional	Pending bounded family migration under #602.
@@ -448,13 +448,13 @@ facade	crates/gvm-client/src/typed/resources.rs	get_host	transitional	Pending bo
 facade	crates/gvm-client/src/typed/resources.rs	get_hosts	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	get_operating_system_asset	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	get_operating_system_assets	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	get_port_list	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	get_port_lists	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	get_port_list	retained-construction	Retained for discoverability; accepts the canonical GetPortListRequest unchanged.
+facade	crates/gvm-client/src/typed/resources.rs	get_port_lists	retained-construction	Retained for discoverability; accepts the canonical GetPortListsRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	modify_asset	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	modify_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	modify_host	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	modify_operating_system_asset	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	modify_port_list	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	modify_port_list	retained-construction	Retained for discoverability; accepts the canonical ModifyPortListRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	clone_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	clone_scan_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	clone_scanner	transitional	Pending bounded family migration under #602.
@@ -643,9 +643,9 @@ options	crates/gvm-gmp/src/commands/overrides.rs	ModifyOverrideOpts	transitional
 options	crates/gvm-gmp/src/commands/overrides.rs	OverrideOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/permissions.rs	GetPermissionsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/permissions.rs	PermissionOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/port_lists.rs	ModifyPortListOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/port_lists.rs	PortListOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListsOpts	removed	Removed by #617; fields now belong to GetPortListsRequest.
+options	crates/gvm-gmp/src/commands/port_lists.rs	ModifyPortListOpts	removed	Removed by #617; fields now belong to ModifyPortListRequest.
+options	crates/gvm-gmp/src/commands/port_lists.rs	PortListOpts	removed	Removed by #617; fields now belong to CreatePortListRequest.
 options	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/report_configs.rs	DeleteReportConfigOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigsOpts	transitional	Pending bounded family migration under #602.
@@ -804,12 +804,14 @@ request	crates/gvm-gmp/src/commands/permissions.rs	CreatePermissionRequest	trans
 request	crates/gvm-gmp/src/commands/permissions.rs	DeletePermissionRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/permissions.rs	GetPermissionsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/permissions.rs	ModifyPermissionRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/port_lists.rs	CreatePortListRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/port_lists.rs	CreatePortRangeRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/port_lists.rs	DeletePortListRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/port_lists.rs	DeletePortRangeRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/port_lists.rs	ModifyPortListRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/port_lists.rs	ClonePortListRequest	canonical-request	Complete clone input with semantic alias metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/port_lists.rs	CreatePortListRequest	canonical-request	Complete create input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/port_lists.rs	CreatePortRangeRequest	canonical-request	Complete range input with final-value validation, direct metadata/encoding, and typed response.
+request	crates/gvm-gmp/src/commands/port_lists.rs	DeletePortListRequest	canonical-request	Complete delete input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/port_lists.rs	DeletePortRangeRequest	canonical-request	Complete range-delete input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/port_lists.rs	ModifyPortListRequest	canonical-request	Complete replacement input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigWithOptsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/report_configs.rs	DeleteReportConfigWithOptsRequest	transitional	Pending bounded family migration under #602.

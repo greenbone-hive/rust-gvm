@@ -25,6 +25,7 @@ use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
+use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
 use gvm_gmp::commands::targets::CreateTargetRequest;
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
@@ -381,6 +382,36 @@ async fn partial_integration_configuration_replacement_fails_before_support_and_
         })
     ));
     assert!(!error.to_string().contains("https://service.example"));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_port_range_fails_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_4).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let request = CreatePortRangeRequest::new(
+        gvm_gmp::EntityId::new("port-list-1").expect("valid id"),
+        gvm_gmp::PortRangeType::Tcp,
+        443,
+        80,
+    );
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("descending range should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidCombination {
+            fields: &["start", "end"],
+            ..
+        })
+    ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;
 }

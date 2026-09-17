@@ -22,8 +22,7 @@ use gvm_gmp::commands::operating_systems::{
 };
 use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
-    DeletePortRangeRequest, GetPortListRequest, GetPortListsOpts, GetPortListsRequest,
-    ModifyPortListOpts, ModifyPortListRequest, PortListOpts,
+    DeletePortRangeRequest, GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
 };
 use gvm_gmp::responses::{
     CreateAssetResponse, CreateConfigResponse, CreateHostResponse, CreatePortListResponse,
@@ -33,7 +32,6 @@ use gvm_gmp::responses::{
     ModifyConfigResponse, ModifyHostResponse, ModifyPortListResponse,
 };
 use gvm_gmp::types::EntityId;
-use gvm_gmp::PortRangeType;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Port Lists ────────────────────────────────────────────────────────────
@@ -44,9 +42,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_port_lists(
         &mut self,
-        opts: GetPortListsOpts,
+        request: GetPortListsRequest,
     ) -> Result<GetPortListsResponse, GvmError> {
-        self.execute(GetPortListsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a detailed `get_port_lists` request for one port list.
@@ -55,10 +53,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_port_list(
         &mut self,
-        port_list_id: &EntityId,
+        request: GetPortListRequest,
     ) -> Result<GetPortListsResponse, GvmError> {
-        self.execute(GetPortListRequest::new(port_list_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_port_list` request and return a typed [`CreatePortListResponse`].
@@ -67,10 +64,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_port_list(
         &mut self,
-        name: &str,
-        opts: PortListOpts,
+        request: CreatePortListRequest,
     ) -> Result<CreatePortListResponse, GvmError> {
-        self.execute(CreatePortListRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Clone a port list through `create_port_list`.
@@ -79,10 +75,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_port_list(
         &mut self,
-        port_list_id: &EntityId,
+        request: ClonePortListRequest,
     ) -> Result<CreatePortListResponse, GvmError> {
-        self.execute(ClonePortListRequest::new(port_list_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_port_list` request and return a typed
@@ -95,11 +90,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_port_list(
         &mut self,
-        port_list_id: &EntityId,
-        opts: ModifyPortListOpts,
+        request: ModifyPortListRequest,
     ) -> Result<ModifyPortListResponse, GvmError> {
-        self.execute(ModifyPortListRequest::new(port_list_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_port_list` request.
@@ -108,11 +101,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_port_list(
         &mut self,
-        port_list_id: &EntityId,
-        ultimate: bool,
+        request: DeletePortListRequest,
     ) -> Result<DeletePortListResponse, GvmError> {
-        self.execute(DeletePortListRequest::new(port_list_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_port_range` request.
@@ -121,18 +112,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_port_range(
         &mut self,
-        port_list_id: &EntityId,
-        range_type: PortRangeType,
-        start: u16,
-        end: u16,
+        request: CreatePortRangeRequest,
     ) -> Result<CreatePortRangeResponse, GvmError> {
-        self.execute(CreatePortRangeRequest::new(
-            port_list_id.clone(),
-            range_type,
-            start,
-            end,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `delete_port_range` request.
@@ -141,10 +123,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_port_range(
         &mut self,
-        port_range_id: &EntityId,
+        request: DeletePortRangeRequest,
     ) -> Result<DeletePortRangeResponse, GvmError> {
-        self.execute(DeletePortRangeRequest::new(port_range_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     // ── Hosts ─────────────────────────────────────────────────────────────────

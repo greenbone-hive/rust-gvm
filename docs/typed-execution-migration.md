@@ -254,6 +254,55 @@ service CA certificate remains optional; it and the client secret are redacted
 from request diagnostics and wire tracing. All three named client methods
 accept the canonical requests unchanged and require GMP 22.8.
 
+## Port-list family
+
+The port-list slice removes `PortListOpts`, `ModifyPortListOpts`,
+`GetPortListsOpts`, and all eight free builders. List requests implement
+`Default`; detail, clone, and delete requests own their identifiers. Create and
+modify inputs live directly on the request value:
+
+```rust
+use gvm_gmp::commands::port_lists::{
+    CreatePortListRequest, ModifyPortListRequest,
+};
+
+let mut create = CreatePortListRequest::new("web services");
+create.comment = Some("production ports".into());
+create.port_range = Some("T:80,443".into());
+let created = client.create_port_list(create).await?;
+
+let mut replace = ModifyPortListRequest::new(created.id);
+replace.name = Some("public web services".into());
+client.modify_port_list(replace).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Modification remains a full replacement: omitting name or comment clears that
+field in gvmd. Port ranges are changed separately. Their canonical create
+request owns the optional comment and uses gvmd's documented child-element
+payload:
+
+```rust
+use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
+use gvm_gmp::PortRangeType;
+
+let mut range = CreatePortRangeRequest::new(
+    port_list_id,
+    PortRangeType::Tcp,
+    80,
+    443,
+);
+range.comment = Some("web ports".into());
+client.create_port_range(range).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Ports must be in the inclusive range 1–65535, and `start` must not exceed
+`end`. Invalid final values return `GvmError::Request` before capability checks
+or transport. All eight operations are baseline GMP 22.4 commands. The named
+client methods accept canonical requests unchanged; raw `send`/`call` remains
+the low-level escape hatch.
+
 ## Moving from a raw builder
 
 Raw execution remains available:
