@@ -19,6 +19,7 @@ use gvm_gmp::commands::agents::{
     GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
+use gvm_gmp::commands::alerts::CreateAlertRequest;
 use gvm_gmp::commands::credentials::CreateCredentialStoreCredentialRequest;
 use gvm_gmp::commands::filters::CreateFilterRequest;
 use gvm_gmp::commands::integration_configs::{
@@ -38,8 +39,8 @@ use gvm_gmp::commands::web_application_targets::{
 };
 use gvm_gmp::responses::ActionResponse;
 use gvm_gmp::{
-    EntityType, GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, ServicePort,
-    TargetHost, TargetHosts, TargetPortSelection,
+    AlertCondition, AlertEvent, AlertMethod, EntityType, GmpCommand, GmpRequest, GmpRequestCodec,
+    GmpRequestError, GmpVersion, ServicePort, TargetHost, TargetHosts, TargetPortSelection,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -794,5 +795,32 @@ async fn supported_and_unknown_custom_metadata_reach_transport() {
         .map(|record| record.command_name().to_string())
         .collect::<Vec<_>>();
     assert_eq!(commands, ["get_targets", "unknown_future_command"]);
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_alert_final_value_fails_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let request = CreateAlertRequest::new(
+        "",
+        AlertEvent::TaskRunStatusChanged,
+        AlertCondition::Always,
+        AlertMethod::Email,
+    );
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("empty alert name should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+    assert!(server.command_history().is_empty());
     server.shutdown().await;
 }

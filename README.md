@@ -312,6 +312,10 @@ list/detail/create/clone/modify/delete helpers accept the same request values
 as `execute`; filters, scheduler data, repeated agent IDs, and mutation fields
 no longer require separate options values or free builders.
 
+Alerts use complete request values for list, detail, create, clone, modify,
+delete, test, and report-trigger operations. Required create fields are typed,
+and nested alert data is redacted from diagnostics and wire traces.
+
 Other families continue through the bounded migration. Raw `send` and `call`
 remain the supported low-level escape hatch. See the downstream
 [migration notes](docs/typed-execution-migration.md) for API selection,

@@ -17,7 +17,10 @@ use gvm_gmp::commands::agents::{
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::aggregates::GetAggregatesRequestOpts;
-use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts, TriggerAlertOpts};
+use gvm_gmp::commands::alerts::{
+    CloneAlertRequest, CreateAlertRequest, DeleteAlertRequest, GetAlertRequest, GetAlertsRequest,
+    ModifyAlertRequest, TestAlertRequest, TriggerAlertRequest,
+};
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
@@ -107,8 +110,8 @@ use gvm_gmp::commands::web_application_targets::{
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
-    EntityType, FeedType, GmpRequest, PortRangeType, ScheduleDefinition, ScheduleInput,
-    ScheduleRecurrence, ScheduleTimestamp, ScheduleTimezone,
+    AlertCondition, AlertEvent, AlertMethod, EntityType, FeedType, GmpRequest, PortRangeType,
+    ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp, ScheduleTimezone,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
@@ -117,6 +120,15 @@ const CREATED_ID: &str = "11111111-1111-1111-1111-111111111111";
 
 fn tag_resources() -> TagResources {
     TagResources::new(EntityType::Task)
+}
+
+fn alert_create_request(name: &str) -> CreateAlertRequest {
+    CreateAlertRequest::new(
+        name,
+        AlertEvent::TaskRunStatusChanged,
+        AlertCondition::Always,
+        AlertMethod::Email,
+    )
 }
 
 const SYSTEM_ADMIN_OVERRIDES: &[(&str, &str)] = &[
@@ -2403,14 +2415,16 @@ async fn alert_and_schedule_families_execute_through_typed_facade() {
     let report_id = id("report-1");
     let schedule_id = id("schedule-1");
 
-    assert_typed_success!(client.get_alerts(GetAlertsOpts::default()));
-    assert_typed_success!(client.get_alert(&alert_id));
-    assert_create_success!(client.create_alert("alert", AlertOpts::default()));
-    assert_create_success!(client.clone_alert(&alert_id));
-    assert_typed_success!(client.modify_alert(&alert_id, AlertOpts::default()));
-    assert_typed_success!(client.delete_alert(&alert_id, false));
-    assert_typed_success!(client.test_alert(&alert_id));
-    assert_typed_success!(client.trigger_alert(&alert_id, &report_id, TriggerAlertOpts::default()));
+    assert_typed_success!(client.get_alerts(GetAlertsRequest::default()));
+    assert_typed_success!(client.get_alert(GetAlertRequest::new(alert_id.clone())));
+    assert_create_success!(client.create_alert(alert_create_request("alert")));
+    assert_create_success!(client.clone_alert(CloneAlertRequest::new(alert_id.clone())));
+    assert_typed_success!(client.modify_alert(ModifyAlertRequest::new(alert_id.clone())));
+    assert_typed_success!(client.delete_alert(DeleteAlertRequest::new(alert_id.clone(), false)));
+    assert_typed_success!(client.test_alert(TestAlertRequest::new(alert_id.clone())));
+    assert_typed_success!(
+        client.trigger_alert(TriggerAlertRequest::new(alert_id.clone(), report_id))
+    );
 
     assert_typed_success!(client.get_schedules(GetSchedulesOpts::default()));
     assert_typed_success!(client.get_schedule(&schedule_id));
@@ -2492,7 +2506,7 @@ async fn alert_and_schedule_execute_preserve_status_and_parse_context() {
     let mut client = client(&server).await;
 
     let status_error = client
-        .get_alert(&id("alert-1"))
+        .get_alert(GetAlertRequest::new(id("alert-1")))
         .await
         .expect_err("non-success alert response should fail");
     assert!(matches!(
@@ -2754,7 +2768,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_cpes(GetSecInfoOpts::default()));
     assert_typed_success!(client.get_cert_bund_advisories(GetSecInfoOpts::default()));
     assert_typed_success!(client.get_dfn_cert_advisories(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_alerts(GetAlertsOpts::default()));
+    assert_typed_success!(client.get_alerts(GetAlertsRequest::default()));
     assert_typed_success!(client.get_credentials(GetCredentialsRequest::default()));
     assert_typed_success!(client.get_filters(GetFiltersRequest::default()));
     assert_typed_success!(client.get_notes(GetNotesOpts::default()));
@@ -2842,7 +2856,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     let related_id = id("22222222-2222-2222-2222-222222222222");
 
     assert_create_success!(client.create_port_list(CreatePortListRequest::new("ports")));
-    assert_create_success!(client.create_alert("alert", AlertOpts::default()));
+    assert_create_success!(client.create_alert(alert_create_request("alert")));
     assert_create_success!(client.create_filter(CreateFilterRequest::new("filter")));
     assert_create_success!(client.create_note("1.3.6.1.4.1.25623.1.0.1", NoteOpts::default()));
     assert_create_success!(

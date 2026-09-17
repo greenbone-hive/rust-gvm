@@ -12,7 +12,7 @@ use gvm_client::{
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
 use gvm_gmp::commands::alerts::{
-    trigger_alert, AlertData, AlertOpts, GetAlertsOpts, TriggerAlertOpts,
+    AlertData, CreateAlertRequest, GetAlertsRequest, ModifyAlertRequest, TriggerAlertRequest,
 };
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
@@ -1068,25 +1068,18 @@ async fn trigger_alert_sends_get_reports_command() {
         .await
         .expect("client should connect");
 
-    let response = client
-        .call(trigger_alert(
-            &EntityId::new("alert-1").expect("valid id"),
-            &EntityId::new("report-1").expect("valid id"),
-            TriggerAlertOpts {
-                filter_string: Some("severity>5".into()),
-                filter_id: Some(EntityId::new("filter-1").expect("valid id")),
-                report_format_id: Some(EntityId::new("format-1").expect("valid id")),
-                delta_report_id: Some(EntityId::new("delta-1").expect("valid id")),
-            },
-        ))
+    let mut request = TriggerAlertRequest::new(
+        EntityId::new("alert-1").expect("valid id"),
+        EntityId::new("report-1").expect("valid id"),
+    );
+    request.filter_string = Some("severity>5".into());
+    request.filter_id = Some(EntityId::new("filter-1").expect("valid id"));
+    request.report_format_id = Some(EntityId::new("format-1").expect("valid id"));
+    request.delta_report_id = Some(EntityId::new("delta-1").expect("valid id"));
+    client
+        .execute(request)
         .await
         .expect("trigger_alert should send get_reports command");
-
-    assert_eq!(response.status_code(), Some(200));
-    assert_eq!(
-        response.root_element_name().as_deref(),
-        Some("get_reports_response")
-    );
 
     let history = server.command_history();
     let command = history.last().expect("trigger command recorded");
@@ -1102,6 +1095,15 @@ async fn trigger_alert_sends_get_reports_command() {
 fn only_alert(response: &gvm_gmp::responses::GetAlertsResponse) -> &gvm_gmp::responses::Alert {
     assert_eq!(response.items.len(), 1);
     &response.items[0]
+}
+
+fn alert_create_request(name: &str) -> CreateAlertRequest {
+    CreateAlertRequest::new(
+        name,
+        AlertEvent::TaskRunStatusChanged,
+        AlertCondition::SeverityAtLeast,
+        AlertMethod::Email,
+    )
 }
 
 fn assert_alert_data(
@@ -1140,84 +1142,70 @@ async fn typed_alert_data_maps_and_rename_round_trip() {
         .await
         .expect("authenticate should succeed");
 
+    let mut create = alert_create_request("Typed Alert");
+    create.event_data = vec![AlertData::new("status", "Done")];
+    create.condition_data = vec![AlertData::new("severity", "5.5")];
+    create.method_data = vec![AlertData::new("to_address", "ops@example.com")];
+    create.filter_id = Some(EntityId::new("filter-1").expect("valid id"));
     let created = client
-        .create_alert(
-            "Typed Alert",
-            AlertOpts {
-                event: Some(AlertEvent::TaskRunStatusChanged),
-                event_data: vec![AlertData::new("status", "Done")],
-                condition: Some(AlertCondition::SeverityAtLeast),
-                condition_data: vec![AlertData::new("severity", "5.5")],
-                method: Some(AlertMethod::Email),
-                method_data: vec![AlertData::new("to_address", "ops@example.com")],
-                ..Default::default()
-            },
-        )
+        .create_alert(create)
         .await
         .expect("create_alert should succeed");
 
     let fetched = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts should succeed");
     let alert = only_alert(&fetched);
     assert_eq!(alert.meta.id, created.id);
+    assert_eq!(
+        alert.filter.as_ref().map(|filter| filter.id.as_str()),
+        Some("filter-1")
+    );
     assert_alert_data(alert, "Typed Alert", Some("Done"), "5.5", "ops@example.com");
 
+    let mut modify = ModifyAlertRequest::new(created.id.clone());
+    modify.name = Some("Renamed Alert".into());
+    modify.event = Some(AlertEvent::TaskRunStatusChanged);
+    modify.condition = Some(AlertCondition::SeverityAtLeast);
+    modify.condition_data = vec![AlertData::new("severity", "7.0")];
+    modify.method = Some(AlertMethod::Email);
+    modify.method_data = vec![AlertData::new("to_address", "soc@example.com")];
     client
-        .modify_alert(
-            &created.id,
-            AlertOpts {
-                name: Some("Renamed Alert".into()),
-                event: Some(AlertEvent::TaskRunStatusChanged),
-                event_data: vec![],
-                condition: Some(AlertCondition::SeverityAtLeast),
-                condition_data: vec![AlertData::new("severity", "7.0")],
-                method: Some(AlertMethod::Email),
-                method_data: vec![AlertData::new("to_address", "soc@example.com")],
-                ..Default::default()
-            },
-        )
+        .modify_alert(modify)
         .await
         .expect("modify_alert should succeed");
 
     let modified = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts after modify should succeed");
     let alert = only_alert(&modified);
+    assert_eq!(alert.filter, None, "omitting filter must clear its binding");
     assert_alert_data(alert, "Renamed Alert", None, "7.0", "soc@example.com");
 
+    let mut modify = ModifyAlertRequest::new(created.id.clone());
+    modify.comment = Some("data omitted".into());
     client
-        .modify_alert(
-            &created.id,
-            AlertOpts {
-                comment: Some("data omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_alert(modify)
         .await
         .expect("partial modify_alert should succeed");
     let partially_modified = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts after partial modify should succeed");
     let alert = only_alert(&partially_modified);
     assert_alert_data(alert, "Renamed Alert", None, "7.0", "soc@example.com");
 
+    let mut modify = ModifyAlertRequest::new(created.id.clone());
+    modify.method = Some(AlertMethod::Email);
+    modify.method_data = vec![AlertData::new("to_address", "nested-name@example.com")];
     client
-        .modify_alert(
-            &created.id,
-            AlertOpts {
-                method: Some(AlertMethod::Email),
-                method_data: vec![AlertData::new("to_address", "nested-name@example.com")],
-                ..Default::default()
-            },
-        )
+        .modify_alert(modify)
         .await
         .expect("data-only modify_alert should succeed");
     let data_only_modified = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts after data-only modify should succeed");
     let alert = only_alert(&data_only_modified);
@@ -1246,50 +1234,38 @@ async fn typed_alert_active_round_trip() {
         .await
         .expect("authenticate should succeed");
 
+    let mut create = alert_create_request("Inactive Alert");
+    create.active = Some(false);
     let created = client
-        .create_alert(
-            "Inactive Alert",
-            AlertOpts {
-                active: Some(false),
-                ..Default::default()
-            },
-        )
+        .create_alert(create)
         .await
         .expect("create_alert should succeed");
     let fetched = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts should succeed");
     assert!(!only_alert(&fetched).active);
 
+    let mut modify = ModifyAlertRequest::new(created.id.clone());
+    modify.active = Some(true);
     client
-        .modify_alert(
-            &created.id,
-            AlertOpts {
-                active: Some(true),
-                ..Default::default()
-            },
-        )
+        .modify_alert(modify)
         .await
         .expect("enabling alert should succeed");
     let enabled = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts after enabling should succeed");
     assert!(only_alert(&enabled).active);
 
+    let mut modify = ModifyAlertRequest::new(created.id.clone());
+    modify.comment = Some("active omitted".into());
     client
-        .modify_alert(
-            &created.id,
-            AlertOpts {
-                comment: Some("active omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_alert(modify)
         .await
         .expect("partial modify_alert should succeed");
     let preserved = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts after partial modify should succeed");
     assert!(
@@ -1297,18 +1273,14 @@ async fn typed_alert_active_round_trip() {
         "omitting active must preserve its current state"
     );
 
+    let mut modify = ModifyAlertRequest::new(created.id.clone());
+    modify.active = Some(false);
     client
-        .modify_alert(
-            &created.id,
-            AlertOpts {
-                active: Some(false),
-                ..Default::default()
-            },
-        )
+        .modify_alert(modify)
         .await
         .expect("disabling alert should succeed");
     let disabled = client
-        .get_alerts(GetAlertsOpts::default())
+        .get_alerts(GetAlertsRequest::default())
         .await
         .expect("get_alerts after disabling should succeed");
     assert!(!only_alert(&disabled).active);

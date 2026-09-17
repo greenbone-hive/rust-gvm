@@ -4579,6 +4579,8 @@ fn set_alert_fields(resource: &mut Resource, cmd: &ParsedCommand) {
     }
     if let Some(filter_id) = cmd.child_attr("filter", "id") {
         resource.set_attr("filter_id", filter_id);
+    } else if cmd.name == "modify_alert" {
+        resource.remove_attr("filter_id");
     }
     if let Some(active) = cmd.child_text("active") {
         resource.set_attr("active", active);

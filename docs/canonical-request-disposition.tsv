@@ -15,14 +15,14 @@ builder	crates/gvm-gmp/src/commands/agents.rs	modify_agent_control_scan_config	r
 builder	crates/gvm-gmp/src/commands/agents.rs	sync_agents	removed	Removed by #613; SyncAgentsRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/aggregates.rs	get_aggregates	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/aggregates.rs	get_aggregates_request	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	clone_alert	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	create_alert	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	delete_alert	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	get_alert	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	get_alerts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	modify_alert	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	test_alert	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/alerts.rs	trigger_alert	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/alerts.rs	clone_alert	removed	Removed by #627; CloneAlertRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/alerts.rs	create_alert	removed	Removed by #627; CreateAlertRequest owns validation and canonical encoding.
+builder	crates/gvm-gmp/src/commands/alerts.rs	delete_alert	removed	Removed by #627; DeleteAlertRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/alerts.rs	get_alert	removed	Removed by #627; GetAlertRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/alerts.rs	get_alerts	removed	Removed by #627; GetAlertsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/alerts.rs	modify_alert	removed	Removed by #627; ModifyAlertRequest owns validation and canonical encoding.
+builder	crates/gvm-gmp/src/commands/alerts.rs	test_alert	removed	Removed by #627; TestAlertRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/alerts.rs	trigger_alert	removed	Removed by #627; TriggerAlertRequest owns semantic metadata and canonical encoding.
 builder	crates/gvm-gmp/src/commands/assets.rs	create_asset	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/assets.rs	delete_asset	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/assets.rs	get_assets	transitional	Pending bounded family migration under #602.
@@ -328,23 +328,23 @@ facade	crates/gvm-client/src/typed/agents.rs	modify_agent_group	retained-constru
 facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config	retained-construction	Retained for discoverability; accepts the canonical ModifyIntegrationConfigRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config_parsed	removed	Removed by #615; modify_integration_config now returns the typed response.
 facade	crates/gvm-client/src/typed/agents.rs	sync_agents	retained-construction	Retained for discoverability; accepts the canonical SyncAgentsRequest unchanged.
-facade	crates/gvm-client/src/typed/automation.rs	clone_alert	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	clone_alert	retained-construction	Retained for discoverability; accepts CloneAlertRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	clone_filter	canonical-request	Accepts CloneFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	clone_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_tag	canonical-request	Accepts CloneTagRequest unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/automation.rs	create_alert	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	create_alert	retained-construction	Retained for discoverability; accepts CreateAlertRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	create_filter	canonical-request	Accepts CreateFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	create_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	create_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	create_tag	canonical-request	Accepts CreateTagRequest unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/automation.rs	delete_alert	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	delete_alert	retained-construction	Retained for discoverability; accepts DeleteAlertRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	delete_filter	canonical-request	Accepts DeleteFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	delete_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	delete_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	delete_tag	canonical-request	Accepts DeleteTagRequest unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/automation.rs	get_alert	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	get_alerts	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	get_alert	retained-construction	Retained for discoverability; accepts GetAlertRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/automation.rs	get_alerts	retained-construction	Retained for discoverability; accepts GetAlertsRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	get_filter	canonical-request	Accepts GetFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	get_filters	canonical-request	Accepts GetFiltersRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	get_note	transitional	Pending bounded family migration under #602.
@@ -353,13 +353,13 @@ facade	crates/gvm-client/src/typed/automation.rs	get_override	transitional	Pendi
 facade	crates/gvm-client/src/typed/automation.rs	get_overrides	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_tag	canonical-request	Accepts GetTagRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	get_tags	canonical-request	Accepts GetTagsRequest unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/automation.rs	modify_alert	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	modify_alert	retained-construction	Retained for discoverability; accepts ModifyAlertRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	modify_filter	canonical-request	Accepts ModifyFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	modify_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	modify_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	modify_tag	canonical-request	Accepts ModifyTagRequest unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/automation.rs	test_alert	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	trigger_alert	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	test_alert	retained-construction	Retained for discoverability; accepts TestAlertRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/automation.rs	trigger_alert	retained-construction	Retained for discoverability; accepts TriggerAlertRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/core.rs	authenticate	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/core.rs	get_version	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/identity.rs	clone_group	transitional	Pending bounded family migration under #602.
@@ -601,9 +601,9 @@ options	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentControlScanConfigOpts	r
 options	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentOpts	removed	Removed by #613; fields now belong to ModifyAgentRequest.
 options	crates/gvm-gmp/src/commands/aggregates.rs	GetAggregatesOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/aggregates.rs	GetAggregatesRequestOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/alerts.rs	AlertOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/alerts.rs	GetAlertsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/alerts.rs	TriggerAlertOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/alerts.rs	AlertOpts	removed	Removed by #627; create and modify requests own their operation-specific fields.
+options	crates/gvm-gmp/src/commands/alerts.rs	GetAlertsOpts	removed	Removed by #627; GetAlertsRequest owns list fields.
+options	crates/gvm-gmp/src/commands/alerts.rs	TriggerAlertOpts	removed	Removed by #627; TriggerAlertRequest owns trigger fields.
 options	crates/gvm-gmp/src/commands/assets.rs	CreateAssetOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/assets.rs	DeleteAssetOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/assets.rs	GetAssetsOpts	transitional	Pending bounded family migration under #602.
@@ -722,14 +722,14 @@ request	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentRequest	canonical-reque
 request	crates/gvm-gmp/src/commands/agents.rs	SyncAgentsRequest	canonical-request	Complete synchronization input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/aggregates.rs	GetAggregatesRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/aggregates.rs	GetLegacyAggregatesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	CloneAlertRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	CreateAlertRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	DeleteAlertRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	GetAlertRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	GetAlertsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	ModifyAlertRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	TestAlertRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/alerts.rs	TriggerAlertRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/alerts.rs	CloneAlertRequest	canonical-request	Complete clone request owns optional gvmd-supported overrides, semantic metadata, and direct encoding.
+request	crates/gvm-gmp/src/commands/alerts.rs	CreateAlertRequest	canonical-request	Complete create input owns required alert fields, validation, redacted data, and direct encoding.
+request	crates/gvm-gmp/src/commands/alerts.rs	DeleteAlertRequest	canonical-request	Complete delete input owns direct encoding and its typed response.
+request	crates/gvm-gmp/src/commands/alerts.rs	GetAlertRequest	canonical-request	Complete detail input owns semantic metadata and direct encoding.
+request	crates/gvm-gmp/src/commands/alerts.rs	GetAlertsRequest	canonical-request	Complete list input owns filters, selectors, and direct encoding.
+request	crates/gvm-gmp/src/commands/alerts.rs	ModifyAlertRequest	canonical-request	Complete modify input owns gvmd omit/clear semantics, validation, redacted data, and direct encoding.
+request	crates/gvm-gmp/src/commands/alerts.rs	TestAlertRequest	canonical-request	Complete test input owns direct encoding and its typed response.
+request	crates/gvm-gmp/src/commands/alerts.rs	TriggerAlertRequest	canonical-request	Complete trigger input owns the get_reports semantic alias, direct encoding, and GetReportsResponse association.
 request	crates/gvm-gmp/src/commands/assets.rs	CreateAssetRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/assets.rs	DeleteAssetRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/assets.rs	GetAssetRequest	transitional	Pending bounded family migration under #602.

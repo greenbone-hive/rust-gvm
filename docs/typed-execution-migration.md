@@ -396,6 +396,39 @@ and list/detail requests expose the supported `alerts` expansion selector.
 Empty comment and term elements remain representable for modification so
 callers can clear those text values.
 
+## Alert family
+
+The alert slice removes `AlertOpts`, `GetAlertsOpts`, `TriggerAlertOpts`, and
+all eight free builders. List, detail, create, clone, modify, delete, test, and
+trigger inputs now live on complete canonical request values, and the eight
+named client methods accept those values unchanged:
+
+```rust
+use gvm_gmp::commands::alerts::{AlertData, CreateAlertRequest};
+use gvm_gmp::{AlertCondition, AlertEvent, AlertMethod};
+
+let mut create = CreateAlertRequest::new(
+    "completed scan",
+    AlertEvent::TaskRunStatusChanged,
+    AlertCondition::Always,
+    AlertMethod::Email,
+);
+create.event_data.push(AlertData::new("status", "Done"));
+create
+    .method_data
+    .push(AlertData::new("to_address", "ops@example.com"));
+let created = client.create_alert(create).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Create owns gvmd's required event, condition, and method values and validates
+the final name. Clone accepts the server-supported name/comment overrides.
+Modify preserves omitted active state but follows gvmd's filter replacement
+behavior: omitting `filter_id` clears the current binding. Detail, clone, and
+trigger preserve distinct semantic identities over shared XML roots. Trigger
+continues to decode `GetReportsResponse`. Alert data values are redacted from
+request diagnostics and wire traces.
+
 ## Tag family
 
 The tag slice removes `TagOpts`, `GetTagsOpts`, and all six free builders.

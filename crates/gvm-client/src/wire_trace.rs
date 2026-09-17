@@ -180,11 +180,25 @@ fn redact_attributes(
 fn is_sensitive_element(stack: &[String], element_name: &str) -> bool {
     is_sensitive_name(element_name)
         || matches!(element_name, "value" | "param" | "default_value")
+        || is_alert_data(stack, element_name)
         || (element_name == "file" && stack.first().is_some_and(|root| root == "modify_license"))
         || (matches!(element_name, "host" | "path")
             && stack
                 .first()
                 .is_some_and(|root| root.contains("credential_store")))
+}
+
+fn is_alert_data(stack: &[String], element_name: &str) -> bool {
+    element_name == "data"
+        && stack.first().is_some_and(|root| {
+            matches!(
+                root.as_str(),
+                "create_alert" | "modify_alert" | "get_alerts_response"
+            )
+        })
+        && stack
+            .last()
+            .is_some_and(|parent| matches!(parent.as_str(), "event" | "condition" | "method"))
 }
 
 fn is_credential_store_preference(stack: &[String], element_name: &str) -> bool {
@@ -312,5 +326,17 @@ mod tests {
             redact_wire_bytes(b"<root><password><empty/></password></root>"),
             b"<root><password><redacted/></password></root>"
         );
+    }
+
+    #[test]
+    fn redacts_nested_alert_data_values() {
+        let xml = b"<create_alert><name>visible</name><method>Email<data>do-not-log<name>password</name></data></method></create_alert>";
+        let redacted = String::from_utf8(redact_wire_bytes(xml)).expect("valid UTF-8");
+
+        assert_eq!(
+            redacted,
+            "<create_alert><name>visible</name><method>Email<data><redacted/></data></method></create_alert>"
+        );
+        assert!(!redacted.contains("do-not-log"));
     }
 }

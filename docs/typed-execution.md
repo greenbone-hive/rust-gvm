@@ -286,15 +286,21 @@ can clear them. The unsupported transitional `severity` field is removed.
 
 ## Alert and schedule command shapes
 
-Semantic requests model every public alert and schedule operation even when
-multiple operations reuse one XML root. Alert list/detail and create/clone pairs
-therefore remain distinct Rust request types with their established shared
-response models. Alert triggering is also explicit: it emits the existing
-`<get_reports alert_id="..." report_id="...">` shape and associates that
-request with `GetReportsResponse`, while `test_alert` uses the ordinary action
-response codec.
+Alert list, detail, create, clone, modify, delete, test, and trigger operations
+use complete canonical requests. `AlertOpts`, `GetAlertsOpts`,
+`TriggerAlertOpts`, and the eight forwarding builders are removed; named client
+methods accept the same request values and delegate to `execute`. List/detail
+and create/clone remain distinct Rust request types over shared wire roots and
+response models.
 
-Schedule requests retain both input levels. `CreateScheduleRequest` and
+Create owns gvmd's required event, condition, and method values. Modify exposes
+the server's filter-clearing-on-omission behavior and active-state preservation.
+Nested alert data values are redacted from request diagnostics and wire traces.
+Alert triggering emits `<get_reports alert_id="..." report_id="...">`, keeps a
+`trigger_alert` semantic alias, and associates the request with
+`GetReportsResponse`; `test_alert` uses the ordinary action response codec.
+
+Schedule requests still retain both input levels. `CreateScheduleRequest` and
 `ModifyScheduleRequest` accept the raw iCalendar compatibility options;
 `CreateTypedScheduleRequest` and `ModifyTypedScheduleRequest` accept validated
 first-run and recurrence input and delegate to the existing typed builders.
