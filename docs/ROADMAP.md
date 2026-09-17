@@ -31,6 +31,13 @@ validation remains a separate follow-up.
 
 ## Compatibility Policy
 
+The current `main` branch is the unreleased `0.7.0` development line. It is
+intentionally SemVer-incompatible with `v0.6.0`: issue #602 replaces temporary
+parallel options/builders/facade inputs with canonical complete request values
+before the next downstream-ready release. The release remains gated on the
+final #602 surface audit and `rust-gvm-api#457` validation. See the
+[v0.7.0 migration guide](v0.7.0-migration.md) for caller-visible changes.
+
 python-gvm compatibility is a secondary target:
 
 - Use python-gvm tests to catch migration and interoperability regressions.
