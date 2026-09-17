@@ -303,6 +303,59 @@ or transport. All eight operations are baseline GMP 22.4 commands. The named
 client methods accept canonical requests unchanged; raw `send`/`call` remains
 the low-level escape hatch.
 
+## Credential and credential-store family
+
+The credential slice removes `CredentialOpts`, `ModifyCredentialOpts`,
+`GetCredentialsOpts`, `GetCredentialStoresOpts`,
+`CredentialStoreCredentialOpts`, `ModifyCredentialStoreOpts`, and
+`ModifyCredentialStoreCredentialOpts`, together with all thirteen free
+builders. Inputs now live directly on twelve canonical request types. Required
+create values use constructors; optional values remain editable and are
+revalidated immediately before support classification and transport:
+
+```rust
+use gvm_gmp::commands::credentials::{
+    CreateCredentialRequest, CreateCredentialStoreCredentialRequest,
+};
+use gvm_gmp::{CredentialStoreCredentialType, CredentialType};
+
+let mut standard = CreateCredentialRequest::new("scanner login");
+standard.credential_type = Some(CredentialType::UsernamePassword);
+standard.login = Some("scanner".into());
+standard.password = Some(password);
+let created = client.create_credential(standard).await?;
+
+let mut stored = CreateCredentialStoreCredentialRequest::new(
+    "vault login",
+    CredentialStoreCredentialType::UsernamePassword,
+    "vault-entry-1",
+    "host-1",
+);
+stored.credential_store_id = Some(store_id);
+client.create_credential_store_credential(stored).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Credential-store list/detail, verification, modification, and store-backed
+credential operations require GMP 22.8. Store-backed create and modify retain
+their semantic aliases even though their XML roots are `create_credential` and
+`modify_credential`. The single-store selector is now the schema-defined
+`credential_store_id` root attribute; callers relying on the legacy Rust child
+shape should move to `GetCredentialStoreRequest`.
+
+Create validation follows gvmd's selected credential type requirements. An
+explicit username/password credential may omit its password for gvmd
+autogeneration, while its login remains required; password-only credentials
+may also autogenerate their secret. Store-backed Kerberos creation requires a
+KDC and realm. Store-backed SNMP creation requires `auth_algorithm`; its
+optional privacy host identifier requires a privacy algorithm. Modify requests
+validate only caller-known final values because gvmd applies type-specific
+modify rules using the stored resource type. The store-backed input enum omits
+`cs_cc`, which pinned gvmd rejects; client certificates remain available as
+standard `cc` credentials. Request diagnostics and wire traces redact passwords,
+private/public keys, key phrases, certificates, SNMP community and privacy
+values, vault/host identifiers, and credential-store preference values.
+
 ## Moving from a raw builder
 
 Raw execution remains available:

@@ -843,12 +843,20 @@ impl SessionHandler {
         if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
         }
-        let credential_store_type = if resource_type == "credential" {
+        let credential_type = if resource_type == "credential" {
             parse_element_text(raw_xml, "type")
-                .filter(|credential_type| is_credential_store_credential_type(credential_type))
         } else {
             None
         };
+        if credential_type.as_deref().is_some_and(|credential_type| {
+            credential_type.starts_with("cs_")
+                && !is_credential_store_credential_type(credential_type)
+        }) {
+            return error_response(&cmd.name, 400, "Invalid credential type");
+        }
+        let credential_store_type = credential_type
+            .as_deref()
+            .filter(|credential_type| is_credential_store_credential_type(credential_type));
         if credential_store_type.is_some() && self.version != GmpVersion::V22_8 {
             return error_response(
                 &cmd.name,
@@ -866,6 +874,17 @@ impl SessionHandler {
                 .is_none_or(|value| value.trim().is_empty())
         {
             return error_response(&cmd.name, 400, "Missing required element: host_identifier");
+        }
+        if credential_store_type == Some("cs_krb5")
+            && credential_kdcs(cmd).is_none()
+            && parse_element_text(raw_xml, "kdc").is_none_or(|value| value.trim().is_empty())
+        {
+            return error_response(&cmd.name, 400, "Missing required element: kdc or kdcs");
+        }
+        if credential_store_type == Some("cs_krb5")
+            && parse_element_text(raw_xml, "realm").is_none_or(|value| value.trim().is_empty())
+        {
+            return error_response(&cmd.name, 400, "Missing required element: realm");
         }
         let (ticket_result_id, ticket_assignee_id, ticket_open_note) = if resource_type == "ticket"
         {
@@ -3600,7 +3619,7 @@ fn handle_verify_credential_store(cmd: &ParsedCommand) -> Vec<u8> {
 fn is_credential_store_credential_type(credential_type: &str) -> bool {
     matches!(
         credential_type,
-        "cs_cc" | "cs_snmp" | "cs_up" | "cs_usk" | "cs_smime" | "cs_pgp" | "cs_pw"
+        "cs_krb5" | "cs_snmp" | "cs_up" | "cs_usk" | "cs_smime" | "cs_pgp" | "cs_pw"
     )
 }
 
@@ -3608,7 +3627,7 @@ fn has_credential_store_credential_modify_field(cmd: &ParsedCommand) -> bool {
     cmd.children.iter().any(|child| {
         matches!(
             child.name.as_str(),
-            "credential_store_id" | "vault_id" | "host_identifier"
+            "credential_store_id" | "vault_id" | "host_identifier" | "privacy_host_identifier"
         )
     })
 }

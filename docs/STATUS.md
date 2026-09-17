@@ -77,6 +77,21 @@ shape and now owns its optional comment. Independent
 [port-list gvmd evidence](port-list-request-gvmd-evidence.md) records that
 protocol correction and the server-side contracts.
 
+Issue #620 converts the complete credential and credential-store family to
+twelve canonical requests. Seven redundant options types and thirteen free
+builders are removed; ten existing named facade helpers accept the canonical
+values unchanged and delegate to `execute`. Credential autogeneration/type
+requirements, store-backed Kerberos/SNMP fields, and final-value validation
+follow pinned gvmd source.
+Credential-store create/modify operations keep their distinct GMP 22.8
+semantic identities over shared credential wire roots, and the detail request
+corrects the legacy child selector to gvmd's documented
+`credential_store_id` attribute. Passwords, keys, certificates, SNMP values,
+vault/host identifiers, and store preferences are redacted from diagnostics
+and wire traces. Independent
+[credential gvmd evidence](credential-request-gvmd-evidence.md) records the
+wire and validation contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 
@@ -96,24 +111,10 @@ OCI/container-image, and web-application task requests preserve their GMP 22.8
 semantic gate before the shared `create_task` wire command can be sent. Raw
 builder calls receive the same shape-based pre-send protection.
 
-The credential-focused Phase 2 batch, tracked by
-[`#544`](https://github.com/greenbone-hive/rust-gvm/issues/544), migrates the
-core credential list/get/create/clone/modify/delete lifecycle. Existing
-builders remain the single byte-compatible encoders, and the existing core
-credential convenience methods remain source-compatible wrappers over generic
-typed execution. Credential-store operations stay separate because their
-vault, preference, semantic-alias, and version-policy shapes require a focused
-follow-up.
-
-The credential-store Phase 2 batch, tracked by
-[`#551`](https://github.com/greenbone-hive/rust-gvm/issues/551), migrates store
-list/filter/detail, verification and preference-bearing modification, plus
-store-backed credential creation and modification. Existing builders remain
-the byte-compatible encoders. The generic `create_credential` and
-`modify_credential` wire roots retain explicit credential-store semantic names,
-so their GMP 22.8 gates run before transmission; existing facade methods now
-delegate to generic execution. Preference values retain wire-trace redaction,
-and raw/custom execution remains supported.
+The earlier additive credential batches in #544 and #551 established typed
+execution while retaining their builders and options. The bounded canonical
+migration in #620 supersedes that transitional construction model for the
+complete credential and credential-store family.
 
 The scanner-focused Phase 2 batch, tracked by
 [`#542`](https://github.com/greenbone-hive/rust-gvm/issues/542), migrates the

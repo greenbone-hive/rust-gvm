@@ -5,11 +5,9 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialOpts,
-    CredentialStoreCredentialType, GetAggregatesRequestOpts, GetCredentialStoresOpts,
-    GetScanReportOpts, GetSystemReportsOpts, GmpClient, GmpNextCommands, GmpVersioned, GvmError,
-    ImportReportOpts, ModifyCredentialStoreCredentialOpts, UsageType, WireTraceDirection,
-    WireTraceEvent,
+    AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialType,
+    GetAggregatesRequestOpts, GetScanReportOpts, GetSystemReportsOpts, GmpClient, GmpNextCommands,
+    GmpVersioned, GvmError, ImportReportOpts, UsageType, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
@@ -25,11 +23,10 @@ use gvm_gmp::commands::configs::{
     GetConfigsOpts, ModifyConfigOpts,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential_store_credential, get_credential, modify_credential_store,
-    modify_credential_store_credential, CredentialOpts, CredentialStorePreference,
-    ModifyCredentialOpts,
-    ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
-    ModifyCredentialStoreOpts, ModifyCredentialStoreRequest,
+    CreateCredentialRequest, CreateCredentialStoreCredentialRequest, CredentialStorePreference,
+    GetCredentialStoreRequest, GetCredentialStoresRequest, ModifyCredentialRequest,
+    ModifyCredentialStoreCredentialRequest, ModifyCredentialStoreRequest,
+    VerifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::integration_configs::{
@@ -333,7 +330,7 @@ async fn create_test_credential(
     name: &str,
 ) -> EntityId {
     client
-        .create_credential(name, CredentialOpts::default())
+        .create_credential(CreateCredentialRequest::new(name))
         .await
         .expect("credential should be created")
         .id
@@ -343,16 +340,12 @@ async fn create_test_smb_credential(
     client: &mut GmpClient<UnixSocketConnection>,
     name: &str,
 ) -> EntityId {
+    let mut request = CreateCredentialRequest::new(name);
+    request.credential_type = Some(CredentialType::UsernamePassword);
+    request.login = Some("scanner".into());
+    request.password = Some("secret".into());
     client
-        .create_credential(
-            name,
-            CredentialOpts {
-                credential_type: Some(CredentialType::UsernamePassword),
-                login: Some("scanner".into()),
-                password: Some("secret".into()),
-                ..Default::default()
-            },
-        )
+        .create_credential(request)
         .await
         .expect("SMB credential should be created")
         .id
@@ -895,18 +888,15 @@ async fn live_wire_trace_redacts_credential_store_preference_values() {
     server.clear_history();
     events.lock().expect("trace lock").clear();
 
+    let mut request =
+        ModifyCredentialStoreRequest::new(EntityId::new(CREDENTIAL_STORE_ID).expect("valid ID"));
+    request.host = Some("store.example".into());
+    request.preferences.push(CredentialStorePreference {
+        name: "token".into(),
+        value: "transport-preference-sentinel".into(),
+    });
     client
-        .call(modify_credential_store(
-            &EntityId::new(CREDENTIAL_STORE_ID).expect("valid ID"),
-            ModifyCredentialStoreOpts {
-                host: Some("store.example".into()),
-                preferences: vec![CredentialStorePreference {
-                    name: "token".into(),
-                    value: "transport-preference-sentinel".into(),
-                }],
-                ..Default::default()
-            },
-        ))
+        .execute(request)
         .await
         .expect("credential store modification should succeed");
 
@@ -926,7 +916,8 @@ async fn live_wire_trace_redacts_credential_store_preference_values() {
             .map(event_text)
             .expect("credential-store request trace")
     };
-    assert!(request.contains("<host>store.example</host>"));
+    assert!(request.contains("<host><redacted/></host>"));
+    assert!(!request.contains("store.example"));
     assert!(request.contains("<name>token</name>"));
     assert!(request.contains("<value><redacted/></value>"));
     assert!(!request.contains("transport-preference-sentinel"));
@@ -2012,9 +2003,24 @@ async fn credential_store_commands_are_rejected_before_v22_8() {
         .await
         .expect("authenticate should succeed");
 
+    server.clear_history();
     let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
     let error = client
-        .verify_credential_store(&credential_store_id)
+        .get_credential_stores(GetCredentialStoresRequest::default())
+        .await
+        .expect_err("22.7 should reject typed credential store listing");
+    assert_unsupported_next_command(error, "get_credential_stores");
+
+    let error = client
+        .get_credential_store(GetCredentialStoreRequest::new(credential_store_id.clone()))
+        .await
+        .expect_err("22.7 should reject typed credential store detail");
+    assert_unsupported_next_command(error, "get_credential_store");
+
+    let error = client
+        .verify_credential_store(VerifyCredentialStoreRequest::new(
+            credential_store_id.clone(),
+        ))
         .await
         .expect_err("22.7 should reject typed credential store verification");
     assert!(matches!(
@@ -2027,13 +2033,16 @@ async fn credential_store_commands_are_rejected_before_v22_8() {
     ));
 
     let error = client
-        .call(create_credential_store_credential(
-            "Rejected Store Credential",
-            CredentialStoreCredentialType::UsernamePassword,
-            "vault-1",
-            "host-1",
-            CredentialStoreCredentialOpts::default(),
-        ))
+        .execute(ModifyCredentialStoreRequest::new(credential_store_id))
+        .await
+        .expect_err("22.7 should reject typed credential store modification");
+    assert_unsupported_next_command(error, "modify_credential_store");
+
+    let error = client
+        .call(
+            b"<create_credential><name>Rejected Store Credential</name><type>cs_up</type><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></create_credential>"
+                .as_slice(),
+        )
         .await
         .expect_err("22.7 should reject raw credential store credential create");
     assert!(matches!(
@@ -2046,13 +2055,12 @@ async fn credential_store_commands_are_rejected_before_v22_8() {
     ));
 
     let error = client
-        .create_credential_store_credential(
+        .create_credential_store_credential(CreateCredentialStoreCredentialRequest::new(
             "Rejected Typed Store Credential",
             CredentialStoreCredentialType::UsernamePassword,
             "vault-1",
             "host-1",
-            CredentialStoreCredentialOpts::default(),
-        )
+        ))
         .await
         .expect_err("22.7 should reject typed credential store credential create");
     assert!(matches!(
@@ -2066,6 +2074,7 @@ async fn credential_store_commands_are_rejected_before_v22_8() {
 
     assert_credential_store_credential_modify_rejected_before_next(&mut client).await;
 
+    assert!(server.command_history().is_empty());
     server.shutdown().await;
 }
 
@@ -2073,25 +2082,23 @@ async fn assert_credential_store_credential_modify_rejected_before_next(
     client: &mut GmpClient<UnixSocketConnection>,
 ) {
     let credential_id = EntityId::new("credential-1").expect("valid id");
-    for opts in [
-        GmpModifyCredentialStoreCredentialOpts::default(),
-        GmpModifyCredentialStoreCredentialOpts {
-            vault_id: Some("vault-1".into()),
-            ..Default::default()
-        },
+    for xml in [
+        "<modify_credential credential_id=\"credential-1\"><credential_store_id>store-1</credential_store_id></modify_credential>",
+        "<modify_credential credential_id=\"credential-1\"><vault_id>vault-1</vault_id></modify_credential>",
+        "<modify_credential credential_id=\"credential-1\"><host_identifier>host-1</host_identifier></modify_credential>",
+        "<modify_credential credential_id=\"credential-1\"><privacy_host_identifier>privacy-host-1</privacy_host_identifier></modify_credential>",
     ] {
         let error = client
-            .call(modify_credential_store_credential(&credential_id, opts))
+            .call(xml.as_bytes())
             .await
             .expect_err("22.7 should reject raw credential store credential modify");
         assert_unsupported_next_command(error, "modify_credential_store_credential");
     }
 
     let error = client
-        .modify_credential_store_credential(
-            &credential_id,
-            ModifyCredentialStoreCredentialOpts::default(),
-        )
+        .modify_credential_store_credential(ModifyCredentialStoreCredentialRequest::new(
+            credential_id,
+        ))
         .await
         .expect_err("22.7 should reject typed credential store credential modify");
     assert_unsupported_next_command(error, "modify_credential_store_credential");
@@ -2290,16 +2297,13 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
         .get_report_closed_cves(&report_id, Default::default())
         .await
         .expect("closed cves should parse");
-    assert_eq!(closed_cves.items[0].cve.as_deref(), Some("CVE-2025-9999"));
+    let closed_cve = &closed_cves.items[0];
+    assert_eq!(closed_cve.cve.as_deref(), Some("CVE-2025-9999"));
     assert_eq!(
-        closed_cves.items[0].nvt_oid.as_deref(),
+        closed_cve.nvt_oid.as_deref(),
         Some("1.3.6.1.4.1.25623.1.0.100000")
     );
-    assert_eq!(
-        closed_cves.items[0].name.as_deref(),
-        Some("Closed vulnerability check")
-    );
-    assert_eq!(closed_cves.items[0].threat.as_deref(), Some("Medium"));
+    assert_eq!(closed_cve.threat.as_deref(), Some("Medium"));
 
     let timezones = client
         .get_timezones()
@@ -2313,20 +2317,22 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     server.clear_history();
 
     let stores = client
-        .get_credential_stores()
+        .get_credential_stores(GetCredentialStoresRequest::default())
         .await
         .expect("credential stores should parse");
     assert_eq!(stores.items[0].name, "Local credential store");
 
     let store_id = EntityId::new("local").expect("valid id");
+    let mut get_store = GetCredentialStoreRequest::new(store_id);
+    get_store.details = Some(true);
     let store = client
-        .get_credential_store(&store_id, Some(true))
+        .get_credential_store(get_store)
         .await
         .expect("credential store should parse");
     assert_eq!(store.items[0].name, "Local credential store");
 
     let filtered_stores = client
-        .get_credential_stores_with_opts(GetCredentialStoresOpts {
+        .get_credential_stores_with_opts(GetCredentialStoresRequest {
             filter_string: Some("name=Local".into()),
             filter_id: Some(EntityId::new("filter-1").expect("valid id")),
             details: Some(false),
@@ -2347,7 +2353,7 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     assert_eq!(commands[0], "<get_credential_stores/>");
     assert_eq!(
         commands[1],
-        "<get_credential_stores details=\"1\"><credential_store_id>local</credential_store_id></get_credential_stores>"
+        "<get_credential_stores credential_store_id=\"local\" details=\"1\"/>"
     );
     assert_eq!(
         commands[2],
@@ -2524,43 +2530,31 @@ async fn typed_ssh_credential_lifecycle_uses_nested_key_shape() {
         .expect("authenticate should succeed");
     server.clear_history();
 
+    let mut create_ssh = CreateCredentialRequest::new("SSH Credential");
+    create_ssh.credential_type = Some(CredentialType::UsernameSshKey);
+    create_ssh.login = Some("root".into());
+    create_ssh.private_key = Some("PRIVATE KEY".into());
+    create_ssh.key_phrase = Some("key phrase".into());
     let credential = client
-        .create_credential(
-            "SSH Credential",
-            CredentialOpts {
-                credential_type: Some(CredentialType::UsernameSshKey),
-                login: Some("root".into()),
-                private_key: Some("PRIVATE KEY".into()),
-                key_phrase: Some("key phrase".into()),
-                ..Default::default()
-            },
-        )
+        .create_credential(create_ssh)
         .await
         .expect("SSH credential should be created");
+    let mut modify_ssh = ModifyCredentialRequest::new(credential.id.clone());
+    modify_ssh.name = Some("Renamed SSH Credential".into());
+    modify_ssh.login = Some("scanner".into());
+    modify_ssh.private_key = Some("UPDATED PRIVATE KEY".into());
+    modify_ssh.key_phrase = Some("updated phrase".into());
+    modify_ssh.allow_insecure = Some(true);
     client
-        .modify_credential(
-            &credential.id,
-            ModifyCredentialOpts {
-                name: Some("Renamed SSH Credential".into()),
-                login: Some("scanner".into()),
-                private_key: Some("UPDATED PRIVATE KEY".into()),
-                key_phrase: Some("updated phrase".into()),
-                allow_insecure: Some(true),
-                ..Default::default()
-            },
-        )
+        .modify_credential(modify_ssh)
         .await
         .expect("SSH credential should be modified");
+    let mut create_username_password = CreateCredentialRequest::new("Username Password Credential");
+    create_username_password.credential_type = Some(CredentialType::UsernamePassword);
+    create_username_password.login = Some("operator".into());
+    create_username_password.password = Some("secret".into());
     let username_password = client
-        .create_credential(
-            "Username Password Credential",
-            CredentialOpts {
-                credential_type: Some(CredentialType::UsernamePassword),
-                login: Some("operator".into()),
-                password: Some("secret".into()),
-                ..Default::default()
-            },
-        )
+        .create_credential(create_username_password)
         .await
         .expect("username/password credential should be created");
 
@@ -2616,33 +2610,25 @@ async fn typed_snmpv3_and_kerberos_credentials_use_current_wire_shapes() {
         .expect("authenticate should succeed");
     server.clear_history();
 
+    let mut create_snmp = CreateCredentialRequest::new("SNMPv3 Credential");
+    create_snmp.credential_type = Some(CredentialType::SnmpV3);
+    create_snmp.login = Some("snmp-user".into());
+    create_snmp.password = Some("auth secret".into());
+    create_snmp.auth_algorithm = Some(SnmpAuthAlgorithm::Sha1);
+    create_snmp.privacy_password = Some("privacy secret".into());
+    create_snmp.privacy_algorithm = Some(SnmpPrivacyAlgorithm::Aes);
     let snmp = client
-        .create_credential(
-            "SNMPv3 Credential",
-            CredentialOpts {
-                credential_type: Some(CredentialType::SnmpV3),
-                login: Some("snmp-user".into()),
-                password: Some("auth secret".into()),
-                auth_algorithm: Some(SnmpAuthAlgorithm::Sha1),
-                privacy_password: Some("privacy secret".into()),
-                privacy_algorithm: Some(SnmpPrivacyAlgorithm::Aes),
-                ..Default::default()
-            },
-        )
+        .create_credential(create_snmp)
         .await
         .expect("SNMPv3 credential should be created");
+    let mut create_kerberos = CreateCredentialRequest::new("Kerberos Credential");
+    create_kerberos.credential_type = Some(CredentialType::Kerberos5);
+    create_kerberos.login = Some("principal".into());
+    create_kerberos.password = Some("kerberos secret".into());
+    create_kerberos.kdcs = vec!["kdc1.example".into(), "kdc2.example".into()];
+    create_kerberos.realm = Some("EXAMPLE.COM".into());
     let kerberos = client
-        .create_credential(
-            "Kerberos Credential",
-            CredentialOpts {
-                credential_type: Some(CredentialType::Kerberos5),
-                login: Some("principal".into()),
-                password: Some("kerberos secret".into()),
-                kdcs: vec!["kdc1.example".into(), "kdc2.example".into()],
-                realm: Some("EXAMPLE.COM".into()),
-                ..Default::default()
-            },
-        )
+        .create_credential(create_kerberos)
         .await
         .expect("Kerberos credential should be created");
 
@@ -2697,24 +2683,22 @@ async fn typed_verify_credential_store_uses_next_command_shape() {
 
     let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
     let response = client
-        .verify_credential_store(&credential_store_id)
+        .verify_credential_store(VerifyCredentialStoreRequest::new(
+            credential_store_id.clone(),
+        ))
         .await
         .expect("verify_credential_store should parse");
     assert_eq!(response.status, 200);
 
+    let mut modify_store = ModifyCredentialStoreRequest::new(credential_store_id.clone());
+    modify_store.active = Some(true);
+    modify_store.host = Some("store.example".into());
+    modify_store.preferences.push(CredentialStorePreference {
+        name: "token".into(),
+        value: "secret".into(),
+    });
     let response = client
-        .execute(ModifyCredentialStoreRequest::new(
-            credential_store_id.clone(),
-            ModifyCredentialStoreOpts {
-                active: Some(true),
-                host: Some("store.example".into()),
-                preferences: vec![CredentialStorePreference {
-                    name: "token".into(),
-                    value: "secret".into(),
-                }],
-                ..Default::default()
-            },
-        ))
+        .execute(modify_store)
         .await
         .expect("modify_credential_store should parse");
     assert_eq!(response.status, 200);
@@ -2752,19 +2736,17 @@ async fn typed_create_credential_store_credential_uses_next_shape() {
 
     server.clear_history();
 
+    let mut create_store_credential = CreateCredentialStoreCredentialRequest::new(
+        "Typed Store Credential",
+        CredentialStoreCredentialType::PasswordOnly,
+        "vault-typed",
+        "host-typed",
+    );
+    create_store_credential.comment = Some("typed store credential".into());
+    create_store_credential.credential_store_id =
+        Some(EntityId::new("credential-store-typed").expect("valid id"));
     let response = client
-        .create_credential_store_credential(
-            "Typed Store Credential",
-            CredentialStoreCredentialType::PasswordOnly,
-            "vault-typed",
-            "host-typed",
-            CredentialStoreCredentialOpts {
-                comment: Some("typed store credential".into()),
-                credential_store_id: Some(
-                    EntityId::new("credential-store-typed").expect("valid id"),
-                ),
-            },
-        )
+        .create_credential_store_credential(create_store_credential)
         .await
         .expect("typed create should succeed");
     assert_eq!(response.status, 201);
@@ -2798,23 +2780,22 @@ async fn typed_modify_credential_store_credential_uses_next_shape() {
         .expect("authenticate should succeed");
 
     let credential = client
-        .create_credential("Stored Credential", Default::default())
+        .create_credential(CreateCredentialRequest::new("Stored Credential"))
         .await
         .expect("create credential should succeed");
 
     server.clear_history();
 
+    let mut modify_store_credential =
+        ModifyCredentialStoreCredentialRequest::new(credential.id.clone());
+    modify_store_credential.name = Some("Updated Store Credential".into());
+    modify_store_credential.comment = Some("from credential store".into());
+    modify_store_credential.credential_store_id =
+        Some(EntityId::new("credential-store-1").expect("valid id"));
+    modify_store_credential.vault_id = Some("vault-1".into());
+    modify_store_credential.host_identifier = Some("host-1".into());
     let response = client
-        .modify_credential_store_credential(
-            &credential.id,
-            ModifyCredentialStoreCredentialOpts {
-                name: Some("Updated Store Credential".into()),
-                comment: Some("from credential store".into()),
-                credential_store_id: Some(EntityId::new("credential-store-1").expect("valid id")),
-                vault_id: Some("vault-1".into()),
-                host_identifier: Some("host-1".into()),
-            },
-        )
+        .modify_credential_store_credential(modify_store_credential)
         .await
         .expect("typed modify should succeed");
     assert_eq!(response.status, 200);
@@ -2833,7 +2814,13 @@ async fn typed_modify_credential_store_credential_uses_next_shape() {
     );
 
     let get = client
-        .call(get_credential(&credential.id))
+        .call(
+            format!(
+                "<get_credentials credential_id=\"{}\" details=\"1\"/>",
+                credential.id
+            )
+            .into_bytes(),
+        )
         .await
         .expect("get modified credential should succeed");
     let xml = get.as_str().expect("utf8 response");
@@ -3686,18 +3673,14 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
     let ssh = create_test_credential(&mut client, "Extended SSH").await;
     let elevate = create_test_smb_credential(&mut client, "Extended Elevation").await;
     let smb = create_test_smb_credential(&mut client, "Extended SMB").await;
+    let mut kerberos = CreateCredentialRequest::new("Extended Kerberos");
+    kerberos.credential_type = Some(CredentialType::Kerberos5);
+    kerberos.login = Some("principal".into());
+    kerberos.password = Some("secret".into());
+    kerberos.kdcs = vec!["kdc.example".into()];
+    kerberos.realm = Some("EXAMPLE.COM".into());
     let krb5 = client
-        .create_credential(
-            "Extended Kerberos",
-            CredentialOpts {
-                credential_type: Some(CredentialType::Kerberos5),
-                login: Some("principal".into()),
-                password: Some("secret".into()),
-                kdcs: vec!["kdc.example".into()],
-                realm: Some("EXAMPLE.COM".into()),
-                ..Default::default()
-            },
-        )
+        .create_credential(kerberos)
         .await
         .expect("Kerberos credential should be created")
         .id;

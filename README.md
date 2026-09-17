@@ -248,6 +248,20 @@ let request = CreateOciImageTargetRequest::new(
 let target = client.create_oci_image_target(request).await?;
 ```
 
+Credential requests follow the same single-value contract; secret-bearing
+fields live on the request and are redacted from diagnostics and wire traces:
+
+```rust
+use gvm_gmp::commands::credentials::CreateCredentialRequest;
+use gvm_gmp::CredentialType;
+
+let mut request = CreateCredentialRequest::new("scanner login");
+request.credential_type = Some(CredentialType::UsernamePassword);
+request.login = Some("scanner".into());
+request.password = Some(password);
+let credential = client.create_credential(request).await?;
+```
+
 Agent groups also use complete canonical requests on GMP 22.8. Their six
 list/detail/create/clone/modify/delete helpers accept the same request values
 as `execute`; filters, scheduler data, repeated agent IDs, and mutation fields

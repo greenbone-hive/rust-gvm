@@ -231,7 +231,7 @@ newer operation before sending:
 
 ```rust
 use gvm_gmp::commands::credentials::{
-    CreateCredentialStoreCredentialRequest, CredentialStoreCredentialOpts,
+    CreateCredentialStoreCredentialRequest,
 };
 use gvm_gmp::CredentialStoreCredentialType;
 
@@ -241,7 +241,6 @@ let credential = client
         CredentialStoreCredentialType::UsernamePassword,
         "vault-entry-1",
         "host-1",
-        CredentialStoreCredentialOpts::default(),
     ))
     .await?;
 ```
@@ -249,10 +248,11 @@ let credential = client
 This preserves the `create_credential_store_credential` and
 `modify_credential_store_credential` capability gates even though those names
 do not appear as XML roots. A client negotiated below GMP 22.8 rejects them
-before transport. Existing builders remain authoritative for vault and host
-fields, store preferences keep the existing wire-trace redaction, and the
-preference-bearing semantic request deliberately provides no `Debug`
-representation that could expose its values.
+before transport. The canonical requests now own the vault, host, SNMP, and
+preference fields directly. Their custom `Debug` implementations and the wire
+trace boundary redact credential material, vault/host identifiers, and
+preference values. The low-level raw `send`/`call` path remains available for
+custom XML.
 
 ## Alert and schedule command shapes
 

@@ -26,9 +26,8 @@ use gvm_gmp::commands::configs::{
     GetConfigsOpts, ModifyConfigOpts,
 };
 use gvm_gmp::commands::credentials::{
-    CloneCredentialRequest, CreateCredentialRequest, CredentialOpts, DeleteCredentialRequest,
-    GetCredentialRequest, GetCredentialsOpts, GetCredentialsRequest, ModifyCredentialOpts,
-    ModifyCredentialRequest,
+    CloneCredentialRequest, CreateCredentialRequest, DeleteCredentialRequest, GetCredentialRequest,
+    GetCredentialsRequest, ModifyCredentialRequest,
 };
 use gvm_gmp::commands::filters::{FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
@@ -2167,7 +2166,7 @@ async fn standard_credential_requests_execute_on_the_oldest_supported_version() 
     let credential_id = id("credential-1");
 
     let listed = client
-        .execute(GetCredentialsRequest::new(GetCredentialsOpts::default()))
+        .execute(GetCredentialsRequest::default())
         .await
         .expect("credential listing should be supported");
     assert_eq!(listed.status, 200);
@@ -2178,10 +2177,7 @@ async fn standard_credential_requests_execute_on_the_oldest_supported_version() 
     assert_eq!(detailed.status, 200);
 
     let created = client
-        .execute(CreateCredentialRequest::new(
-            "credential",
-            CredentialOpts::default(),
-        ))
+        .execute(CreateCredentialRequest::new("credential"))
         .await
         .expect("credential creation should be supported");
     assert_eq!(created.status, 201);
@@ -2192,10 +2188,7 @@ async fn standard_credential_requests_execute_on_the_oldest_supported_version() 
     assert_eq!(cloned.status, 201);
 
     let modified = client
-        .execute(ModifyCredentialRequest::new(
-            credential_id.clone(),
-            ModifyCredentialOpts::default(),
-        ))
+        .execute(ModifyCredentialRequest::new(credential_id.clone()))
         .await
         .expect("credential modification should be supported");
     assert_eq!(modified.status, 200);
@@ -2751,7 +2744,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_cert_bund_advisories(GetSecInfoOpts::default()));
     assert_typed_success!(client.get_dfn_cert_advisories(GetSecInfoOpts::default()));
     assert_typed_success!(client.get_alerts(GetAlertsOpts::default()));
-    assert_typed_success!(client.get_credentials(GetCredentialsOpts::default()));
+    assert_typed_success!(client.get_credentials(GetCredentialsRequest::default()));
     assert_typed_success!(client.get_filters(GetFiltersOpts::default()));
     assert_typed_success!(client.get_notes(GetNotesOpts::default()));
     assert_typed_success!(client.get_overrides(GetOverridesOpts::default()));
@@ -3239,7 +3232,9 @@ async fn remaining_mutation_families_use_typed_facade_and_scalar_relationship_up
     server.clear_history();
 
     let resource_id = id("resource-1");
-    assert_typed_success!(client.delete_credential(&resource_id, false));
+    assert_typed_success!(
+        client.delete_credential(DeleteCredentialRequest::new(resource_id.clone(), false))
+    );
     assert_typed_success!(client.modify_schedule(
         &resource_id,
         ScheduleOpts {
@@ -3322,7 +3317,7 @@ async fn remaining_mutation_families_surface_non_success_responses() {
     let resource_id = id("resource-1");
 
     assert_server_error!(
-        client.delete_credential(&resource_id, false),
+        client.delete_credential(DeleteCredentialRequest::new(resource_id.clone(), false)),
         409,
         "conflict"
     );

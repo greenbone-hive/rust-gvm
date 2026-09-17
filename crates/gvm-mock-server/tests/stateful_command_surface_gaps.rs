@@ -18,9 +18,9 @@ use gvm_gmp::commands::agents::{
     ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential, create_credential_store_credential, get_credential, modify_credential_store,
-    modify_credential_store_credential, verify_credential_store, CredentialOpts,
-    CredentialStoreCredentialOpts, ModifyCredentialStoreCredentialOpts, ModifyCredentialStoreOpts,
+    CreateCredentialRequest, CreateCredentialStoreCredentialRequest, GetCredentialRequest,
+    ModifyCredentialStoreCredentialRequest, ModifyCredentialStoreRequest,
+    VerifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
 use gvm_gmp::commands::system::{
@@ -213,20 +213,15 @@ async fn stateful_credential_store_modify_uses_gvmd_builder_shape() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let modify = send_request(
-        &mut stream,
-        modify_credential_store(
-            &id("credential-store-1"),
-            ModifyCredentialStoreOpts {
-                active: Some(true),
-                host: Some("store.example".into()),
-                path: Some("/vault".into()),
-                port: Some(8200),
-                comment: Some("primary".into()),
-                ..Default::default()
-            },
-        ),
-    )
+    let modify = send_typed_request(&mut stream, {
+        let mut request = ModifyCredentialStoreRequest::new(id("credential-store-1"));
+        request.active = Some(true);
+        request.host = Some("store.example".into());
+        request.path = Some("/vault".into());
+        request.port = Some(8200);
+        request.comment = Some("primary".into());
+        request
+    })
     .await;
     assert_eq!(modify.status_code(), Some(200));
 
@@ -241,9 +236,9 @@ async fn stateful_credential_store_verify_uses_gvmd_builder_shape() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let verify = send_request(
+    let verify = send_typed_request(
         &mut stream,
-        verify_credential_store(&id("credential-store-1")),
+        VerifyCredentialStoreRequest::new(id("credential-store-1")),
     )
     .await;
     assert_eq!(verify.status_code(), Some(200));
@@ -266,19 +261,17 @@ async fn stateful_credential_store_create_credential_uses_gvmd_builder_shape() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let create = send_request(
-        &mut stream,
-        create_credential_store_credential(
+    let create = send_typed_request(&mut stream, {
+        let mut request = CreateCredentialStoreCredentialRequest::new(
             "Store Credential",
             CredentialStoreCredentialType::UsernamePassword,
             "vault-1",
             "host-1",
-            CredentialStoreCredentialOpts {
-                comment: Some("from credential store".into()),
-                credential_store_id: Some(id("credential-store-1")),
-            },
-        ),
-    )
+        );
+        request.comment = Some("from credential store".into());
+        request.credential_store_id = Some(id("credential-store-1"));
+        request
+    })
     .await;
     assert_eq!(create.status_code(), Some(201));
 
@@ -324,6 +317,89 @@ async fn stateful_credential_store_create_credential_uses_gvmd_builder_shape() {
 }
 
 #[tokio::test]
+async fn stateful_credential_store_kerberos_round_trips_and_validates_required_fields() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let create = send_typed_request(&mut stream, {
+        let mut request = CreateCredentialStoreCredentialRequest::new(
+            "Store Kerberos Credential",
+            CredentialStoreCredentialType::Kerberos5,
+            "vault-1",
+            "host-1",
+        );
+        request.credential_store_id = Some(id("credential-store-1"));
+        request.kdcs = vec!["kdc1.example".into(), "kdc2.example".into()];
+        request.realm = Some("EXAMPLE.COM".into());
+        request
+    })
+    .await;
+    assert_eq!(create.status_code(), Some(201));
+    let credential_id = EntityId::new(extract_id(&create)).expect("created credential id");
+
+    let get = send_typed_request(
+        &mut stream,
+        GetCredentialRequest::new(credential_id.clone()),
+    )
+    .await;
+    assert_eq!(get.status_code(), Some(200));
+    let get_xml = get.as_str().expect("utf8");
+    assert!(get_xml.contains("<type>cs_krb5</type>"));
+    assert!(get_xml.contains("<kdc>kdc1.example,kdc2.example</kdc>"));
+    assert!(get_xml.contains("<realm>EXAMPLE.COM</realm>"));
+
+    let modify = send_typed_request(&mut stream, {
+        let mut request = ModifyCredentialStoreCredentialRequest::new(credential_id.clone());
+        request.kdcs = vec!["new-kdc.example".into()];
+        request.realm = Some("NEW.EXAMPLE.COM".into());
+        request
+    })
+    .await;
+    assert_eq!(modify.status_code(), Some(200));
+
+    let get = send_typed_request(&mut stream, GetCredentialRequest::new(credential_id)).await;
+    assert_eq!(get.status_code(), Some(200));
+    let get_xml = get.as_str().expect("utf8");
+    assert!(get_xml.contains("<type>cs_krb5</type>"));
+    assert!(get_xml.contains("<kdc>new-kdc.example</kdc>"));
+    assert!(get_xml.contains("<realm>NEW.EXAMPLE.COM</realm>"));
+    assert!(!get_xml.contains("kdc1.example"));
+    assert!(!get_xml.contains("<realm>EXAMPLE.COM</realm>"));
+
+    let missing_kdc = send_recv(
+        &mut stream,
+        b"<create_credential><name>Missing KDC</name><type>cs_krb5</type><realm>EXAMPLE.COM</realm><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(missing_kdc.status_code(), Some(400));
+    assert!(missing_kdc.status_text().unwrap().contains("kdc or kdcs"));
+
+    let missing_realm = send_recv(
+        &mut stream,
+        b"<create_credential><name>Missing Realm</name><type>cs_krb5</type><kdc>kdc.example</kdc><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(missing_realm.status_code(), Some(400));
+    assert!(missing_realm.status_text().unwrap().contains("realm"));
+
+    let unsupported_client_certificate = send_recv(
+        &mut stream,
+        b"<create_credential><name>Unsupported Store Certificate</name><type>cs_cc</type><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(unsupported_client_certificate.status_code(), Some(400));
+    assert!(unsupported_client_certificate
+        .status_text()
+        .unwrap()
+        .contains("Invalid credential type"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn stateful_credential_store_modify_credential_uses_gvmd_builder_shape() {
     let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
         return;
@@ -331,31 +407,27 @@ async fn stateful_credential_store_modify_credential_uses_gvmd_builder_shape() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let create = send_request(
+    let create = send_typed_request(
         &mut stream,
-        create_credential("Store Credential", CredentialOpts::default()),
+        CreateCredentialRequest::new("Store Credential"),
     )
     .await;
     assert_eq!(create.status_code(), Some(201));
     let credential_id = EntityId::new(extract_id(&create)).expect("created credential id");
 
-    let modify = send_request(
-        &mut stream,
-        modify_credential_store_credential(
-            &credential_id,
-            ModifyCredentialStoreCredentialOpts {
-                name: Some("Updated Store Credential".into()),
-                comment: Some("from credential store".into()),
-                credential_store_id: Some(id("credential-store-1")),
-                vault_id: Some("vault-1".into()),
-                host_identifier: Some("host-1".into()),
-            },
-        ),
-    )
+    let modify = send_typed_request(&mut stream, {
+        let mut request = ModifyCredentialStoreCredentialRequest::new(credential_id.clone());
+        request.name = Some("Updated Store Credential".into());
+        request.comment = Some("from credential store".into());
+        request.credential_store_id = Some(id("credential-store-1"));
+        request.vault_id = Some("vault-1".into());
+        request.host_identifier = Some("host-1".into());
+        request
+    })
     .await;
     assert_eq!(modify.status_code(), Some(200));
 
-    let get = send_request(&mut stream, get_credential(&credential_id)).await;
+    let get = send_typed_request(&mut stream, GetCredentialRequest::new(credential_id)).await;
     assert_eq!(get.status_code(), Some(200));
     let get_xml = get.as_str().expect("utf8");
     assert!(get_xml.contains("Updated Store Credential"));

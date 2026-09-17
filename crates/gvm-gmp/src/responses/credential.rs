@@ -38,8 +38,8 @@ pub enum CredentialKind {
     UsernamePassword,
     /// Username and SSH key (`usk`).
     UsernameSshKey,
-    /// Credential-store-backed client certificate (`cs_cc`).
-    CredentialStoreClientCertificate,
+    /// Credential-store-backed Kerberos 5 credential (`cs_krb5`).
+    CredentialStoreKerberos5,
     /// Credential-store-backed password-only credential (`cs_pw`).
     CredentialStorePasswordOnly,
     /// Credential-store-backed PGP encryption key (`cs_pgp`).
@@ -86,7 +86,7 @@ impl CredentialKind {
             "snmp" => Self::Snmp,
             "up" => Self::UsernamePassword,
             "usk" => Self::UsernameSshKey,
-            "cs_cc" => Self::CredentialStoreClientCertificate,
+            "cs_krb5" => Self::CredentialStoreKerberos5,
             "cs_pw" => Self::CredentialStorePasswordOnly,
             "cs_pgp" => Self::CredentialStorePgpEncryptionKey,
             "cs_smime" => Self::CredentialStoreSmimeCertificate,
@@ -116,9 +116,7 @@ impl From<CredentialType> for CredentialKind {
 impl From<CredentialStoreCredentialType> for CredentialKind {
     fn from(value: CredentialStoreCredentialType) -> Self {
         match value {
-            CredentialStoreCredentialType::ClientCertificate => {
-                Self::CredentialStoreClientCertificate
-            }
+            CredentialStoreCredentialType::Kerberos5 => Self::CredentialStoreKerberos5,
             CredentialStoreCredentialType::PasswordOnly => Self::CredentialStorePasswordOnly,
             CredentialStoreCredentialType::PgpEncryptionKey => {
                 Self::CredentialStorePgpEncryptionKey
@@ -309,7 +307,7 @@ mod tests {
             ("snmp", CredentialKind::Snmp),
             ("up", CredentialKind::UsernamePassword),
             ("usk", CredentialKind::UsernameSshKey),
-            ("cs_cc", CredentialKind::CredentialStoreClientCertificate),
+            ("cs_krb5", CredentialKind::CredentialStoreKerberos5),
             ("cs_pw", CredentialKind::CredentialStorePasswordOnly),
             ("cs_pgp", CredentialKind::CredentialStorePgpEncryptionKey),
             ("cs_smime", CredentialKind::CredentialStoreSmimeCertificate),

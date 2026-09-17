@@ -4,11 +4,9 @@
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::credentials::{
-    CreateCredentialRequest, CreateCredentialStoreCredentialRequest, CredentialOpts,
-    CredentialStoreCredentialOpts, DeleteCredentialRequest, GetCredentialStoreRequest,
-    GetCredentialStoresOpts, GetCredentialStoresRequest, GetCredentialsOpts, GetCredentialsRequest,
-    ModifyCredentialOpts, ModifyCredentialRequest, ModifyCredentialStoreCredentialOpts,
-    ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
+    CreateCredentialRequest, CreateCredentialStoreCredentialRequest, DeleteCredentialRequest,
+    GetCredentialStoreRequest, GetCredentialStoresRequest, GetCredentialsRequest,
+    ModifyCredentialRequest, ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
 use gvm_gmp::commands::nvts::{
@@ -32,8 +30,7 @@ use gvm_gmp::responses::{
     GetNvtsResponse, GetOperatingSystemsResponse, GetPreferencesResponse, GetTimezonesResponse,
     GetVulnerabilitiesResponse, ModifyCredentialResponse, VerifyCredentialStoreResponse,
 };
-use gvm_gmp::types::EntityId;
-use gvm_gmp::{CredentialStoreCredentialType, FeedType};
+use gvm_gmp::FeedType;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Feeds ─────────────────────────────────────────────────────────────────
@@ -66,8 +63,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_credential_stores(&mut self) -> Result<GetCredentialStoresResponse, GvmError> {
-        self.execute(GetCredentialStoresRequest::default()).await
+    pub async fn get_credential_stores(
+        &mut self,
+        request: GetCredentialStoresRequest,
+    ) -> Result<GetCredentialStoresResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `verify_credential_store` request and return a typed
@@ -77,12 +77,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn verify_credential_store(
         &mut self,
-        credential_store_id: &EntityId,
+        request: VerifyCredentialStoreRequest,
     ) -> Result<VerifyCredentialStoreResponse, GvmError> {
-        self.execute(VerifyCredentialStoreRequest::new(
-            credential_store_id.clone(),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a filtered `get_credential_stores` request and return a typed
@@ -92,9 +89,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_credential_stores_with_opts(
         &mut self,
-        opts: GetCredentialStoresOpts,
+        request: GetCredentialStoresRequest,
     ) -> Result<GetCredentialStoresResponse, GvmError> {
-        self.execute(GetCredentialStoresRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a single-store `get_credential_stores` request and return a typed
@@ -104,14 +101,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_credential_store(
         &mut self,
-        credential_store_id: &EntityId,
-        details: Option<bool>,
+        request: GetCredentialStoreRequest,
     ) -> Result<GetCredentialStoresResponse, GvmError> {
-        self.execute(GetCredentialStoreRequest::new(
-            credential_store_id.clone(),
-            details,
-        ))
-        .await
+        self.execute(request).await
     }
 
     // ── NVTs ──────────────────────────────────────────────────────────────────
@@ -354,9 +346,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_credentials(
         &mut self,
-        opts: GetCredentialsOpts,
+        request: GetCredentialsRequest,
     ) -> Result<GetCredentialsResponse, GvmError> {
-        self.execute(GetCredentialsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `create_credential` request and return a typed [`CreateCredentialResponse`].
@@ -365,10 +357,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_credential(
         &mut self,
-        name: &str,
-        opts: CredentialOpts,
+        request: CreateCredentialRequest,
     ) -> Result<CreateCredentialResponse, GvmError> {
-        self.execute(CreateCredentialRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Send a `modify_credential` request and return a typed
@@ -378,11 +369,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_credential(
         &mut self,
-        credential_id: &EntityId,
-        opts: ModifyCredentialOpts,
+        request: ModifyCredentialRequest,
     ) -> Result<ModifyCredentialResponse, GvmError> {
-        self.execute(ModifyCredentialRequest::new(credential_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_credential` request and return a typed
@@ -392,14 +381,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_credential(
         &mut self,
-        credential_id: &EntityId,
-        ultimate: bool,
+        request: DeleteCredentialRequest,
     ) -> Result<DeleteCredentialResponse, GvmError> {
-        self.execute(DeleteCredentialRequest::new(
-            credential_id.clone(),
-            ultimate,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a credential-store-backed `create_credential` request and return a
@@ -409,20 +393,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_credential_store_credential(
         &mut self,
-        name: &str,
-        credential_type: CredentialStoreCredentialType,
-        vault_id: &str,
-        host_identifier: &str,
-        opts: CredentialStoreCredentialOpts,
+        request: CreateCredentialStoreCredentialRequest,
     ) -> Result<CreateCredentialResponse, GvmError> {
-        self.execute(CreateCredentialStoreCredentialRequest::new(
-            name,
-            credential_type,
-            vault_id,
-            host_identifier,
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a credential-store-backed `modify_credential` request and return a
@@ -432,13 +405,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_credential_store_credential(
         &mut self,
-        credential_id: &EntityId,
-        opts: ModifyCredentialStoreCredentialOpts,
+        request: ModifyCredentialStoreCredentialRequest,
     ) -> Result<ModifyCredentialResponse, GvmError> {
-        self.execute(ModifyCredentialStoreCredentialRequest::new(
-            credential_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 }

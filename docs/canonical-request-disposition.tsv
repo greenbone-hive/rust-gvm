@@ -34,19 +34,19 @@ builder	crates/gvm-gmp/src/commands/configs.rs	delete_config	transitional	Pendin
 builder	crates/gvm-gmp/src/commands/configs.rs	get_config	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/configs.rs	get_configs	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/configs.rs	modify_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	clone_credential	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	create_credential	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	create_credential_store_credential	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	delete_credential	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential_store	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential_stores	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential_stores_with_opts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	get_credentials	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	modify_credential	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	modify_credential_store	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	modify_credential_store_credential	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/credentials.rs	verify_credential_store	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/credentials.rs	clone_credential	removed	Removed by #620; CloneCredentialRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	create_credential	removed	Removed by #620; CreateCredentialRequest owns canonical validation and encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	create_credential_store_credential	removed	Removed by #620; CreateCredentialStoreCredentialRequest owns canonical validation, semantic metadata, and encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	delete_credential	removed	Removed by #620; DeleteCredentialRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential	removed	Removed by #620; GetCredentialRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential_store	removed	Removed by #620; GetCredentialStoreRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential_stores	removed	Removed by #620; GetCredentialStoresRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	get_credential_stores_with_opts	removed	Removed by #620; GetCredentialStoresRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	get_credentials	removed	Removed by #620; GetCredentialsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	modify_credential	removed	Removed by #620; ModifyCredentialRequest owns canonical validation and encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	modify_credential_store	removed	Removed by #620; ModifyCredentialStoreRequest owns canonical validation and encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	modify_credential_store_credential	removed	Removed by #620; ModifyCredentialStoreCredentialRequest owns canonical validation, semantic metadata, and encoding.
+builder	crates/gvm-gmp/src/commands/credentials.rs	verify_credential_store	removed	Removed by #620; VerifyCredentialStoreRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/features.rs	get_features	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/feed.rs	get_feed	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/feed.rs	get_feeds	transitional	Pending bounded family migration under #602.
@@ -516,17 +516,17 @@ facade	crates/gvm-client/src/typed/scan.rs	stop_task	transitional	Pending bounde
 facade	crates/gvm-client/src/typed/scan.rs	sync_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	sync_scan_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	verify_scanner	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	create_credential	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	create_credential_store_credential	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	delete_credential	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/security.rs	create_credential	retained-construction	Retained for discoverability; accepts the canonical CreateCredentialRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	create_credential_store_credential	retained-construction	Retained for discoverability; accepts the canonical CreateCredentialStoreCredentialRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	delete_credential	retained-construction	Retained for discoverability; accepts the canonical DeleteCredentialRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	get_cert_bund_advisories	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_cert_bund_advisory	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_cpe	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_cpes	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_credential_store	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_credential_stores	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_credential_stores_with_opts	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_credentials	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/security.rs	get_credential_store	retained-construction	Retained for discoverability; accepts the canonical GetCredentialStoreRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	get_credential_stores	retained-construction	Retained for discoverability; accepts the canonical GetCredentialStoresRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	get_credential_stores_with_opts	retained-construction	Retained for compatibility; accepts the canonical GetCredentialStoresRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	get_credentials	retained-construction	Retained for discoverability; accepts the canonical GetCredentialsRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	get_cve	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_cves	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_dfn_cert_advisories	transitional	Pending bounded family migration under #602.
@@ -547,9 +547,9 @@ facade	crates/gvm-client/src/typed/security.rs	get_secinfo_vulnerabilities	trans
 facade	crates/gvm-client/src/typed/security.rs	get_timezones	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_vulnerabilities	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_vulnerability	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	modify_credential	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	modify_credential_store_credential	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	verify_credential_store	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/security.rs	modify_credential	retained-construction	Retained for discoverability; accepts the canonical ModifyCredentialRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	modify_credential_store_credential	retained-construction	Retained for discoverability; accepts the canonical ModifyCredentialStoreCredentialRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	verify_credential_store	retained-construction	Retained for discoverability; accepts the canonical VerifyCredentialStoreRequest unchanged.
 facade	crates/gvm-client/src/typed/system.rs	describe_auth	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/system.rs	get_aggregates	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/system.rs	get_features_parsed	transitional	Pending bounded family migration under #602.
@@ -614,13 +614,13 @@ options	crates/gvm-gmp/src/commands/configs.rs	DeleteConfigOpts	transitional	Pen
 options	crates/gvm-gmp/src/commands/configs.rs	GetConfigOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/configs.rs	GetConfigsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/configs.rs	ModifyConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/credentials.rs	CredentialOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/credentials.rs	CredentialStoreCredentialOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialStoresOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreCredentialOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/credentials.rs	CredentialOpts	removed	Removed by #620; fields now belong to CreateCredentialRequest.
+options	crates/gvm-gmp/src/commands/credentials.rs	CredentialStoreCredentialOpts	removed	Removed by #620; fields now belong to CreateCredentialStoreCredentialRequest.
+options	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialStoresOpts	removed	Removed by #620; fields now belong to GetCredentialStoresRequest.
+options	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialsOpts	removed	Removed by #620; fields now belong to GetCredentialsRequest.
+options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialOpts	removed	Removed by #620; fields now belong to ModifyCredentialRequest.
+options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreCredentialOpts	removed	Removed by #620; fields now belong to ModifyCredentialStoreCredentialRequest.
+options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreOpts	removed	Removed by #620; fields now belong to ModifyCredentialStoreRequest.
 options	crates/gvm-gmp/src/commands/filters.rs	FilterOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/filters.rs	GetFiltersOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/groups.rs	GetGroupsOpts	transitional	Pending bounded family migration under #602.
@@ -742,18 +742,18 @@ request	crates/gvm-gmp/src/commands/configs.rs	DeleteConfigRequest	transitional	
 request	crates/gvm-gmp/src/commands/configs.rs	GetConfigRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/configs.rs	GetConfigsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/configs.rs	ModifyConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	CloneCredentialRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	CreateCredentialRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	CreateCredentialStoreCredentialRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	DeleteCredentialRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialStoreRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialStoresRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreCredentialRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/credentials.rs	VerifyCredentialStoreRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/credentials.rs	CloneCredentialRequest	canonical-request	Complete clone input with semantic alias metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	CreateCredentialRequest	canonical-request	Complete secret-bearing create input with gvmd-derived final-value validation, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	CreateCredentialStoreCredentialRequest	canonical-request	Complete store-backed create input with semantic alias metadata, gvmd-derived validation, secret redaction, and direct encoding.
+request	crates/gvm-gmp/src/commands/credentials.rs	DeleteCredentialRequest	canonical-request	Complete delete input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialStoreRequest	canonical-request	Complete detail input with GMP 22.8 semantic alias metadata, corrected schema attribute encoding, and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialStoresRequest	canonical-request	Complete store-list input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialsRequest	canonical-request	Complete credential-list input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialRequest	canonical-request	Complete secret-bearing modify input with final-value validation, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreCredentialRequest	canonical-request	Complete store-backed modify input with semantic alias metadata, validation, secret redaction, and direct encoding.
+request	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreRequest	canonical-request	Complete preference-bearing store modify input with validation, secret redaction, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/credentials.rs	VerifyCredentialStoreRequest	canonical-request	Complete verify input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/features.rs	GetFeaturesRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/feed.rs	GetFeedRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/feed.rs	GetFeedsRequest	transitional	Pending bounded family migration under #602.

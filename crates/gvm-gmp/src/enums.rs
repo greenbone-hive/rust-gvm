@@ -433,7 +433,7 @@ impl FromStr for CredentialType {
     }
 }
 gmp_enum!(CredentialStoreCredentialType {
-    ClientCertificate => "cs_cc",
+    Kerberos5 => "cs_krb5",
     PasswordOnly => "cs_pw",
     PgpEncryptionKey => "cs_pgp",
     SmimeCertificate => "cs_smime",

@@ -181,6 +181,10 @@ fn is_sensitive_element(stack: &[String], element_name: &str) -> bool {
     is_sensitive_name(element_name)
         || matches!(element_name, "value" | "param" | "default_value")
         || (element_name == "file" && stack.first().is_some_and(|root| root == "modify_license"))
+        || (matches!(element_name, "host" | "path")
+            && stack
+                .first()
+                .is_some_and(|root| root.contains("credential_store")))
 }
 
 fn is_credential_store_preference(stack: &[String], element_name: &str) -> bool {
@@ -201,6 +205,11 @@ fn is_sensitive_name(name: &str) -> bool {
             | "private"
             | "private_key"
             | "private-key"
+            | "public"
+            | "public_key"
+            | "public-key"
+            | "certificate"
+            | "phrase"
             | "passphrase"
             | "secret"
             | "client_secret"
@@ -209,6 +218,12 @@ fn is_sensitive_name(name: &str) -> bool {
             | "auth-password"
             | "privacy_password"
             | "privacy-password"
+            | "vault_id"
+            | "vault-id"
+            | "host_identifier"
+            | "host-identifier"
+            | "privacy_host_identifier"
+            | "privacy-host-identifier"
             | "key"
             | "token"
             | "api_key"
