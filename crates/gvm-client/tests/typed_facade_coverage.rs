@@ -35,8 +35,7 @@ use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
 use gvm_gmp::commands::integration_configs::{
-    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigOpts,
-    ModifyIntegrationConfigRequest,
+    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
 use gvm_gmp::commands::notes::{GetNotesOpts, ModifyNoteOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
@@ -3672,10 +3671,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         "22.8"
     );
     assert_unsupported_command!(
-        v227_client.execute(ModifyIntegrationConfigRequest::new(
-            id("integration-1"),
-            ModifyIntegrationConfigOpts::default(),
-        )),
+        v227_client.execute(ModifyIntegrationConfigRequest::new(id("integration-1"))),
         "modify_integration_config",
         GmpVersion(22, 7),
         "22.8"

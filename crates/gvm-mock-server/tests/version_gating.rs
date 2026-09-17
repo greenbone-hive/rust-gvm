@@ -18,7 +18,7 @@ use gvm_gmp::commands::credentials::{
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
-    get_integration_config, get_integration_configs, modify_integration_config,
+    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
 use gvm_gmp::commands::oci_image_targets::{
     CreateOciImageTargetRequest, DeleteOciImageTargetRequest, GetOciImageTargetsRequest,
@@ -214,7 +214,11 @@ async fn version_22_7_rejects_next_commands() {
     let mut stream = connect(&server).await;
     authenticate_admin(&mut stream).await;
 
-    let response = send_recv(&mut stream, get_integration_configs(Default::default())).await;
+    let response = send_recv(
+        &mut stream,
+        encode(&GetIntegrationConfigsRequest::default(), GmpVersion::V22_7),
+    )
+    .await;
     assert_eq!(response.status_code(), Some(400));
     assert!(response
         .status_text()
@@ -423,37 +427,40 @@ async fn assert_integration_configs_work_on_next(stream: &mut UnixStream) {
     let integration_config_id = id("00000000-0000-0000-0000-000000000100");
     let get_response = send_recv(
         stream,
-        get_integration_config(&integration_config_id, Some(true)),
+        encode(
+            &GetIntegrationConfigRequest::new(integration_config_id.clone(), Some(true)),
+            GmpVersion::V22_8,
+        ),
     )
     .await;
     assert_eq!(get_response.status_code(), Some(200));
 
-    let list_response = send_recv(stream, get_integration_configs(Default::default())).await;
+    let list_response = send_recv(
+        stream,
+        encode(&GetIntegrationConfigsRequest::default(), GmpVersion::V22_8),
+    )
+    .await;
     assert_eq!(list_response.status_code(), Some(200));
     assert!(list_response
         .as_str()
         .expect("utf8")
         .contains("Default Integration Config"));
 
-    let modify_response = send_recv(
-        stream,
-        modify_integration_config(
-            &integration_config_id,
-            gvm_gmp::commands::integration_configs::ModifyIntegrationConfigOpts {
-                service_url: Some("https://updated.example".into()),
-                service_cacert: Some("UPDATED-CA".into()),
-                oidc_provider_url: Some("https://updated-oidc.example".into()),
-                oidc_provider_client_id: Some("updated-client".into()),
-                oidc_provider_client_secret: Some("updated-secret".into()),
-            },
-        ),
-    )
-    .await;
+    let mut modify_request = ModifyIntegrationConfigRequest::new(integration_config_id.clone());
+    modify_request.service_url = Some("https://updated.example".into());
+    modify_request.service_cacert = Some("UPDATED-CA".into());
+    modify_request.oidc_provider_url = Some("https://updated-oidc.example".into());
+    modify_request.oidc_provider_client_id = Some("updated-client".into());
+    modify_request.oidc_provider_client_secret = Some("updated-secret".into());
+    let modify_response = send_recv(stream, encode(&modify_request, GmpVersion::V22_8)).await;
     assert_eq!(modify_response.status_code(), Some(200));
 
     let modified_get_response = send_recv(
         stream,
-        get_integration_config(&integration_config_id, Some(true)),
+        encode(
+            &GetIntegrationConfigRequest::new(integration_config_id.clone(), Some(true)),
+            GmpVersion::V22_8,
+        ),
     )
     .await;
     let modified_xml = modified_get_response.as_str().expect("utf8");
@@ -484,17 +491,17 @@ async fn assert_integration_configs_work_on_next(stream: &mut UnixStream) {
         .expect("status text")
         .contains("service"));
 
-    let partial_modify = send_recv(
-        stream,
-        modify_integration_config(
-            &integration_config_id,
-            gvm_gmp::commands::integration_configs::ModifyIntegrationConfigOpts {
-                service_url: Some("https://partial.example".into()),
-                ..Default::default()
-            },
-        ),
-    )
-    .await;
+    let mut partial_command = XmlCommand::new("modify_integration_config")
+        .attribute("uuid", integration_config_id.as_str());
+    let service = partial_command.add_element("service");
+    service.add_child_with_text("url", "https://partial.example");
+    service.add_child_with_text("cacert", "");
+    let oidc = partial_command.add_element("oidc");
+    oidc.add_child_with_text("url", "");
+    let client = oidc.add_child("client");
+    client.add_child_with_text("id", "");
+    client.add_child_with_text("secret", "");
+    let partial_modify = send_recv(stream, partial_command).await;
     assert_eq!(partial_modify.status_code(), Some(400));
     assert!(partial_modify
         .status_text()
@@ -503,7 +510,10 @@ async fn assert_integration_configs_work_on_next(stream: &mut UnixStream) {
 
     let clear_response = send_recv(
         stream,
-        modify_integration_config(&integration_config_id, Default::default()),
+        encode(
+            &ModifyIntegrationConfigRequest::new(integration_config_id),
+            GmpVersion::V22_8,
+        ),
     )
     .await;
     assert_eq!(clear_response.status_code(), Some(200));

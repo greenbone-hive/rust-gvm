@@ -32,6 +32,9 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreOpts, ModifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::help::HelpMode;
+use gvm_gmp::commands::integration_configs::{
+    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
+};
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
@@ -2125,31 +2128,31 @@ async fn next_commands_work_on_v22_8() {
     let integration_config_id =
         EntityId::new("00000000-0000-0000-0000-000000000100").expect("valid id");
     let get_response = client
-        .get_integration_config(&integration_config_id, Some(true))
+        .get_integration_config(GetIntegrationConfigRequest::new(
+            integration_config_id.clone(),
+            Some(true),
+        ))
         .await
         .expect("get_integration_config should succeed");
-    assert_eq!(get_response.status_code(), Some(200));
+    assert_eq!(get_response.status, 200);
 
     let list_response = client
-        .get_integration_configs(Default::default())
+        .get_integration_configs(GetIntegrationConfigsRequest::default())
         .await
         .expect("get_integration_configs should succeed");
-    assert_eq!(list_response.status_code(), Some(200));
+    assert_eq!(list_response.status, 200);
 
+    let mut modify = ModifyIntegrationConfigRequest::new(integration_config_id.clone());
+    modify.service_url = Some("https://updated.example".into());
+    modify.service_cacert = Some("UPDATED-CA".into());
+    modify.oidc_provider_url = Some("https://updated-oidc.example".into());
+    modify.oidc_provider_client_id = Some("updated-client".into());
+    modify.oidc_provider_client_secret = Some("updated-secret".into());
     let modify_response = client
-        .modify_integration_config(
-            &integration_config_id,
-            gvm_client::ModifyIntegrationConfigOpts {
-                service_url: Some("https://updated.example".into()),
-                service_cacert: Some("UPDATED-CA".into()),
-                oidc_provider_url: Some("https://updated-oidc.example".into()),
-                oidc_provider_client_id: Some("updated-client".into()),
-                oidc_provider_client_secret: Some("updated-secret".into()),
-            },
-        )
+        .modify_integration_config(modify)
         .await
         .expect("modify_integration_config should succeed");
-    assert_eq!(modify_response.status_code(), Some(200));
+    assert_eq!(modify_response.status, 200);
 
     let report_id = EntityId::new("00000000-0000-0000-0000-000000000200").expect("valid id");
     let helper_error = client
@@ -2184,7 +2187,10 @@ async fn typed_integration_configs_round_trip_over_unix_transport() {
     let integration_config_id =
         EntityId::new("00000000-0000-0000-0000-000000000100").expect("valid id");
     let get_response = client
-        .get_integration_config_parsed(&integration_config_id, Some(true))
+        .get_integration_config(GetIntegrationConfigRequest::new(
+            integration_config_id.clone(),
+            Some(true),
+        ))
         .await
         .expect("detailed integration config should parse");
     assert_eq!(get_response.items.len(), 1);
@@ -2204,27 +2210,30 @@ async fn typed_integration_configs_round_trip_over_unix_transport() {
     );
 
     let list_response = client
-        .get_integration_configs_parsed(Default::default())
+        .get_integration_configs(GetIntegrationConfigsRequest::default())
         .await
         .expect("integration config list should parse");
     assert_eq!(list_response.counts.total, Some(1));
     assert!(list_response.items[0].service.is_none());
     assert!(list_response.items[0].oidc.is_none());
 
+    let mut modify = ModifyIntegrationConfigRequest::new(integration_config_id.clone());
+    modify.service_url = Some("https://typed.example".into());
+    modify.service_cacert = Some("TYPED-CA".into());
+    modify.oidc_provider_url = Some("https://typed-oidc.example".into());
+    modify.oidc_provider_client_id = Some("typed-client".into());
+    modify.oidc_provider_client_secret = Some("typed-secret".into());
     let modify_response = client
-        .modify_integration_config_parsed(
-            &integration_config_id,
-            gvm_client::ModifyIntegrationConfigOpts {
-                service_url: Some("https://typed.example".into()),
-                service_cacert: Some("TYPED-CA".into()),
-                oidc_provider_url: Some("https://typed-oidc.example".into()),
-                oidc_provider_client_id: Some("typed-client".into()),
-                oidc_provider_client_secret: Some("typed-secret".into()),
-            },
-        )
+        .modify_integration_config(modify)
         .await
         .expect("typed modify response should parse");
     assert_eq!(modify_response.status, 200);
+
+    let clear_response = client
+        .modify_integration_config(ModifyIntegrationConfigRequest::new(integration_config_id))
+        .await
+        .expect("typed clear response should parse");
+    assert_eq!(clear_response.status, 200);
 
     server.shutdown().await;
 }

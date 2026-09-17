@@ -56,6 +56,16 @@ eight named client helpers accept the canonical values unchanged, and
 [agent gvmd evidence](agent-request-gvmd-evidence.md) independently records the
 wire contract and binary response behavior.
 
+Issue #615 converts the three GMP 22.8 integration-configuration operations to
+complete canonical requests. Two redundant options types, three free builders,
+three raw duplicate client methods, and the `_parsed` aliases are removed. The
+named methods now accept canonical list, detail, and replacement/clear request
+values. Detail keeps its semantic alias over the list wire root; modifications
+validate complete replacement fields while preserving the all-empty clear
+operation and redacting service CA and OIDC secret values. Independent
+[integration-configuration gvmd evidence](integration-config-request-gvmd-evidence.md)
+records the list/detail, validation, and clear contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 
@@ -195,6 +205,11 @@ agent-group wrappers with complete list/detail/create/clone/modify/delete
 requests and removes that family's options types and free builders. Named
 client helpers now accept those request values directly; agent CRUD,
 integration configurations, and specialized task creation remain separate.
+Issues
+[`#613`](https://github.com/greenbone-hive/rust-gvm/issues/613) and
+[`#615`](https://github.com/greenbone-hive/rust-gvm/issues/615) subsequently
+canonicalize the agent and integration-configuration surfaces while leaving
+specialized task creation in the task family.
 
 The generic-configuration and port-list Phase 3 batch, tracked by
 [`#572`](https://github.com/greenbone-hive/rust-gvm/issues/572), migrates all

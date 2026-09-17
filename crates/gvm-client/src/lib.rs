@@ -39,7 +39,7 @@ use gvm_gmp::commands::credentials::{
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::help::help_with_mode;
 use gvm_gmp::commands::integration_configs::{
-    get_integration_config, get_integration_configs, modify_integration_config,
+    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
@@ -69,10 +69,10 @@ use gvm_gmp::responses::{
     CreateWebApplicationTargetResponse, DeleteAgentGroupResponse, DeleteAgentResponse,
     DeleteOciImageTargetResponse, DeleteWebApplicationTargetResponse, GetAgentGroupsResponse,
     GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
-    GetOciImageTargetsResponse, GetScanReportResponse, GetWebApplicationTargetsResponse,
-    HelpResponse, ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse,
-    ModifyAgentResponse, ModifyOciImageTargetResponse, ModifyWebApplicationTargetResponse,
-    SyncAgentsResponse,
+    GetIntegrationConfigsResponse, GetOciImageTargetsResponse, GetScanReportResponse,
+    GetWebApplicationTargetsResponse, HelpResponse, ModifyAgentControlScanConfigResponse,
+    ModifyAgentGroupResponse, ModifyAgentResponse, ModifyIntegrationConfigResponse,
+    ModifyOciImageTargetResponse, ModifyWebApplicationTargetResponse, SyncAgentsResponse,
 };
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
@@ -90,9 +90,6 @@ pub use gvm_gmp::commands::credentials::{
     CredentialStoreCredentialOpts, GetCredentialStoresOpts, ModifyCredentialStoreCredentialOpts,
 };
 pub use gvm_gmp::commands::help::HelpMode;
-pub use gvm_gmp::commands::integration_configs::{
-    GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
-};
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{
     ExportScanReportOpts, GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts,
@@ -523,46 +520,6 @@ impl<C: GvmConnection> GmpClient<C> {
         self.ensure_named_command_supported(command.wire_name())
     }
 
-    /// Get a single integration configuration.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_integration_config(
-        &mut self,
-        integration_config_id: &EntityId,
-        details: Option<bool>,
-    ) -> Result<Response, GvmError> {
-        self.call(get_integration_config(integration_config_id, details))
-            .await
-    }
-
-    /// List integration configurations.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_integration_configs(
-        &mut self,
-        opts: GetIntegrationConfigsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_integration_configs(opts)).await
-    }
-
-    /// Modify an integration configuration.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn modify_integration_config(
-        &mut self,
-        integration_config_id: &EntityId,
-        opts: ModifyIntegrationConfigOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(modify_integration_config(integration_config_id, opts))
-            .await
-    }
-
     /// Get one structured vulnerability report.
     ///
     /// # Errors
@@ -968,22 +925,20 @@ pub trait GmpNextCommands {
     /// Get a single integration configuration.
     async fn get_integration_config(
         &mut self,
-        integration_config_id: &EntityId,
-        details: Option<bool>,
-    ) -> Result<Response, GvmError>;
+        request: GetIntegrationConfigRequest,
+    ) -> Result<GetIntegrationConfigsResponse, GvmError>;
 
     /// List integration configurations.
     async fn get_integration_configs(
         &mut self,
-        opts: GetIntegrationConfigsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetIntegrationConfigsRequest,
+    ) -> Result<GetIntegrationConfigsResponse, GvmError>;
 
     /// Modify an integration configuration.
     async fn modify_integration_config(
         &mut self,
-        integration_config_id: &EntityId,
-        opts: ModifyIntegrationConfigOpts,
-    ) -> Result<Response, GvmError>;
+        request: ModifyIntegrationConfigRequest,
+    ) -> Result<ModifyIntegrationConfigResponse, GvmError>;
 
     /// Get one structured vulnerability report.
     async fn get_scan_report(
@@ -1571,29 +1526,23 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn get_integration_config(
         &mut self,
-        integration_config_id: &EntityId,
-        details: Option<bool>,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .get_integration_config(integration_config_id, details)
-            .await
+        request: GetIntegrationConfigRequest,
+    ) -> Result<GetIntegrationConfigsResponse, GvmError> {
+        self.0.get_integration_config(request).await
     }
 
     async fn get_integration_configs(
         &mut self,
-        opts: GetIntegrationConfigsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.get_integration_configs(opts).await
+        request: GetIntegrationConfigsRequest,
+    ) -> Result<GetIntegrationConfigsResponse, GvmError> {
+        self.0.get_integration_configs(request).await
     }
 
     async fn modify_integration_config(
         &mut self,
-        integration_config_id: &EntityId,
-        opts: ModifyIntegrationConfigOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .modify_integration_config(integration_config_id, opts)
-            .await
+        request: ModifyIntegrationConfigRequest,
+    ) -> Result<ModifyIntegrationConfigResponse, GvmError> {
+        self.0.modify_integration_config(request).await
     }
 
     async fn get_scan_report(
