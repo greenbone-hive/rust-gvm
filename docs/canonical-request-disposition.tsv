@@ -199,14 +199,14 @@ builder	crates/gvm-gmp/src/commands/scanners.rs	get_scanner	transitional	Pending
 builder	crates/gvm-gmp/src/commands/scanners.rs	get_scanners	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scanners.rs	modify_scanner	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scanners.rs	verify_scanner	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	clone_schedule	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	create_schedule	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	create_typed_schedule	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	delete_schedule	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	get_schedule	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	get_schedules	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	modify_schedule	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/schedules.rs	modify_typed_schedule	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/schedules.rs	clone_schedule	removed	Removed by #629; CloneScheduleRequest is the canonical encoder.
+builder	crates/gvm-gmp/src/commands/schedules.rs	create_schedule	removed	Removed by #629; CreateScheduleRequest is the canonical encoder.
+builder	crates/gvm-gmp/src/commands/schedules.rs	create_typed_schedule	removed	Removed by #629; CreateScheduleRequest::from_input preserves typed construction without a parallel encoder.
+builder	crates/gvm-gmp/src/commands/schedules.rs	delete_schedule	removed	Removed by #629; DeleteScheduleRequest is the canonical encoder.
+builder	crates/gvm-gmp/src/commands/schedules.rs	get_schedule	removed	Removed by #629; GetScheduleRequest is the canonical encoder.
+builder	crates/gvm-gmp/src/commands/schedules.rs	get_schedules	removed	Removed by #629; GetSchedulesRequest is the canonical encoder.
+builder	crates/gvm-gmp/src/commands/schedules.rs	modify_schedule	removed	Removed by #629; ModifyScheduleRequest is the canonical encoder.
+builder	crates/gvm-gmp/src/commands/schedules.rs	modify_typed_schedule	removed	Removed by #629; ModifyScheduleRequest::from_input preserves typed construction without a parallel encoder.
 builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cert_bund_advisories	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cert_bund_advisory	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cpe	transitional	Pending bounded family migration under #602.
@@ -458,7 +458,7 @@ facade	crates/gvm-client/src/typed/resources.rs	modify_port_list	retained-constr
 facade	crates/gvm-client/src/typed/scan.rs	clone_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	clone_scan_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	clone_scanner	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	clone_schedule	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	clone_schedule	retained-construction	Retained for discoverability; accepts the canonical CloneScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	clone_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_agent_group_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_audit	transitional	Pending bounded family migration under #602.
@@ -468,14 +468,14 @@ facade	crates/gvm-client/src/typed/scan.rs	create_import_task	transitional	Pendi
 facade	crates/gvm-client/src/typed/scan.rs	create_oci_image_target_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_scan_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_scanner	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	create_schedule	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	create_schedule	retained-construction	Retained for discoverability; accepts the canonical CreateScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	create_task	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	create_typed_schedule	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	create_typed_schedule	removed	Removed by #629; typed input constructs CreateScheduleRequest and uses create_schedule.
 facade	crates/gvm-client/src/typed/scan.rs	create_web_application_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	delete_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	delete_scan_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	delete_scanner	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	delete_schedule	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	delete_schedule	retained-construction	Retained for discoverability; accepts the canonical DeleteScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	delete_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	empty_trashcan	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_audit	transitional	Pending bounded family migration under #602.
@@ -488,8 +488,8 @@ facade	crates/gvm-client/src/typed/scan.rs	get_scan_config_preferences	transitio
 facade	crates/gvm-client/src/typed/scan.rs	get_scan_configs	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_scanner	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_scanners	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_schedule	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_schedules	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	get_schedule	retained-construction	Retained for discoverability; accepts the canonical GetScheduleRequest unchanged.
+facade	crates/gvm-client/src/typed/scan.rs	get_schedules	retained-construction	Retained for discoverability; accepts the canonical GetSchedulesRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_tasks	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	import_policy	transitional	Pending bounded family migration under #602.
@@ -501,9 +501,9 @@ facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config	transitional	Pendi
 facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_comment	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_name	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	modify_scanner	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	modify_schedule	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	modify_schedule	retained-construction	Retained for discoverability; accepts the canonical ModifyScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	modify_task	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	modify_typed_schedule	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	modify_typed_schedule	removed	Removed by #629; typed input constructs ModifyScheduleRequest and uses modify_schedule.
 facade	crates/gvm-client/src/typed/scan.rs	move_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	restore	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	restore_from_trashcan	transitional	Pending bounded family migration under #602.
@@ -670,8 +670,8 @@ options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesOpts
 options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/scanners.rs	GetScannersOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/scanners.rs	ScannerOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/schedules.rs	GetSchedulesOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/schedules.rs	ScheduleOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/schedules.rs	GetSchedulesOpts	removed	Removed by #629; fields now belong to GetSchedulesRequest.
+options	crates/gvm-gmp/src/commands/schedules.rs	ScheduleOpts	removed	Removed by #629; create and modify requests own operation-specific fields.
 options	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoListOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/secinfo.rs	GetSecInfoOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/system.rs	FilteredGetOpts	transitional	Pending bounded family migration under #602.
@@ -867,14 +867,14 @@ request	crates/gvm-gmp/src/commands/scanners.rs	GetScannerRequest	transitional	P
 request	crates/gvm-gmp/src/commands/scanners.rs	GetScannersRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/scanners.rs	ModifyScannerRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/scanners.rs	VerifyScannerRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	CloneScheduleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	CreateScheduleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	CreateTypedScheduleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	DeleteScheduleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	GetScheduleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	GetSchedulesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	ModifyScheduleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/schedules.rs	ModifyTypedScheduleRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/schedules.rs	CloneScheduleRequest	canonical-request	Complete clone input; direct encoder with semantic clone identity and response association.
+request	crates/gvm-gmp/src/commands/schedules.rs	CreateScheduleRequest	canonical-request	Complete create input; direct encoder with raw and typed recurrence construction.
+request	crates/gvm-gmp/src/commands/schedules.rs	CreateTypedScheduleRequest	removed	Removed by #629; CreateScheduleRequest::from_input represents typed recurrence construction.
+request	crates/gvm-gmp/src/commands/schedules.rs	DeleteScheduleRequest	canonical-request	Complete delete input; direct encoder and response association.
+request	crates/gvm-gmp/src/commands/schedules.rs	GetScheduleRequest	canonical-request	Complete detail input; direct encoder with semantic detail identity and response association.
+request	crates/gvm-gmp/src/commands/schedules.rs	GetSchedulesRequest	canonical-request	Complete list input; direct encoder and response association.
+request	crates/gvm-gmp/src/commands/schedules.rs	ModifyScheduleRequest	canonical-request	Complete modify input; direct encoder with raw and typed recurrence construction.
+request	crates/gvm-gmp/src/commands/schedules.rs	ModifyTypedScheduleRequest	removed	Removed by #629; ModifyScheduleRequest::from_input represents typed recurrence construction.
 request	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoListRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	DescribeAuthRequest	transitional	Pending bounded family migration under #602.

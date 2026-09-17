@@ -300,12 +300,13 @@ Alert triggering emits `<get_reports alert_id="..." report_id="...">`, keeps a
 `trigger_alert` semantic alias, and associates the request with
 `GetReportsResponse`; `test_alert` uses the ordinary action response codec.
 
-Schedule requests still retain both input levels. `CreateScheduleRequest` and
-`ModifyScheduleRequest` accept the raw iCalendar compatibility options;
-`CreateTypedScheduleRequest` and `ModifyTypedScheduleRequest` accept validated
-first-run and recurrence input and delegate to the existing typed builders.
-Typed convenience methods for both forms use `execute`, so status handling,
-parse context, version checks, and redacted tracing remain identical.
+Schedule list, detail, create, clone, modify, and delete operations use six
+complete canonical requests. `ScheduleOpts`, `GetSchedulesOpts`, the eight free
+builders, and the duplicate typed create/modify wrappers are removed. Raw
+iCalendar construction uses `CreateScheduleRequest::new` or
+`ModifyScheduleRequest::new`; validated recurrence construction uses
+`from_input` on those same request types. Create and modify validate gvmd's
+required non-empty iCalendar value before capability checks or transport.
 
 ## Supporting resource lifecycles and trashcan recovery
 

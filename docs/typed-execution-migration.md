@@ -429,6 +429,47 @@ trigger preserve distinct semantic identities over shared XML roots. Trigger
 continues to decode `GetReportsResponse`. Alert data values are redacted from
 request diagnostics and wire traces.
 
+## Schedule family
+
+The schedule slice removes `ScheduleOpts`, `GetSchedulesOpts`, all eight free
+builders, and the duplicate typed create/modify request wrappers. List, detail,
+create, clone, modify, and delete inputs now live on six complete canonical
+request values, and the six named client methods accept those values unchanged:
+
+```rust
+use gvm_gmp::commands::schedules::{
+    CreateScheduleRequest, ModifyScheduleRequest,
+};
+use gvm_gmp::{
+    ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
+    ScheduleTimezone,
+};
+
+let input = ScheduleInput::new(
+    ScheduleDefinition {
+        first_run: ScheduleTimestamp::parse("2030-01-01T00:00:00Z")?,
+        recurrence: ScheduleRecurrence::Daily,
+    },
+    ScheduleTimezone::new("UTC")?,
+);
+let created = client
+    .create_schedule(CreateScheduleRequest::from_input("daily", input))
+    .await?;
+
+let raw = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR";
+client
+    .modify_schedule(ModifyScheduleRequest::new(created.id, raw))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`ScheduleInput` remains the reusable validated recurrence model. Its conversion
+and raw iCalendar construction now converge on the same request types. Pinned
+gvmd requires non-empty iCalendar data for both create and modify, even though
+the schema renders the modify child as optional; canonical validation follows
+the handler and fails before support checks or transport. Clone retains its
+distinct semantic identity and supports gvmd's name/comment overrides.
+
 ## Tag family
 
 The tag slice removes `TagOpts`, `GetTagsOpts`, and all six free builders.
@@ -567,7 +608,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 261 current public async methods: 257 delegate
+The facade inventory locks all 267 current public async methods: 263 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path, and the deprecated `sync_scan_config` alias delegates
 indirectly through `sync_config`.

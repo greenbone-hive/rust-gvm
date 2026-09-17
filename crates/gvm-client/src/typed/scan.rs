@@ -16,9 +16,8 @@ use gvm_gmp::commands::scanners::{
     GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
 };
 use gvm_gmp::commands::schedules::{
-    CloneScheduleRequest, CreateScheduleRequest, CreateTypedScheduleRequest, DeleteScheduleRequest,
-    GetScheduleRequest, GetSchedulesOpts, GetSchedulesRequest, ModifyScheduleRequest,
-    ModifyTypedScheduleRequest, ScheduleOpts,
+    CloneScheduleRequest, CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest,
+    GetSchedulesRequest, ModifyScheduleRequest,
 };
 use gvm_gmp::commands::tasks::{
     CloneAuditRequest, CloneTaskRequest, CreateAgentGroupTaskOpts, CreateAgentGroupTaskRequest,
@@ -43,7 +42,6 @@ use gvm_gmp::responses::{
     VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
-use gvm_gmp::ScheduleInput;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Scan Configs ──────────────────────────────────────────────────────────
@@ -745,9 +743,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_schedules(
         &mut self,
-        opts: GetSchedulesOpts,
+        request: GetSchedulesRequest,
     ) -> Result<GetSchedulesResponse, GvmError> {
-        self.execute(GetSchedulesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a detailed single-schedule `get_schedules` request.
@@ -756,10 +754,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_schedule(
         &mut self,
-        schedule_id: &EntityId,
+        request: GetScheduleRequest,
     ) -> Result<GetSchedulesResponse, GvmError> {
-        self.execute(GetScheduleRequest::new(schedule_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_schedule` request and return a typed [`CreateScheduleResponse`].
@@ -768,23 +765,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_schedule(
         &mut self,
-        name: &str,
-        opts: ScheduleOpts,
+        request: CreateScheduleRequest,
     ) -> Result<CreateScheduleResponse, GvmError> {
-        self.execute(CreateScheduleRequest::new(name, opts)).await
-    }
-
-    /// Send a `create_schedule` request from typed recurrence input.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn create_typed_schedule(
-        &mut self,
-        name: &str,
-        input: ScheduleInput,
-    ) -> Result<CreateScheduleResponse, GvmError> {
-        self.execute(CreateTypedScheduleRequest::new(name, input))
-            .await
+        self.execute(request).await
     }
 
     /// Send a schedule-copy `create_schedule` request.
@@ -793,37 +776,21 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_schedule(
         &mut self,
-        schedule_id: &EntityId,
+        request: CloneScheduleRequest,
     ) -> Result<CreateScheduleResponse, GvmError> {
-        self.execute(CloneScheduleRequest::new(schedule_id.clone()))
-            .await
+        self.execute(request).await
     }
 
-    /// Send a `modify_schedule` request using raw compatibility options and
-    /// return a typed [`ModifyScheduleResponse`].
+    /// Send a `modify_schedule` request and return a typed
+    /// [`ModifyScheduleResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_schedule(
         &mut self,
-        schedule_id: &EntityId,
-        opts: ScheduleOpts,
+        request: ModifyScheduleRequest,
     ) -> Result<ModifyScheduleResponse, GvmError> {
-        self.execute(ModifyScheduleRequest::new(schedule_id.clone(), opts))
-            .await
-    }
-
-    /// Send a `modify_schedule` request from typed recurrence input.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn modify_typed_schedule(
-        &mut self,
-        schedule_id: &EntityId,
-        input: ScheduleInput,
-    ) -> Result<ModifyScheduleResponse, GvmError> {
-        self.execute(ModifyTypedScheduleRequest::new(schedule_id.clone(), input))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_schedule` request and return a typed
@@ -833,10 +800,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_schedule(
         &mut self,
-        schedule_id: &EntityId,
-        ultimate: bool,
+        request: DeleteScheduleRequest,
     ) -> Result<DeleteScheduleResponse, GvmError> {
-        self.execute(DeleteScheduleRequest::new(schedule_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 }

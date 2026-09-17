@@ -123,6 +123,18 @@ Alert data values are redacted from request diagnostics and wire traces.
 Independent [alert gvmd evidence](alert-request-gvmd-evidence.md) records those
 contracts.
 
+Issue #629 converts the six schedule operations to complete canonical
+requests. Two redundant options types, eight free builders, and the duplicate
+typed create/modify wrappers and facade methods are removed. `ScheduleInput`
+remains the reusable recurrence model, with raw and typed construction
+converging on `CreateScheduleRequest` and `ModifyScheduleRequest`. Final create
+and modify values require non-empty iCalendar before support checks or
+transport, matching the pinned gvmd handler even where the schema is looser.
+Detail and clone retain semantic aliases, and clone exposes supported
+name/comment overrides. Independent
+[schedule gvmd evidence](schedule-request-gvmd-evidence.md) records those
+contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 
@@ -173,8 +185,8 @@ their established response shapes, including the report response returned by
 triggering. Schedule list, detail, create, clone, modify, and delete retain both
 raw compatibility options and typed recurrence input. Existing builders remain
 the sole wire encoders and all facade helpers delegate to generic execution.
-The bounded canonical alert migration in #627 supersedes that transitional
-alert construction model; the schedule side remains transitional.
+The bounded canonical alert migration in #627 and schedule migration in #629
+supersede both transitional construction models.
 
 The supporting-resource Phase 2 batch, tracked by
 [`#557`](https://github.com/greenbone-hive/rust-gvm/issues/557), migrates the
@@ -325,8 +337,9 @@ response parsing, or raw compatibility APIs.
 
 **Total: ~32,640 lines of Rust, 1,278 tests**
 
-Schedule create/modify supports typed first-run input and once, hourly, daily,
-weekly, and yearly recurrence. Schedule observations expose normalized typed
+Canonical schedule create/modify requests support typed first-run input and
+once, hourly, daily, weekly, and yearly recurrence, or raw iCalendar through
+the same request types. Schedule observations expose normalized typed
 first-run/next-run timestamps reported by gvmd and distinguish floating or
 `TZID`-qualified starts, recurrence dates, exclusions, and unsupported recurrence
 rules from one-time schedules; raw iCalendar remains available for compatibility.

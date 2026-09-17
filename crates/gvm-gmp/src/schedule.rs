@@ -9,8 +9,6 @@ use std::str::FromStr;
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use uuid::Uuid;
 
-use crate::commands::schedules::ScheduleOpts;
-
 /// A normalized UTC timestamp used by typed schedule APIs.
 ///
 /// Input accepts RFC 3339 timestamps. Values are normalized to UTC with second
@@ -204,23 +202,6 @@ impl ScheduleInput {
             comment: None,
             name: None,
         }
-    }
-
-    /// Serialize this input into the raw compatibility options.
-    #[must_use]
-    pub fn into_raw(self) -> ScheduleOpts {
-        ScheduleOpts {
-            comment: self.comment,
-            icalendar: Some(to_icalendar(&self.definition)),
-            timezone: Some(self.timezone.0),
-            name: self.name,
-        }
-    }
-}
-
-impl From<ScheduleInput> for ScheduleOpts {
-    fn from(value: ScheduleInput) -> Self {
-        value.into_raw()
     }
 }
 
