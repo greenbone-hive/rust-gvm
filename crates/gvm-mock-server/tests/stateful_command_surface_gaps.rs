@@ -13,9 +13,9 @@
 
 use base64::Engine;
 use gvm_gmp::commands::agents::{
-    delete_agent, get_agent_installer_instruction, get_agent_support_bundle, get_agents,
-    modify_agent, modify_agent_control_scan_config, sync_agents, AgentInstallerLanguage,
-    GetAgentsOpts, ModifyAgentControlScanConfigOpts, ModifyAgentOpts,
+    AgentInstallerLanguage, DeleteAgentRequest, GetAgentInstallerInstructionRequest,
+    GetAgentSupportBundleRequest, GetAgentsRequest, ModifyAgentControlScanConfigRequest,
+    ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::credentials::{
     create_credential, create_credential_store_credential, get_credential, modify_credential_store,
@@ -28,7 +28,7 @@ use gvm_gmp::commands::system::{
     RunWizardOpts,
 };
 use gvm_gmp::types::EntityId;
-use gvm_gmp::CredentialStoreCredentialType;
+use gvm_gmp::{CredentialStoreCredentialType, GmpRequestCodec};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -45,6 +45,13 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 
 async fn send_request(stream: &mut UnixStream, request: impl Request) -> Response {
     send_recv(stream, &request.to_bytes()).await
+}
+
+async fn send_typed_request(stream: &mut UnixStream, request: impl GmpRequestCodec) -> Response {
+    let bytes = request
+        .encode(gvm_gmp::GmpVersion(22, 8))
+        .expect("valid typed request");
+    send_recv(stream, &bytes).await
 }
 
 async fn stateful_server() -> Option<MockGmpServer> {
@@ -123,48 +130,33 @@ async fn stateful_agent_commands_use_gvmd_builder_shapes() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let agents = send_request(
+    let agents = send_typed_request(
         &mut stream,
-        get_agents(GetAgentsOpts {
+        GetAgentsRequest {
             filter_string: Some("scanner=agent-controller".into()),
             ..Default::default()
-        }),
+        },
     )
     .await;
     assert_eq!(agents.status_code(), Some(200));
 
-    let modify = send_request(
-        &mut stream,
-        modify_agent(
-            &[id("agent-1")],
-            ModifyAgentOpts {
-                authorized: Some(true),
-                update_to_latest: Some(true),
-                comment: Some("managed".into()),
-                ..Default::default()
-            },
-        ),
-    )
-    .await;
+    let mut modify_request = ModifyAgentRequest::new(vec![id("agent-1")]);
+    modify_request.authorized = Some(true);
+    modify_request.update_to_latest = Some(true);
+    modify_request.comment = Some("managed".into());
+    let modify = send_typed_request(&mut stream, modify_request).await;
     assert_eq!(modify.status_code(), Some(200));
 
-    let delete = send_request(&mut stream, delete_agent(&[id("agent-1")])).await;
+    let delete =
+        send_typed_request(&mut stream, DeleteAgentRequest::new(vec![id("agent-1")])).await;
     assert_eq!(delete.status_code(), Some(200));
 
-    let sync = send_request(&mut stream, sync_agents()).await;
+    let sync = send_typed_request(&mut stream, SyncAgentsRequest).await;
     assert_eq!(sync.status_code(), Some(200));
 
-    let control_config = send_request(
-        &mut stream,
-        modify_agent_control_scan_config(
-            &id("scanner-1"),
-            ModifyAgentControlScanConfigOpts {
-                update_to_latest: Some(true),
-                ..Default::default()
-            },
-        ),
-    )
-    .await;
+    let mut control_request = ModifyAgentControlScanConfigRequest::new(id("scanner-1"));
+    control_request.update_to_latest = Some(true);
+    let control_config = send_typed_request(&mut stream, control_request).await;
     assert_eq!(control_config.status_code(), Some(200));
 
     server.shutdown().await;
@@ -178,10 +170,10 @@ async fn stateful_agent_download_helpers_return_fixture_shapes() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let instruction = send_request(
+    let instruction = send_typed_request(
         &mut stream,
-        get_agent_installer_instruction(
-            &id("scanner-1"),
+        GetAgentInstallerInstructionRequest::new(
+            id("scanner-1"),
             AgentInstallerLanguage::En,
             "https://gvmd.example",
         ),
@@ -192,9 +184,9 @@ async fn stateful_agent_download_helpers_return_fixture_shapes() {
     assert!(instruction_text.contains("<language>en</language>"));
     assert!(instruction_text.contains("<instruction>"));
 
-    let bundle = send_request(
+    let bundle = send_typed_request(
         &mut stream,
-        get_agent_support_bundle(&id("agent-1"), Some(7)),
+        GetAgentSupportBundleRequest::new(id("agent-1"), Some(7)),
     )
     .await;
     assert_eq!(bundle.status_code(), Some(200));

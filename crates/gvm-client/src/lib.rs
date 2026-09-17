@@ -81,8 +81,7 @@ use wire_trace::redact_wire_bytes;
 pub use error::GvmError;
 pub use gvm_gmp::commands::agents::{
     AgentConfigOpts, AgentControlConfig, AgentHeartbeatConfig, AgentInstallerLanguage,
-    AgentRetryConfig, AgentScriptExecutorConfig, GetAgentsOpts, ModifyAgentControlScanConfigOpts,
-    ModifyAgentOpts,
+    AgentRetryConfig, AgentScriptExecutorConfig,
 };
 pub use gvm_gmp::commands::aggregates::{
     AggregateMode, AggregateSort, AggregateSortStatistic, GetAggregatesRequestOpts,
@@ -564,110 +563,6 @@ impl<C: GvmConnection> GmpClient<C> {
             .await
     }
 
-    /// List agents.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_agents(&mut self, opts: GetAgentsOpts) -> Result<GetAgentsResponse, GvmError> {
-        self.execute(GetAgentsRequest::new(opts)).await
-    }
-
-    /// Get a single agent.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_agent(&mut self, agent_id: &EntityId) -> Result<GetAgentsResponse, GvmError> {
-        self.execute(GetAgentRequest::new(agent_id.clone())).await
-    }
-
-    /// Modify one or more agents.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn modify_agent(
-        &mut self,
-        agent_ids: &[EntityId],
-        opts: ModifyAgentOpts,
-    ) -> Result<ModifyAgentResponse, GvmError> {
-        self.execute(ModifyAgentRequest::new(agent_ids.to_vec(), opts))
-            .await
-    }
-
-    /// Delete one or more agents.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn delete_agent(
-        &mut self,
-        agent_ids: &[EntityId],
-    ) -> Result<DeleteAgentResponse, GvmError> {
-        self.execute(DeleteAgentRequest::new(agent_ids.to_vec()))
-            .await
-    }
-
-    /// Synchronize agents.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn sync_agents(&mut self) -> Result<SyncAgentsResponse, GvmError> {
-        self.execute(SyncAgentsRequest::new()).await
-    }
-
-    /// Modify the agent-control scan configuration defaults.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn modify_agent_control_scan_config(
-        &mut self,
-        agent_control_id: &EntityId,
-        opts: ModifyAgentControlScanConfigOpts,
-    ) -> Result<ModifyAgentControlScanConfigResponse, GvmError> {
-        self.execute(ModifyAgentControlScanConfigRequest::new(
-            agent_control_id.clone(),
-            opts,
-        ))
-        .await
-    }
-
-    /// Get agent installer instructions.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_agent_installer_instruction(
-        &mut self,
-        scanner_id: &EntityId,
-        language: AgentInstallerLanguage,
-        origin_url: &str,
-    ) -> Result<GetAgentInstallerInstructionResponse, GvmError> {
-        self.execute(GetAgentInstallerInstructionRequest::new(
-            scanner_id.clone(),
-            language,
-            origin_url,
-        ))
-        .await
-    }
-
-    /// Get an agent support bundle.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_agent_support_bundle(
-        &mut self,
-        agent_uuid: &EntityId,
-        days: Option<u32>,
-    ) -> Result<GetAgentSupportBundleResponse, GvmError> {
-        self.execute(GetAgentSupportBundleRequest::new(agent_uuid.clone(), days))
-            .await
-    }
-
     /// Get one structured vulnerability report.
     ///
     /// # Errors
@@ -878,47 +773,48 @@ pub trait Gmp227Commands {
 #[async_trait::async_trait]
 pub trait GmpNextCommands {
     /// List agents.
-    async fn get_agents(&mut self, opts: GetAgentsOpts) -> Result<GetAgentsResponse, GvmError>;
+    async fn get_agents(
+        &mut self,
+        request: GetAgentsRequest,
+    ) -> Result<GetAgentsResponse, GvmError>;
 
     /// Get a single agent.
-    async fn get_agent(&mut self, agent_id: &EntityId) -> Result<GetAgentsResponse, GvmError>;
+    async fn get_agent(&mut self, request: GetAgentRequest) -> Result<GetAgentsResponse, GvmError>;
 
     /// Modify one or more agents.
     async fn modify_agent(
         &mut self,
-        agent_ids: &[EntityId],
-        opts: ModifyAgentOpts,
+        request: ModifyAgentRequest,
     ) -> Result<ModifyAgentResponse, GvmError>;
 
     /// Delete one or more agents.
     async fn delete_agent(
         &mut self,
-        agent_ids: &[EntityId],
+        request: DeleteAgentRequest,
     ) -> Result<DeleteAgentResponse, GvmError>;
 
     /// Synchronize agents.
-    async fn sync_agents(&mut self) -> Result<SyncAgentsResponse, GvmError>;
+    async fn sync_agents(
+        &mut self,
+        request: SyncAgentsRequest,
+    ) -> Result<SyncAgentsResponse, GvmError>;
 
     /// Modify the agent-control scan configuration defaults.
     async fn modify_agent_control_scan_config(
         &mut self,
-        agent_control_id: &EntityId,
-        opts: ModifyAgentControlScanConfigOpts,
+        request: ModifyAgentControlScanConfigRequest,
     ) -> Result<ModifyAgentControlScanConfigResponse, GvmError>;
 
     /// Get agent installer instructions.
     async fn get_agent_installer_instruction(
         &mut self,
-        scanner_id: &EntityId,
-        language: AgentInstallerLanguage,
-        origin_url: &str,
+        request: GetAgentInstallerInstructionRequest,
     ) -> Result<GetAgentInstallerInstructionResponse, GvmError>;
 
     /// Get an agent support bundle.
     async fn get_agent_support_bundle(
         &mut self,
-        agent_uuid: &EntityId,
-        days: Option<u32>,
+        request: GetAgentSupportBundleRequest,
     ) -> Result<GetAgentSupportBundleResponse, GvmError>;
 
     /// Create an agent group.
@@ -1443,60 +1339,57 @@ impl_gmp227_commands!(GmpNext);
 
 #[async_trait::async_trait]
 impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
-    async fn get_agents(&mut self, opts: GetAgentsOpts) -> Result<GetAgentsResponse, GvmError> {
-        self.0.get_agents(opts).await
+    async fn get_agents(
+        &mut self,
+        request: GetAgentsRequest,
+    ) -> Result<GetAgentsResponse, GvmError> {
+        self.0.get_agents(request).await
     }
 
-    async fn get_agent(&mut self, agent_id: &EntityId) -> Result<GetAgentsResponse, GvmError> {
-        self.0.get_agent(agent_id).await
+    async fn get_agent(&mut self, request: GetAgentRequest) -> Result<GetAgentsResponse, GvmError> {
+        self.0.get_agent(request).await
     }
 
     async fn modify_agent(
         &mut self,
-        agent_ids: &[EntityId],
-        opts: ModifyAgentOpts,
+        request: ModifyAgentRequest,
     ) -> Result<ModifyAgentResponse, GvmError> {
-        self.0.modify_agent(agent_ids, opts).await
+        self.0.modify_agent(request).await
     }
 
     async fn delete_agent(
         &mut self,
-        agent_ids: &[EntityId],
+        request: DeleteAgentRequest,
     ) -> Result<DeleteAgentResponse, GvmError> {
-        self.0.delete_agent(agent_ids).await
+        self.0.delete_agent(request).await
     }
 
-    async fn sync_agents(&mut self) -> Result<SyncAgentsResponse, GvmError> {
-        self.0.sync_agents().await
+    async fn sync_agents(
+        &mut self,
+        request: SyncAgentsRequest,
+    ) -> Result<SyncAgentsResponse, GvmError> {
+        self.0.sync_agents(request).await
     }
 
     async fn modify_agent_control_scan_config(
         &mut self,
-        agent_control_id: &EntityId,
-        opts: ModifyAgentControlScanConfigOpts,
+        request: ModifyAgentControlScanConfigRequest,
     ) -> Result<ModifyAgentControlScanConfigResponse, GvmError> {
-        self.0
-            .modify_agent_control_scan_config(agent_control_id, opts)
-            .await
+        self.0.modify_agent_control_scan_config(request).await
     }
 
     async fn get_agent_installer_instruction(
         &mut self,
-        scanner_id: &EntityId,
-        language: AgentInstallerLanguage,
-        origin_url: &str,
+        request: GetAgentInstallerInstructionRequest,
     ) -> Result<GetAgentInstallerInstructionResponse, GvmError> {
-        self.0
-            .get_agent_installer_instruction(scanner_id, language, origin_url)
-            .await
+        self.0.get_agent_installer_instruction(request).await
     }
 
     async fn get_agent_support_bundle(
         &mut self,
-        agent_uuid: &EntityId,
-        days: Option<u32>,
+        request: GetAgentSupportBundleRequest,
     ) -> Result<GetAgentSupportBundleResponse, GvmError> {
-        self.0.get_agent_support_bundle(agent_uuid, days).await
+        self.0.get_agent_support_bundle(request).await
     }
 
     async fn create_agent_group(
@@ -2225,7 +2118,7 @@ mod tests {
         )
         .await;
         let agent_error = agent_client
-            .get_agents(GetAgentsOpts::default())
+            .get_agents(GetAgentsRequest::default())
             .await
             .expect_err("migrated call-based helper rejects non-success status");
         assert_server_error(agent_error, 503, "backend unavailable");

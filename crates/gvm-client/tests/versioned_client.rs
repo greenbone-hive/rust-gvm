@@ -7,9 +7,8 @@
 use gvm_client::{
     AgentInstallerLanguage, CommandSupport, CreateAgentGroupTaskOpts, CreateOciImageTargetTaskOpts,
     CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
-    ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands,
-    GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentOpts,
-    ModifyCredentialStoreCredentialOpts,
+    ExportScanReportOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
+    GvmError, ModifyCredentialStoreCredentialOpts,
 };
 use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
@@ -17,7 +16,11 @@ use gvm_gmp::commands::agent_groups::{
     CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
     GetAgentGroupsRequest, ModifyAgentGroupRequest,
 };
-use gvm_gmp::commands::agents::get_agents;
+use gvm_gmp::commands::agents::{
+    DeleteAgentRequest, GetAgentInstallerInstructionRequest, GetAgentRequest,
+    GetAgentSupportBundleRequest, GetAgentsRequest, ModifyAgentControlScanConfigRequest,
+    ModifyAgentRequest, SyncAgentsRequest,
+};
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
@@ -701,7 +704,7 @@ async fn versioned_client_rejects_agent_commands_before_next() {
         .expect("authenticate should succeed");
 
     let error = client
-        .call(get_agents(Default::default()))
+        .execute(GetAgentsRequest::default())
         .await
         .expect_err("22.7 should reject next-only agent commands");
 
@@ -843,7 +846,7 @@ async fn next_client_agent_commands_round_trip() {
     };
 
     let agents = client
-        .get_agents(GetAgentsOpts {
+        .get_agents(GetAgentsRequest {
             filter_string: Some("scanner=agent-controller".into()),
             ..Default::default()
         })
@@ -852,7 +855,9 @@ async fn next_client_agent_commands_round_trip() {
     assert_eq!(agents.status, 200);
 
     let missing_agent = client
-        .get_agent(&id("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+        .get_agent(GetAgentRequest::new(id(
+            "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        )))
         .await
         .expect_err("unseeded agent should not be found");
     assert!(matches!(
@@ -860,52 +865,48 @@ async fn next_client_agent_commands_round_trip() {
         GvmError::Server { status: 404, .. }
     ));
 
-    let agent_ids = [id("00000000-0000-0000-0000-000000000002")];
+    let agent_ids = vec![id("00000000-0000-0000-0000-000000000002")];
+    let mut modify_request = ModifyAgentRequest::new(agent_ids.clone());
+    modify_request.authorized = Some(true);
+    modify_request.update_to_latest = Some(true);
+    modify_request.comment = Some("managed from versioned client".into());
     let modify = client
-        .modify_agent(
-            &agent_ids,
-            ModifyAgentOpts {
-                authorized: Some(true),
-                update_to_latest: Some(true),
-                comment: Some("managed from versioned client".into()),
-                ..Default::default()
-            },
-        )
+        .modify_agent(modify_request)
         .await
         .expect("modify_agent should succeed");
     assert_eq!(modify.status, 200);
 
     let sync = client
-        .sync_agents()
+        .sync_agents(SyncAgentsRequest)
         .await
         .expect("sync_agents should succeed");
     assert_eq!(sync.status, 200);
 
+    let mut control_request =
+        ModifyAgentControlScanConfigRequest::new(id("00000000-0000-0000-0000-000000000003"));
+    control_request.update_to_latest = Some(true);
     let control_config = client
-        .modify_agent_control_scan_config(
-            &id("00000000-0000-0000-0000-000000000003"),
-            ModifyAgentControlScanConfigOpts {
-                update_to_latest: Some(true),
-                ..Default::default()
-            },
-        )
+        .modify_agent_control_scan_config(control_request)
         .await
         .expect("modify_agent_control_scan_config should succeed");
     assert_eq!(control_config.status, 200);
 
     let instruction = client
-        .get_agent_installer_instruction(
-            &id("00000000-0000-0000-0000-000000000004"),
+        .get_agent_installer_instruction(GetAgentInstallerInstructionRequest::new(
+            id("00000000-0000-0000-0000-000000000004"),
             AgentInstallerLanguage::En,
             "https://gvmd.example",
-        )
+        ))
         .await
         .expect("get_agent_installer_instruction should succeed");
     assert_eq!(instruction.language, "en");
     assert!(instruction.instruction.contains("mock agent"));
 
     let bundle = client
-        .get_agent_support_bundle(&agent_ids[0], Some(7))
+        .get_agent_support_bundle(GetAgentSupportBundleRequest::new(
+            agent_ids[0].clone(),
+            Some(7),
+        ))
         .await
         .expect("get_agent_support_bundle should succeed");
     assert_eq!(
@@ -915,7 +916,7 @@ async fn next_client_agent_commands_round_trip() {
     assert_eq!(bundle.file.content, b"hello-mock");
 
     let delete = client
-        .delete_agent(&agent_ids)
+        .delete_agent(DeleteAgentRequest::new(agent_ids))
         .await
         .expect("delete_agent should succeed");
     assert_eq!(delete.status, 200);

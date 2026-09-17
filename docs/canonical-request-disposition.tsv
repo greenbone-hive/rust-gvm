@@ -5,14 +5,14 @@ builder	crates/gvm-gmp/src/commands/agent_groups.rs	delete_agent_group	removed	R
 builder	crates/gvm-gmp/src/commands/agent_groups.rs	get_agent_group	removed	Removed by #611; GetAgentGroupRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/agent_groups.rs	get_agent_groups	removed	Removed by #611; GetAgentGroupsRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/agent_groups.rs	modify_agent_group	removed	Removed by #611; ModifyAgentGroupRequest owns canonical encoding.
-builder	crates/gvm-gmp/src/commands/agents.rs	delete_agent	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/agents.rs	get_agent	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/agents.rs	get_agent_installer_instruction	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/agents.rs	get_agent_support_bundle	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/agents.rs	get_agents	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/agents.rs	modify_agent	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/agents.rs	modify_agent_control_scan_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/agents.rs	sync_agents	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/agents.rs	delete_agent	removed	Removed by #613; DeleteAgentRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/agents.rs	get_agent	removed	Removed by #613; GetAgentRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/agents.rs	get_agent_installer_instruction	removed	Removed by #613; GetAgentInstallerInstructionRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/agents.rs	get_agent_support_bundle	removed	Removed by #613; GetAgentSupportBundleRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/agents.rs	get_agents	removed	Removed by #613; GetAgentsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/agents.rs	modify_agent	removed	Removed by #613; ModifyAgentRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/agents.rs	modify_agent_control_scan_config	removed	Removed by #613; ModifyAgentControlScanConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/agents.rs	sync_agents	removed	Removed by #613; SyncAgentsRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/aggregates.rs	get_aggregates	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/aggregates.rs	get_aggregates_request	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/alerts.rs	clone_alert	transitional	Pending bounded family migration under #602.
@@ -310,13 +310,21 @@ builder	crates/gvm-gmp/src/commands/web_application_targets.rs	get_web_applicati
 builder	crates/gvm-gmp/src/commands/web_application_targets.rs	modify_web_application_target	removed	Removed by #609; ModifyWebApplicationTargetRequest owns canonical encoding.
 facade	crates/gvm-client/src/typed/agents.rs	clone_agent_group	retained-construction	Retained for discoverability; accepts the canonical CloneAgentGroupRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	create_agent_group	retained-construction	Retained for discoverability; accepts the canonical CreateAgentGroupRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	delete_agent	retained-construction	Retained for discoverability; accepts the canonical DeleteAgentRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	delete_agent_group	retained-construction	Retained for discoverability; accepts the canonical DeleteAgentGroupRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	get_agent	retained-construction	Retained for discoverability; accepts the canonical GetAgentRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	get_agent_group	retained-construction	Retained for discoverability; accepts the canonical GetAgentGroupRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	get_agent_groups	retained-construction	Retained for discoverability; accepts the canonical GetAgentGroupsRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	get_agent_installer_instruction	retained-construction	Retained for discoverability; accepts the canonical GetAgentInstallerInstructionRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	get_agent_support_bundle	retained-construction	Retained for discoverability; accepts the canonical GetAgentSupportBundleRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	get_agents	retained-construction	Retained for discoverability; accepts the canonical GetAgentsRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	get_integration_config_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/agents.rs	get_integration_configs_parsed	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/agents.rs	modify_agent	retained-construction	Retained for discoverability; accepts the canonical ModifyAgentRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	modify_agent_control_scan_config	retained-construction	Retained for discoverability; accepts the canonical ModifyAgentControlScanConfigRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	modify_agent_group	retained-construction	Retained for discoverability; accepts the canonical ModifyAgentGroupRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config_parsed	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/agents.rs	sync_agents	retained-construction	Retained for discoverability; accepts the canonical SyncAgentsRequest unchanged.
 facade	crates/gvm-client/src/typed/automation.rs	clone_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_filter	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_note	transitional	Pending bounded family migration under #602.
@@ -584,10 +592,10 @@ facade	crates/gvm-client/src/typed/tickets.rs	modify_ticket	frozen-ticket	Ticket
 options	crates/gvm-gmp/src/commands/agent_groups.rs	CreateAgentGroupOpts	removed	Removed by #611; fields now belong to CreateAgentGroupRequest.
 options	crates/gvm-gmp/src/commands/agent_groups.rs	GetAgentGroupsOpts	removed	Removed by #611; fields now belong to GetAgentGroupsRequest.
 options	crates/gvm-gmp/src/commands/agent_groups.rs	ModifyAgentGroupOpts	removed	Removed by #611; fields now belong to ModifyAgentGroupRequest.
-options	crates/gvm-gmp/src/commands/agents.rs	AgentConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/agents.rs	GetAgentsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentControlScanConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/agents.rs	AgentConfigOpts	retained-construction	Reusable nested agent configuration shared by agent and agent-control update requests.
+options	crates/gvm-gmp/src/commands/agents.rs	GetAgentsOpts	removed	Removed by #613; fields now belong to GetAgentsRequest.
+options	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentControlScanConfigOpts	removed	Removed by #613; fields now belong to ModifyAgentControlScanConfigRequest.
+options	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentOpts	removed	Removed by #613; fields now belong to ModifyAgentRequest.
 options	crates/gvm-gmp/src/commands/aggregates.rs	GetAggregatesOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/aggregates.rs	GetAggregatesRequestOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/alerts.rs	AlertOpts	transitional	Pending bounded family migration under #602.
@@ -701,14 +709,14 @@ request	crates/gvm-gmp/src/commands/agent_groups.rs	DeleteAgentGroupRequest	cano
 request	crates/gvm-gmp/src/commands/agent_groups.rs	GetAgentGroupRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/agent_groups.rs	GetAgentGroupsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/agent_groups.rs	ModifyAgentGroupRequest	canonical-request	Complete modify input with direct metadata/encoding and typed response.
-request	crates/gvm-gmp/src/commands/agents.rs	DeleteAgentRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/agents.rs	GetAgentInstallerInstructionRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/agents.rs	GetAgentRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/agents.rs	GetAgentSupportBundleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/agents.rs	GetAgentsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentControlScanConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/agents.rs	SyncAgentsRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/agents.rs	DeleteAgentRequest	canonical-request	Complete delete input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	GetAgentInstallerInstructionRequest	canonical-request	Complete installer-instruction input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	GetAgentRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	GetAgentSupportBundleRequest	canonical-request	Complete support-bundle input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	GetAgentsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentControlScanConfigRequest	canonical-request	Complete agent-control defaults input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentRequest	canonical-request	Complete modify input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	SyncAgentsRequest	canonical-request	Complete synchronization input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/aggregates.rs	GetAggregatesRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/aggregates.rs	GetLegacyAggregatesRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/alerts.rs	CloneAlertRequest	transitional	Pending bounded family migration under #602.

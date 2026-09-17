@@ -13,6 +13,11 @@ use gvm_gmp::commands::agent_groups::{
     CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
     GetAgentGroupsRequest, ModifyAgentGroupRequest,
 };
+use gvm_gmp::commands::agents::{
+    AgentInstallerLanguage, DeleteAgentRequest, GetAgentInstallerInstructionRequest,
+    GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
+    ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
+};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
@@ -247,6 +252,63 @@ async fn every_agent_group_request_is_version_gated_before_transport() {
         &mut client,
         DeleteAgentGroupRequest::new(group_id, false),
         "delete_agent_group",
+    )
+    .await;
+
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn every_agent_request_is_version_gated_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let agent_id = gvm_gmp::EntityId::new("agent-1").expect("valid id");
+    let scanner_id = gvm_gmp::EntityId::new("scanner-1").expect("valid id");
+
+    assert_unsupported_22_8_request(&mut client, GetAgentsRequest::default(), "get_agents").await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetAgentRequest::new(agent_id.clone()),
+        "get_agents",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        ModifyAgentRequest::new(vec![agent_id.clone()]),
+        "modify_agent",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        DeleteAgentRequest::new(vec![agent_id.clone()]),
+        "delete_agent",
+    )
+    .await;
+    assert_unsupported_22_8_request(&mut client, SyncAgentsRequest, "sync_agents").await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        ModifyAgentControlScanConfigRequest::new(scanner_id.clone()),
+        "modify_agent_control_scan_config",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetAgentInstallerInstructionRequest::new(
+            scanner_id,
+            AgentInstallerLanguage::En,
+            "https://gvmd.example",
+        ),
+        "get_agent_installer_instruction",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetAgentSupportBundleRequest::new(agent_id, Some(7)),
+        "get_agent_support_bundle",
     )
     .await;
 
