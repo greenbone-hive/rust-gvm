@@ -905,7 +905,7 @@ async fn matrix_tags_create_and_empty_trashcan() {
 
     let tag_id = create_and_get_id(
         &mut stream,
-        b"<create_tag><name>Matrix Tag</name></create_tag>",
+        b"<create_tag><name>Matrix Tag</name><resources><type>task</type></resources></create_tag>",
         "create_tag",
     )
     .await;

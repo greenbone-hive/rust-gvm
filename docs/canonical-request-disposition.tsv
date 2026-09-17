@@ -240,12 +240,12 @@ builder	crates/gvm-gmp/src/commands/system.rs	modify_setting	transitional	Pendin
 builder	crates/gvm-gmp/src/commands/system.rs	run_wizard	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	run_wizard_with_opts	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system_reports.rs	get_system_reports	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tags.rs	clone_tag	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tags.rs	create_tag	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tags.rs	delete_tag	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tags.rs	get_tag	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tags.rs	get_tags	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tags.rs	modify_tag	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tags.rs	clone_tag	removed	Removed by #624; CloneTagRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/tags.rs	create_tag	removed	Removed by #624; CreateTagRequest owns validation and canonical encoding.
+builder	crates/gvm-gmp/src/commands/tags.rs	delete_tag	removed	Removed by #624; DeleteTagRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/tags.rs	get_tag	removed	Removed by #624; GetTagRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/tags.rs	get_tags	removed	Removed by #624; GetTagsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/tags.rs	modify_tag	removed	Removed by #624; ModifyTagRequest owns validation and canonical encoding.
 builder	crates/gvm-gmp/src/commands/targets.rs	clone_target	removed	Removed by #607; CloneTargetRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/targets.rs	create_target	removed	Removed by #607; CreateTargetRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/targets.rs	delete_target	removed	Removed by #607; DeleteTargetRequest owns canonical encoding.
@@ -332,17 +332,17 @@ facade	crates/gvm-client/src/typed/automation.rs	clone_alert	transitional	Pendin
 facade	crates/gvm-client/src/typed/automation.rs	clone_filter	canonical-request	Accepts CloneFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	clone_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_override	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	clone_tag	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	clone_tag	canonical-request	Accepts CloneTagRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	create_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	create_filter	canonical-request	Accepts CreateFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	create_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	create_override	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	create_tag	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	create_tag	canonical-request	Accepts CreateTagRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	delete_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	delete_filter	canonical-request	Accepts DeleteFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	delete_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	delete_override	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	delete_tag	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	delete_tag	canonical-request	Accepts DeleteTagRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	get_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_alerts	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_filter	canonical-request	Accepts GetFilterRequest unchanged and delegates to execute.
@@ -351,13 +351,13 @@ facade	crates/gvm-client/src/typed/automation.rs	get_note	transitional	Pending b
 facade	crates/gvm-client/src/typed/automation.rs	get_notes	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_overrides	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	get_tag	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	get_tags	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	get_tag	canonical-request	Accepts GetTagRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/automation.rs	get_tags	canonical-request	Accepts GetTagsRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	modify_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	modify_filter	canonical-request	Accepts ModifyFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	modify_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	modify_override	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	modify_tag	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	modify_tag	canonical-request	Accepts ModifyTagRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	test_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	trigger_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/core.rs	authenticate	transitional	Pending bounded family migration under #602.
@@ -682,8 +682,8 @@ options	crates/gvm-gmp/src/commands/system.rs	GetResourceNamesOpts	transitional	
 options	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/system.rs	RunWizardOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/system_reports.rs	GetSystemReportsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/tags.rs	GetTagsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/tags.rs	TagOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/tags.rs	GetTagsOpts	removed	Removed by #624; fields now belong to GetTagsRequest.
+options	crates/gvm-gmp/src/commands/tags.rs	TagOpts	removed	Removed by #624; supported fields now belong to create and modify requests; unsupported severity was removed.
 options	crates/gvm-gmp/src/commands/targets.rs	CreateTargetOpts	removed	Removed by #607; fields now belong to CreateTargetRequest.
 options	crates/gvm-gmp/src/commands/targets.rs	GetTargetsOpts	removed	Removed by #607; fields now belong to GetTargetsRequest.
 options	crates/gvm-gmp/src/commands/targets.rs	ModifyTargetOpts	removed	Removed by #607; fields now belong to ModifyTargetRequest.
@@ -898,10 +898,12 @@ request	crates/gvm-gmp/src/commands/system.rs	RunWizardRequest	transitional	Pend
 request	crates/gvm-gmp/src/commands/system.rs	RunWizardWithOptsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	SystemHelpRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system_reports.rs	GetSystemReportsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tags.rs	CreateTagRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tags.rs	DeleteTagRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tags.rs	GetTagsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tags.rs	ModifyTagRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tags.rs	CloneTagRequest	canonical-request	Complete clone request owns the create_tag semantic alias and optional gvmd-supported overrides.
+request	crates/gvm-gmp/src/commands/tags.rs	CreateTagRequest	canonical-request	Complete create request owns required resources, validation, and XML encoding.
+request	crates/gvm-gmp/src/commands/tags.rs	DeleteTagRequest	canonical-request	Complete delete request owns the tag identifier and ultimate flag.
+request	crates/gvm-gmp/src/commands/tags.rs	GetTagRequest	canonical-request	Complete detail request owns the get_tags semantic alias.
+request	crates/gvm-gmp/src/commands/tags.rs	GetTagsRequest	canonical-request	Complete list request owns all supported selectors and XML encoding.
+request	crates/gvm-gmp/src/commands/tags.rs	ModifyTagRequest	canonical-request	Complete modify request owns validation, resource actions, clearing semantics, and XML encoding.
 request	crates/gvm-gmp/src/commands/targets.rs	CloneTargetRequest	canonical-request	Complete clone input, semantic alias metadata, direct validation/encoding, and typed response.
 request	crates/gvm-gmp/src/commands/targets.rs	CreateTargetRequest	canonical-request	Complete create input with final-value validation, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/targets.rs	DeleteTargetRequest	canonical-request	Complete delete input with direct metadata/encoding and typed response.

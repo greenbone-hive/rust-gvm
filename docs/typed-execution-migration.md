@@ -396,6 +396,51 @@ and list/detail requests expose the supported `alerts` expansion selector.
 Empty comment and term elements remain representable for modification so
 callers can clear those text values.
 
+## Tag family
+
+The tag slice removes `TagOpts`, `GetTagsOpts`, and all six free builders.
+List, detail, create, clone, modify, and delete inputs now live on complete
+canonical request values, and the six named client methods accept those values
+unchanged:
+
+```rust
+use gvm_gmp::commands::tags::{
+    CreateTagRequest, ModifyTagRequest, TagResourceAction, TagResourceUpdate,
+    TagResources,
+};
+use gvm_gmp::EntityType;
+
+let mut resources = TagResources::new(EntityType::Task);
+resources.filter = Some("status=Running".into());
+let mut create = CreateTagRequest::new("running tasks", resources);
+create.value = Some("triage".into());
+let created = client.create_tag(create).await?;
+
+let mut replacement = TagResources::new(EntityType::Policy);
+replacement.filter = Some("name=baseline".into());
+let mut modify = ModifyTagRequest::new(created.id);
+modify.resource_update = Some(TagResourceUpdate {
+    resources: replacement,
+    action: Some(TagResourceAction::Set),
+});
+modify.comment = Some(String::new());
+client.modify_tag(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Create requests validate their required final name and resource type before
+support checks or transport. Clone and modify reject an explicitly empty name,
+and tag-on-tag resource selections are invalid. `GetTagRequest` and
+`CloneTagRequest` retain distinct semantic identities over the shared
+`get_tags` and `create_tag` XML roots.
+
+Pinned gvmd source corrects the transitional model: resources support multiple
+IDs and a filter, modify supports add/set/remove actions and rename, list
+supports `names_only`, and clone supports optional name/comment overrides.
+Policy resources keep the historical `config` wire mapping. Explicit empty
+modify comment/value strings remain representable for clearing. The old tag
+`severity` option is removed because gvmd does not define or parse it.
+
 ## Moving from a raw builder
 
 Raw execution remains available:

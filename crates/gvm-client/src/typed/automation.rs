@@ -21,8 +21,8 @@ use gvm_gmp::commands::overrides::{
     GetOverridesOpts, GetOverridesRequest, ModifyOverrideOpts, ModifyOverrideRequest, OverrideOpts,
 };
 use gvm_gmp::commands::tags::{
-    CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsOpts,
-    GetTagsRequest, ModifyTagRequest, TagOpts,
+    CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsRequest,
+    ModifyTagRequest,
 };
 use gvm_gmp::responses::{
     ActionResponse, CreateAlertResponse, CreateFilterResponse, CreateNoteResponse,
@@ -342,16 +342,16 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_tags(&mut self, opts: GetTagsOpts) -> Result<GetTagsResponse, GvmError> {
-        self.execute(GetTagsRequest::new(opts)).await
+    pub async fn get_tags(&mut self, request: GetTagsRequest) -> Result<GetTagsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a detailed single-tag request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_tag(&mut self, tag_id: &EntityId) -> Result<GetTagsResponse, GvmError> {
-        self.execute(GetTagRequest::new(tag_id.clone())).await
+    pub async fn get_tag(&mut self, request: GetTagRequest) -> Result<GetTagsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `create_tag` request and return a typed [`CreateTagResponse`].
@@ -360,18 +360,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_tag(
         &mut self,
-        name: &str,
-        opts: TagOpts,
+        request: CreateTagRequest,
     ) -> Result<CreateTagResponse, GvmError> {
-        self.execute(CreateTagRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Clone a tag through `create_tag`.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn clone_tag(&mut self, tag_id: &EntityId) -> Result<CreateTagResponse, GvmError> {
-        self.execute(CloneTagRequest::new(tag_id.clone())).await
+    pub async fn clone_tag(
+        &mut self,
+        request: CloneTagRequest,
+    ) -> Result<CreateTagResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `modify_tag` request.
@@ -380,11 +382,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_tag(
         &mut self,
-        tag_id: &EntityId,
-        opts: TagOpts,
+        request: ModifyTagRequest,
     ) -> Result<ModifyTagResponse, GvmError> {
-        self.execute(ModifyTagRequest::new(tag_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_tag` request.
@@ -393,10 +393,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_tag(
         &mut self,
-        tag_id: &EntityId,
-        ultimate: bool,
+        request: DeleteTagRequest,
     ) -> Result<DeleteTagResponse, GvmError> {
-        self.execute(DeleteTagRequest::new(tag_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 }

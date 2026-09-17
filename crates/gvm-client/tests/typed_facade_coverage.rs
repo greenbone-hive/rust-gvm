@@ -77,7 +77,10 @@ use gvm_gmp::commands::system::{
     RunWizardWithOptsRequest,
 };
 use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
-use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
+use gvm_gmp::commands::tags::{
+    CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsRequest,
+    ModifyTagRequest, TagResources,
+};
 use gvm_gmp::commands::targets::{
     CloneTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
     ModifyTargetRequest,
@@ -104,13 +107,18 @@ use gvm_gmp::commands::web_application_targets::{
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
-    FeedType, GmpRequest, PortRangeType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
-    ScheduleTimestamp, ScheduleTimezone,
+    EntityType, FeedType, GmpRequest, PortRangeType, ScheduleDefinition, ScheduleInput,
+    ScheduleRecurrence, ScheduleTimestamp, ScheduleTimezone,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
 
 const CREATED_ID: &str = "11111111-1111-1111-1111-111111111111";
+
+fn tag_resources() -> TagResources {
+    TagResources::new(EntityType::Task)
+}
+
 const SYSTEM_ADMIN_OVERRIDES: &[(&str, &str)] = &[
     (
         "modify_auth",
@@ -2752,7 +2760,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_notes(GetNotesOpts::default()));
     assert_typed_success!(client.get_overrides(GetOverridesOpts::default()));
     assert_typed_success!(client.get_schedules(GetSchedulesOpts::default()));
-    assert_typed_success!(client.get_tags(GetTagsOpts::default()));
+    assert_typed_success!(client.get_tags(GetTagsRequest::default()));
     assert_typed_success!(client.get_tickets(GetTicketsOpts::default()));
     assert_typed_success!(client.get_users(GetUsersOpts::default()));
     assert_typed_success!(client.get_groups(GetGroupsOpts::default()));
@@ -2848,7 +2856,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
             ..Default::default()
         }
     ));
-    assert_create_success!(client.create_tag("tag", TagOpts::default()));
+    assert_create_success!(client.create_tag(CreateTagRequest::new("tag", tag_resources())));
     assert_create_success!(client.create_ticket(
         &related_id,
         CreateTicketOpts {
@@ -2948,12 +2956,12 @@ async fn filters_tags_and_trashcan_execute_through_typed_facade() {
         client.delete_filter(DeleteFilterRequest::new(resource_id.clone(), false))
     );
 
-    assert_typed_success!(client.get_tags(GetTagsOpts::default()));
-    assert_typed_success!(client.get_tag(&resource_id));
-    assert_create_success!(client.create_tag("tag", TagOpts::default()));
-    assert_create_success!(client.clone_tag(&resource_id));
-    assert_typed_success!(client.modify_tag(&resource_id, TagOpts::default()));
-    assert_typed_success!(client.delete_tag(&resource_id, true));
+    assert_typed_success!(client.get_tags(GetTagsRequest::default()));
+    assert_typed_success!(client.get_tag(GetTagRequest::new(resource_id.clone())));
+    assert_create_success!(client.create_tag(CreateTagRequest::new("tag", tag_resources())));
+    assert_create_success!(client.clone_tag(CloneTagRequest::new(resource_id.clone())));
+    assert_typed_success!(client.modify_tag(ModifyTagRequest::new(resource_id.clone())));
+    assert_typed_success!(client.delete_tag(DeleteTagRequest::new(resource_id.clone(), true)));
 
     assert_typed_success!(client.empty_trashcan());
     assert_typed_success!(client.restore(&resource_id));
@@ -3023,7 +3031,7 @@ async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
     ));
 
     let tag_error = client
-        .clone_tag(&id("tag-1"))
+        .clone_tag(CloneTagRequest::new(id("tag-1")))
         .await
         .expect_err("missing cloned tag id should fail");
     assert!(matches!(

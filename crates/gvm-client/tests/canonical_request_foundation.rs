@@ -29,6 +29,7 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
+use gvm_gmp::commands::tags::{CreateTagRequest, TagResources};
 use gvm_gmp::commands::targets::CreateTargetRequest;
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
@@ -37,8 +38,8 @@ use gvm_gmp::commands::web_application_targets::{
 };
 use gvm_gmp::responses::ActionResponse;
 use gvm_gmp::{
-    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, ServicePort, TargetHost,
-    TargetHosts, TargetPortSelection,
+    EntityType, GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, ServicePort,
+    TargetHost, TargetHosts, TargetPortSelection,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -439,6 +440,31 @@ async fn mutated_filter_name_fails_before_support_and_transport() {
         GvmError::Request(GmpRequestError::InvalidField {
             field: "name",
             reason: "must not be empty",
+        })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_tag_final_values_fail_before_support_and_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_4).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let request = CreateTagRequest::new("tag", TagResources::new(EntityType::Tag));
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("tag resource type should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField {
+            field: "resources.resource_type",
+            reason: "tag resources cannot themselves be tags",
         })
     ));
     assert!(server.command_history().is_empty());
