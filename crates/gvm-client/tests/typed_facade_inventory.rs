@@ -183,10 +183,8 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_schedules",
     "get_schedule",
     "create_schedule",
-    "create_typed_schedule",
     "clone_schedule",
     "modify_schedule",
-    "modify_typed_schedule",
     "delete_schedule",
     "get_tags",
     "get_tag",
@@ -391,7 +389,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 265);
+    assert_eq!(direct_execute_count, 263);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

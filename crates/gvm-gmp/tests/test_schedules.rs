@@ -5,64 +5,58 @@
 
 mod common;
 
-use common::{id, xml};
-use gvm_gmp::commands::schedules::*;
+use common::id;
+use gvm_gmp::commands::schedules::{
+    CloneScheduleRequest, CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest,
+    GetSchedulesRequest, ModifyScheduleRequest,
+};
+use gvm_gmp::{GmpRequestCodec, GmpVersion};
+
+const ICALENDAR: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR";
+
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap()
+}
 
 #[test]
-fn test_create_schedule_basic() {
+fn create_schedule_with_complete_request() {
+    let mut request = CreateScheduleRequest::new("daily-scan", ICALENDAR);
+    request.comment = Some("run daily".into());
+    request.timezone = Some("UTC".into());
+
     assert_eq!(
-        xml(create_schedule("sched", Default::default())),
-        "<create_schedule><name>sched</name></create_schedule>"
+        xml(&request),
+        "<create_schedule><name>daily-scan</name><comment>run daily</comment><icalendar>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR</icalendar><timezone>UTC</timezone></create_schedule>"
     );
 }
 
 #[test]
-fn test_create_schedule_with_icalendar() {
-    let ical = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR";
-    let rendered = xml(create_schedule(
-        "daily-scan",
-        ScheduleOpts {
-            comment: Some("run daily".into()),
-            icalendar: Some(ical.into()),
-            timezone: Some("UTC".into()),
+fn schedule_lifecycle_requests_have_exact_xml() {
+    assert_eq!(
+        xml(&GetSchedulesRequest {
+            details: Some(true),
             ..Default::default()
-        },
-    ));
-    assert!(rendered.contains("<name>daily-scan</name>"));
-    assert!(rendered.contains("<comment>run daily</comment>"));
-    assert!(rendered.contains("<icalendar>BEGIN:VCALENDAR"));
-    assert!(rendered.contains("<timezone>UTC</timezone>"));
-}
-
-#[test]
-fn test_schedule_get_modify_delete() {
-    assert_eq!(
-        xml(clone_schedule(&id("sc1"))),
-        "<create_schedule><copy>sc1</copy></create_schedule>"
+        }),
+        "<get_schedules details=\"1\"/>"
     );
     assert_eq!(
-        xml(get_schedule(&id("sc1"))),
+        xml(&GetScheduleRequest::new(id("sc1"))),
         "<get_schedules details=\"1\" schedule_id=\"sc1\"/>"
     );
     assert_eq!(
-        xml(delete_schedule(&id("sc1"), false)),
+        xml(&CloneScheduleRequest::new(id("sc1"))),
+        "<create_schedule><copy>sc1</copy></create_schedule>"
+    );
+
+    let mut modify = ModifyScheduleRequest::new(id("sc1"), ICALENDAR);
+    modify.name = Some("updated".into());
+    modify.timezone = Some("Europe/Berlin".into());
+    assert_eq!(
+        xml(&modify),
+        "<modify_schedule schedule_id=\"sc1\"><name>updated</name><icalendar>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR</icalendar><timezone>Europe/Berlin</timezone></modify_schedule>"
+    );
+    assert_eq!(
+        xml(&DeleteScheduleRequest::new(id("sc1"), false)),
         "<delete_schedule schedule_id=\"sc1\" ultimate=\"0\"/>"
     );
-}
-
-#[test]
-fn test_modify_schedule_with_icalendar() {
-    let rendered = xml(modify_schedule(
-        &id("sc1"),
-        ScheduleOpts {
-            name: Some("updated".into()),
-            icalendar: Some("BEGIN:VCALENDAR\r\nEND:VCALENDAR".into()),
-            timezone: Some("Europe/Berlin".into()),
-            ..Default::default()
-        },
-    ));
-    assert!(rendered.contains("schedule_id=\"sc1\""));
-    assert!(rendered.contains("<name>updated</name>"));
-    assert!(rendered.contains("<icalendar>"));
-    assert!(rendered.contains("<timezone>Europe/Berlin</timezone>"));
 }

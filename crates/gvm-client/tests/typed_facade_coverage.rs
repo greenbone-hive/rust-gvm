@@ -72,7 +72,10 @@ use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
     GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
 };
-use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
+use gvm_gmp::commands::schedules::{
+    CloneScheduleRequest, CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest,
+    GetSchedulesRequest, ModifyScheduleRequest,
+};
 use gvm_gmp::commands::secinfo::{GenericInfoType, GetInfoListOpts, GetSecInfoOpts};
 use gvm_gmp::commands::system::{
     FilteredGetOpts, ModifyAuthRequest, ModifyLicenseOpts, ModifyLicenseRequest,
@@ -2426,21 +2429,27 @@ async fn alert_and_schedule_families_execute_through_typed_facade() {
         client.trigger_alert(TriggerAlertRequest::new(alert_id.clone(), report_id))
     );
 
-    assert_typed_success!(client.get_schedules(GetSchedulesOpts::default()));
-    assert_typed_success!(client.get_schedule(&schedule_id));
-    assert_create_success!(client.create_schedule(
-        "raw",
-        ScheduleOpts {
-            icalendar: Some("BEGIN:VCALENDAR\r\nEND:VCALENDAR".into()),
-            timezone: Some("UTC".into()),
-            ..Default::default()
-        }
-    ));
-    assert_create_success!(client.create_typed_schedule("typed", typed_schedule_input()));
-    assert_create_success!(client.clone_schedule(&schedule_id));
-    assert_typed_success!(client.modify_schedule(&schedule_id, ScheduleOpts::default()));
-    assert_typed_success!(client.modify_typed_schedule(&schedule_id, typed_schedule_input()));
-    assert_typed_success!(client.delete_schedule(&schedule_id, true));
+    assert_typed_success!(client.get_schedules(GetSchedulesRequest::default()));
+    assert_typed_success!(client.get_schedule(GetScheduleRequest::new(schedule_id.clone())));
+    assert_create_success!(client.create_schedule({
+        let mut request = CreateScheduleRequest::new("raw", "BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+        request.timezone = Some("UTC".into());
+        request
+    }));
+    assert_create_success!(client.create_schedule(CreateScheduleRequest::from_input(
+        "typed",
+        typed_schedule_input()
+    )));
+    assert_create_success!(client.clone_schedule(CloneScheduleRequest::new(schedule_id.clone())));
+    assert_typed_success!(client.modify_schedule(ModifyScheduleRequest::new(
+        schedule_id.clone(),
+        "BEGIN:VCALENDAR\r\nEND:VCALENDAR"
+    )));
+    assert_typed_success!(client.modify_schedule(ModifyScheduleRequest::from_input(
+        schedule_id.clone(),
+        typed_schedule_input()
+    )));
+    assert_typed_success!(client.delete_schedule(DeleteScheduleRequest::new(schedule_id, true)));
 
     let history = server.command_history();
     let commands = history
@@ -2516,7 +2525,7 @@ async fn alert_and_schedule_execute_preserve_status_and_parse_context() {
     ));
 
     let parse_error = client
-        .clone_schedule(&id("schedule-1"))
+        .clone_schedule(CloneScheduleRequest::new(id("schedule-1")))
         .await
         .expect_err("missing cloned schedule id should fail");
     assert!(matches!(
@@ -2773,7 +2782,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_filters(GetFiltersRequest::default()));
     assert_typed_success!(client.get_notes(GetNotesOpts::default()));
     assert_typed_success!(client.get_overrides(GetOverridesOpts::default()));
-    assert_typed_success!(client.get_schedules(GetSchedulesOpts::default()));
+    assert_typed_success!(client.get_schedules(GetSchedulesRequest::default()));
     assert_typed_success!(client.get_tags(GetTagsRequest::default()));
     assert_typed_success!(client.get_tickets(GetTicketsOpts::default()));
     assert_typed_success!(client.get_users(GetUsersOpts::default()));
@@ -2862,14 +2871,11 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     assert_create_success!(
         client.create_override("1.3.6.1.4.1.25623.1.0.1", OverrideOpts::default())
     );
-    assert_create_success!(client.create_schedule(
-        "schedule",
-        ScheduleOpts {
-            icalendar: Some("BEGIN:VCALENDAR\nEND:VCALENDAR".into()),
-            timezone: Some("UTC".into()),
-            ..Default::default()
-        }
-    ));
+    assert_create_success!(client.create_schedule({
+        let mut request = CreateScheduleRequest::new("schedule", "BEGIN:VCALENDAR\nEND:VCALENDAR");
+        request.timezone = Some("UTC".into());
+        request
+    }));
     assert_create_success!(client.create_tag(CreateTagRequest::new("tag", tag_resources())));
     assert_create_success!(client.create_ticket(
         &related_id,
@@ -3262,14 +3268,15 @@ async fn remaining_mutation_families_use_typed_facade_and_scalar_relationship_up
     assert_typed_success!(
         client.delete_credential(DeleteCredentialRequest::new(resource_id.clone(), false))
     );
-    assert_typed_success!(client.modify_schedule(
-        &resource_id,
-        ScheduleOpts {
-            comment: Some("updated".into()),
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.delete_schedule(&resource_id, true));
+    assert_typed_success!(client.modify_schedule({
+        let mut request =
+            ModifyScheduleRequest::new(resource_id.clone(), "BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+        request.comment = Some("updated".into());
+        request
+    }));
+    assert_typed_success!(
+        client.delete_schedule(DeleteScheduleRequest::new(resource_id.clone(), true))
+    );
 
     assert_typed_success!(client.modify_target(ModifyTargetRequest::new(resource_id.clone())));
     assert_typed_success!(client.modify_target({
@@ -3349,11 +3356,18 @@ async fn remaining_mutation_families_surface_non_success_responses() {
         "conflict"
     );
     assert_server_error!(
-        client.modify_schedule(&resource_id, ScheduleOpts::default()),
+        client.modify_schedule(ModifyScheduleRequest::new(
+            resource_id.clone(),
+            "BEGIN:VCALENDAR\r\nEND:VCALENDAR"
+        )),
         409,
         "conflict"
     );
-    assert_server_error!(client.delete_schedule(&resource_id, false), 409, "conflict");
+    assert_server_error!(
+        client.delete_schedule(DeleteScheduleRequest::new(resource_id.clone(), false)),
+        409,
+        "conflict"
+    );
     assert_server_error!(
         client.delete_target(DeleteTargetRequest::new(resource_id.clone(), false)),
         409,

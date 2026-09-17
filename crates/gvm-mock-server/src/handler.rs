@@ -1719,7 +1719,7 @@ impl SessionHandler {
             parse_element_text(raw_xml, "name")
         };
         let new_text = parse_element_text(raw_xml, "text");
-        let new_comment = if matches!(resource_type, "filter" | "tag") {
+        let new_comment = if matches!(resource_type, "filter" | "schedule" | "tag") {
             element_text_including_empty(cmd, raw_xml, "comment")
         } else {
             parse_element_text(raw_xml, "comment")

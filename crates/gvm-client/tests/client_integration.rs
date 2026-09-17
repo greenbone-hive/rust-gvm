@@ -52,7 +52,10 @@ use gvm_gmp::commands::scan_configs::{
     GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::ScannerOpts;
-use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
+use gvm_gmp::commands::schedules::{
+    CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest, GetSchedulesRequest,
+    ModifyScheduleRequest,
+};
 use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::system::ModifyLicenseOpts;
@@ -5768,7 +5771,7 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
     let first_run =
         ScheduleTimestamp::parse("2030-01-01T00:00:00Z").expect("valid first run timestamp");
     let created = client
-        .create_typed_schedule(
+        .create_schedule(CreateScheduleRequest::from_input(
             "Typed Schedule",
             ScheduleInput::new(
                 ScheduleDefinition {
@@ -5777,12 +5780,19 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
                 },
                 ScheduleTimezone::new("UTC").expect("valid timezone"),
             ),
-        )
+        ))
         .await
         .expect("typed schedule create should succeed");
 
+    let detail = client
+        .get_schedule(GetScheduleRequest::new(created.id.clone()))
+        .await
+        .expect("schedule detail should succeed");
+    assert_eq!(detail.items.len(), 1);
+    assert_eq!(detail.items[0].meta.id, created.id);
+
     let schedules = client
-        .get_schedules(GetSchedulesOpts::default())
+        .get_schedules(GetSchedulesRequest::default())
         .await
         .expect("schedule observation should succeed");
     let schedule = schedules
@@ -5804,14 +5814,11 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
         .expect("created schedule has iCalendar");
 
     client
-        .modify_schedule(
-            &created.id,
-            ScheduleOpts {
-                comment: Some("raw compatibility update".to_string()),
-                icalendar: Some(raw_icalendar),
-                ..Default::default()
-            },
-        )
+        .modify_schedule({
+            let mut request = ModifyScheduleRequest::new(created.id.clone(), raw_icalendar);
+            request.comment = Some("raw compatibility update".to_string());
+            request
+        })
         .await
         .expect("raw schedule modify should remain available");
 
@@ -5825,13 +5832,14 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
         ScheduleTimezone::new("Europe/Berlin").expect("valid timezone"),
     );
     input.name = Some("Modified Typed Schedule".to_string());
+    input.comment = Some(String::new());
     client
-        .modify_typed_schedule(&created.id, input)
+        .modify_schedule(ModifyScheduleRequest::from_input(created.id.clone(), input))
         .await
         .expect("typed schedule modify should succeed");
 
     let schedules = client
-        .get_schedules(GetSchedulesOpts::default())
+        .get_schedules(GetSchedulesRequest::default())
         .await
         .expect("modified schedule observation should succeed");
     let schedule = schedules
@@ -5840,6 +5848,7 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
         .find(|schedule| schedule.meta.id == created.id)
         .expect("modified schedule should be listed");
     assert_eq!(schedule.meta.name, "Modified Typed Schedule");
+    assert_eq!(schedule.meta.comment, None);
     assert_eq!(schedule.timezone.as_deref(), Some("Europe/Berlin"));
     assert_eq!(schedule.first_run_at.as_ref(), Some(&modified_first_run));
     assert_eq!(schedule.next_run_at.as_ref(), Some(&modified_first_run));
@@ -5891,17 +5900,17 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         )
     };
     let first_schedule = client
-        .create_typed_schedule(
+        .create_schedule(CreateScheduleRequest::from_input(
             "First Task Schedule",
             schedule_input("2030-01-01T00:00:00Z"),
-        )
+        ))
         .await
         .expect("first schedule create should succeed");
     let second_schedule = client
-        .create_typed_schedule(
+        .create_schedule(CreateScheduleRequest::from_input(
             "Second Task Schedule",
             schedule_input("2031-01-01T00:00:00Z"),
-        )
+        ))
         .await
         .expect("second schedule create should succeed");
 
@@ -6100,7 +6109,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     assert_eq!(after_failed_update.schedule_periods, Some(7));
 
     let dependency_error = client
-        .delete_schedule(&second_schedule.id, true)
+        .delete_schedule(DeleteScheduleRequest::new(second_schedule.id.clone(), true))
         .await
         .expect_err("attached schedule deletion should fail");
     assert!(matches!(
@@ -6129,7 +6138,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     assert_eq!(cleared.schedule_periods, Some(0));
 
     client
-        .delete_schedule(&second_schedule.id, true)
+        .delete_schedule(DeleteScheduleRequest::new(second_schedule.id.clone(), true))
         .await
         .expect("detached schedule delete should succeed");
     client
@@ -6148,7 +6157,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect("task trash should succeed");
     let trashed_dependency_error = client
-        .delete_schedule(&first_schedule.id, true)
+        .delete_schedule(DeleteScheduleRequest::new(first_schedule.id.clone(), true))
         .await
         .expect_err("trashed dependent task should block permanent schedule deletion");
     assert!(matches!(
@@ -6160,7 +6169,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect("permanent task delete should succeed");
     client
-        .delete_schedule(&first_schedule.id, true)
+        .delete_schedule(DeleteScheduleRequest::new(first_schedule.id.clone(), true))
         .await
         .expect("schedule delete after dependent task should succeed");
     client

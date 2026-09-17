@@ -30,6 +30,7 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
+use gvm_gmp::commands::schedules::ModifyScheduleRequest;
 use gvm_gmp::commands::tags::{CreateTagRequest, TagResources};
 use gvm_gmp::commands::targets::CreateTargetRequest;
 use gvm_gmp::commands::web_application_targets::{
@@ -820,6 +821,33 @@ async fn invalid_alert_final_value_fails_before_transport() {
     assert!(matches!(
         error,
         GvmError::Request(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_schedule_final_value_fails_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    let error = client
+        .execute(ModifyScheduleRequest::new(
+            "schedule-1".parse().expect("valid id"),
+            "",
+        ))
+        .await
+        .expect_err("empty iCalendar should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField {
+            field: "icalendar",
+            ..
+        })
     ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;
