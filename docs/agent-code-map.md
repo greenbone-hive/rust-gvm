@@ -49,7 +49,7 @@ Adding or changing a GMP command:
   implement `GmpRequestCodec` directly, and update
   `docs/canonical-request-disposition.tsv`. Standard targets are the reference;
   alternate targets, agent groups, agents, integration configurations, port
-  lists, credentials, and filters show the same contract across their
+  lists, credentials, filters, and tags show the same contract across their
   applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.

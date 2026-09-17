@@ -323,7 +323,7 @@ async fn matrix_tags_create_modify() {
 
     let tag_id = create_and_get_id(
         &mut stream,
-        b"<create_tag><name>Matrix Tag Old</name><comment>tag</comment></create_tag>",
+        b"<create_tag><name>Matrix Tag Old</name><resources><type>task</type></resources><comment>tag</comment></create_tag>",
         "create_tag",
     )
     .await;

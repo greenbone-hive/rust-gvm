@@ -1,36 +1,101 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Tag command builders.
+//! Canonical requests for tag operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
-use crate::enums::{EntityType, SeverityLevel};
+use crate::common::{add_filter_attrs, bool_str, set_optional_bool_attr};
+use crate::enums::EntityType;
 use crate::responses::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse};
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for tag create and modify requests.
-#[derive(Debug, Clone, Default)]
-pub struct TagOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional free-form value payload.
-    pub value: Option<String>,
-    /// Optional related resource type.
-    pub resource_type: Option<EntityType>,
-    /// Optional related resource identifier.
-    pub resource_id: Option<EntityId>,
-    /// Optional severity value.
-    pub severity: Option<SeverityLevel>,
-    /// Whether the resource should be active.
-    pub active: Option<bool>,
+/// Resources selected when a tag is created or modified.
+#[derive(Debug, Clone)]
+pub struct TagResources {
+    /// Resource type to which the tag applies.
+    pub resource_type: EntityType,
+    /// Individual resource identifiers to select.
+    pub resource_ids: Vec<EntityId>,
+    /// Optional gvmd filter used to select resources of `resource_type`.
+    pub filter: Option<String>,
 }
 
-/// Options for `get_tags` requests.
+impl TagResources {
+    /// Create an empty resource selection for the given type.
+    #[must_use]
+    pub fn new(resource_type: EntityType) -> Self {
+        Self {
+            resource_type,
+            resource_ids: Vec::new(),
+            filter: None,
+        }
+    }
+
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.resource_type == EntityType::Tag {
+            Err(GmpRequestError::invalid_field(
+                "resources.resource_type",
+                "tag resources cannot themselves be tags",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn wire_type(&self) -> EntityType {
+        match self.resource_type {
+            EntityType::Policy => EntityType::Config,
+            other => other,
+        }
+    }
+}
+
+/// How a modify request changes the resources attached to a tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagResourceAction {
+    /// Add the selected resources to the current selection.
+    Add,
+    /// Replace the current selection with the selected resources.
+    Set,
+    /// Remove the selected resources from the current selection.
+    Remove,
+}
+
+impl TagResourceAction {
+    const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Set => "set",
+            Self::Remove => "remove",
+        }
+    }
+}
+
+/// Resource change carried by a tag modification.
+#[derive(Debug, Clone)]
+pub struct TagResourceUpdate {
+    /// Resources to add, replace, or remove.
+    pub resources: TagResources,
+    /// Optional edit action. Omission has gvmd's replacement semantics.
+    pub action: Option<TagResourceAction>,
+}
+
+impl TagResourceUpdate {
+    /// Create a resource update using gvmd's default replacement semantics.
+    #[must_use]
+    pub fn new(resources: TagResources) -> Self {
+        Self {
+            resources,
+            action: None,
+        }
+    }
+}
+
+/// Semantic request for listing tags.
 #[derive(Debug, Clone, Default)]
-pub struct GetTagsOpts {
+pub struct GetTagsRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -39,23 +104,17 @@ pub struct GetTagsOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+    /// Whether to return names only.
+    pub names_only: Option<bool>,
 }
 
-/// Semantic request for listing tags.
-#[derive(Debug, Clone, Default)]
-pub struct GetTagsRequest(GetTagsOpts);
-
-impl GetTagsRequest {
-    /// Create a tag-list request.
-    #[must_use]
-    pub fn new(opts: GetTagsOpts) -> Self {
-        Self(opts)
+impl GmpRequestCodec for GetTagsRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_tags"))
     }
-}
 
-impl Request for GetTagsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_tags(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_tags_command(self).to_bytes())
     }
 }
 
@@ -63,56 +122,76 @@ impl GmpRequest for GetTagsRequest {
     type Response = GetTagsResponse;
 }
 
-macro_rules! tag_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(tag_id: EntityId) -> Self {
-                Self(tag_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
+/// Semantic request for one detailed tag.
+#[derive(Debug, Clone)]
+pub struct GetTagRequest {
+    /// Tag identifier to retrieve.
+    pub tag_id: EntityId,
 }
 
-tag_id_request!(GetTagRequest, GetTagsResponse, get_tag);
-tag_id_request!(CloneTagRequest, CreateTagResponse, clone_tag);
+impl GetTagRequest {
+    /// Create a single-tag request.
+    #[must_use]
+    pub fn new(tag_id: EntityId) -> Self {
+        Self { tag_id }
+    }
+}
+
+impl GmpRequestCodec for GetTagRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_tags", "get_tag"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_tag_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for GetTagRequest {
+    type Response = GetTagsResponse;
+}
 
 /// Semantic request for creating a tag.
 #[derive(Debug, Clone)]
 pub struct CreateTagRequest {
-    name: String,
-    opts: TagOpts,
+    /// Tag name.
+    pub name: String,
+    /// Resources to which the tag applies.
+    pub resources: TagResources,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// Optional free-form tag value.
+    pub value: Option<String>,
+    /// Whether the tag should be active.
+    pub active: Option<bool>,
 }
 
 impl CreateTagRequest {
     /// Create a tag-creation request.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: TagOpts) -> Self {
+    pub fn new(name: impl Into<String>, resources: TagResources) -> Self {
         Self {
             name: name.into(),
-            opts,
+            resources,
+            comment: None,
+            value: None,
+            active: None,
         }
     }
 }
 
-impl Request for CreateTagRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_tag(&self.name, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateTagRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")?;
+        self.resources.validate()
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_tag"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(create_tag_command(self).to_bytes())
     }
 }
 
@@ -120,24 +199,94 @@ impl GmpRequest for CreateTagRequest {
     type Response = CreateTagResponse;
 }
 
+/// Semantic request for cloning a tag through `create_tag`.
+#[derive(Debug, Clone)]
+pub struct CloneTagRequest {
+    /// Existing tag identifier to copy.
+    pub tag_id: EntityId,
+    /// Optional name override. Omission copies the existing name.
+    pub name: Option<String>,
+    /// Optional comment override. Omission copies the existing comment.
+    pub comment: Option<String>,
+}
+
+impl CloneTagRequest {
+    /// Create a tag-clone request.
+    #[must_use]
+    pub fn new(tag_id: EntityId) -> Self {
+        Self {
+            tag_id,
+            name: None,
+            comment: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for CloneTagRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_name(&self.name)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("create_tag", "clone_tag"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(clone_tag_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for CloneTagRequest {
+    type Response = CreateTagResponse;
+}
+
 /// Semantic request for modifying a tag.
 #[derive(Debug, Clone)]
 pub struct ModifyTagRequest {
-    tag_id: EntityId,
-    opts: TagOpts,
+    /// Tag identifier to modify.
+    pub tag_id: EntityId,
+    /// Optional replacement name.
+    pub name: Option<String>,
+    /// Optional replacement comment. An empty string clears the comment.
+    pub comment: Option<String>,
+    /// Optional replacement value. An empty string clears the value.
+    pub value: Option<String>,
+    /// Optional resource selection update.
+    pub resource_update: Option<TagResourceUpdate>,
+    /// Whether the tag should be active.
+    pub active: Option<bool>,
 }
 
 impl ModifyTagRequest {
     /// Create a tag-modification request.
     #[must_use]
-    pub fn new(tag_id: EntityId, opts: TagOpts) -> Self {
-        Self { tag_id, opts }
+    pub fn new(tag_id: EntityId) -> Self {
+        Self {
+            tag_id,
+            name: None,
+            comment: None,
+            value: None,
+            resource_update: None,
+            active: None,
+        }
     }
 }
 
-impl Request for ModifyTagRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_tag(&self.tag_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for ModifyTagRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_name(&self.name)?;
+        if let Some(update) = &self.resource_update {
+            update.resources.validate()?;
+        }
+        Ok(())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_tag"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(modify_tag_command(self).to_bytes())
     }
 }
 
@@ -148,8 +297,10 @@ impl GmpRequest for ModifyTagRequest {
 /// Semantic request for deleting a tag.
 #[derive(Debug, Clone)]
 pub struct DeleteTagRequest {
-    tag_id: EntityId,
-    ultimate: bool,
+    /// Tag identifier to delete.
+    pub tag_id: EntityId,
+    /// Whether to delete permanently instead of moving the tag to trash.
+    pub ultimate: bool,
 }
 
 impl DeleteTagRequest {
@@ -160,9 +311,13 @@ impl DeleteTagRequest {
     }
 }
 
-impl Request for DeleteTagRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_tag(&self.tag_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteTagRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_tag"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_tag_command(self).to_bytes())
     }
 }
 
@@ -170,189 +325,244 @@ impl GmpRequest for DeleteTagRequest {
     type Response = DeleteTagResponse;
 }
 
-/// Build a clone request for an existing tag.
-#[must_use]
-pub fn clone_tag(tag_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_tag").child_with_text("copy", tag_id.as_str())
+fn require_non_empty(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `create_tag` request.
-#[must_use]
-pub fn create_tag(name: &str, opts: TagOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_tag");
-    cmd.add_element_with_text("name", name);
-    add_tag_body(&mut cmd, &opts);
-    cmd
+fn validate_optional_name(name: &Option<String>) -> Result<(), GmpRequestError> {
+    if name.as_ref().is_some_and(String::is_empty) {
+        Err(GmpRequestError::invalid_field("name", "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `get_tags` request.
-#[must_use]
-pub fn get_tags(opts: GetTagsOpts) -> impl Request {
+fn add_optional_text_element(cmd: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        cmd.add_element_with_text(name, value);
+    }
+}
+
+fn add_resources(
+    cmd: &mut XmlCommand,
+    resources: &TagResources,
+    action: Option<TagResourceAction>,
+) {
+    let resources_element = cmd.add_element("resources");
+    if let Some(filter) = resources.filter.as_deref() {
+        resources_element.set_attribute("filter", filter);
+    }
+    if let Some(action) = action {
+        resources_element.set_attribute("action", action.as_gmp_str());
+    }
+    for resource_id in &resources.resource_ids {
+        resources_element
+            .add_child("resource")
+            .set_attribute("id", resource_id.as_str());
+    }
+    resources_element
+        .add_child("type")
+        .set_text(resources.wire_type().as_gmp_str());
+}
+
+fn get_tags_command(request: &GetTagsRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_tags");
     add_filter_attrs(
         &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "trash", request.trash);
+    set_optional_bool_attr(&mut cmd, "details", request.details);
+    set_optional_bool_attr(&mut cmd, "names_only", request.names_only);
     cmd
 }
 
-/// Build a `get_tag` request.
-#[must_use]
-pub fn get_tag(tag_id: &EntityId) -> impl Request {
+fn get_tag_command(request: &GetTagRequest) -> XmlCommand {
     XmlCommand::new("get_tags")
-        .attribute("tag_id", tag_id.as_str())
+        .attribute("tag_id", request.tag_id.as_str())
         .attribute("details", "1")
 }
 
-/// Build a `modify_tag` request.
-#[must_use]
-pub fn modify_tag(tag_id: &EntityId, opts: TagOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_tag").attribute("tag_id", tag_id.as_str());
-    add_tag_body(&mut cmd, &opts);
+fn create_tag_command(request: &CreateTagRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_tag");
+    cmd.add_element_with_text("name", &request.name);
+    add_resources(&mut cmd, &request.resources, None);
+    add_optional_text_element(&mut cmd, "value", request.value.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    if let Some(active) = request.active {
+        cmd.add_element_with_text("active", bool_str(active));
+    }
     cmd
 }
 
-/// Build a `delete_tag` request.
-#[must_use]
-pub fn delete_tag(tag_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_tag")
-        .attribute("tag_id", tag_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+fn clone_tag_command(request: &CloneTagRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_tag");
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    cmd.add_element_with_text("copy", request.tag_id.as_str());
+    cmd
 }
 
-fn add_tag_body(cmd: &mut XmlCommand, opts: &TagOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    add_text_element(cmd, "value", opts.value.as_deref());
-
-    // GMP expects a <resources> block with a <type> child.
-    if let Some(resource_type) = opts.resource_type {
-        let resources = cmd.add_element("resources");
-
-        // Align with python-gvm behavior: audit -> task, policy -> scan_config
-        let actual_type = match resource_type {
-            EntityType::Policy => EntityType::Config,
-            other => other,
-        };
-
-        if let Some(resource_id) = opts.resource_id.as_ref() {
-            resources
-                .add_child("resource")
-                .set_attribute("id", resource_id.as_str());
-        }
-
-        resources
-            .add_child("type")
-            .set_text(actual_type.as_gmp_str());
+fn modify_tag_command(request: &ModifyTagRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_tag").attribute("tag_id", request.tag_id.as_str());
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    if let Some(update) = &request.resource_update {
+        add_resources(&mut cmd, &update.resources, update.action);
     }
-
-    if let Some(severity) = opts.severity {
-        cmd.add_element_with_text("severity", severity.as_gmp_str());
-    }
-    if let Some(active) = opts.active {
+    add_optional_text_element(&mut cmd, "value", request.value.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    if let Some(active) = request.active {
         cmd.add_element_with_text("active", bool_str(active));
     }
+    cmd
+}
+
+fn delete_tag_command(request: &DeleteTagRequest) -> XmlCommand {
+    XmlCommand::new("delete_tag")
+        .attribute("tag_id", request.tag_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
+    fn request_xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(
+            request
+                .encode(GmpVersion(22, 8))
+                .expect("valid tag request"),
+        )
+        .expect("valid UTF-8")
+    }
+
     #[test]
-    fn semantic_tag_requests_match_builder_bytes_and_responses() {
+    fn requests_have_independent_exact_wire_shapes() {
+        assert_eq!(
+            request_xml(&GetTagsRequest {
+                filter_string: Some("name=web".into()),
+                filter_id: Some(id("saved-filter")),
+                trash: Some(true),
+                details: Some(false),
+                names_only: Some(true),
+            }),
+            "<get_tags details=\"0\" filt_id=\"saved-filter\" filter=\"name=web\" names_only=\"1\" trash=\"1\"/>"
+        );
+
+        assert_eq!(
+            request_xml(&GetTagRequest::new(id("tag-1"))),
+            "<get_tags details=\"1\" tag_id=\"tag-1\"/>"
+        );
+
+        let mut resources = TagResources::new(EntityType::Policy);
+        resources.resource_ids = vec![id("policy-1"), id("policy-2")];
+        resources.filter = Some("name=baseline".into());
+        let mut create = CreateTagRequest::new("baseline", resources);
+        create.value = Some("blue".into());
+        create.comment = Some("policies".into());
+        create.active = Some(true);
+        assert_eq!(
+            request_xml(&create),
+            "<create_tag><name>baseline</name><resources filter=\"name=baseline\"><resource id=\"policy-1\"/><resource id=\"policy-2\"/><type>config</type></resources><value>blue</value><comment>policies</comment><active>1</active></create_tag>"
+        );
+
+        let mut clone = CloneTagRequest::new(id("tag-1"));
+        clone.name = Some("copy".into());
+        clone.comment = Some(String::new());
+        assert_eq!(
+            request_xml(&clone),
+            "<create_tag><name>copy</name><comment></comment><copy>tag-1</copy></create_tag>"
+        );
+
+        let mut resources = TagResources::new(EntityType::Task);
+        resources.resource_ids = vec![id("task-1"), id("task-2")];
+        resources.filter = Some("status=Running".into());
+        let mut modify = ModifyTagRequest::new(id("tag-1"));
+        modify.name = Some("renamed".into());
+        modify.comment = Some(String::new());
+        modify.value = Some(String::new());
+        modify.resource_update = Some(TagResourceUpdate {
+            resources,
+            action: Some(TagResourceAction::Remove),
+        });
+        modify.active = Some(false);
+        assert_eq!(
+            request_xml(&modify),
+            "<modify_tag tag_id=\"tag-1\"><name>renamed</name><resources action=\"remove\" filter=\"status=Running\"><resource id=\"task-1\"/><resource id=\"task-2\"/><type>task</type></resources><value></value><comment></comment><active>0</active></modify_tag>"
+        );
+
+        assert_eq!(
+            request_xml(&DeleteTagRequest::new(id("tag-1"), true)),
+            "<delete_tag tag_id=\"tag-1\" ultimate=\"1\"/>"
+        );
+    }
+
+    #[test]
+    fn requests_keep_static_response_associations() {
         fn associated<R, T>(_: &R)
         where
             R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
+            T: GmpResponse,
         {
         }
-        let tag_id = id("tag-1");
-        let get_opts = GetTagsOpts {
-            details: Some(true),
-            ..Default::default()
-        };
-        let opts = TagOpts {
-            value: Some("value".into()),
-            ..Default::default()
-        };
-        let list = GetTagsRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_tags(get_opts).to_bytes());
-        associated::<_, GetTagsResponse>(&list);
-        let get = GetTagRequest::new(tag_id.clone());
-        assert_eq!(get.to_bytes(), get_tag(&tag_id).to_bytes());
-        associated::<_, GetTagsResponse>(&get);
-        let create = CreateTagRequest::new("tag", opts.clone());
-        assert_eq!(
-            create.to_bytes(),
-            create_tag("tag", opts.clone()).to_bytes()
-        );
-        associated::<_, CreateTagResponse>(&create);
-        let clone = CloneTagRequest::new(tag_id.clone());
-        assert_eq!(clone.to_bytes(), clone_tag(&tag_id).to_bytes());
-        associated::<_, CreateTagResponse>(&clone);
-        let modify = ModifyTagRequest::new(tag_id.clone(), opts.clone());
-        assert_eq!(modify.to_bytes(), modify_tag(&tag_id, opts).to_bytes());
-        associated::<_, ModifyTagResponse>(&modify);
-        let delete = DeleteTagRequest::new(tag_id.clone(), true);
-        assert_eq!(delete.to_bytes(), delete_tag(&tag_id, true).to_bytes());
-        associated::<_, DeleteTagResponse>(&delete);
-    }
 
-    #[test]
-    fn tag_commands_build_xml() {
-        let rendered = xml(create_tag(
+        associated::<_, GetTagsResponse>(&GetTagsRequest::default());
+        associated::<_, GetTagsResponse>(&GetTagRequest::new(id("tag-1")));
+        associated::<_, CreateTagResponse>(&CreateTagRequest::new(
             "tag",
-            TagOpts {
-                value: Some("blue".into()),
-                resource_type: Some(EntityType::Task),
-                resource_id: Some(id("t1")),
-                severity: Some(SeverityLevel::High),
-                active: Some(true),
-                ..Default::default()
-            },
+            TagResources::new(EntityType::Task),
         ));
-        assert!(rendered.contains("<resources>"));
-        assert!(rendered.contains("<resource id=\"t1\"/>"));
-        assert!(rendered.contains("<type>task</type>"));
-        assert!(rendered.contains("<severity>high</severity>"));
-        assert_eq!(
-            xml(clone_tag(&id("tg1"))),
-            "<create_tag><copy>tg1</copy></create_tag>"
-        );
-        assert_eq!(
-            xml(get_tag(&id("tg1"))),
-            "<get_tags details=\"1\" tag_id=\"tg1\"/>"
-        );
+        associated::<_, CreateTagResponse>(&CloneTagRequest::new(id("tag-1")));
+        associated::<_, ModifyTagResponse>(&ModifyTagRequest::new(id("tag-1")));
+        associated::<_, DeleteTagResponse>(&DeleteTagRequest::new(id("tag-1"), false));
     }
 
     #[test]
-    fn tag_get_modify_delete_build_xml() {
-        let rendered = xml(get_tags(GetTagsOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        let rendered = xml(modify_tag(
-            &id("tg1"),
-            TagOpts {
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
+    fn invalid_final_values_are_rejected() {
+        let mut create = CreateTagRequest::new("tag", TagResources::new(EntityType::Task));
+        create.name.clear();
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
         ));
-        assert_eq!(
-            rendered,
-            "<modify_tag tag_id=\"tg1\"><comment>updated</comment></modify_tag>"
-        );
-        assert_eq!(
-            xml(delete_tag(&id("tg1"), false)),
-            "<delete_tag tag_id=\"tg1\" ultimate=\"0\"/>"
-        );
+
+        let mut clone = CloneTagRequest::new(id("tag-1"));
+        clone.name = Some(String::new());
+        assert!(matches!(
+            clone.validate(),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
+        ));
+
+        let create = CreateTagRequest::new("tag", TagResources::new(EntityType::Tag));
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "resources.resource_type",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn semantic_aliases_keep_wire_and_capability_names() {
+        let get = GetTagRequest::new(id("tag-1"));
+        let get_command = get.command().expect("typed command");
+        assert_eq!(get_command.wire_name(), "get_tags");
+        assert_eq!(get_command.semantic_name(), Some("get_tag"));
+
+        let clone = CloneTagRequest::new(id("tag-1"));
+        let clone_command = clone.command().expect("typed command");
+        assert_eq!(clone_command.wire_name(), "create_tag");
+        assert_eq!(clone_command.semantic_name(), Some("clone_tag"));
     }
 }

@@ -641,6 +641,26 @@ impl Resource {
                 }
             }
         }
+        if self.resource_type == "tag" {
+            if let Some(value) = self.attr("value") {
+                xml.push_str(&format!("<value>{}</value>", xml_escape(value)));
+            }
+            if let Some(resource_type) = self.attr("tag_resource_type") {
+                let resource_count = self
+                    .attr("tag_resource_ids")
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter(|id| !id.is_empty())
+                    .count();
+                xml.push_str(&format!(
+                    "<resources><type>{}</type><count><total>{resource_count}</total></count></resources>",
+                    xml_escape(resource_type),
+                ));
+            }
+            if let Some(active) = self.attr("active") {
+                xml.push_str(&format!("<active>{}</active>", xml_escape(active)));
+            }
+        }
         for (k, v) in &self.attrs {
             if self.resource_type == "scanner" && k == "credential_id" {
                 xml.push_str(&format!(
@@ -659,6 +679,18 @@ impl Resource {
             }
             if self.resource_type == "ticket"
                 && matches!(k.as_str(), "assigned_to_id" | "result_id" | "task_id")
+            {
+                continue;
+            }
+            if self.resource_type == "tag"
+                && matches!(
+                    k.as_str(),
+                    "value"
+                        | "tag_resource_type"
+                        | "tag_resource_ids"
+                        | "tag_resources_filter"
+                        | "active"
+                )
             {
                 continue;
             }

@@ -793,7 +793,7 @@ impl SessionHandler {
             if let Ok(uuid) = Uuid::parse_str(&copy_id) {
                 match store.clone_typed(&uuid, resource_type) {
                     Ok(new_id) => {
-                        if resource_type == "filter" {
+                        if matches!(resource_type, "filter" | "tag") {
                             let name = parse_element_text(raw_xml, "name");
                             let comment = element_text_including_empty(cmd, raw_xml, "comment");
                             if name.is_some() || comment.is_some() {
@@ -857,6 +857,17 @@ impl SessionHandler {
         if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
         }
+        let tag_resources = if resource_type == "tag" {
+            match tag_resource_selection(cmd) {
+                Ok(Some(resources)) => Some(resources),
+                Ok(None) => {
+                    return error_response(&cmd.name, 400, "Missing required element: resources");
+                }
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
+        } else {
+            None
+        };
         let credential_type = if resource_type == "credential" {
             parse_element_text(raw_xml, "type")
         } else {
@@ -1091,6 +1102,19 @@ impl SessionHandler {
             }
             if let Some(filter_type) = parse_element_text(raw_xml, "type") {
                 resource.set_attr("type", &filter_type);
+            }
+        }
+        if let Some(tag_resources) = tag_resources {
+            resource.set_attr("tag_resource_type", &tag_resources.resource_type);
+            resource.set_attr("tag_resource_ids", &tag_resources.resource_ids.join(","));
+            if let Some(filter) = tag_resources.filter {
+                resource.set_attr("tag_resources_filter", &filter);
+            }
+            if let Some(value) = element_text_including_empty(cmd, raw_xml, "value") {
+                resource.set_attr("value", &value);
+            }
+            if let Some(active) = parse_element_text(raw_xml, "active") {
+                resource.set_attr("active", &active);
             }
         }
         if resource_type == "ticket" {
@@ -1695,7 +1719,7 @@ impl SessionHandler {
             parse_element_text(raw_xml, "name")
         };
         let new_text = parse_element_text(raw_xml, "text");
-        let new_comment = if resource_type == "filter" {
+        let new_comment = if matches!(resource_type, "filter" | "tag") {
             element_text_including_empty(cmd, raw_xml, "comment")
         } else {
             parse_element_text(raw_xml, "comment")
@@ -1790,7 +1814,11 @@ impl SessionHandler {
         } else {
             None
         };
-        let new_value = parse_element_text(raw_xml, "value");
+        let new_value = if resource_type == "tag" {
+            element_text_including_empty(cmd, raw_xml, "value")
+        } else {
+            parse_element_text(raw_xml, "value")
+        };
         let new_value = if resource_type == "setting" {
             let Some(value) = new_value else {
                 return error_response(&cmd.name, 400, "Missing required element: value");
@@ -1815,6 +1843,21 @@ impl SessionHandler {
         } else {
             parse_element_text(raw_xml, "term")
         };
+        let tag_resource_update = if resource_type == "tag" {
+            match tag_resource_selection(cmd) {
+                Ok(update) => update,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
+        } else {
+            None
+        };
+        if tag_resource_update
+            .as_ref()
+            .and_then(|update| update.action.as_deref())
+            .is_some_and(|action| !matches!(action, "" | "add" | "set" | "remove"))
+        {
+            return error_response(&cmd.name, 400, "Invalid resources action");
+        }
         let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
         let new_vault_id = parse_element_text(raw_xml, "vault_id");
         let new_host_identifier = parse_element_text(raw_xml, "host_identifier");
@@ -2019,6 +2062,36 @@ impl SessionHandler {
             }
             if let Some(ref value) = new_value {
                 r.set_attr("value", value);
+            }
+            if let Some(ref update) = tag_resource_update {
+                r.set_attr("tag_resource_type", &update.resource_type);
+                let mut ids = match update.action.as_deref() {
+                    Some("add") | Some("remove") => r
+                        .attr("tag_resource_ids")
+                        .unwrap_or_default()
+                        .split(',')
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>(),
+                    _ => Vec::new(),
+                };
+                match update.action.as_deref() {
+                    Some("add") => {
+                        for id in &update.resource_ids {
+                            if !ids.contains(id) {
+                                ids.push(id.clone());
+                            }
+                        }
+                    }
+                    Some("remove") => ids.retain(|id| !update.resource_ids.contains(id)),
+                    _ => ids.clone_from(&update.resource_ids),
+                }
+                r.set_attr("tag_resource_ids", &ids.join(","));
+                if let Some(ref filter) = update.filter {
+                    r.set_attr("tag_resources_filter", filter);
+                } else if !matches!(update.action.as_deref(), Some("add" | "remove")) {
+                    r.remove_attr("tag_resources_filter");
+                }
             }
             if resource_type == "filter" {
                 if let Some(ref term) = new_term {
@@ -3724,6 +3797,44 @@ fn element_child_text<'a>(element: &'a ParsedElement, name: &str) -> Option<&'a 
         .iter()
         .find(|child| child.name == name)
         .and_then(|child| child.text.as_deref())
+}
+
+#[derive(Debug, Clone)]
+struct TagResourceSelection {
+    resource_type: String,
+    resource_ids: Vec<String>,
+    filter: Option<String>,
+    action: Option<String>,
+}
+
+fn tag_resource_selection(
+    cmd: &ParsedCommand,
+) -> Result<Option<TagResourceSelection>, &'static str> {
+    let Some(resources) = cmd.children.iter().find(|child| child.name == "resources") else {
+        return Ok(None);
+    };
+    let Some(resource_type) = element_child_text(resources, "type")
+        .filter(|resource_type| !resource_type.trim().is_empty())
+    else {
+        return Err("Missing required element: resources/type");
+    };
+    if resource_type == "tag" {
+        return Err("Tag resources cannot themselves be tags");
+    }
+    let resource_ids = resources
+        .children
+        .iter()
+        .filter(|child| child.name == "resource")
+        .filter_map(|resource| resource.attributes.get("id"))
+        .filter(|id| !id.trim().is_empty())
+        .cloned()
+        .collect();
+    Ok(Some(TagResourceSelection {
+        resource_type: resource_type.to_string(),
+        resource_ids,
+        filter: resources.attributes.get("filter").cloned(),
+        action: resources.attributes.get("action").cloned(),
+    }))
 }
 
 fn usage_type_matches(resource: &Resource, requested_usage_type: Option<&str>) -> bool {

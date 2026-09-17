@@ -504,7 +504,7 @@ Each Phase 4 domain module follows the same 5-test pattern (multi-item, empty, c
 | `note.rs` | NVT OID, text, hosts (comma-separated), port, task/result refs |
 | `override_.rs` | NVT OID, new_severity, active flag |
 | `schedule.rs` | iCalendar data, timezone string |
-| `tag.rs` | Resource type/id, value, severity, active |
+| `tag.rs` | Resource type/count, value, active |
 | `ticket.rs` | Status enum, assigned_to, open/fixed/closed notes, result ref |
 | `user.rs` | Roles (Vec\<NamedEntity\>), groups, host_access |
 | `group.rs` | Users list (comma-separated) |

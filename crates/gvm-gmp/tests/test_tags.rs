@@ -5,48 +5,78 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::tags::*;
-use gvm_gmp::{EntityType, SeverityLevel};
+use gvm_gmp::{EntityType, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-#[test]
-fn test_create_tag_basic() {
-    assert_eq!(
-        xml(create_tag("tag", Default::default())),
-        "<create_tag><name>tag</name></create_tag>"
-    );
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap()
 }
 
 #[test]
-fn test_create_tag_with_optionals() {
+fn test_create_and_clone_tag() {
+    let mut resources = TagResources::new(EntityType::Task);
+    resources.resource_ids = vec![id("t1"), id("t2")];
+    resources.filter = Some("status=Running".into());
+    let mut create = CreateTagRequest::new("tag", resources);
+    create.comment = Some("c".into());
+    create.value = Some("blue".into());
+    create.active = Some(true);
     assert_eq!(
-        xml(create_tag(
-            "tag",
-            TagOpts {
-                comment: Some("c".into()),
-                value: Some("blue".into()),
-                resource_type: Some(EntityType::Task),
-                resource_id: Some(id("t1")),
-                severity: Some(SeverityLevel::High),
-                active: Some(true),
-            }
-        )),
-        r#"<create_tag><name>tag</name><comment>c</comment><value>blue</value><resources><resource id="t1"/><type>task</type></resources><severity>high</severity><active>1</active></create_tag>"#
+        xml(&create),
+        r#"<create_tag><name>tag</name><resources filter="status=Running"><resource id="t1"/><resource id="t2"/><type>task</type></resources><value>blue</value><comment>c</comment><active>1</active></create_tag>"#
+    );
+
+    let mut clone = CloneTagRequest::new(id("tg1"));
+    clone.name = Some("copy".into());
+    clone.comment = Some(String::new());
+    assert_eq!(
+        xml(&clone),
+        "<create_tag><name>copy</name><comment></comment><copy>tg1</copy></create_tag>"
     );
 }
 
 #[test]
 fn test_tag_get_modify_delete() {
     assert_eq!(
-        xml(clone_tag(&id("tg1"))),
-        "<create_tag><copy>tg1</copy></create_tag>"
-    );
-    assert_eq!(
-        xml(get_tag(&id("tg1"))),
+        xml(&GetTagRequest::new(id("tg1"))),
         "<get_tags details=\"1\" tag_id=\"tg1\"/>"
     );
+
+    let mut modify = ModifyTagRequest::new(id("tg1"));
+    modify.name = Some("renamed".into());
+    modify.comment = Some(String::new());
+    modify.value = Some(String::new());
+    modify.resource_update = Some(TagResourceUpdate {
+        resources: TagResources::new(EntityType::Policy),
+        action: Some(TagResourceAction::Set),
+    });
     assert_eq!(
-        xml(delete_tag(&id("tg1"), false)),
+        xml(&modify),
+        "<modify_tag tag_id=\"tg1\"><name>renamed</name><resources action=\"set\"><type>config</type></resources><value></value><comment></comment></modify_tag>"
+    );
+
+    assert_eq!(
+        xml(&DeleteTagRequest::new(id("tg1"), false)),
         "<delete_tag tag_id=\"tg1\" ultimate=\"0\"/>"
     );
+}
+
+#[test]
+fn test_invalid_tag_values_are_rejected() {
+    let mut create = CreateTagRequest::new("tag", TagResources::new(EntityType::Task));
+    create.name.clear();
+    assert!(matches!(
+        create.validate(),
+        Err(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+
+    let invalid = CreateTagRequest::new("tag", TagResources::new(EntityType::Tag));
+    assert!(matches!(
+        invalid.validate(),
+        Err(GmpRequestError::InvalidField {
+            field: "resources.resource_type",
+            ..
+        })
+    ));
 }

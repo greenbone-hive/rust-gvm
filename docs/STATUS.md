@@ -102,6 +102,16 @@ child while adding supported rename, clone name/comment overrides, list alert
 expansion, and explicit comment/term clearing. Independent
 [filter gvmd evidence](filter-request-gvmd-evidence.md) records those contracts.
 
+Issue #624 converts all six tag operations to complete canonical requests.
+Two redundant options types and six free builders are removed; the six named
+facade methods accept request values unchanged. Create and modify use reusable
+resource selection/update values for required type, multiple IDs, filters, and
+add/set/remove actions. Pinned gvmd reconciliation adds list `names_only`,
+clone overrides, rename, and explicit comment/value clearing; removes the
+unsupported tag `severity` input; preserves policy-to-config wire mapping; and
+rejects tag-on-tag resources before support checks or transport. Independent
+[tag gvmd evidence](tag-request-gvmd-evidence.md) records those contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 

@@ -123,6 +123,28 @@ let filters = client
     .await?;
 ```
 
+#### Canonical tags
+
+Tag operations use complete requests and an explicit resource selection:
+
+```rust
+use gvm_gmp::commands::tags::{CreateTagRequest, GetTagsRequest, TagResources};
+use gvm_gmp::EntityType;
+
+let mut resources = TagResources::new(EntityType::Task);
+resources.filter = Some("status=Running".into());
+let mut request = CreateTagRequest::new("Running tasks", resources);
+request.value = Some("triage".into());
+let created = client.create_tag(request).await?;
+
+let tags = client
+    .get_tags(GetTagsRequest {
+        details: Some(true),
+        ..Default::default()
+    })
+    .await?;
+```
+
 #### Typed schedules
 
 Common schedule recurrence does not require callers to construct or parse

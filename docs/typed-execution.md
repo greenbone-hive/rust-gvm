@@ -269,6 +269,21 @@ overrides, and list/detail support alert expansion. Required or explicitly
 replaced names are validated from the final value before support checks and
 transport.
 
+## Canonical tag requests
+
+Tag list, detail, create, clone, modify, and delete operations use complete
+canonical requests. `TagOpts`, `GetTagsOpts`, and the six forwarding builders
+are removed; discoverable client methods accept the same request values and
+delegate to `execute`. Detail and clone preserve their semantic aliases over
+the `get_tags` and `create_tag` wire roots.
+
+`TagResources` owns a required resource type plus zero or more IDs and an
+optional filter. `TagResourceUpdate` adds gvmd's optional add/set/remove action
+for modification. Policy resources retain the `config` wire spelling, while
+tag-on-tag resources fail final-value validation before support checks or
+transport. Modify preserves explicit empty comment/value elements so callers
+can clear them. The unsupported transitional `severity` field is removed.
+
 ## Alert and schedule command shapes
 
 Semantic requests model every public alert and schedule operation even when
