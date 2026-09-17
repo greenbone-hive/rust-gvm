@@ -33,8 +33,8 @@ use gvm_gmp::commands::agents::{
     ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential_store_credential, get_credential_store, get_credential_stores,
-    get_credential_stores_with_opts, modify_credential_store_credential, verify_credential_store,
+    CreateCredentialStoreCredentialRequest, GetCredentialStoreRequest, GetCredentialStoresRequest,
+    ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::help::help_with_mode;
@@ -65,14 +65,16 @@ use gvm_gmp::commands::web_application_targets::{
     GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
 use gvm_gmp::responses::{
-    CloneAgentGroupResponse, CreateAgentGroupResponse, CreateOciImageTargetResponse,
-    CreateWebApplicationTargetResponse, DeleteAgentGroupResponse, DeleteAgentResponse,
-    DeleteOciImageTargetResponse, DeleteWebApplicationTargetResponse, GetAgentGroupsResponse,
-    GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
-    GetIntegrationConfigsResponse, GetOciImageTargetsResponse, GetScanReportResponse,
-    GetWebApplicationTargetsResponse, HelpResponse, ModifyAgentControlScanConfigResponse,
-    ModifyAgentGroupResponse, ModifyAgentResponse, ModifyIntegrationConfigResponse,
+    CloneAgentGroupResponse, CreateAgentGroupResponse, CreateCredentialResponse,
+    CreateOciImageTargetResponse, CreateWebApplicationTargetResponse, DeleteAgentGroupResponse,
+    DeleteAgentResponse, DeleteOciImageTargetResponse, DeleteWebApplicationTargetResponse,
+    GetAgentGroupsResponse, GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse,
+    GetAgentsResponse, GetCredentialStoresResponse, GetIntegrationConfigsResponse,
+    GetOciImageTargetsResponse, GetScanReportResponse, GetWebApplicationTargetsResponse,
+    HelpResponse, ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse,
+    ModifyAgentResponse, ModifyCredentialResponse, ModifyIntegrationConfigResponse,
     ModifyOciImageTargetResponse, ModifyWebApplicationTargetResponse, SyncAgentsResponse,
+    VerifyCredentialStoreResponse,
 };
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
@@ -85,9 +87,6 @@ pub use gvm_gmp::commands::agents::{
 };
 pub use gvm_gmp::commands::aggregates::{
     AggregateMode, AggregateSort, AggregateSortStatistic, GetAggregatesRequestOpts,
-};
-pub use gvm_gmp::commands::credentials::{
-    CredentialStoreCredentialOpts, GetCredentialStoresOpts, ModifyCredentialStoreCredentialOpts,
 };
 pub use gvm_gmp::commands::help::HelpMode;
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
@@ -1030,43 +1029,40 @@ pub trait GmpNextCommands {
     async fn get_timezones(&mut self) -> Result<Response, GvmError>;
 
     /// List credential stores.
-    async fn get_credential_stores(&mut self) -> Result<Response, GvmError>;
+    async fn get_credential_stores(
+        &mut self,
+        request: GetCredentialStoresRequest,
+    ) -> Result<GetCredentialStoresResponse, GvmError>;
 
     /// Verify a credential store connection.
     async fn verify_credential_store(
         &mut self,
-        credential_store_id: &EntityId,
-    ) -> Result<Response, GvmError>;
+        request: VerifyCredentialStoreRequest,
+    ) -> Result<VerifyCredentialStoreResponse, GvmError>;
 
     /// List credential stores with optional filters.
     async fn get_credential_stores_with_opts(
         &mut self,
-        opts: GetCredentialStoresOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetCredentialStoresRequest,
+    ) -> Result<GetCredentialStoresResponse, GvmError>;
 
     /// Get a single credential store.
     async fn get_credential_store(
         &mut self,
-        credential_store_id: &EntityId,
-        details: Option<bool>,
-    ) -> Result<Response, GvmError>;
+        request: GetCredentialStoreRequest,
+    ) -> Result<GetCredentialStoresResponse, GvmError>;
 
     /// Create a credential-store-backed credential.
     async fn create_credential_store_credential(
         &mut self,
-        name: &str,
-        credential_type: CredentialStoreCredentialType,
-        vault_id: &str,
-        host_identifier: &str,
-        opts: CredentialStoreCredentialOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateCredentialStoreCredentialRequest,
+    ) -> Result<CreateCredentialResponse, GvmError>;
 
     /// Modify a credential-store-backed credential.
     async fn modify_credential_store_credential(
         &mut self,
-        credential_id: &EntityId,
-        opts: ModifyCredentialStoreCredentialOpts,
-    ) -> Result<Response, GvmError>;
+        request: ModifyCredentialStoreCredentialRequest,
+    ) -> Result<ModifyCredentialResponse, GvmError>;
 }
 
 macro_rules! impl_gmp226_commands {
@@ -1641,63 +1637,46 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         self.0.call(get_timezones()).await
     }
 
-    async fn get_credential_stores(&mut self) -> Result<Response, GvmError> {
-        self.0.call(get_credential_stores()).await
+    async fn get_credential_stores(
+        &mut self,
+        request: GetCredentialStoresRequest,
+    ) -> Result<GetCredentialStoresResponse, GvmError> {
+        self.0.get_credential_stores(request).await
     }
 
     async fn verify_credential_store(
         &mut self,
-        credential_store_id: &EntityId,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(verify_credential_store(credential_store_id))
-            .await
+        request: VerifyCredentialStoreRequest,
+    ) -> Result<VerifyCredentialStoreResponse, GvmError> {
+        self.0.verify_credential_store(request).await
     }
 
     async fn get_credential_stores_with_opts(
         &mut self,
-        opts: GetCredentialStoresOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_credential_stores_with_opts(opts)).await
+        request: GetCredentialStoresRequest,
+    ) -> Result<GetCredentialStoresResponse, GvmError> {
+        self.0.get_credential_stores_with_opts(request).await
     }
 
     async fn get_credential_store(
         &mut self,
-        credential_store_id: &EntityId,
-        details: Option<bool>,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(get_credential_store(credential_store_id, details))
-            .await
+        request: GetCredentialStoreRequest,
+    ) -> Result<GetCredentialStoresResponse, GvmError> {
+        self.0.get_credential_store(request).await
     }
 
     async fn create_credential_store_credential(
         &mut self,
-        name: &str,
-        credential_type: CredentialStoreCredentialType,
-        vault_id: &str,
-        host_identifier: &str,
-        opts: CredentialStoreCredentialOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(create_credential_store_credential(
-                name,
-                credential_type,
-                vault_id,
-                host_identifier,
-                opts,
-            ))
-            .await
+        request: CreateCredentialStoreCredentialRequest,
+    ) -> Result<CreateCredentialResponse, GvmError> {
+        self.0.create_credential_store_credential(request).await
     }
 
     async fn modify_credential_store_credential(
         &mut self,
-        credential_id: &EntityId,
-        opts: ModifyCredentialStoreCredentialOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(modify_credential_store_credential(credential_id, opts))
-            .await
+        request: ModifyCredentialStoreCredentialRequest,
+    ) -> Result<ModifyCredentialResponse, GvmError> {
+        self.0.modify_credential_store_credential(request).await
     }
 }
 
@@ -1771,9 +1750,14 @@ fn request_contains_credential_store_modify_field(request_bytes: &[u8]) -> bool 
     let Ok(request) = std::str::from_utf8(request_bytes) else {
         return false;
     };
-    ["credential_store_id", "vault_id", "host_identifier"]
-        .iter()
-        .any(|field| request_contains_element(request, field))
+    [
+        "credential_store_id",
+        "vault_id",
+        "host_identifier",
+        "privacy_host_identifier",
+    ]
+    .iter()
+    .any(|field| request_contains_element(request, field))
 }
 
 fn request_contains_element(request: &str, element_name: &str) -> bool {
@@ -2184,7 +2168,7 @@ mod tests {
         assert!(!request_contains_credential_store_type(b"\xff"));
 
         for credential_type in [
-            "cs_cc", "cs_snmp", "cs_up", "cs_usk", "cs_smime", "cs_pgp", "cs_pw",
+            "cs_krb5", "cs_snmp", "cs_up", "cs_usk", "cs_smime", "cs_pgp", "cs_pw",
         ] {
             let request =
                 format!("<create_credential><type>{credential_type}</type></create_credential>");
@@ -2270,7 +2254,12 @@ mod tests {
 
     #[test]
     fn credential_store_modify_semantic_detection_matches_next_shape() {
-        for field in ["credential_store_id", "vault_id", "host_identifier"] {
+        for field in [
+            "credential_store_id",
+            "vault_id",
+            "host_identifier",
+            "privacy_host_identifier",
+        ] {
             let request = format!(
                 "<modify_credential credential_id=\"credential-1\"><{field}>value</{field}></modify_credential>"
             );
@@ -2416,17 +2405,16 @@ mod tests {
         });
 
         let response = client
-            .create_credential_store_credential(
+            .create_credential_store_credential(CreateCredentialStoreCredentialRequest::new(
                 "Credential",
                 CredentialStoreCredentialType::UsernamePassword,
                 "vault-1",
                 "host-1",
-                CredentialStoreCredentialOpts::default(),
-            )
+            ))
             .await
             .expect("request succeeds");
 
-        assert_eq!(response.status_code(), Some(201));
+        assert_eq!(response.status, 201);
     }
 
     #[tokio::test]
@@ -2443,37 +2431,43 @@ mod tests {
         });
 
         let response = client
-            .modify_credential_store_credential(
-                &EntityId::new("credential-1").expect("valid id"),
-                ModifyCredentialStoreCredentialOpts {
-                    vault_id: Some("vault-1".into()),
-                    ..Default::default()
-                },
-            )
+            .modify_credential_store_credential({
+                let mut request = ModifyCredentialStoreCredentialRequest::new(
+                    EntityId::new("credential-1").expect("valid id"),
+                );
+                request.vault_id = Some("vault-1".into());
+                request
+            })
             .await
             .expect("request succeeds");
 
-        assert_eq!(response.status_code(), Some(200));
+        assert_eq!(response.status, 200);
     }
 
     #[test]
     fn redacts_known_credential_elements() {
-        let bytes = br#"<root><password>pw</password><community>snmp</community><private>key</private><private_key>key2</private_key><passphrase>phrase</passphrase><secret>oidc-secret</secret><auth_password>auth</auth_password><privacy_password>privacy</privacy_password><password algorithm="x">again</password></root>"#;
+        let bytes = br#"<root><password>pw</password><community>snmp</community><private>key</private><private_key>key2</private_key><public>public-key</public><certificate>certificate-data</certificate><phrase>key-phrase</phrase><passphrase>passphrase-value</passphrase><secret>oidc-secret</secret><auth_password>auth</auth_password><privacy_password>privacy</privacy_password><vault_id>vault-secret</vault_id><host_identifier>host-secret</host_identifier><privacy_host_identifier>privacy-host-secret</privacy_host_identifier><password algorithm="x">again</password></root>"#;
 
         let redacted = String::from_utf8(redact_wire_bytes(bytes)).expect("utf-8");
 
         assert_eq!(
             redacted,
-            r#"<root><password><redacted/></password><community><redacted/></community><private><redacted/></private><private_key><redacted/></private_key><passphrase><redacted/></passphrase><secret><redacted/></secret><auth_password><redacted/></auth_password><privacy_password><redacted/></privacy_password><password algorithm="x"><redacted/></password></root>"#
+            r#"<root><password><redacted/></password><community><redacted/></community><private><redacted/></private><private_key><redacted/></private_key><public><redacted/></public><certificate><redacted/></certificate><phrase><redacted/></phrase><passphrase><redacted/></passphrase><secret><redacted/></secret><auth_password><redacted/></auth_password><privacy_password><redacted/></privacy_password><vault_id><redacted/></vault_id><host_identifier><redacted/></host_identifier><privacy_host_identifier><redacted/></privacy_host_identifier><password algorithm="x"><redacted/></password></root>"#
         );
         assert!(!redacted.contains(">pw<"));
         assert!(!redacted.contains(">snmp<"));
         assert!(!redacted.contains(">key<"));
         assert!(!redacted.contains(">key2<"));
-        assert!(!redacted.contains(">phrase<"));
+        assert!(!redacted.contains(">public-key<"));
+        assert!(!redacted.contains(">certificate-data<"));
+        assert!(!redacted.contains(">key-phrase<"));
+        assert!(!redacted.contains(">passphrase-value<"));
         assert!(!redacted.contains(">oidc-secret<"));
         assert!(!redacted.contains(">auth<"));
         assert!(!redacted.contains(">privacy<"));
+        assert!(!redacted.contains(">vault-secret<"));
+        assert!(!redacted.contains(">host-secret<"));
+        assert!(!redacted.contains(">privacy-host-secret<"));
         assert!(!redacted.contains(">again<"));
     }
 
@@ -2507,26 +2501,26 @@ mod tests {
     }
 
     #[test]
-    fn redacts_credential_store_preference_builder_values() {
+    fn redacts_canonical_credential_store_request_values() {
         use gvm_gmp::commands::credentials::{
-            modify_credential_store, CredentialStorePreference, ModifyCredentialStoreOpts,
+            CredentialStorePreference, ModifyCredentialStoreRequest,
         };
 
-        let request = modify_credential_store(
-            &EntityId::new("credential-store-1").expect("valid ID"),
-            ModifyCredentialStoreOpts {
-                host: Some("store.example".into()),
-                preferences: vec![CredentialStorePreference {
-                    name: "token".into(),
-                    value: "preference-sentinel".into(),
-                }],
-                ..Default::default()
-            },
-        )
-        .to_bytes();
+        let request = {
+            let mut request = ModifyCredentialStoreRequest::new(
+                EntityId::new("credential-store-1").expect("valid ID"),
+            );
+            request.host = Some("store.example".into());
+            request.preferences = vec![CredentialStorePreference {
+                name: "token".into(),
+                value: "preference-sentinel".into(),
+            }];
+            request.encode(GmpVersion(22, 8)).expect("request encodes")
+        };
         let redacted = String::from_utf8(redact_wire_bytes(&request)).expect("UTF-8 trace");
 
-        assert!(redacted.contains("<host>store.example</host>"));
+        assert!(redacted.contains("<host><redacted/></host>"));
+        assert!(!redacted.contains("store.example"));
         assert!(redacted.contains("<name>token</name>"));
         assert!(redacted.contains("<value><redacted/></value>"));
         assert!(!redacted.contains("preference-sentinel"));

@@ -13,8 +13,8 @@
 use gvm_gmp::commands::agent_groups::{CreateAgentGroupRequest, GetAgentGroupsRequest};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
-    create_credential_store_credential, modify_credential_store_credential,
-    verify_credential_store, CredentialStoreCredentialOpts, ModifyCredentialStoreCredentialOpts,
+    CreateCredentialStoreCredentialRequest, ModifyCredentialStoreCredentialRequest,
+    VerifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
@@ -269,16 +269,7 @@ async fn version_22_7_rejects_next_commands() {
         .unwrap()
         .contains("get_oci_image_targets"));
 
-    let response = send_recv(
-        &mut stream,
-        verify_credential_store(&id("credential-store-1")),
-    )
-    .await;
-    assert_eq!(response.status_code(), Some(400));
-    assert!(response
-        .status_text()
-        .unwrap()
-        .contains("verify_credential_store"));
+    assert_credential_store_verify_rejected_before_next(&mut stream).await;
 
     let response = send_recv(
         &mut stream,
@@ -321,12 +312,14 @@ async fn version_22_7_rejects_next_commands() {
 async fn assert_credential_store_credentials_rejected_before_next(stream: &mut UnixStream) {
     let response = send_recv(
         stream,
-        create_credential_store_credential(
-            "Rejected Store Credential",
-            CredentialStoreCredentialType::UsernamePassword,
-            "vault-1",
-            "host-1",
-            CredentialStoreCredentialOpts::default(),
+        encode(
+            &CreateCredentialStoreCredentialRequest::new(
+                "Rejected Store Credential",
+                CredentialStoreCredentialType::UsernamePassword,
+                "vault-1",
+                "host-1",
+            ),
+            GmpVersion::V22_7,
         ),
     )
     .await;
@@ -335,12 +328,13 @@ async fn assert_credential_store_credentials_rejected_before_next(stream: &mut U
 
     let response = send_recv(
         stream,
-        modify_credential_store_credential(
-            &id("credential-1"),
-            ModifyCredentialStoreCredentialOpts {
-                vault_id: Some("vault-1".into()),
-                ..Default::default()
+        encode(
+            &{
+                let mut request = ModifyCredentialStoreCredentialRequest::new(id("credential-1"));
+                request.vault_id = Some("vault-1".into());
+                request
             },
+            GmpVersion::V22_7,
         ),
     )
     .await;
@@ -349,12 +343,13 @@ async fn assert_credential_store_credentials_rejected_before_next(stream: &mut U
 
     let response = send_recv(
         stream,
-        modify_credential_store_credential(
-            &id("credential-1"),
-            ModifyCredentialStoreCredentialOpts {
-                host_identifier: Some("host-1".into()),
-                ..Default::default()
+        encode(
+            &{
+                let mut request = ModifyCredentialStoreCredentialRequest::new(id("credential-1"));
+                request.host_identifier = Some("host-1".into());
+                request
             },
+            GmpVersion::V22_7,
         ),
     )
     .await;
@@ -368,6 +363,22 @@ async fn assert_credential_store_credentials_rejected_before_next(stream: &mut U
     .await;
     assert_eq!(response.status_code(), Some(400));
     assert!(response.status_text().unwrap().contains("GMP 22.8"));
+}
+
+async fn assert_credential_store_verify_rejected_before_next(stream: &mut UnixStream) {
+    let response = send_recv(
+        stream,
+        encode(
+            &VerifyCredentialStoreRequest::new(id("credential-store-1")),
+            GmpVersion::V22_7,
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response
+        .status_text()
+        .unwrap()
+        .contains("verify_credential_store"));
 }
 
 #[tokio::test]
@@ -565,19 +576,28 @@ async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut Unix
 }
 
 async fn assert_credential_store_verify_works_on_next(stream: &mut UnixStream) {
-    let response = send_recv(stream, verify_credential_store(&id("credential-store-1"))).await;
+    let response = send_recv(
+        stream,
+        encode(
+            &VerifyCredentialStoreRequest::new(id("credential-store-1")),
+            GmpVersion::V22_8,
+        ),
+    )
+    .await;
     assert_eq!(response.status_code(), Some(200));
 }
 
 async fn assert_credential_store_credentials_work_on_next(stream: &mut UnixStream) {
     let create = send_recv(
         stream,
-        create_credential_store_credential(
-            "Version Gated Store Credential",
-            CredentialStoreCredentialType::PasswordOnly,
-            "vault-1",
-            "host-1",
-            CredentialStoreCredentialOpts::default(),
+        encode(
+            &CreateCredentialStoreCredentialRequest::new(
+                "Version Gated Store Credential",
+                CredentialStoreCredentialType::PasswordOnly,
+                "vault-1",
+                "host-1",
+            ),
+            GmpVersion::V22_8,
         ),
     )
     .await;
@@ -586,14 +606,15 @@ async fn assert_credential_store_credentials_work_on_next(stream: &mut UnixStrea
 
     let response = send_recv(
         stream,
-        modify_credential_store_credential(
-            &credential_id,
-            ModifyCredentialStoreCredentialOpts {
-                credential_store_id: Some(id("credential-store-gate")),
-                vault_id: Some("vault-gate".into()),
-                host_identifier: Some("host-gate".into()),
-                ..Default::default()
+        encode(
+            &{
+                let mut request = ModifyCredentialStoreCredentialRequest::new(credential_id);
+                request.credential_store_id = Some(id("credential-store-gate"));
+                request.vault_id = Some("vault-gate".into());
+                request.host_identifier = Some("host-gate".into());
+                request
             },
+            GmpVersion::V22_8,
         ),
     )
     .await;

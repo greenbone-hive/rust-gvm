@@ -353,7 +353,7 @@ canonical_inventory!(
     credential_store_type_wire_inventory,
     CredentialStoreCredentialType,
     {
-        ClientCertificate => ("cs_cc", ClientCertificate),
+        Kerberos5 => ("cs_krb5", Kerberos5),
         PasswordOnly => ("cs_pw", PasswordOnly),
         PgpEncryptionKey => ("cs_pgp", PgpEncryptionKey),
         SmimeCertificate => ("cs_smime", SmimeCertificate),

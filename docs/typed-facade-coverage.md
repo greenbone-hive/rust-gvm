@@ -35,6 +35,9 @@ Coverage is organized by behavior family:
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.
+- credential and credential-store helpers accept complete canonical requests;
+  standard and store-backed lifecycles, GMP 22.8 rejection, response parsing,
+  and secret-safe tracing are integration covered.
 
 The response-model expansion tracked by
 [#371](https://github.com/greenbone-hive/rust-gvm/issues/371),

@@ -6,9 +6,8 @@
 
 use gvm_client::{
     AgentInstallerLanguage, CommandSupport, CreateAgentGroupTaskOpts, CreateOciImageTargetTaskOpts,
-    CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
-    ExportScanReportOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
-    GvmError, ModifyCredentialStoreCredentialOpts,
+    CreateWebApplicationTaskOpts, CredentialStoreCredentialType, ExportScanReportOpts,
+    Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError,
 };
 use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
@@ -21,7 +20,10 @@ use gvm_gmp::commands::agents::{
     GetAgentSupportBundleRequest, GetAgentsRequest, ModifyAgentControlScanConfigRequest,
     ModifyAgentRequest, SyncAgentsRequest,
 };
-use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
+use gvm_gmp::commands::credentials::{
+    CreateCredentialStoreCredentialRequest, GetCredentialStoreRequest, GetCredentialStoresRequest,
+    ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
+};
 use gvm_gmp::commands::integration_configs::GetIntegrationConfigsRequest;
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
@@ -339,10 +341,10 @@ async fn next_client_verify_credential_store_round_trip() {
     server.clear_history();
     let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
     let response = client
-        .verify_credential_store(&credential_store_id)
+        .verify_credential_store(VerifyCredentialStoreRequest::new(credential_store_id))
         .await
         .expect("verify_credential_store should succeed");
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -380,33 +382,37 @@ async fn next_client_credential_store_helpers_send_expected_commands() {
     server.clear_history();
     let credential_store_id = EntityId::new("local").expect("valid id");
     let response = client
-        .get_credential_store(&credential_store_id, Some(true))
+        .get_credential_store({
+            let mut request = GetCredentialStoreRequest::new(credential_store_id);
+            request.details = Some(true);
+            request
+        })
         .await
         .expect("get_credential_store should succeed");
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
     assert!(response
-        .as_str()
-        .expect("valid UTF-8 XML")
-        .contains("Local credential store"));
+        .items
+        .iter()
+        .any(|store| store.name == "Local credential store"));
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].command_name(), "get_credential_stores");
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 request"),
-        "<get_credential_stores details=\"1\"><credential_store_id>local</credential_store_id></get_credential_stores>"
+        "<get_credential_stores credential_store_id=\"local\" details=\"1\"/>"
     );
 
     server.clear_history();
     let response = client
-        .get_credential_stores_with_opts(GetCredentialStoresOpts {
+        .get_credential_stores_with_opts(GetCredentialStoresRequest {
             filter_string: Some("name=Local".into()),
             filter_id: Some(EntityId::new("filter-1").expect("valid id")),
             details: Some(false),
         })
         .await
         .expect("get_credential_stores_with_opts should succeed");
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -443,20 +449,20 @@ async fn next_client_create_credential_store_credential_round_trip() {
 
     server.clear_history();
     let create_response = client
-        .create_credential_store_credential(
-            "Client Store Credential",
-            CredentialStoreCredentialType::UsernamePassword,
-            "vault-1",
-            "host-1",
-            CredentialStoreCredentialOpts {
-                comment: Some("stored credential".into()),
-                credential_store_id: Some(id("credential-store-1")),
-            },
-        )
+        .create_credential_store_credential({
+            let mut request = CreateCredentialStoreCredentialRequest::new(
+                "Client Store Credential",
+                CredentialStoreCredentialType::UsernamePassword,
+                "vault-1",
+                "host-1",
+            );
+            request.comment = Some("stored credential".into());
+            request.credential_store_id = Some(id("credential-store-1"));
+            request
+        })
         .await
         .expect("create_credential_store_credential should succeed");
-    assert_eq!(create_response.status_code(), Some(201));
-    assert!(create_response.id().is_some());
+    assert_eq!(create_response.status, 201);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -489,10 +495,9 @@ async fn next_client_modify_credential_store_credential_round_trip() {
         .expect("authenticate should succeed");
 
     let create_response = client
-        .call(create_credential(
-            "Next Store Credential",
-            CredentialOpts::default(),
-        ))
+        .call(
+            b"<create_credential><name>Next Store Credential</name></create_credential>".as_slice(),
+        )
         .await
         .expect("create credential should succeed");
     let credential_id = id(&create_response.id().expect("created id"));
@@ -505,19 +510,17 @@ async fn next_client_modify_credential_store_credential_round_trip() {
     server.clear_history();
 
     let response = client
-        .modify_credential_store_credential(
-            &credential_id,
-            ModifyCredentialStoreCredentialOpts {
-                name: Some("Next Updated Store Credential".into()),
-                credential_store_id: Some(id("credential-store-next")),
-                vault_id: Some("vault-next".into()),
-                host_identifier: Some("host-next".into()),
-                ..Default::default()
-            },
-        )
+        .modify_credential_store_credential({
+            let mut request = ModifyCredentialStoreCredentialRequest::new(credential_id.clone());
+            request.name = Some("Next Updated Store Credential".into());
+            request.credential_store_id = Some(id("credential-store-next"));
+            request.vault_id = Some("vault-next".into());
+            request.host_identifier = Some("host-next".into());
+            request
+        })
         .await
         .expect("modify_credential_store_credential should succeed");
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -671,7 +674,7 @@ async fn versioned_client_rejects_oci_image_targets_before_next() {
 
     let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
     let error = client
-        .call(verify_credential_store(&credential_store_id))
+        .execute(VerifyCredentialStoreRequest::new(credential_store_id))
         .await
         .expect_err("22.7 should reject next-only credential store verify command");
 

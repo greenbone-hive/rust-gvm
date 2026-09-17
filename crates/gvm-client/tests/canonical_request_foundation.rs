@@ -4,6 +4,7 @@
 #![allow(missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
+use std::error::Error as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ use gvm_gmp::commands::agents::{
     GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
+use gvm_gmp::commands::credentials::CreateCredentialStoreCredentialRequest;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -469,6 +471,46 @@ async fn mutated_target_request_is_revalidated_before_transport() {
         GvmError::Request(GmpRequestError::InvalidCombination {
             fields: &["ssh_credential_port", "ssh_credential_id"],
             ..
+        })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn mutated_credential_request_validation_precedes_version_gate_and_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let mut request = CreateCredentialStoreCredentialRequest::new(
+        "stored",
+        gvm_gmp::CredentialStoreCredentialType::PasswordOnly,
+        "vault-1",
+        "host-1",
+    );
+    request.host_identifier = "outer-error-host-sentinel".into();
+    request.vault_id.clear();
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("final mutated value should fail before the GMP 22.8 gate");
+
+    let mut error_paths = format!("{error:?}\n{error}");
+    let mut source = error.source();
+    while let Some(current) = source {
+        error_paths.push_str(&format!("\n{current:?}\n{current}"));
+        source = current.source();
+    }
+    assert!(!error_paths.contains("outer-error-host-sentinel"));
+
+    assert!(matches!(
+        &error,
+        GvmError::Request(GmpRequestError::InvalidField {
+            field: "vault_id",
+            reason: "must not be empty",
         })
     ));
     assert!(server.command_history().is_empty());

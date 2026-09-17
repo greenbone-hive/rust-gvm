@@ -274,6 +274,7 @@ pub fn minimum_version_for_command(name: &str) -> Option<GmpVersion> {
         | "create_credential_store_credential"
         | "create_oci_image_target_task"
         | "create_web_application_task"
+        | "get_credential_store"
         | "get_report_export"
         | "modify_credential_store_credential" => Some(GmpVersion(22, 8)),
         _ => command_capability(name).and_then(|capability| capability.min_version),
@@ -323,6 +324,10 @@ mod tests {
         assert!(audit_hosts.available_in(GmpVersion(22, 7)));
         assert_eq!(
             minimum_version_for_command("get_report_export"),
+            Some(GmpVersion(22, 8))
+        );
+        assert_eq!(
+            minimum_version_for_command("get_credential_store"),
             Some(GmpVersion(22, 8))
         );
         assert!(command_capability("unknown_prefixed_command").is_none());
