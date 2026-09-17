@@ -112,6 +112,17 @@ unsupported tag `severity` input; preserves policy-to-config wire mapping; and
 rejects tag-on-tag resources before support checks or transport. Independent
 [tag gvmd evidence](tag-request-gvmd-evidence.md) records those contracts.
 
+Issue #627 converts all eight alert operations to complete canonical requests.
+Three redundant options types and eight free builders are removed; the eight
+named facade methods accept request values unchanged. Create requires gvmd's
+final event, condition, and method values; clone supports name/comment
+overrides; modify documents filter clearing on omission while preserving
+omitted active state. Detail, clone, and report-trigger operations retain their
+semantic aliases, and trigger remains associated with `GetReportsResponse`.
+Alert data values are redacted from request diagnostics and wire traces.
+Independent [alert gvmd evidence](alert-request-gvmd-evidence.md) records those
+contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 
@@ -154,7 +165,7 @@ response preserves both default and configuration-scoped shapes. Existing
 convenience methods delegate to generic execution; raw builders, `send`, `call`,
 and the deprecated global-sync compatibility shim remain supported.
 
-The alert-and-schedule Phase 2 batch, tracked by
+The earlier additive alert-and-schedule Phase 2 batch, tracked by
 [`#555`](https://github.com/greenbone-hive/rust-gvm/issues/555), migrates every
 public alert and schedule builder to semantic typed execution. Alert list,
 detail, create, clone, modify, delete, test, and report-trigger operations keep
@@ -162,6 +173,8 @@ their established response shapes, including the report response returned by
 triggering. Schedule list, detail, create, clone, modify, and delete retain both
 raw compatibility options and typed recurrence input. Existing builders remain
 the sole wire encoders and all facade helpers delegate to generic execution.
+The bounded canonical alert migration in #627 supersedes that transitional
+alert construction model; the schedule side remains transitional.
 
 The supporting-resource Phase 2 batch, tracked by
 [`#557`](https://github.com/greenbone-hive/rust-gvm/issues/557), migrates the

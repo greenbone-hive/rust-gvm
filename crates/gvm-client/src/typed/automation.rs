@@ -4,9 +4,8 @@
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::alerts::{
-    AlertOpts, CloneAlertRequest, CreateAlertRequest, DeleteAlertRequest, GetAlertRequest,
-    GetAlertsOpts, GetAlertsRequest, ModifyAlertRequest, TestAlertRequest, TriggerAlertOpts,
-    TriggerAlertRequest,
+    CloneAlertRequest, CreateAlertRequest, DeleteAlertRequest, GetAlertRequest, GetAlertsRequest,
+    ModifyAlertRequest, TestAlertRequest, TriggerAlertRequest,
 };
 use gvm_gmp::commands::filters::{
     CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, GetFilterRequest,
@@ -41,16 +40,22 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_alerts(&mut self, opts: GetAlertsOpts) -> Result<GetAlertsResponse, GvmError> {
-        self.execute(GetAlertsRequest::new(opts)).await
+    pub async fn get_alerts(
+        &mut self,
+        request: GetAlertsRequest,
+    ) -> Result<GetAlertsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a detailed single-alert `get_alerts` request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_alert(&mut self, alert_id: &EntityId) -> Result<GetAlertsResponse, GvmError> {
-        self.execute(GetAlertRequest::new(alert_id.clone())).await
+    pub async fn get_alert(
+        &mut self,
+        request: GetAlertRequest,
+    ) -> Result<GetAlertsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `create_alert` request and return a typed [`CreateAlertResponse`].
@@ -59,10 +64,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_alert(
         &mut self,
-        name: &str,
-        opts: AlertOpts,
+        request: CreateAlertRequest,
     ) -> Result<CreateAlertResponse, GvmError> {
-        self.execute(CreateAlertRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Send an alert-copy `create_alert` request.
@@ -71,9 +75,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_alert(
         &mut self,
-        alert_id: &EntityId,
+        request: CloneAlertRequest,
     ) -> Result<CreateAlertResponse, GvmError> {
-        self.execute(CloneAlertRequest::new(alert_id.clone())).await
+        self.execute(request).await
     }
 
     /// Send a `modify_alert` request and return a typed [`ModifyAlertResponse`].
@@ -82,11 +86,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_alert(
         &mut self,
-        alert_id: &EntityId,
-        opts: AlertOpts,
+        request: ModifyAlertRequest,
     ) -> Result<ModifyAlertResponse, GvmError> {
-        self.execute(ModifyAlertRequest::new(alert_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_alert` request.
@@ -95,19 +97,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_alert(
         &mut self,
-        alert_id: &EntityId,
-        ultimate: bool,
+        request: DeleteAlertRequest,
     ) -> Result<DeleteAlertResponse, GvmError> {
-        self.execute(DeleteAlertRequest::new(alert_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `test_alert` request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn test_alert(&mut self, alert_id: &EntityId) -> Result<ActionResponse, GvmError> {
-        self.execute(TestAlertRequest::new(alert_id.clone())).await
+    pub async fn test_alert(
+        &mut self,
+        request: TestAlertRequest,
+    ) -> Result<ActionResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Trigger an alert for a report through the report query command.
@@ -116,16 +119,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn trigger_alert(
         &mut self,
-        alert_id: &EntityId,
-        report_id: &EntityId,
-        opts: TriggerAlertOpts,
+        request: TriggerAlertRequest,
     ) -> Result<GetReportsResponse, GvmError> {
-        self.execute(TriggerAlertRequest::new(
-            alert_id.clone(),
-            report_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     // ── Filters ───────────────────────────────────────────────────────────────
