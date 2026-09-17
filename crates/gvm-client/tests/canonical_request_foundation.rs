@@ -18,6 +18,9 @@ use gvm_gmp::commands::agents::{
     GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
+use gvm_gmp::commands::integration_configs::{
+    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
+};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
@@ -312,6 +315,72 @@ async fn every_agent_request_is_version_gated_before_transport() {
     )
     .await;
 
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn every_integration_configuration_request_is_version_gated_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let config_id = gvm_gmp::EntityId::new("integration-1").expect("valid id");
+
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetIntegrationConfigsRequest::default(),
+        "get_integration_configs",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        GetIntegrationConfigRequest::new(config_id.clone(), Some(true)),
+        "get_integration_configs",
+    )
+    .await;
+    assert_unsupported_22_8_request(
+        &mut client,
+        ModifyIntegrationConfigRequest::new(config_id),
+        "modify_integration_config",
+    )
+    .await;
+
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn partial_integration_configuration_replacement_fails_before_support_and_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let mut request = ModifyIntegrationConfigRequest::new(
+        gvm_gmp::EntityId::new("integration-1").expect("valid id"),
+    );
+    request.service_url = Some("https://service.example".into());
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("partial replacement should fail before the GMP 22.8 gate");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidCombination {
+            fields: &[
+                "service_url",
+                "oidc_provider_url",
+                "oidc_provider_client_id",
+                "oidc_provider_client_secret",
+            ],
+            ..
+        })
+    ));
+    assert!(!error.to_string().contains("https://service.example"));
     assert!(server.command_history().is_empty());
     server.shutdown().await;
 }

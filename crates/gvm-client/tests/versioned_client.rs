@@ -22,6 +22,7 @@ use gvm_gmp::commands::agents::{
     ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
+use gvm_gmp::commands::integration_configs::GetIntegrationConfigsRequest;
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
@@ -305,10 +306,10 @@ async fn next_client_exposes_next_trait_methods() {
     };
 
     let response = client
-        .get_integration_configs(Default::default())
+        .get_integration_configs(GetIntegrationConfigsRequest::default())
         .await
         .expect("next-only command should succeed");
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
 
     server.shutdown().await;
 }

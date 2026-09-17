@@ -210,6 +210,50 @@ binary support-bundle response types. Every operation remains gated to GMP
 22.8 before encoding or transport; detail remains a semantic alias over the
 `get_agents` wire root.
 
+## Integration-configuration family
+
+The integration-configuration slice removes `GetIntegrationConfigsOpts`,
+`ModifyIntegrationConfigOpts`, all three free builders, the three raw duplicate
+client signatures, and the `_parsed` aliases. The list request owns its filter
+fields; the detail request owns its identifier and detail flag while preserving
+the `get_integration_configs` wire root:
+
+```rust
+use gvm_gmp::commands::integration_configs::{
+    GetIntegrationConfigRequest, ModifyIntegrationConfigRequest,
+};
+
+let current = client
+    .get_integration_config(GetIntegrationConfigRequest::new(
+        integration_config_id.clone(),
+        Some(true),
+    ))
+    .await?;
+
+let mut replacement =
+    ModifyIntegrationConfigRequest::new(integration_config_id.clone());
+replacement.service_url = Some("https://service.example".into());
+replacement.oidc_provider_url = Some("https://oidc.example".into());
+replacement.oidc_provider_client_id = Some("client-id".into());
+replacement.oidc_provider_client_secret = Some("client-secret".into());
+client.modify_integration_config(replacement).await?;
+
+client
+    .modify_integration_config(ModifyIntegrationConfigRequest::new(
+        integration_config_id,
+    ))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+The final call is the explicit clear operation: every configurable field is
+unset. If any field is set, the service URL, OIDC provider URL, client ID, and
+client secret must all be present and non-empty. Partial replacements return a
+value-free `GmpRequestError` before capability checks or transmission. The
+service CA certificate remains optional; it and the client secret are redacted
+from request diagnostics and wire tracing. All three named client methods
+accept the canonical requests unchanged and require GMP 22.8.
+
 ## Moving from a raw builder
 
 Raw execution remains available:

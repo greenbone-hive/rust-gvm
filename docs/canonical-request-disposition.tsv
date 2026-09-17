@@ -69,9 +69,9 @@ builder	crates/gvm-gmp/src/commands/hosts.rs	delete_host	transitional	Pending bo
 builder	crates/gvm-gmp/src/commands/hosts.rs	get_host	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/hosts.rs	get_hosts	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/hosts.rs	modify_host	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/integration_configs.rs	get_integration_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/integration_configs.rs	get_integration_configs	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/integration_configs.rs	modify_integration_config	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/integration_configs.rs	get_integration_config	removed	Removed by #615; GetIntegrationConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/integration_configs.rs	get_integration_configs	removed	Removed by #615; GetIntegrationConfigsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/integration_configs.rs	modify_integration_config	removed	Removed by #615; ModifyIntegrationConfigRequest owns canonical validation and encoding.
 builder	crates/gvm-gmp/src/commands/notes.rs	clone_note	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/notes.rs	create_note	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/notes.rs	delete_note	transitional	Pending bounded family migration under #602.
@@ -318,12 +318,15 @@ facade	crates/gvm-client/src/typed/agents.rs	get_agent_groups	retained-construct
 facade	crates/gvm-client/src/typed/agents.rs	get_agent_installer_instruction	retained-construction	Retained for discoverability; accepts the canonical GetAgentInstallerInstructionRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	get_agent_support_bundle	retained-construction	Retained for discoverability; accepts the canonical GetAgentSupportBundleRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	get_agents	retained-construction	Retained for discoverability; accepts the canonical GetAgentsRequest unchanged.
-facade	crates/gvm-client/src/typed/agents.rs	get_integration_config_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/agents.rs	get_integration_configs_parsed	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/agents.rs	get_integration_config	retained-construction	Retained for discoverability; accepts the canonical GetIntegrationConfigRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	get_integration_config_parsed	removed	Removed by #615; get_integration_config now returns the typed response.
+facade	crates/gvm-client/src/typed/agents.rs	get_integration_configs	retained-construction	Retained for discoverability; accepts the canonical GetIntegrationConfigsRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	get_integration_configs_parsed	removed	Removed by #615; get_integration_configs now returns the typed response.
 facade	crates/gvm-client/src/typed/agents.rs	modify_agent	retained-construction	Retained for discoverability; accepts the canonical ModifyAgentRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	modify_agent_control_scan_config	retained-construction	Retained for discoverability; accepts the canonical ModifyAgentControlScanConfigRequest unchanged.
 facade	crates/gvm-client/src/typed/agents.rs	modify_agent_group	retained-construction	Retained for discoverability; accepts the canonical ModifyAgentGroupRequest unchanged.
-facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config_parsed	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config	retained-construction	Retained for discoverability; accepts the canonical ModifyIntegrationConfigRequest unchanged.
+facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config_parsed	removed	Removed by #615; modify_integration_config now returns the typed response.
 facade	crates/gvm-client/src/typed/agents.rs	sync_agents	retained-construction	Retained for discoverability; accepts the canonical SyncAgentsRequest unchanged.
 facade	crates/gvm-client/src/typed/automation.rs	clone_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_filter	transitional	Pending bounded family migration under #602.
@@ -624,8 +627,8 @@ options	crates/gvm-gmp/src/commands/groups.rs	GetGroupsOpts	transitional	Pending
 options	crates/gvm-gmp/src/commands/groups.rs	GroupOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/hosts.rs	GetHostsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/hosts.rs	HostOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/integration_configs.rs	GetIntegrationConfigsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/integration_configs.rs	ModifyIntegrationConfigOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/integration_configs.rs	GetIntegrationConfigsOpts	removed	Removed by #615; fields now belong to GetIntegrationConfigsRequest.
+options	crates/gvm-gmp/src/commands/integration_configs.rs	ModifyIntegrationConfigOpts	removed	Removed by #615; fields now belong to ModifyIntegrationConfigRequest.
 options	crates/gvm-gmp/src/commands/notes.rs	GetNotesOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/notes.rs	ModifyNoteOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/notes.rs	NoteOpts	transitional	Pending bounded family migration under #602.
@@ -769,9 +772,9 @@ request	crates/gvm-gmp/src/commands/hosts.rs	DeleteHostRequest	transitional	Pend
 request	crates/gvm-gmp/src/commands/hosts.rs	GetHostRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/hosts.rs	GetHostsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/hosts.rs	ModifyHostRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/integration_configs.rs	GetIntegrationConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/integration_configs.rs	GetIntegrationConfigsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/integration_configs.rs	ModifyIntegrationConfigRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/integration_configs.rs	GetIntegrationConfigRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/integration_configs.rs	GetIntegrationConfigsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/integration_configs.rs	ModifyIntegrationConfigRequest	canonical-request	Complete replacement/clear input with final-value validation, direct encoding, secret redaction, and typed response.
 request	crates/gvm-gmp/src/commands/notes.rs	CreateNoteRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/notes.rs	DeleteNoteRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/notes.rs	GetNotesRequest	transitional	Pending bounded family migration under #602.

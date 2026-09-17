@@ -13,8 +13,7 @@ use gvm_gmp::commands::agents::{
     ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::integration_configs::{
-    GetIntegrationConfigRequest, GetIntegrationConfigsOpts, GetIntegrationConfigsRequest,
-    ModifyIntegrationConfigOpts, ModifyIntegrationConfigRequest,
+    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
 use gvm_gmp::responses::{
     CloneAgentGroupResponse, CreateAgentGroupResponse, DeleteAgentGroupResponse,
@@ -23,7 +22,6 @@ use gvm_gmp::responses::{
     ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse, ModifyAgentResponse,
     ModifyIntegrationConfigResponse, SyncAgentsResponse,
 };
-use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Agents ────────────────────────────────────────────────────────────────
@@ -186,55 +184,36 @@ impl<C: GvmConnection + Send> GmpClient<C> {
 
     // ── Integration Configurations ────────────────────────────────────────────
 
-    /// Send a single `get_integration_config` request and return a typed response.
-    ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::get_integration_config`] method.
+    /// Send a detailed `get_integration_configs` request and return a typed response.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_integration_config_parsed(
+    pub async fn get_integration_config(
         &mut self,
-        integration_config_id: &EntityId,
-        details: Option<bool>,
+        request: GetIntegrationConfigRequest,
     ) -> Result<GetIntegrationConfigsResponse, GvmError> {
-        self.execute(GetIntegrationConfigRequest::new(
-            integration_config_id.clone(),
-            details,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `get_integration_configs` request and return a typed response.
     ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::get_integration_configs`] method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_integration_configs_parsed(
+    pub async fn get_integration_configs(
         &mut self,
-        opts: GetIntegrationConfigsOpts,
+        request: GetIntegrationConfigsRequest,
     ) -> Result<GetIntegrationConfigsResponse, GvmError> {
-        self.execute(GetIntegrationConfigsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `modify_integration_config` request and return a typed response.
     ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::modify_integration_config`] method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn modify_integration_config_parsed(
+    pub async fn modify_integration_config(
         &mut self,
-        integration_config_id: &EntityId,
-        opts: ModifyIntegrationConfigOpts,
+        request: ModifyIntegrationConfigRequest,
     ) -> Result<ModifyIntegrationConfigResponse, GvmError> {
-        self.execute(ModifyIntegrationConfigRequest::new(
-            integration_config_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 }

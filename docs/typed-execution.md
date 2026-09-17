@@ -185,14 +185,17 @@ named facade methods accept the same requests and delegate to `execute`.
 Agent list, detail, modify, delete, synchronization, agent-control-default,
 installer-instruction, and support-bundle requests follow the same contract.
 `AgentConfigOpts` remains a reusable nested configuration value shared by the
-two agent mutation shapes. Integration-configuration requests remain
-transitional and delegate to existing builders; parsed integration helpers and
-raw integration methods retain their established behavior.
+two agent mutation shapes. Integration-configuration list, detail, and
+replacement/clear requests are canonical as well. Detail keeps a semantic
+alias over the list wire root. A completely empty modification clears the
+configuration; any replacement validates the four required service/OIDC
+values before the GMP 22.8 capability check or transport.
 
 Agent installer instructions retain their language and origin metadata.
 Support-bundle responses continue to decode base64 content into binary bytes
-and validate declared sizes. OIDC client secrets remain redacted from
-semantic-request diagnostics and wire tracing.
+and validate declared sizes. Integration service CA certificates and OIDC
+client secrets remain redacted from semantic-request diagnostics and wire
+tracing.
 
 ## System administration and user settings
 
