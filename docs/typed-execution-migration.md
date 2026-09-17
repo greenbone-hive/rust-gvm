@@ -356,6 +356,46 @@ standard `cc` credentials. Request diagnostics and wire traces redact passwords,
 private/public keys, key phrases, certificates, SNMP community and privacy
 values, vault/host identifiers, and credential-store preference values.
 
+## Filter family
+
+The filter slice removes `FilterOpts`, `GetFiltersOpts`, and all six free
+builders. List, detail, create, clone, modify, and delete inputs now live on
+complete canonical request values, and the six named client methods accept
+those values unchanged:
+
+```rust
+use gvm_gmp::commands::filters::{CreateFilterRequest, GetFiltersRequest};
+use gvm_gmp::FilterType;
+
+let mut create = CreateFilterRequest::new("recent tasks");
+create.term = Some("rows=10 sort-reverse=modified".into());
+create.filter_type = Some(FilterType::Task);
+let created = client.create_filter(create).await?;
+
+let filters = client
+    .get_filters(GetFiltersRequest {
+        details: Some(true),
+        alerts: Some(true),
+        ..Default::default()
+    })
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Create requests validate their required final name before support checks or
+transport. Clone and modify requests likewise reject an explicitly empty name,
+including after public-field mutation. `GetFilterRequest` and
+`CloneFilterRequest` retain distinct semantic identities over the shared
+`get_filters` and `create_filter` XML roots.
+
+Pinned gvmd source corrects three transitional-model gaps. Filter sorting is
+part of the filter term (`sort=` or `sort-reverse=`), so the unsupported
+create/modify `sort_order` child is removed. Modify now represents gvmd's
+supported rename element; clone represents optional name/comment overrides;
+and list/detail requests expose the supported `alerts` expansion selector.
+Empty comment and term elements remain representable for modification so
+callers can clear those text values.
+
 ## Moving from a raw builder
 
 Raw execution remains available:

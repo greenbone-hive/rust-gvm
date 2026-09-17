@@ -29,7 +29,10 @@ use gvm_gmp::commands::credentials::{
     CloneCredentialRequest, CreateCredentialRequest, DeleteCredentialRequest, GetCredentialRequest,
     GetCredentialsRequest, ModifyCredentialRequest,
 };
-use gvm_gmp::commands::filters::{FilterOpts, GetFiltersOpts};
+use gvm_gmp::commands::filters::{
+    CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, GetFilterRequest,
+    GetFiltersRequest, ModifyFilterRequest,
+};
 use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
@@ -2745,7 +2748,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_dfn_cert_advisories(GetSecInfoOpts::default()));
     assert_typed_success!(client.get_alerts(GetAlertsOpts::default()));
     assert_typed_success!(client.get_credentials(GetCredentialsRequest::default()));
-    assert_typed_success!(client.get_filters(GetFiltersOpts::default()));
+    assert_typed_success!(client.get_filters(GetFiltersRequest::default()));
     assert_typed_success!(client.get_notes(GetNotesOpts::default()));
     assert_typed_success!(client.get_overrides(GetOverridesOpts::default()));
     assert_typed_success!(client.get_schedules(GetSchedulesOpts::default()));
@@ -2832,7 +2835,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
 
     assert_create_success!(client.create_port_list(CreatePortListRequest::new("ports")));
     assert_create_success!(client.create_alert("alert", AlertOpts::default()));
-    assert_create_success!(client.create_filter("filter", FilterOpts::default()));
+    assert_create_success!(client.create_filter(CreateFilterRequest::new("filter")));
     assert_create_success!(client.create_note("1.3.6.1.4.1.25623.1.0.1", NoteOpts::default()));
     assert_create_success!(
         client.create_override("1.3.6.1.4.1.25623.1.0.1", OverrideOpts::default())
@@ -2936,12 +2939,14 @@ async fn filters_tags_and_trashcan_execute_through_typed_facade() {
     server.clear_history();
     let resource_id = id("resource-1");
 
-    assert_typed_success!(client.get_filters(GetFiltersOpts::default()));
-    assert_typed_success!(client.get_filter(&resource_id));
-    assert_create_success!(client.create_filter("filter", FilterOpts::default()));
-    assert_create_success!(client.clone_filter(&resource_id));
-    assert_typed_success!(client.modify_filter(&resource_id, FilterOpts::default()));
-    assert_typed_success!(client.delete_filter(&resource_id, false));
+    assert_typed_success!(client.get_filters(GetFiltersRequest::default()));
+    assert_typed_success!(client.get_filter(GetFilterRequest::new(resource_id.clone())));
+    assert_create_success!(client.create_filter(CreateFilterRequest::new("filter")));
+    assert_create_success!(client.clone_filter(CloneFilterRequest::new(resource_id.clone())));
+    assert_typed_success!(client.modify_filter(ModifyFilterRequest::new(resource_id.clone())));
+    assert_typed_success!(
+        client.delete_filter(DeleteFilterRequest::new(resource_id.clone(), false))
+    );
 
     assert_typed_success!(client.get_tags(GetTagsOpts::default()));
     assert_typed_success!(client.get_tag(&resource_id));
@@ -3008,7 +3013,7 @@ async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
     let mut client = client(&server).await;
 
     let filter_error = client
-        .get_filter(&id("filter-1"))
+        .get_filter(GetFilterRequest::new(id("filter-1")))
         .await
         .expect_err("non-success filter response should fail");
     assert!(matches!(

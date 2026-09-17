@@ -500,7 +500,7 @@ Each Phase 4 domain module follows the same 5-test pattern (multi-item, empty, c
 |--------|---------------------|
 | `alert.rs` | Event, condition, method enums; filter_id ref |
 | `credential.rs` | Type-specific fields (login, certificate, SNMP algorithms) |
-| `filter.rs` | Term expression, filter_type, sort_order |
+| `filter.rs` | Term expression and filter type |
 | `note.rs` | NVT OID, text, hosts (comma-separated), port, task/result refs |
 | `override_.rs` | NVT OID, new_severity, active flag |
 | `schedule.rs` | iCalendar data, timezone string |

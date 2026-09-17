@@ -92,6 +92,16 @@ and wire traces. Independent
 [credential gvmd evidence](credential-request-gvmd-evidence.md) records the
 wire and validation contracts.
 
+Issue #622 converts all six baseline filter operations to complete canonical
+requests. Two redundant options types and six free builders are removed; the
+six named facade methods accept request values unchanged. List/detail and
+create/clone keep distinct semantic identities over their shared wire roots,
+and final required names are validated before support checks or transport.
+Pinned gvmd reconciliation removes the unsupported create/modify `sort_order`
+child while adding supported rename, clone name/comment overrides, list alert
+expansion, and explicit comment/term clearing. Independent
+[filter gvmd evidence](filter-request-gvmd-evidence.md) records those contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 

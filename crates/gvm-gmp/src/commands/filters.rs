@@ -1,34 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Filter command builders.
+//! Canonical requests for filter operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
-use crate::enums::{FilterType, SortOrder};
+use crate::common::{add_filter_attrs, bool_str, set_optional_bool_attr};
+use crate::enums::FilterType;
 use crate::responses::{
     CreateFilterResponse, DeleteFilterResponse, GetFiltersResponse, ModifyFilterResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for filter create and modify requests.
+/// Semantic request for listing filters.
 #[derive(Debug, Clone, Default)]
-pub struct FilterOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional filter term expression.
-    pub term: Option<String>,
-    /// Optional resource type the filter applies to.
-    pub filter_type: Option<FilterType>,
-    /// Optional sort order.
-    pub sort_order: Option<SortOrder>,
-}
-
-/// Options for `get_filters` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetFiltersOpts {
+pub struct GetFiltersRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -37,23 +24,17 @@ pub struct GetFiltersOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+    /// Whether to include alerts that use each filter.
+    pub alerts: Option<bool>,
 }
 
-/// Semantic request for listing filters.
-#[derive(Debug, Clone, Default)]
-pub struct GetFiltersRequest(GetFiltersOpts);
-
-impl GetFiltersRequest {
-    /// Create a filter-list request.
-    #[must_use]
-    pub fn new(opts: GetFiltersOpts) -> Self {
-        Self(opts)
+impl GmpRequestCodec for GetFiltersRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_filters"))
     }
-}
 
-impl Request for GetFiltersRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_filters(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_filters_command(self).to_bytes())
     }
 }
 
@@ -61,56 +42,77 @@ impl GmpRequest for GetFiltersRequest {
     type Response = GetFiltersResponse;
 }
 
-macro_rules! filter_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(filter_id: EntityId) -> Self {
-                Self(filter_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
+/// Semantic request for one detailed filter.
+#[derive(Debug, Clone)]
+pub struct GetFilterRequest {
+    /// Filter identifier to retrieve.
+    pub filter_id: EntityId,
+    /// Whether to include alerts that use the filter.
+    pub alerts: Option<bool>,
 }
 
-filter_id_request!(GetFilterRequest, GetFiltersResponse, get_filter);
-filter_id_request!(CloneFilterRequest, CreateFilterResponse, clone_filter);
+impl GetFilterRequest {
+    /// Create a single-filter request.
+    #[must_use]
+    pub fn new(filter_id: EntityId) -> Self {
+        Self {
+            filter_id,
+            alerts: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for GetFilterRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_filters", "get_filter"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_filter_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for GetFilterRequest {
+    type Response = GetFiltersResponse;
+}
 
 /// Semantic request for creating a filter.
 #[derive(Debug, Clone)]
 pub struct CreateFilterRequest {
-    name: String,
-    opts: FilterOpts,
+    /// Filter name.
+    pub name: String,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// Optional filter term expression.
+    pub term: Option<String>,
+    /// Optional resource type the filter applies to.
+    pub filter_type: Option<FilterType>,
 }
 
 impl CreateFilterRequest {
     /// Create a filter-creation request.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: FilterOpts) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            opts,
+            comment: None,
+            term: None,
+            filter_type: None,
         }
     }
 }
 
-impl Request for CreateFilterRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_filter(&self.name, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateFilterRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_filter"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(create_filter_command(self).to_bytes())
     }
 }
 
@@ -118,24 +120,90 @@ impl GmpRequest for CreateFilterRequest {
     type Response = CreateFilterResponse;
 }
 
+/// Semantic request for cloning a filter through `create_filter`.
+#[derive(Debug, Clone)]
+pub struct CloneFilterRequest {
+    /// Existing filter identifier to copy.
+    pub filter_id: EntityId,
+    /// Optional name override. Omission copies the existing name.
+    pub name: Option<String>,
+    /// Optional comment override. Omission copies the existing comment.
+    pub comment: Option<String>,
+}
+
+impl CloneFilterRequest {
+    /// Create a filter-clone request.
+    #[must_use]
+    pub fn new(filter_id: EntityId) -> Self {
+        Self {
+            filter_id,
+            name: None,
+            comment: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for CloneFilterRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_name(&self.name)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_filter",
+            "clone_filter",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(clone_filter_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for CloneFilterRequest {
+    type Response = CreateFilterResponse;
+}
+
 /// Semantic request for modifying a filter.
 #[derive(Debug, Clone)]
 pub struct ModifyFilterRequest {
-    filter_id: EntityId,
-    opts: FilterOpts,
+    /// Filter identifier to modify.
+    pub filter_id: EntityId,
+    /// Optional replacement name.
+    pub name: Option<String>,
+    /// Optional replacement comment.
+    pub comment: Option<String>,
+    /// Optional replacement filter term.
+    pub term: Option<String>,
+    /// Optional replacement resource type.
+    pub filter_type: Option<FilterType>,
 }
 
 impl ModifyFilterRequest {
     /// Create a filter-modification request.
     #[must_use]
-    pub fn new(filter_id: EntityId, opts: FilterOpts) -> Self {
-        Self { filter_id, opts }
+    pub fn new(filter_id: EntityId) -> Self {
+        Self {
+            filter_id,
+            name: None,
+            comment: None,
+            term: None,
+            filter_type: None,
+        }
     }
 }
 
-impl Request for ModifyFilterRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_filter(&self.filter_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for ModifyFilterRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_name(&self.name)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_filter"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(modify_filter_command(self).to_bytes())
     }
 }
 
@@ -146,8 +214,10 @@ impl GmpRequest for ModifyFilterRequest {
 /// Semantic request for deleting a filter.
 #[derive(Debug, Clone)]
 pub struct DeleteFilterRequest {
-    filter_id: EntityId,
-    ultimate: bool,
+    /// Filter identifier to delete.
+    pub filter_id: EntityId,
+    /// Whether to delete permanently instead of moving the filter to trash.
+    pub ultimate: bool,
 }
 
 impl DeleteFilterRequest {
@@ -161,9 +231,13 @@ impl DeleteFilterRequest {
     }
 }
 
-impl Request for DeleteFilterRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_filter(&self.filter_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteFilterRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_filter"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_filter_command(self).to_bytes())
     }
 }
 
@@ -171,168 +245,213 @@ impl GmpRequest for DeleteFilterRequest {
     type Response = DeleteFilterResponse;
 }
 
-/// Build a clone request for an existing filter.
-#[must_use]
-pub fn clone_filter(filter_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_filter").child_with_text("copy", filter_id.as_str())
+fn require_non_empty(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `create_filter` request.
-#[must_use]
-pub fn create_filter(name: &str, opts: FilterOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_filter");
-    cmd.add_element_with_text("name", name);
-    add_filter_body(&mut cmd, &opts);
-    cmd
+fn validate_optional_name(name: &Option<String>) -> Result<(), GmpRequestError> {
+    if name.as_ref().is_some_and(String::is_empty) {
+        Err(GmpRequestError::invalid_field("name", "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `get_filters` request.
-#[must_use]
-pub fn get_filters(opts: GetFiltersOpts) -> impl Request {
+fn add_optional_text_element(cmd: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        cmd.add_element_with_text(name, value);
+    }
+}
+
+fn get_filters_command(request: &GetFiltersRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_filters");
     add_filter_attrs(
         &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "trash", request.trash);
+    set_optional_bool_attr(&mut cmd, "details", request.details);
+    set_optional_bool_attr(&mut cmd, "alerts", request.alerts);
     cmd
 }
 
-/// Build a `get_filter` request.
-#[must_use]
-pub fn get_filter(filter_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_filters")
-        .attribute("filter_id", filter_id.as_str())
-        .attribute("details", "1")
-}
-
-/// Build a `modify_filter` request.
-#[must_use]
-pub fn modify_filter(filter_id: &EntityId, opts: FilterOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_filter").attribute("filter_id", filter_id.as_str());
-    add_filter_body(&mut cmd, &opts);
+fn get_filter_command(request: &GetFilterRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("get_filters")
+        .attribute("filter_id", request.filter_id.as_str())
+        .attribute("details", "1");
+    set_optional_bool_attr(&mut cmd, "alerts", request.alerts);
     cmd
 }
 
-/// Build a `delete_filter` request.
-#[must_use]
-pub fn delete_filter(filter_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_filter")
-        .attribute("filter_id", filter_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
-}
-
-fn add_filter_body(cmd: &mut XmlCommand, opts: &FilterOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    add_text_element(cmd, "term", opts.term.as_deref());
-    if let Some(filter_type) = opts.filter_type {
+fn create_filter_command(request: &CreateFilterRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_filter");
+    cmd.add_element_with_text("name", &request.name);
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    add_optional_text_element(&mut cmd, "term", request.term.as_deref());
+    if let Some(filter_type) = request.filter_type {
         cmd.add_element_with_text("type", filter_type.as_gmp_str());
     }
-    if let Some(sort_order) = opts.sort_order {
-        cmd.add_element_with_text("sort_order", sort_order.as_gmp_str());
+    cmd
+}
+
+fn clone_filter_command(request: &CloneFilterRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_filter");
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    cmd.add_element_with_text("copy", request.filter_id.as_str());
+    cmd
+}
+
+fn modify_filter_command(request: &ModifyFilterRequest) -> XmlCommand {
+    let mut cmd =
+        XmlCommand::new("modify_filter").attribute("filter_id", request.filter_id.as_str());
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    add_optional_text_element(&mut cmd, "term", request.term.as_deref());
+    if let Some(filter_type) = request.filter_type {
+        cmd.add_element_with_text("type", filter_type.as_gmp_str());
     }
+    cmd
+}
+
+fn delete_filter_command(request: &DeleteFilterRequest) -> XmlCommand {
+    XmlCommand::new("delete_filter")
+        .attribute("filter_id", request.filter_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
+    fn request_xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(
+            request
+                .encode(GmpVersion(22, 8))
+                .expect("valid filter request"),
+        )
+        .expect("valid UTF-8")
+    }
+
     #[test]
-    fn semantic_filter_requests_match_builder_bytes_and_responses() {
+    fn requests_have_independent_exact_wire_shapes() {
+        assert_eq!(
+            request_xml(&GetFiltersRequest {
+                filter_string: Some("name=web".into()),
+                filter_id: Some(id("saved-filter")),
+                trash: Some(true),
+                details: Some(false),
+                alerts: Some(true),
+            }),
+            "<get_filters alerts=\"1\" details=\"0\" filt_id=\"saved-filter\" filter=\"name=web\" trash=\"1\"/>"
+        );
+
+        let mut get = GetFilterRequest::new(id("filter-1"));
+        get.alerts = Some(true);
+        assert_eq!(
+            request_xml(&get),
+            "<get_filters alerts=\"1\" details=\"1\" filter_id=\"filter-1\"/>"
+        );
+
+        let mut create = CreateFilterRequest::new("web");
+        create.comment = Some("web tasks".into());
+        create.term = Some("rows=10".into());
+        create.filter_type = Some(FilterType::Task);
+        assert_eq!(
+            request_xml(&create),
+            "<create_filter><name>web</name><comment>web tasks</comment><term>rows=10</term><type>task</type></create_filter>"
+        );
+
+        let mut clone = CloneFilterRequest::new(id("filter-1"));
+        clone.name = Some("web copy".into());
+        clone.comment = Some(String::new());
+        assert_eq!(
+            request_xml(&clone),
+            "<create_filter><name>web copy</name><comment></comment><copy>filter-1</copy></create_filter>"
+        );
+
+        let mut modify = ModifyFilterRequest::new(id("filter-1"));
+        modify.name = Some("renamed".into());
+        modify.comment = Some(String::new());
+        modify.term = Some("rows=-1".into());
+        modify.filter_type = Some(FilterType::Result);
+        assert_eq!(
+            request_xml(&modify),
+            "<modify_filter filter_id=\"filter-1\"><name>renamed</name><comment></comment><term>rows=-1</term><type>result</type></modify_filter>"
+        );
+
+        assert_eq!(
+            request_xml(&DeleteFilterRequest::new(id("filter-1"), true)),
+            "<delete_filter filter_id=\"filter-1\" ultimate=\"1\"/>"
+        );
+    }
+
+    #[test]
+    fn requests_keep_static_response_associations() {
         fn associated<R, T>(_: &R)
         where
             R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
+            T: GmpResponse,
         {
         }
-        let filter_id = id("filter-1");
-        let get_opts = GetFiltersOpts {
-            details: Some(true),
-            ..Default::default()
-        };
-        let opts = FilterOpts {
-            term: Some("rows=10".into()),
-            ..Default::default()
-        };
-        let list = GetFiltersRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_filters(get_opts).to_bytes());
-        associated::<_, GetFiltersResponse>(&list);
-        let get = GetFilterRequest::new(filter_id.clone());
-        assert_eq!(get.to_bytes(), get_filter(&filter_id).to_bytes());
-        associated::<_, GetFiltersResponse>(&get);
-        let create = CreateFilterRequest::new("filter", opts.clone());
-        assert_eq!(
-            create.to_bytes(),
-            create_filter("filter", opts.clone()).to_bytes()
-        );
-        associated::<_, CreateFilterResponse>(&create);
-        let clone = CloneFilterRequest::new(filter_id.clone());
-        assert_eq!(clone.to_bytes(), clone_filter(&filter_id).to_bytes());
-        associated::<_, CreateFilterResponse>(&clone);
-        let modify = ModifyFilterRequest::new(filter_id.clone(), opts.clone());
-        assert_eq!(
-            modify.to_bytes(),
-            modify_filter(&filter_id, opts).to_bytes()
-        );
-        associated::<_, ModifyFilterResponse>(&modify);
-        let delete = DeleteFilterRequest::new(filter_id.clone(), true);
-        assert_eq!(
-            delete.to_bytes(),
-            delete_filter(&filter_id, true).to_bytes()
-        );
-        associated::<_, DeleteFilterResponse>(&delete);
+
+        associated::<_, GetFiltersResponse>(&GetFiltersRequest::default());
+        associated::<_, GetFiltersResponse>(&GetFilterRequest::new(id("filter-1")));
+        associated::<_, CreateFilterResponse>(&CreateFilterRequest::new("filter"));
+        associated::<_, CreateFilterResponse>(&CloneFilterRequest::new(id("filter-1")));
+        associated::<_, ModifyFilterResponse>(&ModifyFilterRequest::new(id("filter-1")));
+        associated::<_, DeleteFilterResponse>(&DeleteFilterRequest::new(id("filter-1"), false));
     }
 
     #[test]
-    fn filter_commands_build_xml() {
-        let rendered = xml(create_filter(
-            "f",
-            FilterOpts {
-                term: Some("rows=10".into()),
-                filter_type: Some(FilterType::Task),
-                sort_order: Some(SortOrder::Ascending),
-                ..Default::default()
-            },
+    fn empty_names_fail_final_value_validation() {
+        let mut create = CreateFilterRequest::new("filter");
+        create.name.clear();
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
         ));
-        assert!(rendered.contains("<term>rows=10</term>"));
-        assert_eq!(
-            xml(clone_filter(&id("f1"))),
-            "<create_filter><copy>f1</copy></create_filter>"
-        );
-        assert_eq!(
-            xml(get_filter(&id("f1"))),
-            "<get_filters details=\"1\" filter_id=\"f1\"/>"
-        );
+
+        let mut clone = CloneFilterRequest::new(id("filter-1"));
+        clone.name = Some(String::new());
+        assert!(matches!(
+            clone.validate(),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
+        ));
+
+        let mut modify = ModifyFilterRequest::new(id("filter-1"));
+        modify.name = Some(String::new());
+        assert!(matches!(
+            modify.validate(),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
+        ));
     }
 
     #[test]
-    fn filter_get_modify_delete_build_xml() {
-        let rendered = xml(get_filters(GetFiltersOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        let rendered = xml(modify_filter(
-            &id("f1"),
-            FilterOpts {
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
-        ));
+    fn aliases_have_distinct_semantic_names() {
         assert_eq!(
-            rendered,
-            "<modify_filter filter_id=\"f1\"><comment>updated</comment></modify_filter>"
+            GetFilterRequest::new(id("filter-1"))
+                .command()
+                .expect("semantic command")
+                .semantic_name(),
+            Some("get_filter")
         );
         assert_eq!(
-            xml(delete_filter(&id("f1"), false)),
-            "<delete_filter filter_id=\"f1\" ultimate=\"0\"/>"
+            CloneFilterRequest::new(id("filter-1"))
+                .command()
+                .expect("semantic command")
+                .semantic_name(),
+            Some("clone_filter")
         );
     }
 }

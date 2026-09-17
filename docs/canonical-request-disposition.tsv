@@ -50,12 +50,12 @@ builder	crates/gvm-gmp/src/commands/credentials.rs	verify_credential_store	remov
 builder	crates/gvm-gmp/src/commands/features.rs	get_features	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/feed.rs	get_feed	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/feed.rs	get_feeds	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/filters.rs	clone_filter	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/filters.rs	create_filter	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/filters.rs	delete_filter	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/filters.rs	get_filter	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/filters.rs	get_filters	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/filters.rs	modify_filter	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/filters.rs	clone_filter	removed	Removed by #622; CloneFilterRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/filters.rs	create_filter	removed	Removed by #622; CreateFilterRequest owns validation and canonical encoding.
+builder	crates/gvm-gmp/src/commands/filters.rs	delete_filter	removed	Removed by #622; DeleteFilterRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/filters.rs	get_filter	removed	Removed by #622; GetFilterRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/filters.rs	get_filters	removed	Removed by #622; GetFiltersRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/filters.rs	modify_filter	removed	Removed by #622; ModifyFilterRequest owns validation and canonical encoding.
 builder	crates/gvm-gmp/src/commands/groups.rs	clone_group	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/groups.rs	create_group	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/groups.rs	delete_group	transitional	Pending bounded family migration under #602.
@@ -329,24 +329,24 @@ facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config	retained-
 facade	crates/gvm-client/src/typed/agents.rs	modify_integration_config_parsed	removed	Removed by #615; modify_integration_config now returns the typed response.
 facade	crates/gvm-client/src/typed/agents.rs	sync_agents	retained-construction	Retained for discoverability; accepts the canonical SyncAgentsRequest unchanged.
 facade	crates/gvm-client/src/typed/automation.rs	clone_alert	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	clone_filter	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	clone_filter	canonical-request	Accepts CloneFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	clone_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	clone_tag	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	create_alert	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	create_filter	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	create_filter	canonical-request	Accepts CreateFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	create_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	create_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	create_tag	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	delete_alert	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	delete_filter	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	delete_filter	canonical-request	Accepts DeleteFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	delete_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	delete_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	delete_tag	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_alert	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_alerts	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	get_filter	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	get_filters	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	get_filter	canonical-request	Accepts GetFilterRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/automation.rs	get_filters	canonical-request	Accepts GetFiltersRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	get_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_notes	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_override	transitional	Pending bounded family migration under #602.
@@ -354,7 +354,7 @@ facade	crates/gvm-client/src/typed/automation.rs	get_overrides	transitional	Pend
 facade	crates/gvm-client/src/typed/automation.rs	get_tag	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	get_tags	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	modify_alert	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/automation.rs	modify_filter	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/automation.rs	modify_filter	canonical-request	Accepts ModifyFilterRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/automation.rs	modify_note	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	modify_override	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/automation.rs	modify_tag	transitional	Pending bounded family migration under #602.
@@ -621,8 +621,8 @@ options	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialsOpts	removed	Re
 options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialOpts	removed	Removed by #620; fields now belong to ModifyCredentialRequest.
 options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreCredentialOpts	removed	Removed by #620; fields now belong to ModifyCredentialStoreCredentialRequest.
 options	crates/gvm-gmp/src/commands/credentials.rs	ModifyCredentialStoreOpts	removed	Removed by #620; fields now belong to ModifyCredentialStoreRequest.
-options	crates/gvm-gmp/src/commands/filters.rs	FilterOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/filters.rs	GetFiltersOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/filters.rs	FilterOpts	removed	Removed by #622; supported fields now belong to create, clone, and modify requests.
+options	crates/gvm-gmp/src/commands/filters.rs	GetFiltersOpts	removed	Removed by #622; fields now belong to GetFiltersRequest.
 options	crates/gvm-gmp/src/commands/groups.rs	GetGroupsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/groups.rs	GroupOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/hosts.rs	GetHostsOpts	transitional	Pending bounded family migration under #602.
@@ -757,10 +757,12 @@ request	crates/gvm-gmp/src/commands/credentials.rs	VerifyCredentialStoreRequest	
 request	crates/gvm-gmp/src/commands/features.rs	GetFeaturesRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/feed.rs	GetFeedRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/feed.rs	GetFeedsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/filters.rs	CreateFilterRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/filters.rs	DeleteFilterRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/filters.rs	GetFiltersRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/filters.rs	ModifyFilterRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/filters.rs	CloneFilterRequest	canonical-request	Complete clone request owns the create_filter semantic alias and optional gvmd-supported overrides.
+request	crates/gvm-gmp/src/commands/filters.rs	CreateFilterRequest	canonical-request	Complete create request owns validation and XML encoding.
+request	crates/gvm-gmp/src/commands/filters.rs	DeleteFilterRequest	canonical-request	Complete delete request owns the filter identifier and ultimate flag.
+request	crates/gvm-gmp/src/commands/filters.rs	GetFilterRequest	canonical-request	Complete detail request owns the get_filters semantic alias and alert expansion selector.
+request	crates/gvm-gmp/src/commands/filters.rs	GetFiltersRequest	canonical-request	Complete list request owns all supported selectors and XML encoding.
+request	crates/gvm-gmp/src/commands/filters.rs	ModifyFilterRequest	canonical-request	Complete modify request owns validation and XML encoding.
 request	crates/gvm-gmp/src/commands/groups.rs	CreateGroupRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/groups.rs	DeleteGroupRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/groups.rs	GetGroupsRequest	transitional	Pending bounded family migration under #602.

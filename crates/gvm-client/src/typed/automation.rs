@@ -9,8 +9,8 @@ use gvm_gmp::commands::alerts::{
     TriggerAlertRequest,
 };
 use gvm_gmp::commands::filters::{
-    CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, FilterOpts, GetFilterRequest,
-    GetFiltersOpts, GetFiltersRequest, ModifyFilterRequest,
+    CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, GetFilterRequest,
+    GetFiltersRequest, ModifyFilterRequest,
 };
 use gvm_gmp::commands::notes::{
     CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesOpts,
@@ -136,9 +136,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_filters(
         &mut self,
-        opts: GetFiltersOpts,
+        request: GetFiltersRequest,
     ) -> Result<GetFiltersResponse, GvmError> {
-        self.execute(GetFiltersRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a detailed single-filter request.
@@ -147,9 +147,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_filter(
         &mut self,
-        filter_id: &EntityId,
+        request: GetFilterRequest,
     ) -> Result<GetFiltersResponse, GvmError> {
-        self.execute(GetFilterRequest::new(filter_id.clone())).await
+        self.execute(request).await
     }
 
     /// Send a `create_filter` request and return a typed [`CreateFilterResponse`].
@@ -158,10 +158,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_filter(
         &mut self,
-        name: &str,
-        opts: FilterOpts,
+        request: CreateFilterRequest,
     ) -> Result<CreateFilterResponse, GvmError> {
-        self.execute(CreateFilterRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Clone a filter through `create_filter`.
@@ -170,10 +169,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_filter(
         &mut self,
-        filter_id: &EntityId,
+        request: CloneFilterRequest,
     ) -> Result<CreateFilterResponse, GvmError> {
-        self.execute(CloneFilterRequest::new(filter_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_filter` request.
@@ -182,11 +180,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_filter(
         &mut self,
-        filter_id: &EntityId,
-        opts: FilterOpts,
+        request: ModifyFilterRequest,
     ) -> Result<ModifyFilterResponse, GvmError> {
-        self.execute(ModifyFilterRequest::new(filter_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_filter` request.
@@ -195,11 +191,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_filter(
         &mut self,
-        filter_id: &EntityId,
-        ultimate: bool,
+        request: DeleteFilterRequest,
     ) -> Result<DeleteFilterResponse, GvmError> {
-        self.execute(DeleteFilterRequest::new(filter_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     // ── Notes ─────────────────────────────────────────────────────────────────

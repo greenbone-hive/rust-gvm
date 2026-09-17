@@ -254,6 +254,21 @@ trace boundary redact credential material, vault/host identifiers, and
 preference values. The low-level raw `send`/`call` path remains available for
 custom XML.
 
+## Canonical filter requests
+
+Filter list, detail, create, clone, modify, and delete operations use complete
+canonical requests. `FilterOpts`, `GetFiltersOpts`, and the six forwarding
+builders are removed; discoverable client methods accept the same request
+values and delegate to `execute`. Detail and clone preserve their semantic
+aliases over the `get_filters` and `create_filter` wire roots.
+
+The request model follows pinned gvmd rather than the transitional builder:
+sorting remains part of the filter term, so the unsupported `sort_order` child
+is gone. Modify supports filter rename, clone supports optional name/comment
+overrides, and list/detail support alert expansion. Required or explicitly
+replaced names are validated from the final value before support checks and
+transport.
+
 ## Alert and schedule command shapes
 
 Semantic requests model every public alert and schedule operation even when
