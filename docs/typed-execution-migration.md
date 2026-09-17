@@ -173,6 +173,43 @@ transport, including clone and detail semantic aliases over the create and
 list wire roots. Specialized `create_agent_group_task` remains in the task
 family and is not changed by this migration.
 
+## Agent family
+
+The agent slice removes `GetAgentsOpts`, `ModifyAgentOpts`,
+`ModifyAgentControlScanConfigOpts`, and all eight free builders. List requests
+implement `Default`; detail, delete, installer-instruction, support-bundle, and
+agent-control-default requests use constructors for their required values.
+Agent updates start with the selected identifiers, with optional mutation
+fields on the same request:
+
+```rust
+use gvm_gmp::commands::agents::{
+    GetAgentSupportBundleRequest, ModifyAgentRequest,
+};
+
+let mut modify = ModifyAgentRequest::new(vec![agent_id.clone()]);
+modify.authorized = Some(true);
+modify.update_to_latest = Some(true);
+modify.comment = Some("production agent".into());
+client.modify_agent(modify).await?;
+
+let bundle = client
+    .get_agent_support_bundle(GetAgentSupportBundleRequest::new(
+        agent_id,
+        Some(7),
+    ))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`AgentConfigOpts` is intentionally retained as reusable nested configuration
+for both agent updates and agent-control defaults. `SyncAgentsRequest` is an
+input-free request value. The eight named client conveniences accept the
+canonical requests unchanged and preserve the installer-instruction and
+binary support-bundle response types. Every operation remains gated to GMP
+22.8 before encoding or transport; detail remains a semantic alias over the
+`get_agents` wire root.
+
 ## Moving from a raw builder
 
 Raw execution remains available:

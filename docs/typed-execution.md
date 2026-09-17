@@ -182,9 +182,12 @@ All agent, agent-group, and integration-configuration commands require GMP
 canonical: they directly own filters, identifiers, scheduler values, repeated
 agent relationships, mutation fields, semantic aliases, and exact XML. Their
 named facade methods accept the same requests and delegate to `execute`.
-Agent and integration-configuration requests remain transitional and delegate
-to existing builders; parsed integration helpers and raw integration methods
-retain their established behavior.
+Agent list, detail, modify, delete, synchronization, agent-control-default,
+installer-instruction, and support-bundle requests follow the same contract.
+`AgentConfigOpts` remains a reusable nested configuration value shared by the
+two agent mutation shapes. Integration-configuration requests remain
+transitional and delegate to existing builders; parsed integration helpers and
+raw integration methods retain their established behavior.
 
 Agent installer instructions retain their language and origin metadata.
 Support-bundle responses continue to decode base64 content into binary bytes

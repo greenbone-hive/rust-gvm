@@ -14,8 +14,7 @@ use gvm_gmp::commands::agent_groups::{
 use gvm_gmp::commands::agents::{
     AgentInstallerLanguage, DeleteAgentRequest, GetAgentInstallerInstructionRequest,
     GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
-    ModifyAgentControlScanConfigOpts, ModifyAgentControlScanConfigRequest, ModifyAgentOpts,
-    ModifyAgentRequest, SyncAgentsRequest,
+    ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::aggregates::GetAggregatesRequestOpts;
 use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts, TriggerAlertOpts};
@@ -3578,10 +3577,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         "22.8"
     );
     assert_unsupported_command!(
-        v227_client.execute(ModifyAgentRequest::new(
-            vec![id("agent-1")],
-            ModifyAgentOpts::default(),
-        )),
+        v227_client.execute(ModifyAgentRequest::new(vec![id("agent-1")])),
         "modify_agent",
         GmpVersion(22, 7),
         "22.8"
@@ -3599,10 +3595,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         "22.8"
     );
     assert_unsupported_command!(
-        v227_client.execute(ModifyAgentControlScanConfigRequest::new(
-            id("scanner-1"),
-            ModifyAgentControlScanConfigOpts::default(),
-        )),
+        v227_client.execute(ModifyAgentControlScanConfigRequest::new(id("scanner-1"))),
         "modify_agent_control_scan_config",
         GmpVersion(22, 7),
         "22.8"

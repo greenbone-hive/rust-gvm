@@ -10,6 +10,14 @@ use std::path::PathBuf;
 const INTEGRATION_COVERED: &[&str] = &[
     "get_version",
     "authenticate",
+    "get_agents",
+    "get_agent",
+    "modify_agent",
+    "delete_agent",
+    "sync_agents",
+    "modify_agent_control_scan_config",
+    "get_agent_installer_instruction",
+    "get_agent_support_bundle",
     "get_targets",
     "get_target",
     "create_target",
@@ -383,7 +391,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 257);
+    assert_eq!(direct_execute_count, 265);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

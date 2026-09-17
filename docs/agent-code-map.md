@@ -11,6 +11,7 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/target-request-gvmd-evidence.md`: pinned public gvmd schema/source evidence for the canonical target reference slice.
 - `docs/alternate-target-request-gvmd-evidence.md`: pinned gvmd evidence for canonical OCI-image and web-application target requests.
 - `docs/agent-group-request-gvmd-evidence.md`: pinned gvmd evidence for the canonical agent-group lifecycle.
+- `docs/agent-request-gvmd-evidence.md`: pinned gvmd evidence for canonical agent operations and support-bundle decoding.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -43,7 +44,8 @@ Adding or changing a GMP command:
 - For a converted family, put all required and optional inputs on one request,
   implement `GmpRequestCodec` directly, and update
   `docs/canonical-request-disposition.tsv`. Standard targets are the reference;
-  alternate targets and agent groups show the same contract on GMP 22.8.
+  alternate targets, agent groups, and agents show the same contract on GMP
+  22.8.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.
 - If version-gated, update `crates/gvm-client/src/version.rs` and any typed version traits in `crates/gvm-client/src/lib.rs`.

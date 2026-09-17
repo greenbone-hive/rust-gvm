@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Agent command builders.
+//! Canonical requests for agent operations.
 
-use gvm_protocol::{xml_command::XmlElement, Request, XmlCommand};
+use gvm_protocol::{xml_command::XmlElement, Request as _, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str};
 use crate::responses::{
@@ -12,7 +12,7 @@ use crate::responses::{
     SyncAgentsResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
 /// Supported agent installer instruction languages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,15 +32,6 @@ impl AgentInstallerLanguage {
             Self::De => "de",
         }
     }
-}
-
-/// Options for `get_agents` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetAgentsOpts {
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
 }
 
 /// Retry defaults inside an agent configuration.
@@ -83,7 +74,7 @@ pub struct AgentHeartbeatConfig {
     pub miss_until_inactive: Option<u32>,
 }
 
-/// Agent configuration payload shared by agent update commands.
+/// Reusable agent configuration payload shared by agent update requests.
 #[derive(Debug, Clone, Default)]
 pub struct AgentConfigOpts {
     /// Agent-control configuration.
@@ -94,43 +85,22 @@ pub struct AgentConfigOpts {
     pub heartbeat: Option<AgentHeartbeatConfig>,
 }
 
-/// Optional fields for `modify_agent` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyAgentOpts {
-    /// Whether the selected agents are authorized.
-    pub authorized: Option<bool>,
-    /// Whether selected agents should update to the latest version.
-    pub update_to_latest: Option<bool>,
-    /// Optional comment text.
-    pub comment: Option<String>,
-    /// Optional agent configuration update.
-    pub config: Option<AgentConfigOpts>,
-}
-
-/// Optional fields for `modify_agent_control_scan_config` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyAgentControlScanConfigOpts {
-    /// Default configuration for agents controlled by this scanner.
-    pub agent_defaults: Option<AgentConfigOpts>,
-    /// Default update-to-latest value for controlled agents.
-    pub update_to_latest: Option<bool>,
-}
-
 /// Semantic request for listing agents.
 #[derive(Debug, Clone, Default)]
-pub struct GetAgentsRequest(GetAgentsOpts);
-
-impl GetAgentsRequest {
-    /// Create an agent-list request.
-    #[must_use]
-    pub fn new(opts: GetAgentsOpts) -> Self {
-        Self(opts)
-    }
+pub struct GetAgentsRequest {
+    /// Optional inline filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
+    pub filter_id: Option<EntityId>,
 }
 
-impl Request for GetAgentsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_agents(self.0.clone()).to_bytes()
+impl GmpRequestCodec for GetAgentsRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_agents"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_agents_command(self).to_bytes())
     }
 }
 
@@ -140,19 +110,26 @@ impl GmpRequest for GetAgentsRequest {
 
 /// Semantic request for one agent.
 #[derive(Debug, Clone)]
-pub struct GetAgentRequest(EntityId);
+pub struct GetAgentRequest {
+    /// Agent identifier to retrieve.
+    pub agent_id: EntityId,
+}
 
 impl GetAgentRequest {
     /// Create a single-agent request.
     #[must_use]
     pub fn new(agent_id: EntityId) -> Self {
-        Self(agent_id)
+        Self { agent_id }
     }
 }
 
-impl Request for GetAgentRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_agent(&self.0).to_bytes()
+impl GmpRequestCodec for GetAgentRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_agents", "get_agent"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_agent_command(&self.agent_id).to_bytes())
     }
 }
 
@@ -160,24 +137,42 @@ impl GmpRequest for GetAgentRequest {
     type Response = GetAgentsResponse;
 }
 
-/// Semantic request for modifying agents.
+/// Semantic request for modifying one or more agents.
 #[derive(Debug, Clone)]
 pub struct ModifyAgentRequest {
-    agent_ids: Vec<EntityId>,
-    opts: ModifyAgentOpts,
+    /// Agent identifiers to modify.
+    pub agent_ids: Vec<EntityId>,
+    /// Whether the selected agents are authorized.
+    pub authorized: Option<bool>,
+    /// Whether selected agents should update to the latest version.
+    pub update_to_latest: Option<bool>,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// Optional shared agent configuration update.
+    pub config: Option<AgentConfigOpts>,
 }
 
 impl ModifyAgentRequest {
-    /// Create an agent-modification request.
+    /// Create an agent-modification request with its selected agents.
     #[must_use]
-    pub fn new(agent_ids: Vec<EntityId>, opts: ModifyAgentOpts) -> Self {
-        Self { agent_ids, opts }
+    pub fn new(agent_ids: Vec<EntityId>) -> Self {
+        Self {
+            agent_ids,
+            authorized: None,
+            update_to_latest: None,
+            comment: None,
+            config: None,
+        }
     }
 }
 
-impl Request for ModifyAgentRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_agent(&self.agent_ids, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for ModifyAgentRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_agent"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(modify_agent_command(self).to_bytes())
     }
 }
 
@@ -185,21 +180,28 @@ impl GmpRequest for ModifyAgentRequest {
     type Response = ModifyAgentResponse;
 }
 
-/// Semantic request for deleting agents.
+/// Semantic request for deleting one or more agents.
 #[derive(Debug, Clone)]
-pub struct DeleteAgentRequest(Vec<EntityId>);
+pub struct DeleteAgentRequest {
+    /// Agent identifiers to delete.
+    pub agent_ids: Vec<EntityId>,
+}
 
 impl DeleteAgentRequest {
     /// Create an agent-deletion request.
     #[must_use]
     pub fn new(agent_ids: Vec<EntityId>) -> Self {
-        Self(agent_ids)
+        Self { agent_ids }
     }
 }
 
-impl Request for DeleteAgentRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_agent(&self.0).to_bytes()
+impl GmpRequestCodec for DeleteAgentRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_agent"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_agent_command(&self.agent_ids).to_bytes())
     }
 }
 
@@ -219,9 +221,13 @@ impl SyncAgentsRequest {
     }
 }
 
-impl Request for SyncAgentsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        sync_agents().to_bytes()
+impl GmpRequestCodec for SyncAgentsRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("sync_agents"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("sync_agents").to_bytes())
     }
 }
 
@@ -232,24 +238,33 @@ impl GmpRequest for SyncAgentsRequest {
 /// Semantic request for modifying agent-control defaults.
 #[derive(Debug, Clone)]
 pub struct ModifyAgentControlScanConfigRequest {
-    agent_control_id: EntityId,
-    opts: ModifyAgentControlScanConfigOpts,
+    /// Agent-control scanner identifier to modify.
+    pub agent_control_id: EntityId,
+    /// Default configuration for controlled agents.
+    pub agent_defaults: Option<AgentConfigOpts>,
+    /// Default update-to-latest value for controlled agents.
+    pub update_to_latest: Option<bool>,
 }
 
 impl ModifyAgentControlScanConfigRequest {
     /// Create an agent-control defaults request.
     #[must_use]
-    pub fn new(agent_control_id: EntityId, opts: ModifyAgentControlScanConfigOpts) -> Self {
+    pub fn new(agent_control_id: EntityId) -> Self {
         Self {
             agent_control_id,
-            opts,
+            agent_defaults: None,
+            update_to_latest: None,
         }
     }
 }
 
-impl Request for ModifyAgentControlScanConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_agent_control_scan_config(&self.agent_control_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for ModifyAgentControlScanConfigRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_agent_control_scan_config"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(modify_agent_control_scan_config_command(self).to_bytes())
     }
 }
 
@@ -260,9 +275,12 @@ impl GmpRequest for ModifyAgentControlScanConfigRequest {
 /// Semantic request for agent installer instructions.
 #[derive(Debug, Clone)]
 pub struct GetAgentInstallerInstructionRequest {
-    scanner_id: EntityId,
-    language: AgentInstallerLanguage,
-    origin_url: String,
+    /// Scanner identifier for which to render the instructions.
+    pub scanner_id: EntityId,
+    /// Instruction language.
+    pub language: AgentInstallerLanguage,
+    /// Public origin URL used by the installer instructions.
+    pub origin_url: String,
 }
 
 impl GetAgentInstallerInstructionRequest {
@@ -281,10 +299,13 @@ impl GetAgentInstallerInstructionRequest {
     }
 }
 
-impl Request for GetAgentInstallerInstructionRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_agent_installer_instruction(&self.scanner_id, self.language, &self.origin_url)
-            .to_bytes()
+impl GmpRequestCodec for GetAgentInstallerInstructionRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_agent_installer_instruction"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_agent_installer_instruction_command(self).to_bytes())
     }
 }
 
@@ -295,8 +316,10 @@ impl GmpRequest for GetAgentInstallerInstructionRequest {
 /// Semantic request for an agent support bundle.
 #[derive(Debug, Clone)]
 pub struct GetAgentSupportBundleRequest {
-    agent_uuid: EntityId,
-    days: Option<u32>,
+    /// Agent identifier whose support bundle should be generated.
+    pub agent_uuid: EntityId,
+    /// Optional number of days to include.
+    pub days: Option<u32>,
 }
 
 impl GetAgentSupportBundleRequest {
@@ -307,9 +330,13 @@ impl GetAgentSupportBundleRequest {
     }
 }
 
-impl Request for GetAgentSupportBundleRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_agent_support_bundle(&self.agent_uuid, self.days).to_bytes()
+impl GmpRequestCodec for GetAgentSupportBundleRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_agent_support_bundle"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_agent_support_bundle_command(self).to_bytes())
     }
 }
 
@@ -317,71 +344,54 @@ impl GmpRequest for GetAgentSupportBundleRequest {
     type Response = GetAgentSupportBundleResponse;
 }
 
-/// Build a `get_agents` request.
-#[must_use]
-pub fn get_agents(opts: GetAgentsOpts) -> impl Request {
+fn get_agents_command(request: &GetAgentsRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_agents");
     add_filter_attrs(
         &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
     cmd
 }
 
-/// Build a `get_agent` request.
-#[must_use]
-pub fn get_agent(agent_id: &EntityId) -> impl Request {
+fn get_agent_command(agent_id: &EntityId) -> XmlCommand {
     XmlCommand::new("get_agents").attribute("agent_id", agent_id.as_str())
 }
 
-/// Build a `modify_agent` request.
-#[must_use]
-pub fn modify_agent(agent_ids: &[EntityId], opts: ModifyAgentOpts) -> impl Request {
+fn modify_agent_command(request: &ModifyAgentRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("modify_agent");
-    add_agents_element(&mut cmd, agent_ids);
-    if let Some(authorized) = opts.authorized {
+    add_agents_element(&mut cmd, &request.agent_ids);
+    if let Some(authorized) = request.authorized {
         cmd.add_element_with_text("authorized", bool_str(authorized));
     }
-    if let Some(update_to_latest) = opts.update_to_latest {
+    if let Some(update_to_latest) = request.update_to_latest {
         cmd.add_element_with_text("update_to_latest", bool_str(update_to_latest));
     }
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(config) = opts.config.as_ref() {
+    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    if let Some(config) = request.config.as_ref() {
         let config_element = cmd.add_element("config");
         add_agent_config(config_element, config);
     }
     cmd
 }
 
-/// Build a `delete_agent` request.
-#[must_use]
-pub fn delete_agent(agent_ids: &[EntityId]) -> impl Request {
+fn delete_agent_command(agent_ids: &[EntityId]) -> XmlCommand {
     let mut cmd = XmlCommand::new("delete_agent");
     add_agents_element(&mut cmd, agent_ids);
     cmd
 }
 
-/// Build a `sync_agents` request.
-#[must_use]
-pub fn sync_agents() -> impl Request {
-    XmlCommand::new("sync_agents")
-}
-
-/// Build a `modify_agent_control_scan_config` request.
-#[must_use]
-pub fn modify_agent_control_scan_config(
-    agent_control_id: &EntityId,
-    opts: ModifyAgentControlScanConfigOpts,
-) -> impl Request {
+fn modify_agent_control_scan_config_command(
+    request: &ModifyAgentControlScanConfigRequest,
+) -> XmlCommand {
     let mut cmd = XmlCommand::new("modify_agent_control_scan_config")
-        .attribute("agent_control_id", agent_control_id.as_str());
+        .attribute("agent_control_id", request.agent_control_id.as_str());
     let defaults = cmd.add_element("config_defaults");
-    if let Some(agent_defaults) = opts.agent_defaults.as_ref() {
+    if let Some(agent_defaults) = request.agent_defaults.as_ref() {
         let agent_defaults_element = defaults.add_child("agent_defaults");
         add_agent_config(agent_defaults_element, agent_defaults);
     }
-    if let Some(update_to_latest) = opts.update_to_latest {
+    if let Some(update_to_latest) = request.update_to_latest {
         defaults
             .add_child("agent_control_defaults")
             .add_child_with_text("update_to_latest", bool_str(update_to_latest));
@@ -389,25 +399,19 @@ pub fn modify_agent_control_scan_config(
     cmd
 }
 
-/// Build a `get_agent_installer_instruction` request.
-#[must_use]
-pub fn get_agent_installer_instruction(
-    scanner_id: &EntityId,
-    language: AgentInstallerLanguage,
-    origin_url: &str,
-) -> impl Request {
+fn get_agent_installer_instruction_command(
+    request: &GetAgentInstallerInstructionRequest,
+) -> XmlCommand {
     XmlCommand::new("get_agent_installer_instruction")
-        .attribute("language", language.as_gmp_str())
-        .attribute("origin_url", origin_url)
-        .attribute("scanner_id", scanner_id.as_str())
+        .attribute("language", request.language.as_gmp_str())
+        .attribute("origin_url", &request.origin_url)
+        .attribute("scanner_id", request.scanner_id.as_str())
 }
 
-/// Build a `get_agent_support_bundle` request.
-#[must_use]
-pub fn get_agent_support_bundle(agent_uuid: &EntityId, days: Option<u32>) -> impl Request {
-    let mut cmd =
-        XmlCommand::new("get_agent_support_bundle").attribute("agent_uuid", agent_uuid.as_str());
-    if let Some(days) = days {
+fn get_agent_support_bundle_command(request: &GetAgentSupportBundleRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("get_agent_support_bundle")
+        .attribute("agent_uuid", request.agent_uuid.as_str());
+    if let Some(days) = request.days {
         cmd.set_attribute("days", &days.to_string());
     }
     cmd
@@ -480,12 +484,7 @@ fn add_u32_child(parent: &mut XmlElement, name: &str, value: Option<u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
-    use crate::responses::{
-        DeleteAgentResponse, GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse,
-        GetAgentsResponse, ModifyAgentControlScanConfigResponse, ModifyAgentResponse,
-        SyncAgentsResponse,
-    };
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
@@ -513,151 +512,132 @@ mod tests {
         }
     }
 
+    fn request_xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(
+            request
+                .encode(GmpVersion(22, 8))
+                .expect("valid agent request"),
+        )
+        .expect("valid UTF-8")
+    }
+
     #[test]
-    fn agent_get_builds_xml() {
+    fn requests_have_independent_exact_wire_shapes() {
         assert_eq!(
-            xml(get_agents(GetAgentsOpts {
+            request_xml(&GetAgentsRequest {
                 filter_string: Some("scanner=agent-controller".into()),
                 filter_id: Some(id("filter-1")),
-            })),
+            }),
             "<get_agents filt_id=\"filter-1\" filter=\"scanner=agent-controller\"/>"
         );
         assert_eq!(
-            xml(get_agent(&id("agent-1"))),
+            request_xml(&GetAgentRequest::new(id("agent-1"))),
             "<get_agents agent_id=\"agent-1\"/>"
         );
-    }
 
-    #[test]
-    fn agent_modify_and_delete_build_xml() {
+        let mut modify = ModifyAgentRequest::new(vec![id("agent-1"), id("agent-2")]);
+        modify.authorized = Some(true);
+        modify.update_to_latest = Some(false);
+        modify.comment = Some("managed".into());
+        modify.config = Some(sample_config());
         assert_eq!(
-            xml(modify_agent(
-                &[id("agent-1"), id("agent-2")],
-                ModifyAgentOpts {
-                    authorized: Some(true),
-                    update_to_latest: Some(false),
-                    comment: Some("managed".into()),
-                    config: Some(sample_config()),
-                },
-            )),
+            request_xml(&modify),
             "<modify_agent><agents><agent id=\"agent-1\"/><agent id=\"agent-2\"/></agents><authorized>1</authorized><update_to_latest>0</update_to_latest><comment>managed</comment><config><agent_control><retry><attempts>3</attempts><delay_in_seconds>10</delay_in_seconds><max_jitter_in_seconds>5</max_jitter_in_seconds></retry></agent_control><agent_script_executor><bulk_size>20</bulk_size><bulk_throttle_time_in_ms>100</bulk_throttle_time_in_ms><indexer_dir_depth>4</indexer_dir_depth><scheduler_cron_time><item>0 */6 * * *</item><item>30 */6 * * *</item></scheduler_cron_time></agent_script_executor><heartbeat><interval_in_seconds>60</interval_in_seconds><miss_until_inactive>3</miss_until_inactive></heartbeat></config></modify_agent>"
         );
         assert_eq!(
-            xml(delete_agent(&[id("agent-1"), id("agent-2")])),
+            request_xml(&DeleteAgentRequest::new(vec![id("agent-1"), id("agent-2")])),
             "<delete_agent><agents><agent id=\"agent-1\"/><agent id=\"agent-2\"/></agents></delete_agent>"
         );
-    }
+        assert_eq!(request_xml(&SyncAgentsRequest), "<sync_agents/>");
 
-    #[test]
-    fn agent_sync_and_control_config_build_xml() {
-        assert_eq!(xml(sync_agents()), "<sync_agents/>");
+        let mut control = ModifyAgentControlScanConfigRequest::new(id("scanner-1"));
+        control.agent_defaults = Some(sample_config());
+        control.update_to_latest = Some(true);
         assert_eq!(
-            xml(modify_agent_control_scan_config(
-                &id("scanner-1"),
-                ModifyAgentControlScanConfigOpts {
-                    agent_defaults: Some(sample_config()),
-                    update_to_latest: Some(true),
-                },
-            )),
+            request_xml(&control),
             "<modify_agent_control_scan_config agent_control_id=\"scanner-1\"><config_defaults><agent_defaults><agent_control><retry><attempts>3</attempts><delay_in_seconds>10</delay_in_seconds><max_jitter_in_seconds>5</max_jitter_in_seconds></retry></agent_control><agent_script_executor><bulk_size>20</bulk_size><bulk_throttle_time_in_ms>100</bulk_throttle_time_in_ms><indexer_dir_depth>4</indexer_dir_depth><scheduler_cron_time><item>0 */6 * * *</item><item>30 */6 * * *</item></scheduler_cron_time></agent_script_executor><heartbeat><interval_in_seconds>60</interval_in_seconds><miss_until_inactive>3</miss_until_inactive></heartbeat></agent_defaults><agent_control_defaults><update_to_latest>1</update_to_latest></agent_control_defaults></config_defaults></modify_agent_control_scan_config>"
         );
-    }
-
-    #[test]
-    fn agent_installer_and_support_bundle_build_xml() {
         assert_eq!(
-            xml(get_agent_installer_instruction(
-                &id("scanner-1"),
+            request_xml(&GetAgentInstallerInstructionRequest::new(
+                id("scanner-1"),
                 AgentInstallerLanguage::En,
                 "https://gvmd.example",
             )),
             "<get_agent_installer_instruction language=\"en\" origin_url=\"https://gvmd.example\" scanner_id=\"scanner-1\"/>"
         );
         assert_eq!(
-            xml(get_agent_support_bundle(&id("agent-1"), Some(14))),
+            request_xml(&GetAgentSupportBundleRequest::new(id("agent-1"), Some(14))),
             "<get_agent_support_bundle agent_uuid=\"agent-1\" days=\"14\"/>"
         );
         assert_eq!(
-            xml(get_agent_support_bundle(&id("agent-1"), None)),
+            request_xml(&GetAgentSupportBundleRequest::new(id("agent-1"), None)),
             "<get_agent_support_bundle agent_uuid=\"agent-1\"/>"
         );
     }
 
     #[test]
-    fn semantic_requests_preserve_builder_bytes_and_response_associations() {
-        fn agents<R: GmpRequest<Response = GetAgentsResponse>>(_: &R) {}
-        fn modify<R: GmpRequest<Response = ModifyAgentResponse>>(_: &R) {}
-        fn delete<R: GmpRequest<Response = DeleteAgentResponse>>(_: &R) {}
-        fn sync<R: GmpRequest<Response = SyncAgentsResponse>>(_: &R) {}
-        fn control<R: GmpRequest<Response = ModifyAgentControlScanConfigResponse>>(_: &R) {}
-        fn instruction<R: GmpRequest<Response = GetAgentInstallerInstructionResponse>>(_: &R) {}
-        fn bundle<R: GmpRequest<Response = GetAgentSupportBundleResponse>>(_: &R) {}
-
-        let agent_id = id("agent-1");
-        let agent_ids = vec![agent_id.clone(), id("agent-2")];
-        let list_opts = GetAgentsOpts {
-            filter_string: Some("scanner=agent-controller".into()),
-            filter_id: Some(id("filter-1")),
-        };
-        let modify_opts = ModifyAgentOpts {
-            authorized: Some(true),
-            update_to_latest: Some(false),
-            comment: Some("managed".into()),
-            config: Some(sample_config()),
-        };
-        let control_opts = ModifyAgentControlScanConfigOpts {
-            agent_defaults: Some(sample_config()),
-            update_to_latest: Some(true),
-        };
-
-        let list = GetAgentsRequest::new(list_opts.clone());
-        agents(&list);
-        assert_eq!(list.to_bytes(), get_agents(list_opts).to_bytes());
-        let get = GetAgentRequest::new(agent_id.clone());
-        agents(&get);
-        assert_eq!(get.to_bytes(), get_agent(&agent_id).to_bytes());
-        let modify_request = ModifyAgentRequest::new(agent_ids.clone(), modify_opts.clone());
-        modify(&modify_request);
+    fn requests_expose_semantic_capability_metadata() {
         assert_eq!(
-            modify_request.to_bytes(),
-            modify_agent(&agent_ids, modify_opts).to_bytes()
+            GetAgentsRequest::default().command(),
+            Some(GmpCommand::new("get_agents"))
         );
-        let delete_request = DeleteAgentRequest::new(agent_ids.clone());
-        delete(&delete_request);
         assert_eq!(
-            delete_request.to_bytes(),
-            delete_agent(&agent_ids).to_bytes()
+            GetAgentRequest::new(id("agent-1")).command(),
+            Some(GmpCommand::with_semantic_name("get_agents", "get_agent"))
         );
-        let sync_request = SyncAgentsRequest::new();
-        sync(&sync_request);
-        assert_eq!(sync_request.to_bytes(), sync_agents().to_bytes());
-        let control_request =
-            ModifyAgentControlScanConfigRequest::new(agent_id.clone(), control_opts.clone());
-        control(&control_request);
         assert_eq!(
-            control_request.to_bytes(),
-            modify_agent_control_scan_config(&agent_id, control_opts).to_bytes()
+            ModifyAgentRequest::new(vec![]).command(),
+            Some(GmpCommand::new("modify_agent"))
         );
-        let instruction_request = GetAgentInstallerInstructionRequest::new(
-            agent_id.clone(),
-            AgentInstallerLanguage::De,
-            "https://gvmd.example",
-        );
-        instruction(&instruction_request);
         assert_eq!(
-            instruction_request.to_bytes(),
-            get_agent_installer_instruction(
-                &agent_id,
-                AgentInstallerLanguage::De,
-                "https://gvmd.example",
+            DeleteAgentRequest::new(vec![]).command(),
+            Some(GmpCommand::new("delete_agent"))
+        );
+        assert_eq!(
+            SyncAgentsRequest.command(),
+            Some(GmpCommand::new("sync_agents"))
+        );
+        assert_eq!(
+            ModifyAgentControlScanConfigRequest::new(id("scanner-1")).command(),
+            Some(GmpCommand::new("modify_agent_control_scan_config"))
+        );
+        assert_eq!(
+            GetAgentInstallerInstructionRequest::new(
+                id("scanner-1"),
+                AgentInstallerLanguage::En,
+                "https://gvmd.example"
             )
-            .to_bytes()
+            .command(),
+            Some(GmpCommand::new("get_agent_installer_instruction"))
         );
-        let bundle_request = GetAgentSupportBundleRequest::new(agent_id.clone(), Some(14));
-        bundle(&bundle_request);
         assert_eq!(
-            bundle_request.to_bytes(),
-            get_agent_support_bundle(&agent_id, Some(14)).to_bytes()
+            GetAgentSupportBundleRequest::new(id("agent-1"), None).command(),
+            Some(GmpCommand::new("get_agent_support_bundle"))
         );
+    }
+
+    #[test]
+    fn requests_remain_statically_associated_with_responses() {
+        fn assert_response<R: GmpRequest<Response = T>, T: GmpResponse>(_: &R) {}
+
+        assert_response::<_, GetAgentsResponse>(&GetAgentsRequest::default());
+        assert_response::<_, GetAgentsResponse>(&GetAgentRequest::new(id("agent-1")));
+        assert_response::<_, ModifyAgentResponse>(&ModifyAgentRequest::new(vec![]));
+        assert_response::<_, DeleteAgentResponse>(&DeleteAgentRequest::new(vec![]));
+        assert_response::<_, SyncAgentsResponse>(&SyncAgentsRequest);
+        assert_response::<_, ModifyAgentControlScanConfigResponse>(
+            &ModifyAgentControlScanConfigRequest::new(id("scanner-1")),
+        );
+        assert_response::<_, GetAgentInstallerInstructionResponse>(
+            &GetAgentInstallerInstructionRequest::new(
+                id("scanner-1"),
+                AgentInstallerLanguage::En,
+                "https://gvmd.example",
+            ),
+        );
+        assert_response::<_, GetAgentSupportBundleResponse>(&GetAgentSupportBundleRequest::new(
+            id("agent-1"),
+            None,
+        ));
     }
 }

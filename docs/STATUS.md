@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-16
+Last updated: 2026-09-17
 
 ## Support Direction
 
@@ -46,6 +46,15 @@ encoding. Three options types and six forwarding builders are removed; the six
 named client helpers accept the canonical requests unchanged. Independent
 [agent-group gvmd evidence](agent-group-request-gvmd-evidence.md) records the
 server contract.
+
+Issue #613 converts the remaining eight GMP 22.8 agent operations to complete
+canonical requests: list, detail, modify, delete, synchronize, agent-control
+defaults, installer instructions, and support-bundle download. Three redundant
+options types and eight forwarding builders are removed; `AgentConfigOpts`
+remains as shared nested configuration used by both mutation requests. The
+eight named client helpers accept the canonical values unchanged, and
+[agent gvmd evidence](agent-request-gvmd-evidence.md) independently records the
+wire contract and binary response behavior.
 
 The sections below retain the bounded delivery history for each migrated
 family.
