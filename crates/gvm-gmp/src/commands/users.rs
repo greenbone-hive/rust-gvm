@@ -1,103 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! User command builders.
+//! Canonical requests for user operations.
 
 use std::fmt;
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::common::{add_filter_attrs, add_text_element, set_optional_bool_attr};
 use crate::enums::UserAuthType;
 use crate::responses::{
     CreateUserResponse, DeleteUserResponse, GetUsersResponse, ModifyUserResponse,
 };
 use crate::types::{CollectionUpdate, EntityId};
-use crate::GmpRequest;
-
-/// Optional fields for user create requests.
-#[derive(Clone, Default)]
-pub struct UserOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional password value.
-    pub password: Option<String>,
-    /// Optional host-access restrictions.
-    pub host_access: Option<UserHostAccess>,
-    /// Role identifiers assigned to the user.
-    pub role_ids: Vec<EntityId>,
-    /// Optional user authentication type.
-    pub auth_type: Option<UserAuthType>,
-}
-
-/// Optional fields for user modify requests.
-#[derive(Clone, Default)]
-pub struct ModifyUserOpts {
-    /// Optional replacement name.
-    pub new_name: Option<String>,
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional password value.
-    pub password: Option<String>,
-    /// Optional host-access restrictions.
-    pub host_access: Option<UserHostAccess>,
-    /// Role update: omit, replace, or explicitly clear.
-    pub role_ids: CollectionUpdate<EntityId>,
-    /// Optional user authentication type.
-    pub auth_type: Option<UserAuthType>,
-}
-
-fn redacted(value: &Option<String>) -> Option<&'static str> {
-    value.as_ref().map(|_| "<redacted>")
-}
-
-impl fmt::Debug for UserOpts {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UserOpts")
-            .field("comment", &self.comment)
-            .field("password", &redacted(&self.password))
-            .field("host_access", &self.host_access)
-            .field("role_ids", &self.role_ids)
-            .field("auth_type", &self.auth_type)
-            .finish()
-    }
-}
-
-impl fmt::Debug for ModifyUserOpts {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ModifyUserOpts")
-            .field("new_name", &self.new_name)
-            .field("comment", &self.comment)
-            .field("password", &redacted(&self.password))
-            .field("host_access", &self.host_access)
-            .field("role_ids", &self.role_ids)
-            .field("auth_type", &self.auth_type)
-            .finish()
-    }
-}
-
-impl From<UserOpts> for ModifyUserOpts {
-    fn from(opts: UserOpts) -> Self {
-        let role_ids = if opts.role_ids.is_empty() {
-            CollectionUpdate::Omitted
-        } else {
-            CollectionUpdate::Replace(opts.role_ids)
-        };
-        Self {
-            new_name: None,
-            comment: opts.comment,
-            password: opts.password,
-            host_access: opts.host_access,
-            role_ids,
-            auth_type: opts.auth_type,
-        }
-    }
-}
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
 /// User host-access restrictions.
 ///
-/// `hosts` is the comma-separated GMP host expression string accepted by gvmd.
-/// It may contain individual hosts, ranges, or CIDR expressions.
+/// `hosts` is the comma-separated GMP host expression accepted by gvmd. It
+/// may contain individual hosts, ranges, or CIDR expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UserHostAccess {
@@ -142,9 +63,9 @@ impl From<&str> for UserHostAccess {
     }
 }
 
-/// Options for `get_users` requests.
+/// Request for listing users.
 #[derive(Debug, Clone, Default)]
-pub struct GetUsersOpts {
+pub struct GetUsersRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -155,21 +76,13 @@ pub struct GetUsersOpts {
     pub details: Option<bool>,
 }
 
-/// Semantic request for listing users.
-#[derive(Debug, Clone, Default)]
-pub struct GetUsersRequest(GetUsersOpts);
-
-impl GetUsersRequest {
-    /// Create a user-list request.
-    #[must_use]
-    pub fn new(opts: GetUsersOpts) -> Self {
-        Self(opts)
+impl GmpRequestCodec for GetUsersRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_users"))
     }
-}
 
-impl Request for GetUsersRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_users(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_users_command(self).to_bytes())
     }
 }
 
@@ -177,56 +90,96 @@ impl GmpRequest for GetUsersRequest {
     type Response = GetUsersResponse;
 }
 
-macro_rules! user_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(user_id: EntityId) -> Self {
-                Self(user_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
+/// Request for one detailed user.
+#[derive(Debug, Clone)]
+pub struct GetUserRequest {
+    /// User identifier to retrieve.
+    pub user_id: EntityId,
 }
 
-user_id_request!(GetUserRequest, GetUsersResponse, get_user);
-user_id_request!(CloneUserRequest, CreateUserResponse, clone_user);
+impl GetUserRequest {
+    /// Create a detailed single-user request.
+    #[must_use]
+    pub fn new(user_id: EntityId) -> Self {
+        Self { user_id }
+    }
+}
 
-/// Semantic request for creating a user.
-#[derive(Debug, Clone)]
+impl GmpRequestCodec for GetUserRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_users", "get_user"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_user_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for GetUserRequest {
+    type Response = GetUsersResponse;
+}
+
+/// Request for creating a user.
+#[derive(Clone)]
 pub struct CreateUserRequest {
-    name: String,
-    opts: UserOpts,
+    /// User name.
+    pub name: String,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// Optional password. Debug output always redacts this value.
+    pub password: Option<String>,
+    /// Optional host-access restriction.
+    pub host_access: Option<UserHostAccess>,
+    /// Roles assigned to the user.
+    pub role_ids: Vec<EntityId>,
+    /// Groups assigned to the user.
+    pub group_ids: Vec<EntityId>,
+    /// Authentication source accepted for the user.
+    pub auth_source: Option<UserAuthType>,
 }
 
 impl CreateUserRequest {
-    /// Create a user-creation request.
+    /// Create a user request with the required user name.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: UserOpts) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            opts,
+            comment: None,
+            password: None,
+            host_access: None,
+            role_ids: Vec::new(),
+            group_ids: Vec::new(),
+            auth_source: None,
         }
     }
 }
 
-impl Request for CreateUserRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_user(&self.name, self.opts.clone()).to_bytes()
+impl fmt::Debug for CreateUserRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateUserRequest")
+            .field("name", &self.name)
+            .field("comment", &self.comment)
+            .field("password", &redacted(&self.password))
+            .field("host_access", &self.host_access)
+            .field("role_ids", &self.role_ids)
+            .field("group_ids", &self.group_ids)
+            .field("auth_source", &self.auth_source)
+            .finish()
+    }
+}
+
+impl GmpRequestCodec for CreateUserRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_user"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(create_user_command(self).to_bytes())
     }
 }
 
@@ -234,27 +187,146 @@ impl GmpRequest for CreateUserRequest {
     type Response = CreateUserResponse;
 }
 
-/// Semantic request for modifying a user.
+/// Request for cloning a user through `create_user`.
 #[derive(Debug, Clone)]
-pub struct ModifyUserRequest {
-    user_id: EntityId,
-    opts: ModifyUserOpts,
+pub struct CloneUserRequest {
+    /// Existing user identifier to copy.
+    pub user_id: EntityId,
+    /// Optional name override. Omission copies the existing name.
+    pub name: Option<String>,
+    /// Optional comment override. Omission copies the existing comment.
+    pub comment: Option<String>,
 }
 
-impl ModifyUserRequest {
-    /// Create a user-modification request.
+impl CloneUserRequest {
+    /// Create a user-clone request.
     #[must_use]
-    pub fn new(user_id: EntityId, opts: impl Into<ModifyUserOpts>) -> Self {
+    pub fn new(user_id: EntityId) -> Self {
         Self {
             user_id,
-            opts: opts.into(),
+            name: None,
+            comment: None,
         }
     }
 }
 
-impl Request for ModifyUserRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_user(&self.user_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CloneUserRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_non_empty(self.name.as_deref(), "name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("create_user", "clone_user"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(clone_user_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for CloneUserRequest {
+    type Response = CreateUserResponse;
+}
+
+/// Request for modifying a user.
+#[derive(Clone)]
+pub struct ModifyUserRequest {
+    /// User identifier selector. Exactly one of this and `name` must be set.
+    pub user_id: Option<EntityId>,
+    /// User-name selector. Exactly one of this and `user_id` must be set.
+    pub name: Option<String>,
+    /// Optional replacement name.
+    pub new_name: Option<String>,
+    /// Optional replacement comment. An empty string clears the comment.
+    pub comment: Option<String>,
+    /// Optional replacement password. Debug output always redacts this value.
+    pub password: Option<String>,
+    /// Final host-access restriction.
+    ///
+    /// gvmd replaces host access on every `modify_user` command, including
+    /// when the `<hosts>` child is omitted, so this value is required.
+    pub host_access: UserHostAccess,
+    /// Role update: preserve, replace, or clear.
+    pub role_ids: CollectionUpdate<EntityId>,
+    /// Group update: preserve, replace, or clear.
+    pub group_ids: CollectionUpdate<EntityId>,
+    /// Optional authentication-source replacement. Omission preserves it.
+    pub auth_source: Option<UserAuthType>,
+}
+
+impl ModifyUserRequest {
+    /// Create a user-modification request selected by identifier.
+    #[must_use]
+    pub fn new(user_id: EntityId, host_access: UserHostAccess) -> Self {
+        Self {
+            user_id: Some(user_id),
+            name: None,
+            new_name: None,
+            comment: None,
+            password: None,
+            host_access,
+            role_ids: CollectionUpdate::Omitted,
+            group_ids: CollectionUpdate::Omitted,
+            auth_source: None,
+        }
+    }
+
+    /// Create a user-modification request selected by user name.
+    #[must_use]
+    pub fn by_name(name: impl Into<String>, host_access: UserHostAccess) -> Self {
+        Self {
+            user_id: None,
+            name: Some(name.into()),
+            new_name: None,
+            comment: None,
+            password: None,
+            host_access,
+            role_ids: CollectionUpdate::Omitted,
+            group_ids: CollectionUpdate::Omitted,
+            auth_source: None,
+        }
+    }
+}
+
+impl fmt::Debug for ModifyUserRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModifyUserRequest")
+            .field("user_id", &self.user_id)
+            .field("name", &self.name)
+            .field("new_name", &self.new_name)
+            .field("comment", &self.comment)
+            .field("password", &redacted(&self.password))
+            .field("host_access", &self.host_access)
+            .field("role_ids", &self.role_ids)
+            .field("group_ids", &self.group_ids)
+            .field("auth_source", &self.auth_source)
+            .finish()
+    }
+}
+
+impl GmpRequestCodec for ModifyUserRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        match (&self.user_id, &self.name) {
+            (Some(_), None) | (None, Some(_)) => {}
+            _ => {
+                return Err(GmpRequestError::invalid_combination(
+                    &["user_id", "name"],
+                    "exactly one of user_id or name must select the user to modify",
+                ));
+            }
+        }
+        validate_optional_non_empty(self.name.as_deref(), "name")?;
+        validate_optional_non_empty(self.new_name.as_deref(), "new_name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_user"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(modify_user_command(self).to_bytes())
     }
 }
 
@@ -262,24 +334,71 @@ impl GmpRequest for ModifyUserRequest {
     type Response = ModifyUserResponse;
 }
 
-/// Semantic request for deleting a user.
+/// Request for deleting a user and optionally transferring owned resources.
 #[derive(Debug, Clone)]
 pub struct DeleteUserRequest {
-    user_id: EntityId,
-    ultimate: bool,
+    /// User identifier to delete. This takes precedence over `name` in gvmd.
+    pub user_id: Option<EntityId>,
+    /// User name selector used when `user_id` is omitted.
+    pub name: Option<String>,
+    /// Identifier of the user inheriting owned resources. The value `self` is supported.
+    pub inheritor_id: Option<EntityId>,
+    /// Name of the inheriting user when `inheritor_id` is omitted.
+    pub inheritor_name: Option<String>,
 }
 
 impl DeleteUserRequest {
-    /// Create a user-deletion request.
+    /// Create a user-deletion request selected by identifier.
     #[must_use]
-    pub fn new(user_id: EntityId, ultimate: bool) -> Self {
-        Self { user_id, ultimate }
+    pub fn new(user_id: EntityId) -> Self {
+        Self {
+            user_id: Some(user_id),
+            name: None,
+            inheritor_id: None,
+            inheritor_name: None,
+        }
+    }
+
+    /// Create a user-deletion request selected by name.
+    #[must_use]
+    pub fn by_name(name: impl Into<String>) -> Self {
+        Self {
+            user_id: None,
+            name: Some(name.into()),
+            inheritor_id: None,
+            inheritor_name: None,
+        }
     }
 }
 
-impl Request for DeleteUserRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_user(&self.user_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteUserRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        match (&self.user_id, &self.name) {
+            (Some(_), None) | (None, Some(_)) => {}
+            _ => {
+                return Err(GmpRequestError::invalid_combination(
+                    &["user_id", "name"],
+                    "exactly one of user_id or name must select the user to delete",
+                ));
+            }
+        }
+        if self.inheritor_id.is_some() && self.inheritor_name.is_some() {
+            return Err(GmpRequestError::invalid_combination(
+                &["inheritor_id", "inheritor_name"],
+                "at most one inheritor selector may be set",
+            ));
+        }
+        validate_optional_non_empty(self.name.as_deref(), "name")?;
+        validate_optional_non_empty(self.inheritor_name.as_deref(), "inheritor_name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_user"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(delete_user_command(self).to_bytes())
     }
 }
 
@@ -287,85 +406,106 @@ impl GmpRequest for DeleteUserRequest {
     type Response = DeleteUserResponse;
 }
 
-/// Build a clone request for an existing user.
-#[must_use]
-pub fn clone_user(user_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_user").child_with_text("copy", user_id.as_str())
+fn redacted(value: &Option<String>) -> Option<&'static str> {
+    value.as_ref().map(|_| "<redacted>")
 }
 
-/// Build a `create_user` request.
-#[must_use]
-pub fn create_user(name: &str, opts: UserOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_user");
-    cmd.add_element_with_text("name", name);
-    add_user_common(
-        &mut cmd,
-        opts.comment.as_deref(),
-        opts.password.as_deref(),
-        opts.host_access.as_ref(),
-        opts.auth_type,
-    );
-    add_roles(&mut cmd, &opts.role_ids);
-    cmd
+fn require_non_empty(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `get_users` request.
-#[must_use]
-pub fn get_users(opts: GetUsersOpts) -> impl Request {
+fn validate_optional_non_empty(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    if value.is_some_and(str::is_empty) {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
+}
+
+fn get_users_command(request: &GetUsersRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_users");
     add_filter_attrs(
         &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "trash", request.trash);
+    set_optional_bool_attr(&mut cmd, "details", request.details);
     cmd
 }
 
-/// Build a `get_user` request.
-#[must_use]
-pub fn get_user(user_id: &EntityId) -> impl Request {
+fn get_user_command(request: &GetUserRequest) -> XmlCommand {
     XmlCommand::new("get_users")
-        .attribute("user_id", user_id.as_str())
+        .attribute("user_id", request.user_id.as_str())
         .attribute("details", "1")
 }
 
-/// Build a `modify_user` request.
-#[must_use]
-pub fn modify_user(user_id: &EntityId, opts: impl Into<ModifyUserOpts>) -> impl Request {
-    let opts = opts.into();
-    let mut cmd = XmlCommand::new("modify_user").attribute("user_id", user_id.as_str());
-    add_text_element(&mut cmd, "new_name", opts.new_name.as_deref());
-    add_modify_user_body(&mut cmd, &opts);
+fn create_user_command(request: &CreateUserRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_user");
+    cmd.add_element_with_text("name", &request.name);
+    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    add_text_element(&mut cmd, "password", request.password.as_deref());
+    if let Some(host_access) = request.host_access.as_ref() {
+        add_host_access(&mut cmd, host_access);
+    }
+    add_roles(&mut cmd, &request.role_ids);
+    add_groups(&mut cmd, &request.group_ids);
+    add_source(&mut cmd, request.auth_source);
     cmd
 }
 
-/// Build a `delete_user` request.
-#[must_use]
-pub fn delete_user(user_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_user")
-        .attribute("user_id", user_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+fn clone_user_command(request: &CloneUserRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_user");
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    cmd.add_element_with_text("copy", request.user_id.as_str());
+    cmd
 }
 
-fn add_user_common(
-    cmd: &mut XmlCommand,
-    comment: Option<&str>,
-    password: Option<&str>,
-    host_access: Option<&UserHostAccess>,
-    auth_type: Option<UserAuthType>,
-) {
-    add_text_element(cmd, "comment", comment);
-    add_text_element(cmd, "password", password);
-    if let Some(host_access) = host_access {
-        cmd.add_element("hosts")
-            .set_attribute("allow", bool_str(host_access.allow))
-            .set_text(&host_access.hosts);
+fn modify_user_command(request: &ModifyUserRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_user");
+    if let Some(user_id) = request.user_id.as_ref() {
+        cmd.set_attribute("user_id", user_id.as_str());
     }
-    if let Some(auth_type) = auth_type {
-        cmd.add_element_with_text("authentication", auth_type.as_gmp_str());
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    add_optional_text_element(&mut cmd, "new_name", request.new_name.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    add_text_element(&mut cmd, "password", request.password.as_deref());
+    add_host_access(&mut cmd, &request.host_access);
+    add_role_update(&mut cmd, &request.role_ids);
+    add_group_update(&mut cmd, &request.group_ids);
+    add_source(&mut cmd, request.auth_source);
+    cmd
+}
+
+fn delete_user_command(request: &DeleteUserRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("delete_user");
+    if let Some(user_id) = request.user_id.as_ref() {
+        cmd.set_attribute("user_id", user_id.as_str());
     }
+    if let Some(name) = request.name.as_deref() {
+        cmd.set_attribute("name", name);
+    }
+    if let Some(inheritor_id) = request.inheritor_id.as_ref() {
+        cmd.set_attribute("inheritor_id", inheritor_id.as_str());
+    }
+    if let Some(inheritor_name) = request.inheritor_name.as_deref() {
+        cmd.set_attribute("inheritor_name", inheritor_name);
+    }
+    cmd
+}
+
+fn add_host_access(cmd: &mut XmlCommand, host_access: &UserHostAccess) {
+    cmd.add_element("hosts")
+        .set_attribute("allow", if host_access.allow { "1" } else { "0" })
+        .set_text(&host_access.hosts);
 }
 
 fn add_roles(cmd: &mut XmlCommand, role_ids: &[EntityId]) {
@@ -375,231 +515,167 @@ fn add_roles(cmd: &mut XmlCommand, role_ids: &[EntityId]) {
     }
 }
 
-fn add_modify_user_body(cmd: &mut XmlCommand, opts: &ModifyUserOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    add_text_element(cmd, "password", opts.password.as_deref());
-    if let Some(host_access) = &opts.host_access {
-        cmd.add_element("hosts")
-            .set_attribute("allow", bool_str(host_access.allow))
-            .set_text(&host_access.hosts);
-    }
-    if let Some(auth_type) = opts.auth_type {
-        cmd.add_element_with_text("authentication", auth_type.as_gmp_str());
-    }
-    match &opts.role_ids {
+fn add_role_update(cmd: &mut XmlCommand, role_ids: &CollectionUpdate<EntityId>) {
+    match role_ids {
         CollectionUpdate::Omitted => {}
-        CollectionUpdate::Replace(role_ids) if !role_ids.is_empty() => {
-            add_roles(cmd, role_ids);
-        }
+        CollectionUpdate::Replace(role_ids) if !role_ids.is_empty() => add_roles(cmd, role_ids),
         CollectionUpdate::Replace(_) | CollectionUpdate::Clear => {
             cmd.add_element("role").set_attribute("id", "0");
         }
     }
 }
 
+fn add_groups(cmd: &mut XmlCommand, group_ids: &[EntityId]) {
+    if group_ids.is_empty() {
+        return;
+    }
+    let groups = cmd.add_element("groups");
+    for group_id in group_ids {
+        groups
+            .add_child("group")
+            .set_attribute("id", group_id.as_str());
+    }
+}
+
+fn add_group_update(cmd: &mut XmlCommand, group_ids: &CollectionUpdate<EntityId>) {
+    match group_ids {
+        CollectionUpdate::Omitted => {}
+        CollectionUpdate::Replace(group_ids) if !group_ids.is_empty() => {
+            add_groups(cmd, group_ids);
+        }
+        CollectionUpdate::Replace(_) | CollectionUpdate::Clear => {
+            cmd.add_element("groups");
+        }
+    }
+}
+
+fn add_source(cmd: &mut XmlCommand, source: Option<UserAuthType>) {
+    let Some(source) = source else {
+        return;
+    };
+    let source_element = cmd.add_element("sources");
+    source_element.add_child_with_text("source", source.as_gmp_str());
+}
+
+fn add_optional_text_element(cmd: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        cmd.add_element_with_text(name, value);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
-    #[test]
-    fn semantic_user_requests_match_builder_bytes_and_responses() {
-        fn associated<R, T>(_: &R)
-        where
-            R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
-        {
-        }
-        let user_id = id("user-1");
-        let get_opts = GetUsersOpts {
-            details: Some(true),
-            ..Default::default()
-        };
-        let opts = UserOpts {
-            host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
-            role_ids: vec![id("role-1")],
-            ..Default::default()
-        };
-        let modify_opts = ModifyUserOpts {
-            role_ids: CollectionUpdate::Clear,
-            ..Default::default()
-        };
-
-        let list = GetUsersRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_users(get_opts).to_bytes());
-        associated::<_, GetUsersResponse>(&list);
-        let get = GetUserRequest::new(user_id.clone());
-        assert_eq!(get.to_bytes(), get_user(&user_id).to_bytes());
-        associated::<_, GetUsersResponse>(&get);
-        let create = CreateUserRequest::new("user", opts.clone());
-        assert_eq!(create.to_bytes(), create_user("user", opts).to_bytes());
-        associated::<_, CreateUserResponse>(&create);
-        let clone = CloneUserRequest::new(user_id.clone());
-        assert_eq!(clone.to_bytes(), clone_user(&user_id).to_bytes());
-        associated::<_, CreateUserResponse>(&clone);
-        let modify = ModifyUserRequest::new(user_id.clone(), modify_opts.clone());
-        assert_eq!(
-            modify.to_bytes(),
-            modify_user(&user_id, modify_opts).to_bytes()
-        );
-        associated::<_, ModifyUserResponse>(&modify);
-        let delete = DeleteUserRequest::new(user_id.clone(), true);
-        assert_eq!(delete.to_bytes(), delete_user(&user_id, true).to_bytes());
-        associated::<_, DeleteUserResponse>(&delete);
+    fn xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(request.encode(GmpVersion(22, 8)).expect("valid request"))
+            .expect("valid UTF-8")
     }
 
     #[test]
-    fn user_commands_build_xml() {
-        let rendered = xml(create_user(
-            "alice",
-            UserOpts {
-                password: Some("secret".into()),
-                role_ids: vec![id("r1")],
-                auth_type: Some(UserAuthType::File),
-                ..Default::default()
-            },
-        ));
-        assert!(rendered.contains("<role id=\"r1\"/>"));
-        assert!(rendered.contains("<authentication>file</authentication>"));
+    fn requests_encode_independent_exact_wire_shapes() {
+        let mut create = CreateUserRequest::new("alice");
+        create.comment = Some("operator".into());
+        create.password = Some("secret".into());
+        create.host_access = Some(UserHostAccess::deny("192.0.2.0/24"));
+        create.role_ids = vec![id("role-1")];
+        create.group_ids = vec![id("group-1")];
+        create.auth_source = Some(UserAuthType::File);
         assert_eq!(
-            xml(clone_user(&id("u1"))),
-            "<create_user><copy>u1</copy></create_user>"
+            xml(&create),
+            "<create_user><name>alice</name><comment>operator</comment><password>secret</password><hosts allow=\"0\">192.0.2.0/24</hosts><role id=\"role-1\"/><groups><group id=\"group-1\"/></groups><sources><source>file</source></sources></create_user>"
         );
+
+        let mut clone = CloneUserRequest::new(id("user-1"));
+        clone.name = Some("alice-copy".into());
+        clone.comment = Some(String::new());
         assert_eq!(
-            xml(get_user(&id("u1"))),
-            "<get_users details=\"1\" user_id=\"u1\"/>"
+            xml(&clone),
+            "<create_user><name>alice-copy</name><comment></comment><copy>user-1</copy></create_user>"
+        );
+
+        assert_eq!(
+            xml(&GetUserRequest::new(id("user-1"))),
+            "<get_users details=\"1\" user_id=\"user-1\"/>"
+        );
+
+        let mut modify = ModifyUserRequest::new(id("user-1"), UserHostAccess::allow(""));
+        modify.new_name = Some("alice-renamed".into());
+        modify.comment = Some(String::new());
+        modify.password = Some("replacement".into());
+        modify.role_ids = CollectionUpdate::Clear;
+        modify.group_ids = CollectionUpdate::replace([id("group-2")]);
+        modify.auth_source = Some(UserAuthType::File);
+        assert_eq!(
+            xml(&modify),
+            "<modify_user user_id=\"user-1\"><new_name>alice-renamed</new_name><comment></comment><password>replacement</password><hosts allow=\"1\"></hosts><role id=\"0\"/><groups><group id=\"group-2\"/></groups><sources><source>file</source></sources></modify_user>"
+        );
+
+        let mut delete = DeleteUserRequest::new(id("user-1"));
+        delete.inheritor_id = Some(id("self"));
+        assert_eq!(
+            xml(&delete),
+            "<delete_user inheritor_id=\"self\" user_id=\"user-1\"/>"
         );
     }
 
     #[test]
-    fn user_get_modify_delete_build_xml() {
-        let rendered = xml(get_users(GetUsersOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        let rendered = xml(modify_user(
-            &id("u1"),
-            ModifyUserOpts {
-                new_name: Some("alice-renamed".into()),
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
-        ));
-        assert_eq!(
-            rendered,
-            "<modify_user user_id=\"u1\"><new_name>alice-renamed</new_name><comment>updated</comment></modify_user>"
-        );
-        assert_eq!(
-            xml(modify_user(&id("u1"), ModifyUserOpts::default())),
-            "<modify_user user_id=\"u1\"/>"
-        );
-        let rendered = xml(delete_user(&id("u1"), true));
-        assert!(rendered.contains("<delete_user "));
-        assert!(rendered.contains("user_id=\"u1\""));
-        assert!(rendered.contains("ultimate=\"1\""));
-    }
-
-    #[test]
-    fn modify_user_emits_host_access_allow_mode() {
-        let rendered = xml(modify_user(
-            &id("u1"),
-            ModifyUserOpts {
-                host_access: Some(UserHostAccess::allow("192.0.2.0/24")),
-                ..Default::default()
-            },
+    fn requests_validate_mutated_final_values() {
+        let mut create = CreateUserRequest::new("alice");
+        create.name.clear();
+        assert!(matches!(
+            create.encode(GmpVersion(22, 8)),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
         ));
 
-        assert_eq!(
-            rendered,
-            "<modify_user user_id=\"u1\"><hosts allow=\"1\">192.0.2.0/24</hosts></modify_user>"
-        );
-    }
-
-    #[test]
-    fn modify_user_emits_host_access_deny_mode() {
-        let rendered = xml(modify_user(
-            &id("u1"),
-            ModifyUserOpts {
-                host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
-                ..Default::default()
-            },
+        let mut delete = DeleteUserRequest::by_name("alice");
+        delete.name = None;
+        assert!(matches!(
+            delete.encode(GmpVersion(22, 8)),
+            Err(GmpRequestError::InvalidCombination { .. })
         ));
-
-        assert_eq!(
-            rendered,
-            "<modify_user user_id=\"u1\"><hosts allow=\"0\">192.0.2.0/24</hosts></modify_user>"
-        );
     }
 
     #[test]
-    fn modify_user_emits_explicit_empty_host_access() {
-        let rendered = xml(modify_user(
-            &id("u1"),
-            ModifyUserOpts {
-                host_access: Some(UserHostAccess::deny("")),
-                ..Default::default()
-            },
+    fn password_debug_output_is_redacted() {
+        let mut create = CreateUserRequest::new("alice");
+        create.password = Some("create-secret".into());
+        let create_debug = format!("{create:?}");
+        assert!(create_debug.contains("<redacted>"));
+        assert!(!create_debug.contains("create-secret"));
+
+        let mut modify = ModifyUserRequest::new(id("user-1"), UserHostAccess::allow(""));
+        modify.password = Some("modify-secret".into());
+        let modify_debug = format!("{modify:?}");
+        assert!(modify_debug.contains("<redacted>"));
+        assert!(!modify_debug.contains("modify-secret"));
+    }
+
+    #[test]
+    fn requests_expose_semantic_metadata_and_response_associations() {
+        fn assert_response<R: GmpRequest<Response = T>, T: GmpResponse>(_: &R) {}
+
+        assert_eq!(
+            GetUserRequest::new(id("user-1")).command(),
+            Some(GmpCommand::with_semantic_name("get_users", "get_user"))
+        );
+        assert_eq!(
+            CloneUserRequest::new(id("user-1")).command(),
+            Some(GmpCommand::with_semantic_name("create_user", "clone_user"))
+        );
+        assert_response::<_, GetUsersResponse>(&GetUsersRequest::default());
+        assert_response::<_, GetUsersResponse>(&GetUserRequest::new(id("user-1")));
+        assert_response::<_, CreateUserResponse>(&CreateUserRequest::new("alice"));
+        assert_response::<_, CreateUserResponse>(&CloneUserRequest::new(id("user-1")));
+        assert_response::<_, ModifyUserResponse>(&ModifyUserRequest::new(
+            id("user-1"),
+            UserHostAccess::allow(""),
         ));
-
-        assert_eq!(
-            rendered,
-            "<modify_user user_id=\"u1\"><hosts allow=\"0\"></hosts></modify_user>"
-        );
-    }
-
-    #[test]
-    fn modify_user_distinguishes_omitted_replaced_and_cleared_roles() {
-        assert_eq!(
-            xml(modify_user(&id("u1"), ModifyUserOpts::default())),
-            "<modify_user user_id=\"u1\"/>"
-        );
-        assert_eq!(
-            xml(modify_user(
-                &id("u1"),
-                ModifyUserOpts {
-                    role_ids: CollectionUpdate::replace([id("r1"), id("r2")]),
-                    ..Default::default()
-                }
-            )),
-            "<modify_user user_id=\"u1\"><role id=\"r1\"/><role id=\"r2\"/></modify_user>"
-        );
-        assert_eq!(
-            xml(modify_user(
-                &id("u1"),
-                ModifyUserOpts {
-                    role_ids: CollectionUpdate::Clear,
-                    ..Default::default()
-                }
-            )),
-            "<modify_user user_id=\"u1\"><role id=\"0\"/></modify_user>"
-        );
-    }
-
-    #[test]
-    fn user_option_debug_output_redacts_passwords() {
-        let create = format!(
-            "{:?}",
-            UserOpts {
-                password: Some("create-secret".into()),
-                ..Default::default()
-            }
-        );
-        let modify = format!(
-            "{:?}",
-            ModifyUserOpts {
-                password: Some("modify-secret".into()),
-                ..Default::default()
-            }
-        );
-
-        assert!(create.contains("<redacted>"));
-        assert!(!create.contains("create-secret"));
-        assert!(modify.contains("<redacted>"));
-        assert!(!modify.contains("modify-secret"));
+        assert_response::<_, DeleteUserResponse>(&DeleteUserRequest::new(id("user-1")));
     }
 }

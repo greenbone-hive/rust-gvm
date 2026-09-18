@@ -36,7 +36,10 @@ use gvm_gmp::commands::filters::{
     CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, GetFilterRequest,
     GetFiltersRequest, ModifyFilterRequest,
 };
-use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
+use gvm_gmp::commands::groups::{
+    CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsRequest,
+    ModifyGroupRequest,
+};
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
 use gvm_gmp::commands::integration_configs::{
@@ -110,7 +113,10 @@ use gvm_gmp::commands::user_settings::{
     GetUserSettingRequest, GetUserSettingsOpts, GetUserSettingsRequest, ModifyUserSettingOpts,
     ModifyUserSettingRequest,
 };
-use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
+use gvm_gmp::commands::users::{
+    CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
+    ModifyUserRequest, UserHostAccess,
+};
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
@@ -829,12 +835,15 @@ async fn user_lifecycle_executes_through_typed_facade() {
     let mut client = client(&server).await;
     let entity_id = id(CREATED_ID);
 
-    assert_typed_success!(client.get_users(GetUsersOpts::default()));
-    assert_typed_success!(client.get_user(&entity_id));
-    assert_create_success!(client.create_user("user", UserOpts::default()));
-    assert_create_success!(client.clone_user(&entity_id));
-    assert_typed_success!(client.modify_user(&entity_id, ModifyUserOpts::default()));
-    assert_typed_success!(client.delete_user(&entity_id, false));
+    assert_typed_success!(client.get_users(GetUsersRequest::default()));
+    assert_typed_success!(client.get_user(GetUserRequest::new(entity_id.clone())));
+    assert_create_success!(client.create_user(CreateUserRequest::new("user")));
+    assert_create_success!(client.clone_user(CloneUserRequest::new(entity_id.clone())));
+    assert_typed_success!(client.modify_user(ModifyUserRequest::new(
+        entity_id.clone(),
+        UserHostAccess::allow("")
+    )));
+    assert_typed_success!(client.delete_user(DeleteUserRequest::new(entity_id)));
 
     server.shutdown().await;
 }
@@ -848,12 +857,17 @@ async fn group_lifecycle_executes_through_typed_facade() {
     let mut client = client(&server).await;
     let entity_id = id(CREATED_ID);
 
-    assert_typed_success!(client.get_groups(GetGroupsOpts::default()));
-    assert_typed_success!(client.get_group(&entity_id));
-    assert_create_success!(client.create_group("group", GroupOpts::default()));
-    assert_create_success!(client.clone_group(&entity_id));
-    assert_typed_success!(client.modify_group(&entity_id, GroupOpts::default()));
-    assert_typed_success!(client.delete_group(&entity_id, false));
+    assert_typed_success!(client.get_groups(GetGroupsRequest::default()));
+    assert_typed_success!(client.get_group(GetGroupRequest::new(entity_id.clone())));
+    assert_create_success!(client.create_group(CreateGroupRequest::new("group")));
+    assert_create_success!(client.clone_group(CloneGroupRequest::new(entity_id.clone())));
+    assert_typed_success!(client.modify_group(ModifyGroupRequest::new(
+        entity_id.clone(),
+        "group",
+        "",
+        Vec::new()
+    )));
+    assert_typed_success!(client.delete_group(DeleteGroupRequest::new(entity_id, false)));
 
     server.shutdown().await;
 }
@@ -917,7 +931,11 @@ async fn identity_and_permission_facades_preserve_status_and_parse_context() {
     };
     let mut client = client(&server).await;
 
-    assert_server_error!(client.get_user(&id("user-1")), 409, "identity conflict");
+    assert_server_error!(
+        client.get_user(GetUserRequest::new(id("user-1"))),
+        409,
+        "identity conflict"
+    );
     let parse_error = client
         .clone_permission(&id("permission-1"))
         .await
@@ -2794,8 +2812,8 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_schedules(GetSchedulesRequest::default()));
     assert_typed_success!(client.get_tags(GetTagsRequest::default()));
     assert_typed_success!(client.get_tickets(GetTicketsOpts::default()));
-    assert_typed_success!(client.get_users(GetUsersOpts::default()));
-    assert_typed_success!(client.get_groups(GetGroupsOpts::default()));
+    assert_typed_success!(client.get_users(GetUsersRequest::default()));
+    assert_typed_success!(client.get_groups(GetGroupsRequest::default()));
     assert_typed_success!(client.get_roles(GetRolesOpts::default()));
     assert_typed_success!(client.get_permissions(GetPermissionsOpts::default()));
     assert_typed_success!(client.get_hosts(GetHostsOpts::default()));
@@ -2898,8 +2916,8 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
             comment: None,
         }
     ));
-    assert_create_success!(client.create_user("user", UserOpts::default()));
-    assert_create_success!(client.create_group("group", GroupOpts::default()));
+    assert_create_success!(client.create_user(CreateUserRequest::new("user")));
+    assert_create_success!(client.create_group(CreateGroupRequest::new("group")));
     assert_create_success!(client.create_role("role", RoleOpts::default()));
     assert_create_success!(client.create_permission(PermissionOpts::default()));
     assert_create_success!(client.create_host(HostOpts::named("192.0.2.10")));

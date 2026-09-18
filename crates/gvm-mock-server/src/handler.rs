@@ -793,7 +793,10 @@ impl SessionHandler {
             if let Ok(uuid) = Uuid::parse_str(&copy_id) {
                 match store.clone_typed(&uuid, resource_type) {
                     Ok(new_id) => {
-                        if matches!(resource_type, "filter" | "scanner" | "tag") {
+                        if matches!(
+                            resource_type,
+                            "filter" | "scanner" | "tag" | "group" | "user"
+                        ) {
                             let name = parse_element_text(raw_xml, "name");
                             let comment = element_text_including_empty(cmd, raw_xml, "comment");
                             if resource_type == "scanner" || name.is_some() || comment.is_some() {
@@ -1448,6 +1451,28 @@ impl SessionHandler {
                 Ok(None) => {}
                 Err(message) => return error_response(&cmd.name, 400, message),
             }
+            resource.set_attr(
+                "group_ids",
+                &nested_child_ids(cmd, "groups", "group").join(","),
+            );
+            let hosts = element_text_including_empty(cmd, raw_xml, "hosts").unwrap_or_default();
+            let hosts_allow = cmd
+                .child_attr("hosts", "allow")
+                .and_then(parse_filter_bool)
+                .unwrap_or(true);
+            resource.set_attr("hosts", &hosts);
+            resource.set_attr("hosts_allow", if hosts_allow { "1" } else { "0" });
+            if let Some(source) = nested_child_text(cmd, &["sources", "source"]) {
+                resource.set_attr("auth_source", &source);
+            }
+        }
+
+        if resource_type == "group" {
+            let users = element_text_including_empty(cmd, raw_xml, "users").unwrap_or_default();
+            resource.set_attr("users", &users);
+            if has_nested_child(cmd, "specials", "full") {
+                resource.set_attr("special_full", "1");
+            }
         }
 
         if resource_type == "asset" {
@@ -1665,21 +1690,36 @@ impl SessionHandler {
         let resource_type = cmd.name.strip_prefix("modify_").unwrap_or("unknown");
         let id_attr = format!("{resource_type}_id");
 
-        let id_str = if cmd.name == "modify_integration_config" {
-            let Some(id) = cmd.attr("uuid") else {
-                return error_response(&cmd.name, 400, "Missing required attribute: uuid");
+        let uuid = if resource_type == "user" && cmd.attr(&id_attr).is_none() {
+            let Some(name) = parse_element_text(raw_xml, "name") else {
+                return error_response(&cmd.name, 400, "Missing user selector");
             };
-            id
+            let Some(user) = store
+                .list("user")
+                .into_iter()
+                .find(|user| user.name == name)
+            else {
+                return error_response(&cmd.name, 404, "Resource not found");
+            };
+            user.id
         } else {
-            let Some(id) = cmd.attr(&id_attr) else {
-                let message = format!("Missing required attribute: {id_attr}");
-                return error_response(&cmd.name, 400, &message);
+            let id_str = if cmd.name == "modify_integration_config" {
+                let Some(id) = cmd.attr("uuid") else {
+                    return error_response(&cmd.name, 400, "Missing required attribute: uuid");
+                };
+                id
+            } else {
+                let Some(id) = cmd.attr(&id_attr) else {
+                    let message = format!("Missing required attribute: {id_attr}");
+                    return error_response(&cmd.name, 400, &message);
+                };
+                id
             };
-            id
-        };
 
-        let Ok(uuid) = Uuid::parse_str(id_str) else {
-            return error_response(&cmd.name, 400, "Invalid UUID");
+            let Ok(uuid) = Uuid::parse_str(id_str) else {
+                return error_response(&cmd.name, 400, "Invalid UUID");
+            };
+            uuid
         };
 
         let new_target_port_list_id = if resource_type == "target" {
@@ -1787,11 +1827,16 @@ impl SessionHandler {
             parse_element_text(raw_xml, "new_name")
         } else if resource_type == "alert" {
             cmd.child_text("name").map(str::to_string)
+        } else if resource_type == "group" {
+            element_text_including_empty(cmd, raw_xml, "name")
         } else {
             parse_element_text(raw_xml, "name")
         };
         let new_text = parse_element_text(raw_xml, "text");
-        let new_comment = if matches!(resource_type, "filter" | "scanner" | "schedule" | "tag") {
+        let new_comment = if matches!(
+            resource_type,
+            "filter" | "scanner" | "schedule" | "tag" | "group" | "user"
+        ) {
             element_text_including_empty(cmd, raw_xml, "comment")
         } else {
             parse_element_text(raw_xml, "comment")
@@ -1949,6 +1994,26 @@ impl SessionHandler {
         } else {
             None
         };
+        let new_user_group_ids = if resource_type == "user" {
+            cmd.children
+                .iter()
+                .any(|child| child.name == "groups")
+                .then(|| nested_child_ids(cmd, "groups", "group"))
+        } else {
+            None
+        };
+        let new_user_hosts = (resource_type == "user")
+            .then(|| element_text_including_empty(cmd, raw_xml, "hosts").unwrap_or_default());
+        let new_user_hosts_allow = (resource_type == "user").then(|| {
+            cmd.child_attr("hosts", "allow")
+                .and_then(parse_filter_bool)
+                .unwrap_or(true)
+        });
+        let new_user_auth_source = (resource_type == "user")
+            .then(|| nested_child_text(cmd, &["sources", "source"]))
+            .flatten();
+        let new_group_users = (resource_type == "group")
+            .then(|| element_text_including_empty(cmd, raw_xml, "users").unwrap_or_default());
         let new_login = parse_element_text(raw_xml, "login");
         let new_allow_insecure = parse_element_text(raw_xml, "allow_insecure");
         let new_kdc = credential_kdcs(cmd)
@@ -2091,12 +2156,12 @@ impl SessionHandler {
                         r.remove_attr(attribute);
                     }
                 }
-            } else if resource_type == "port_list" {
+            } else if matches!(resource_type, "port_list" | "group") {
                 r.name = new_name.clone().unwrap_or_default();
             } else if let Some(ref name) = new_name {
                 r.name.clone_from(name);
             }
-            if resource_type == "port_list" {
+            if matches!(resource_type, "port_list" | "group") {
                 r.comment = new_comment.clone().unwrap_or_default();
             } else if let Some(ref comment) = new_comment {
                 r.comment.clone_from(comment);
@@ -2131,6 +2196,21 @@ impl SessionHandler {
             }
             if let Some(ref role_ids) = new_role_ids {
                 r.set_attr("role_ids", &role_ids.join(","));
+            }
+            if let Some(ref group_ids) = new_user_group_ids {
+                r.set_attr("group_ids", &group_ids.join(","));
+            }
+            if let Some(ref hosts) = new_user_hosts {
+                r.set_attr("hosts", hosts);
+            }
+            if let Some(hosts_allow) = new_user_hosts_allow {
+                r.set_attr("hosts_allow", if hosts_allow { "1" } else { "0" });
+            }
+            if let Some(ref source) = new_user_auth_source {
+                r.set_attr("auth_source", source);
+            }
+            if let Some(ref users) = new_group_users {
+                r.set_attr("users", users);
             }
             if resource_type == "oci_image_target" {
                 if let Some(ref image_references) = new_image_references {
@@ -2474,15 +2554,30 @@ impl SessionHandler {
         let resource_type = cmd.name.strip_prefix("delete_").unwrap_or("unknown");
         let id_attr = format!("{resource_type}_id");
 
-        let Some(id_str) = cmd.attr(&id_attr) else {
-            return error_response(&cmd.name, 400, "Missing required attribute: id");
+        let uuid = if resource_type == "user" && cmd.attr(&id_attr).is_none() {
+            let Some(name) = cmd.attr("name") else {
+                return error_response(&cmd.name, 400, "Missing user selector");
+            };
+            let Some(user) = store
+                .list("user")
+                .into_iter()
+                .find(|user| user.name == name)
+            else {
+                return error_response(&cmd.name, 404, "Resource not found");
+            };
+            user.id
+        } else {
+            let Some(id_str) = cmd.attr(&id_attr) else {
+                return error_response(&cmd.name, 400, "Missing required attribute: id");
+            };
+
+            let Ok(uuid) = Uuid::parse_str(id_str) else {
+                return error_response(&cmd.name, 400, "Invalid UUID");
+            };
+            uuid
         };
 
-        let Ok(uuid) = Uuid::parse_str(id_str) else {
-            return error_response(&cmd.name, 400, "Invalid UUID");
-        };
-
-        let ultimate = cmd.attr("ultimate") == Some("1");
+        let ultimate = resource_type == "user" || cmd.attr("ultimate") == Some("1");
 
         match store.delete_typed(&uuid, resource_type, ultimate) {
             Ok(()) => {
@@ -4938,6 +5033,31 @@ fn valid_note_override_severity(severity: &str, replacement: bool) -> bool {
 
 fn valid_note_override_active(active: &str) -> bool {
     active.parse::<i32>().is_ok_and(|days| days >= -1)
+}
+
+fn nested_child_ids(cmd: &ParsedCommand, container: &str, child_name: &str) -> Vec<String> {
+    cmd.children
+        .iter()
+        .find(|child| child.name == container)
+        .into_iter()
+        .flat_map(|container| &container.children)
+        .filter(|child| child.name == child_name)
+        .filter_map(|child| child.attributes.get("id"))
+        .filter(|id| !id.trim().is_empty() && id.as_str() != "0")
+        .cloned()
+        .collect()
+}
+
+fn has_nested_child(cmd: &ParsedCommand, container: &str, child_name: &str) -> bool {
+    cmd.children
+        .iter()
+        .find(|child| child.name == container)
+        .is_some_and(|container| {
+            container
+                .children
+                .iter()
+                .any(|child| child.name == child_name)
+        })
 }
 
 fn task_observer_group_ids(cmd: &ParsedCommand) -> Vec<String> {

@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 
 ## Support Direction
 
@@ -157,6 +157,19 @@ support checks or transport, and the parser-ignored legacy note `orphan` child
 is removed. Independent
 [note/override gvmd evidence](note-override-request-gvmd-evidence.md) records
 those contracts.
+
+Issue #636 converts all twelve user and group operations to complete canonical
+requests. Five redundant options types and twelve free builders are removed;
+the twelve named facade methods accept request values unchanged. User create
+and modify own roles, groups, host access, authentication source, and
+secret-bearing password input, while collection updates distinguish preserving,
+replacing, and clearing relationships. User modification requires the final
+host-access value because gvmd replaces it on every modification. Group
+modification similarly owns final name, comment, and membership values. Detail
+and clone retain semantic aliases, final values fail validation before support
+checks or transport, and password diagnostics and wire traces remain redacted.
+Independent [user/group gvmd evidence](user-group-request-gvmd-evidence.md)
+records those contracts.
 
 The sections below retain the bounded delivery history for each migrated
 family.

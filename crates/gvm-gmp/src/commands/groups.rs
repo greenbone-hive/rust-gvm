@@ -1,29 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Group command builders.
+//! Canonical requests for group operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::responses::{
     CreateGroupResponse, DeleteGroupResponse, GetGroupsResponse, ModifyGroupResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for group create and modify requests.
+/// Request for listing groups.
 #[derive(Debug, Clone, Default)]
-pub struct GroupOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// User names associated with the request.
-    pub users: Vec<String>,
-}
-
-/// Options for `get_groups` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetGroupsOpts {
+pub struct GetGroupsRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -34,21 +25,13 @@ pub struct GetGroupsOpts {
     pub details: Option<bool>,
 }
 
-/// Semantic request for listing groups.
-#[derive(Debug, Clone, Default)]
-pub struct GetGroupsRequest(GetGroupsOpts);
-
-impl GetGroupsRequest {
-    /// Create a group-list request.
-    #[must_use]
-    pub fn new(opts: GetGroupsOpts) -> Self {
-        Self(opts)
+impl GmpRequestCodec for GetGroupsRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_groups"))
     }
-}
 
-impl Request for GetGroupsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_groups(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_groups_command(self).to_bytes())
     }
 }
 
@@ -56,56 +39,74 @@ impl GmpRequest for GetGroupsRequest {
     type Response = GetGroupsResponse;
 }
 
-macro_rules! group_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(group_id: EntityId) -> Self {
-                Self(group_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
+/// Request for one detailed group.
+#[derive(Debug, Clone)]
+pub struct GetGroupRequest {
+    /// Group identifier to retrieve.
+    pub group_id: EntityId,
 }
 
-group_id_request!(GetGroupRequest, GetGroupsResponse, get_group);
-group_id_request!(CloneGroupRequest, CreateGroupResponse, clone_group);
+impl GetGroupRequest {
+    /// Create a detailed single-group request.
+    #[must_use]
+    pub fn new(group_id: EntityId) -> Self {
+        Self { group_id }
+    }
+}
 
-/// Semantic request for creating a group.
+impl GmpRequestCodec for GetGroupRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_groups", "get_group"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_group_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for GetGroupRequest {
+    type Response = GetGroupsResponse;
+}
+
+/// Request for creating a group.
 #[derive(Debug, Clone)]
 pub struct CreateGroupRequest {
-    name: String,
-    opts: GroupOpts,
+    /// Group name.
+    pub name: String,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// User names assigned to the group.
+    pub users: Vec<String>,
+    /// Whether members receive full access to each other's resources.
+    pub special_full: bool,
 }
 
 impl CreateGroupRequest {
-    /// Create a group-creation request.
+    /// Create a group request with the required group name.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: GroupOpts) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            opts,
+            comment: None,
+            users: Vec::new(),
+            special_full: false,
         }
     }
 }
 
-impl Request for CreateGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_group(&self.name, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateGroupRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")?;
+        validate_user_names(&self.users)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_group"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(create_group_command(self).to_bytes())
     }
 }
 
@@ -113,24 +114,99 @@ impl GmpRequest for CreateGroupRequest {
     type Response = CreateGroupResponse;
 }
 
-/// Semantic request for modifying a group.
+/// Request for cloning a group through `create_group`.
 #[derive(Debug, Clone)]
-pub struct ModifyGroupRequest {
-    group_id: EntityId,
-    opts: GroupOpts,
+pub struct CloneGroupRequest {
+    /// Existing group identifier to copy.
+    pub group_id: EntityId,
+    /// Optional name override. Omission copies the existing name.
+    pub name: Option<String>,
+    /// Optional comment override. Omission copies the existing comment.
+    pub comment: Option<String>,
 }
 
-impl ModifyGroupRequest {
-    /// Create a group-modification request.
+impl CloneGroupRequest {
+    /// Create a group-clone request.
     #[must_use]
-    pub fn new(group_id: EntityId, opts: GroupOpts) -> Self {
-        Self { group_id, opts }
+    pub fn new(group_id: EntityId) -> Self {
+        Self {
+            group_id,
+            name: None,
+            comment: None,
+        }
     }
 }
 
-impl Request for ModifyGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_group(&self.group_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CloneGroupRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_non_empty(self.name.as_deref(), "name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_group",
+            "clone_group",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(clone_group_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for CloneGroupRequest {
+    type Response = CreateGroupResponse;
+}
+
+/// Request for modifying a group.
+#[derive(Debug, Clone)]
+pub struct ModifyGroupRequest {
+    /// Group identifier to modify.
+    pub group_id: EntityId,
+    /// Final group name. gvmd replaces this value even when the child is omitted.
+    pub name: String,
+    /// Final comment. An empty string clears the comment.
+    pub comment: String,
+    /// Final user membership. An empty vector clears all users.
+    pub users: Vec<String>,
+}
+
+impl ModifyGroupRequest {
+    /// Create a complete group-modification request.
+    ///
+    /// gvmd replaces the name, comment, and membership on every
+    /// `modify_group` command, so callers must provide the final values for
+    /// all three fields.
+    #[must_use]
+    pub fn new(
+        group_id: EntityId,
+        name: impl Into<String>,
+        comment: impl Into<String>,
+        users: Vec<String>,
+    ) -> Self {
+        Self {
+            group_id,
+            name: name.into(),
+            comment: comment.into(),
+            users,
+        }
+    }
+}
+
+impl GmpRequestCodec for ModifyGroupRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")?;
+        validate_user_names(&self.users)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_group"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(modify_group_command(self).to_bytes())
     }
 }
 
@@ -138,11 +214,13 @@ impl GmpRequest for ModifyGroupRequest {
     type Response = ModifyGroupResponse;
 }
 
-/// Semantic request for deleting a group.
+/// Request for deleting a group.
 #[derive(Debug, Clone)]
 pub struct DeleteGroupRequest {
-    group_id: EntityId,
-    ultimate: bool,
+    /// Group identifier to delete.
+    pub group_id: EntityId,
+    /// Whether to delete permanently instead of moving the group to trash.
+    pub ultimate: bool,
 }
 
 impl DeleteGroupRequest {
@@ -153,9 +231,13 @@ impl DeleteGroupRequest {
     }
 }
 
-impl Request for DeleteGroupRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_group(&self.group_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteGroupRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_group"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_group_command(self).to_bytes())
     }
 }
 
@@ -163,157 +245,187 @@ impl GmpRequest for DeleteGroupRequest {
     type Response = DeleteGroupResponse;
 }
 
-/// Build a clone request for an existing group.
-#[must_use]
-pub fn clone_group(group_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_group").child_with_text("copy", group_id.as_str())
+fn require_non_empty(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `create_group` request.
-#[must_use]
-pub fn create_group(name: &str, opts: GroupOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_group");
-    cmd.add_element_with_text("name", name);
-    add_group_body(&mut cmd, &opts);
-    cmd
+fn validate_optional_non_empty(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    if value.is_some_and(str::is_empty) {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `get_groups` request.
-#[must_use]
-pub fn get_groups(opts: GetGroupsOpts) -> impl Request {
+fn validate_user_names(users: &[String]) -> Result<(), GmpRequestError> {
+    if users.iter().any(String::is_empty) {
+        Err(GmpRequestError::invalid_field(
+            "users",
+            "user names must not be empty",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn get_groups_command(request: &GetGroupsRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_groups");
     add_filter_attrs(
         &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "trash", request.trash);
+    set_optional_bool_attr(&mut cmd, "details", request.details);
     cmd
 }
 
-/// Build a `get_group` request.
-#[must_use]
-pub fn get_group(group_id: &EntityId) -> impl Request {
+fn get_group_command(request: &GetGroupRequest) -> XmlCommand {
     XmlCommand::new("get_groups")
-        .attribute("group_id", group_id.as_str())
+        .attribute("group_id", request.group_id.as_str())
         .attribute("details", "1")
 }
 
-/// Build a `modify_group` request.
-#[must_use]
-pub fn modify_group(group_id: &EntityId, opts: GroupOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_group").attribute("group_id", group_id.as_str());
-    add_group_body(&mut cmd, &opts);
+fn create_group_command(request: &CreateGroupRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_group");
+    cmd.add_element_with_text("name", &request.name);
+    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    if request.special_full {
+        cmd.add_element("specials").add_child("full");
+    }
+    if !request.users.is_empty() {
+        cmd.add_element_with_text("users", &request.users.join(","));
+    }
     cmd
 }
 
-/// Build a `delete_group` request.
-#[must_use]
-pub fn delete_group(group_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_group")
-        .attribute("group_id", group_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+fn clone_group_command(request: &CloneGroupRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_group");
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    add_optional_text_element(&mut cmd, "comment", request.comment.as_deref());
+    cmd.add_element_with_text("copy", request.group_id.as_str());
+    cmd
 }
 
-fn add_group_body(cmd: &mut XmlCommand, opts: &GroupOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    if !opts.users.is_empty() {
-        cmd.add_element_with_text("users", &opts.users.join(","));
+fn modify_group_command(request: &ModifyGroupRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_group").attribute("group_id", request.group_id.as_str());
+    cmd.add_element_with_text("name", &request.name);
+    cmd.add_element_with_text("comment", &request.comment);
+    cmd.add_element_with_text("users", &request.users.join(","));
+    cmd
+}
+
+fn add_optional_text_element(cmd: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        cmd.add_element_with_text(name, value);
     }
+}
+
+fn delete_group_command(request: &DeleteGroupRequest) -> XmlCommand {
+    XmlCommand::new("delete_group")
+        .attribute("group_id", request.group_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
-    #[test]
-    fn semantic_group_requests_match_builder_bytes_and_responses() {
-        fn associated<R, T>(_: &R)
-        where
-            R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
-        {
-        }
-        let group_id = id("group-1");
-        let get_opts = GetGroupsOpts {
-            details: Some(true),
-            ..Default::default()
-        };
-        let opts = GroupOpts {
-            users: vec!["alice".into()],
-            ..Default::default()
-        };
-
-        let list = GetGroupsRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_groups(get_opts).to_bytes());
-        associated::<_, GetGroupsResponse>(&list);
-        let get = GetGroupRequest::new(group_id.clone());
-        assert_eq!(get.to_bytes(), get_group(&group_id).to_bytes());
-        associated::<_, GetGroupsResponse>(&get);
-        let create = CreateGroupRequest::new("group", opts.clone());
-        assert_eq!(
-            create.to_bytes(),
-            create_group("group", opts.clone()).to_bytes()
-        );
-        associated::<_, CreateGroupResponse>(&create);
-        let clone = CloneGroupRequest::new(group_id.clone());
-        assert_eq!(clone.to_bytes(), clone_group(&group_id).to_bytes());
-        associated::<_, CreateGroupResponse>(&clone);
-        let modify = ModifyGroupRequest::new(group_id.clone(), opts.clone());
-        assert_eq!(modify.to_bytes(), modify_group(&group_id, opts).to_bytes());
-        associated::<_, ModifyGroupResponse>(&modify);
-        let delete = DeleteGroupRequest::new(group_id.clone(), true);
-        assert_eq!(delete.to_bytes(), delete_group(&group_id, true).to_bytes());
-        associated::<_, DeleteGroupResponse>(&delete);
+    fn xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(request.encode(GmpVersion(22, 8)).expect("valid request"))
+            .expect("valid UTF-8")
     }
 
     #[test]
-    fn group_commands_build_xml() {
-        let rendered = xml(create_group(
-            "group",
-            GroupOpts {
-                users: vec!["alice".into()],
-                ..Default::default()
-            },
-        ));
-        assert!(rendered.contains("<users>alice</users>"));
+    fn requests_encode_independent_exact_wire_shapes() {
+        let mut create = CreateGroupRequest::new("operators");
+        create.comment = Some("team".into());
+        create.users = vec!["alice".into(), "bob".into()];
+        create.special_full = true;
         assert_eq!(
-            xml(clone_group(&id("g1"))),
-            "<create_group><copy>g1</copy></create_group>"
+            xml(&create),
+            "<create_group><name>operators</name><comment>team</comment><specials><full/></specials><users>alice,bob</users></create_group>"
         );
+
+        let mut clone = CloneGroupRequest::new(id("group-1"));
+        clone.name = Some("operators-copy".into());
+        clone.comment = Some(String::new());
         assert_eq!(
-            xml(get_group(&id("g1"))),
-            "<get_groups details=\"1\" group_id=\"g1\"/>"
+            xml(&clone),
+            "<create_group><name>operators-copy</name><comment></comment><copy>group-1</copy></create_group>"
+        );
+
+        assert_eq!(
+            xml(&GetGroupRequest::new(id("group-1"))),
+            "<get_groups details=\"1\" group_id=\"group-1\"/>"
+        );
+
+        let modify = ModifyGroupRequest::new(id("group-1"), "renamed", "", Vec::new());
+        assert_eq!(
+            xml(&modify),
+            "<modify_group group_id=\"group-1\"><name>renamed</name><comment></comment><users></users></modify_group>"
+        );
+
+        assert_eq!(
+            xml(&DeleteGroupRequest::new(id("group-1"), true)),
+            "<delete_group group_id=\"group-1\" ultimate=\"1\"/>"
         );
     }
 
     #[test]
-    fn group_get_modify_delete_build_xml() {
-        let rendered = xml(get_groups(GetGroupsOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        let rendered = xml(modify_group(
-            &id("g1"),
-            GroupOpts {
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
+    fn requests_validate_mutated_final_values() {
+        let mut create = CreateGroupRequest::new("operators");
+        create.name.clear();
+        assert!(matches!(
+            create.encode(GmpVersion(22, 8)),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
         ));
+
+        let modify =
+            ModifyGroupRequest::new(id("group-1"), "operators", "team", vec![String::new()]);
+        assert!(matches!(
+            modify.encode(GmpVersion(22, 8)),
+            Err(GmpRequestError::InvalidField { field: "users", .. })
+        ));
+    }
+
+    #[test]
+    fn requests_expose_semantic_metadata_and_response_associations() {
+        fn assert_response<R: GmpRequest<Response = T>, T: GmpResponse>(_: &R) {}
+
         assert_eq!(
-            rendered,
-            "<modify_group group_id=\"g1\"><comment>updated</comment></modify_group>"
+            GetGroupRequest::new(id("group-1")).command(),
+            Some(GmpCommand::with_semantic_name("get_groups", "get_group"))
         );
         assert_eq!(
-            xml(delete_group(&id("g1"), false)),
-            "<delete_group group_id=\"g1\" ultimate=\"0\"/>"
+            CloneGroupRequest::new(id("group-1")).command(),
+            Some(GmpCommand::with_semantic_name(
+                "create_group",
+                "clone_group"
+            ))
         );
+        assert_response::<_, GetGroupsResponse>(&GetGroupsRequest::default());
+        assert_response::<_, GetGroupsResponse>(&GetGroupRequest::new(id("group-1")));
+        assert_response::<_, CreateGroupResponse>(&CreateGroupRequest::new("operators"));
+        assert_response::<_, CreateGroupResponse>(&CloneGroupRequest::new(id("group-1")));
+        assert_response::<_, ModifyGroupResponse>(&ModifyGroupRequest::new(
+            id("group-1"),
+            "operators",
+            "team",
+            Vec::new(),
+        ));
+        assert_response::<_, DeleteGroupResponse>(&DeleteGroupRequest::new(id("group-1"), false));
     }
 }

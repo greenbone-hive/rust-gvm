@@ -350,6 +350,29 @@ Alerts use complete request values for list, detail, create, clone, modify,
 delete, test, and report-trigger operations. Required create fields are typed,
 and nested alert data is redacted from diagnostics and wire traces.
 
+Users and groups use complete request values for their list, detail, create,
+clone, modify, and delete lifecycles. User relationship updates explicitly
+preserve, replace, or clear roles and groups, while `ModifyUserRequest` carries
+the final host-access value required by gvmd. Password fields remain redacted
+from request diagnostics and wire traces:
+
+```rust
+use gvm_gmp::commands::users::{
+    CreateUserRequest, ModifyUserRequest, UserHostAccess,
+};
+
+let mut create = CreateUserRequest::new("operator");
+create.password = Some(password);
+create.host_access = Some(UserHostAccess::deny("192.0.2.0/24"));
+let created = client.create_user(create).await?;
+
+let mut modify =
+    ModifyUserRequest::new(created.id, UserHostAccess::allow(""));
+modify.comment = Some("production operator".into());
+client.modify_user(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
 Other families continue through the bounded migration. Raw `send` and `call`
 remain the supported low-level escape hatch. See the downstream
 [migration notes](docs/typed-execution-migration.md) for API selection,

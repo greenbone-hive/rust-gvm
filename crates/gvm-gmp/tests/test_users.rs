@@ -5,81 +5,90 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::users::*;
-use gvm_gmp::UserAuthType;
+use gvm_gmp::{CollectionUpdate, GmpRequestCodec, GmpRequestError, GmpVersion, UserAuthType};
 
-#[test]
-fn test_create_user_basic() {
-    assert_eq!(
-        xml(create_user("alice", Default::default())),
-        "<create_user><name>alice</name></create_user>"
-    );
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap()
 }
 
 #[test]
-fn test_create_user_with_optionals() {
+fn canonical_user_requests_encode_exact_xml() {
+    let mut create = CreateUserRequest::new("alice");
+    create.comment = Some("c".into());
+    create.password = Some("secret".into());
+    create.host_access = Some(UserHostAccess::allow("127.0.0.1"));
+    create.role_ids = vec![id("r1"), id("r2")];
+    create.group_ids = vec![id("g1")];
+    create.auth_source = Some(UserAuthType::File);
     assert_eq!(
-        xml(create_user(
-            "alice",
-            UserOpts {
-                comment: Some("c".into()),
-                password: Some("secret".into()),
-                host_access: Some("127.0.0.1".into()),
-                role_ids: vec![id("r1"), id("r2")],
-                auth_type: Some(UserAuthType::File),
-            }
-        )),
-        "<create_user><name>alice</name><comment>c</comment><password>secret</password><hosts allow=\"1\">127.0.0.1</hosts><authentication>file</authentication><role id=\"r1\"/><role id=\"r2\"/></create_user>"
+        xml(&create),
+        "<create_user><name>alice</name><comment>c</comment><password>secret</password><hosts allow=\"1\">127.0.0.1</hosts><role id=\"r1\"/><role id=\"r2\"/><groups><group id=\"g1\"/></groups><sources><source>file</source></sources></create_user>"
     );
-}
 
-#[test]
-fn test_modify_user_with_host_access_modes() {
+    let mut modify = ModifyUserRequest::new(id("u1"), UserHostAccess::deny(""));
+    modify.new_name = Some("renamed".into());
+    modify.comment = Some(String::new());
+    modify.role_ids = CollectionUpdate::Clear;
+    modify.group_ids = CollectionUpdate::Clear;
+    modify.auth_source = Some(UserAuthType::LdapConnect);
     assert_eq!(
-        xml(modify_user(
-            &id("u1"),
-            ModifyUserOpts {
-                host_access: Some(UserHostAccess::allow("192.0.2.0/24")),
-                ..Default::default()
-            }
-        )),
-        "<modify_user user_id=\"u1\"><hosts allow=\"1\">192.0.2.0/24</hosts></modify_user>"
+        xml(&modify),
+        "<modify_user user_id=\"u1\"><new_name>renamed</new_name><comment></comment><hosts allow=\"0\"></hosts><role id=\"0\"/><groups/><sources><source>ldap_connect</source></sources></modify_user>"
     );
-    assert_eq!(
-        xml(modify_user(
-            &id("u1"),
-            ModifyUserOpts {
-                host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
-                ..Default::default()
-            }
-        )),
-        "<modify_user user_id=\"u1\"><hosts allow=\"0\">192.0.2.0/24</hosts></modify_user>"
-    );
-    assert_eq!(
-        xml(modify_user(
-            &id("u1"),
-            ModifyUserOpts {
-                host_access: Some(UserHostAccess::deny("")),
-                ..Default::default()
-            }
-        )),
-        "<modify_user user_id=\"u1\"><hosts allow=\"0\"></hosts></modify_user>"
-    );
-}
 
-#[test]
-fn test_user_get_modify_delete() {
+    let mut clone = CloneUserRequest::new(id("u1"));
+    clone.name = Some("copy".into());
     assert_eq!(
-        xml(clone_user(&id("u1"))),
-        "<create_user><copy>u1</copy></create_user>"
+        xml(&clone),
+        "<create_user><name>copy</name><copy>u1</copy></create_user>"
     );
     assert_eq!(
-        xml(get_user(&id("u1"))),
+        xml(&GetUserRequest::new(id("u1"))),
         "<get_users details=\"1\" user_id=\"u1\"/>"
     );
+
+    let mut delete = DeleteUserRequest::by_name("alice");
+    delete.inheritor_name = Some("admin".into());
     assert_eq!(
-        xml(delete_user(&id("u1"), true)),
-        "<delete_user ultimate=\"1\" user_id=\"u1\"/>"
+        xml(&delete),
+        "<delete_user inheritor_name=\"admin\" name=\"alice\"/>"
     );
+}
+
+#[test]
+fn canonical_user_requests_reject_invalid_final_values() {
+    let mut create = CreateUserRequest::new("alice");
+    create.name.clear();
+    assert!(matches!(
+        create.encode(GmpVersion(22, 8)),
+        Err(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+
+    let request = DeleteUserRequest {
+        user_id: None,
+        name: None,
+        inheritor_id: None,
+        inheritor_name: None,
+    };
+    assert!(matches!(
+        request.encode(GmpVersion(22, 8)),
+        Err(GmpRequestError::InvalidCombination { .. })
+    ));
+}
+
+#[test]
+fn user_request_debug_output_redacts_passwords() {
+    let mut create = CreateUserRequest::new("alice");
+    create.password = Some("create-secret".into());
+    let mut modify = ModifyUserRequest::new(id("u1"), UserHostAccess::allow(""));
+    modify.password = Some("modify-secret".into());
+
+    let create_debug = format!("{create:?}");
+    let modify_debug = format!("{modify:?}");
+    assert!(create_debug.contains("<redacted>"));
+    assert!(!create_debug.contains("create-secret"));
+    assert!(modify_debug.contains("<redacted>"));
+    assert!(!modify_debug.contains("modify-secret"));
 }
