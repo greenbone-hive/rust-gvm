@@ -58,6 +58,32 @@ fn canonical_user_requests_encode_exact_xml() {
 }
 
 #[test]
+fn delete_user_encodes_only_supported_selectors_and_inheritors() {
+    // Pinned gvmd ignores the legacy ultimate attribute. Keep exact-wire
+    // coverage for both selectors with absent, ID, and name inheritance.
+    // Evidence: docs/user-group-request-gvmd-evidence.md.
+    for (mut request, selector) in [
+        (DeleteUserRequest::new(id("u1")), "user_id=\"u1\""),
+        (DeleteUserRequest::by_name("alice"), "name=\"alice\""),
+    ] {
+        assert_eq!(xml(&request), format!("<delete_user {selector}/>"));
+
+        request.inheritor_id = Some(id("self"));
+        assert_eq!(
+            xml(&request),
+            format!("<delete_user inheritor_id=\"self\" {selector}/>")
+        );
+
+        request.inheritor_id = None;
+        request.inheritor_name = Some("admin".into());
+        assert_eq!(
+            xml(&request),
+            format!("<delete_user inheritor_name=\"admin\" {selector}/>")
+        );
+    }
+}
+
+#[test]
 fn canonical_user_requests_reject_invalid_final_values() {
     let mut create = CreateUserRequest::new("alice");
     create.name.clear();

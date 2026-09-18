@@ -181,7 +181,9 @@ modification similarly owns final name, comment, and membership values. Detail
 and clone retain semantic aliases, final values fail validation before support
 checks or transport, and password diagnostics and wire traces remain redacted.
 Independent [user/group gvmd evidence](user-group-request-gvmd-evidence.md)
-records those contracts.
+records those contracts. Issue #639 documents why the legacy delete-user
+`ultimate` input is intentionally absent and provides the
+[v0.7 user/group migration mapping](v0.7.0-migration.md#users-and-groups).
 
 The next #602 slice converts all twelve role and permission lifecycle operations
 to complete requests and request-accepting facades. Four option bags and twelve

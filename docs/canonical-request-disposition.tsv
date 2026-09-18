@@ -297,7 +297,7 @@ builder	crates/gvm-gmp/src/commands/user_settings.rs	get_user_settings	transitio
 builder	crates/gvm-gmp/src/commands/user_settings.rs	modify_user_setting	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/users.rs	clone_user	removed	Removed by #636; CloneUserRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/users.rs	create_user	removed	Removed by #636; CreateUserRequest owns canonical validation and encoding.
-builder	crates/gvm-gmp/src/commands/users.rs	delete_user	removed	Removed by #636; DeleteUserRequest owns selector validation and canonical encoding.
+builder	crates/gvm-gmp/src/commands/users.rs	delete_user	removed	Removed by #636; DeleteUserRequest owns selector validation and canonical encoding; legacy ultimate is ignored by pinned gvmd and intentionally removed (see docs/user-group-request-gvmd-evidence.md).
 builder	crates/gvm-gmp/src/commands/users.rs	get_user	removed	Removed by #636; GetUserRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/users.rs	get_users	removed	Removed by #636; GetUsersRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/users.rs	modify_user	removed	Removed by #636; ModifyUserRequest owns canonical validation and encoding.
