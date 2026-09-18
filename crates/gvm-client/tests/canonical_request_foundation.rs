@@ -25,10 +25,12 @@ use gvm_gmp::commands::filters::CreateFilterRequest;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
+use gvm_gmp::commands::notes::CreateNoteRequest;
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
+use gvm_gmp::commands::overrides::CreateOverrideRequest;
 use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
 use gvm_gmp::commands::scanners::CreateScannerRequest;
 use gvm_gmp::commands::schedules::ModifyScheduleRequest;
@@ -878,6 +880,54 @@ async fn invalid_scanner_final_value_fails_before_transport() {
     assert!(matches!(
         error,
         GvmError::Request(GmpRequestError::InvalidField { field: "port", .. })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_note_final_value_fails_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let mut request = CreateNoteRequest::new("1.3.6.1", "note");
+    request.text.clear();
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("empty note text should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field: "text", .. })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_override_final_value_fails_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let request = CreateOverrideRequest::new("1.3.6.1", "override", f64::INFINITY);
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("infinite replacement severity should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField {
+            field: "new_severity",
+            ..
+        })
     ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;

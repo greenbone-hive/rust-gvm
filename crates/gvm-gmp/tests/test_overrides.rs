@@ -5,57 +5,58 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::overrides::*;
+use gvm_gmp::{GmpRequestCodec, GmpRequestError, GmpVersion};
 
-#[test]
-fn test_create_override_basic() {
-    assert_eq!(
-        xml(create_override("oid", Default::default())),
-        "<create_override><nvt oid=\"oid\"/></create_override>"
-    );
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap()
 }
 
 #[test]
-fn test_create_override_with_optionals() {
+fn canonical_override_requests_encode_exact_xml() {
+    let mut create = CreateOverrideRequest::new("oid", "body", 7.5);
+    create.hosts = vec!["1.1.1.1".into()];
+    create.port = Some("22/tcp".into());
+    create.severity = Some(5.0);
+    create.task_id = Some(id("t1"));
+    create.result_id = Some(id("r1"));
+    create.days_active = Some(-1);
     assert_eq!(
-        xml(create_override(
-            "oid",
-            OverrideOpts {
-                text: Some("body".into()),
-                hosts: vec!["1.1.1.1".into()],
-                port: Some("22".into()),
-                severity: Some("5.0".into()),
-                new_severity: Some("7.5".into()),
-                task_id: Some(id("t1")),
-                result_id: Some(id("r1")),
-                active: Some(true),
-            }
-        )),
-        "<create_override><nvt oid=\"oid\"/><text>body</text><hosts>1.1.1.1</hosts><port>22</port><severity>5.0</severity><new_severity>7.5</new_severity><task id=\"t1\"/><result id=\"r1\"/><active>1</active></create_override>"
+        xml(&create),
+        "<create_override><nvt oid=\"oid\"/><text>body</text><hosts>1.1.1.1</hosts><port>22/tcp</port><severity>5</severity><new_severity>7.5</new_severity><task id=\"t1\"/><result id=\"r1\"/><active>-1</active></create_override>"
     );
-}
 
-#[test]
-fn test_override_get_modify_delete() {
     assert_eq!(
-        xml(clone_override(&id("o1"))),
+        xml(&CloneOverrideRequest::new(id("o1"))),
         "<create_override><copy>o1</copy></create_override>"
     );
     assert_eq!(
-        xml(get_override(&id("o1"))),
+        xml(&GetOverrideRequest::new(id("o1"))),
         "<get_overrides details=\"1\" override_id=\"o1\"/>"
     );
     assert_eq!(
-        xml(delete_override(&id("o1"), false)),
+        xml(&DeleteOverrideRequest::new(id("o1"), false)),
         "<delete_override override_id=\"o1\" ultimate=\"0\"/>"
     );
     assert_eq!(
-        xml(get_overrides(GetOverridesOpts {
+        xml(&GetOverridesRequest {
             details: Some(true),
             result: Some(true),
             ..Default::default()
-        })),
+        }),
         "<get_overrides details=\"1\" result=\"1\"/>"
     );
+}
+
+#[test]
+fn canonical_override_validation_checks_final_values() {
+    let request = ModifyOverrideRequest::new(id("o1"), "body", f64::INFINITY);
+    assert!(matches!(
+        request.encode(GmpVersion(22, 8)),
+        Err(GmpRequestError::InvalidField {
+            field: "new_severity",
+            ..
+        })
+    ));
 }

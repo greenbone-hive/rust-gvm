@@ -1,62 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Note command builders.
+//! Canonical requests for note operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::common::{add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr};
 use crate::responses::{
     CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse,
 };
-use crate::types::{CollectionUpdate, EntityId};
-use crate::GmpRequest;
+use crate::types::EntityId;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for note create requests.
+/// Request for listing notes.
 #[derive(Debug, Clone, Default)]
-pub struct NoteOpts {
-    /// Optional text body.
-    pub text: Option<String>,
-    /// Host entries associated with the request.
-    pub hosts: Vec<String>,
-    /// Optional port selector.
-    pub port: Option<String>,
-    /// Optional severity value.
-    pub severity: Option<String>,
-    /// Optional task identifier.
-    pub task_id: Option<EntityId>,
-    /// Optional result identifier.
-    pub result_id: Option<EntityId>,
-    /// Whether the resource should be active.
-    pub active: Option<bool>,
-    /// Whether the note should be marked as orphaned.
-    pub orphan: Option<bool>,
-}
-
-/// Optional fields for `modify_note` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyNoteOpts {
-    /// Optional text body.
-    pub text: Option<String>,
-    /// Host update: omit, replace, or explicitly clear.
-    pub hosts: CollectionUpdate<String>,
-    /// Optional port selector.
-    pub port: Option<String>,
-    /// Optional severity value.
-    pub severity: Option<String>,
-    /// Optional task identifier.
-    pub task_id: Option<EntityId>,
-    /// Optional result identifier.
-    pub result_id: Option<EntityId>,
-    /// Whether the resource should be active.
-    pub active: Option<bool>,
-    /// Whether the note should be marked as orphaned.
-    pub orphan: Option<bool>,
-}
-
-/// Options for `get_notes` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetNotesOpts {
+pub struct GetNotesRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -65,25 +23,17 @@ pub struct GetNotesOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
-    /// Whether to include associated result references in the response.
+    /// Whether to include associated result references.
     pub result: Option<bool>,
 }
 
-/// Semantic request for listing notes.
-#[derive(Debug, Clone, Default)]
-pub struct GetNotesRequest(GetNotesOpts);
-
-impl GetNotesRequest {
-    /// Create a note-list request.
-    #[must_use]
-    pub fn new(opts: GetNotesOpts) -> Self {
-        Self(opts)
+impl GmpRequestCodec for GetNotesRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_notes"))
     }
-}
 
-impl Request for GetNotesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_notes(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_notes_command(self).to_bytes())
     }
 }
 
@@ -91,56 +41,90 @@ impl GmpRequest for GetNotesRequest {
     type Response = GetNotesResponse;
 }
 
-macro_rules! note_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(note_id: EntityId) -> Self {
-                Self(note_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
+/// Request for one detailed note.
+#[derive(Debug, Clone)]
+pub struct GetNoteRequest {
+    /// Note identifier to retrieve.
+    pub note_id: EntityId,
 }
 
-note_id_request!(GetNoteRequest, GetNotesResponse, get_note);
-note_id_request!(CloneNoteRequest, CreateNoteResponse, clone_note);
+impl GetNoteRequest {
+    /// Create a detailed single-note request.
+    #[must_use]
+    pub fn new(note_id: EntityId) -> Self {
+        Self { note_id }
+    }
+}
 
-/// Semantic request for creating a note.
+impl GmpRequestCodec for GetNoteRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_notes", "get_note"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_note_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for GetNoteRequest {
+    type Response = GetNotesResponse;
+}
+
+/// Request for creating a note.
 #[derive(Debug, Clone)]
 pub struct CreateNoteRequest {
-    nvt_oid: String,
-    opts: NoteOpts,
+    /// OID of the NVT to which the note applies.
+    pub nvt_oid: String,
+    /// Note text.
+    pub text: String,
+    /// Host restrictions. An empty list means any host.
+    pub hosts: Vec<String>,
+    /// Optional result-port restriction such as `22/tcp` or `general/tcp`.
+    pub port: Option<String>,
+    /// Optional result-severity restriction in `0..=10`, or `-1` for log.
+    pub severity: Option<f64>,
+    /// Optional task restriction.
+    pub task_id: Option<EntityId>,
+    /// Optional result restriction.
+    pub result_id: Option<EntityId>,
+    /// Optional activation duration: `-1` forever, `0` disabled, or positive days.
+    pub days_active: Option<i32>,
 }
 
 impl CreateNoteRequest {
-    /// Create a note-creation request.
+    /// Create a note request with gvmd's required NVT and text values.
     #[must_use]
-    pub fn new(nvt_oid: impl Into<String>, opts: NoteOpts) -> Self {
+    pub fn new(nvt_oid: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             nvt_oid: nvt_oid.into(),
-            opts,
+            text: text.into(),
+            hosts: Vec::new(),
+            port: None,
+            severity: None,
+            task_id: None,
+            result_id: None,
+            days_active: None,
         }
     }
 }
 
-impl Request for CreateNoteRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_note(&self.nvt_oid, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateNoteRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required(&self.nvt_oid, "nvt_oid")?;
+        validate_required(&self.text, "text")?;
+        validate_hosts(&self.hosts)?;
+        validate_optional_port(self.port.as_deref())?;
+        validate_optional_severity(self.severity, "severity", false)?;
+        validate_days_active(self.days_active)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_note"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(create_note_command(self).to_bytes())
     }
 }
 
@@ -148,24 +132,99 @@ impl GmpRequest for CreateNoteRequest {
     type Response = CreateNoteResponse;
 }
 
-/// Semantic request for modifying a note.
+/// Request for cloning a note through `create_note`.
 #[derive(Debug, Clone)]
-pub struct ModifyNoteRequest {
-    note_id: EntityId,
-    opts: ModifyNoteOpts,
+pub struct CloneNoteRequest {
+    /// Existing note identifier to copy.
+    pub note_id: EntityId,
 }
 
-impl ModifyNoteRequest {
-    /// Create a note-modification request.
+impl CloneNoteRequest {
+    /// Create a note-clone request.
     #[must_use]
-    pub fn new(note_id: EntityId, opts: ModifyNoteOpts) -> Self {
-        Self { note_id, opts }
+    pub fn new(note_id: EntityId) -> Self {
+        Self { note_id }
     }
 }
 
-impl Request for ModifyNoteRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_note(&self.note_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CloneNoteRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("create_note", "clone_note"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(clone_note_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for CloneNoteRequest {
+    type Response = CreateNoteResponse;
+}
+
+/// Request for modifying a note.
+///
+/// gvmd requires [`Self::text`] on every modification. Omitted hosts, port,
+/// severity, task, and result values clear those restrictions. Omitted
+/// [`Self::nvt_oid`] and [`Self::days_active`] preserve their current values.
+#[derive(Debug, Clone)]
+pub struct ModifyNoteRequest {
+    /// Note identifier to modify.
+    pub note_id: EntityId,
+    /// Required replacement note text.
+    pub text: String,
+    /// Optional replacement NVT OID; omission preserves the current NVT.
+    pub nvt_oid: Option<String>,
+    /// Replacement host restrictions. An empty list clears the restriction.
+    pub hosts: Vec<String>,
+    /// Replacement result-port restriction; omission clears it.
+    pub port: Option<String>,
+    /// Replacement result-severity restriction; omission clears it.
+    pub severity: Option<f64>,
+    /// Replacement task restriction; omission clears it.
+    pub task_id: Option<EntityId>,
+    /// Replacement result restriction; omission clears it.
+    pub result_id: Option<EntityId>,
+    /// Optional activation update; omission preserves the current activation.
+    pub days_active: Option<i32>,
+}
+
+impl ModifyNoteRequest {
+    /// Create a note-modification request with cleared restrictions.
+    #[must_use]
+    pub fn new(note_id: EntityId, text: impl Into<String>) -> Self {
+        Self {
+            note_id,
+            text: text.into(),
+            nvt_oid: None,
+            hosts: Vec::new(),
+            port: None,
+            severity: None,
+            task_id: None,
+            result_id: None,
+            days_active: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for ModifyNoteRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required(&self.text, "text")?;
+        if let Some(nvt_oid) = self.nvt_oid.as_deref() {
+            validate_required(nvt_oid, "nvt_oid")?;
+        }
+        validate_hosts(&self.hosts)?;
+        validate_optional_port(self.port.as_deref())?;
+        validate_optional_severity(self.severity, "severity", false)?;
+        validate_days_active(self.days_active)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_note"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(modify_note_command(self).to_bytes())
     }
 }
 
@@ -173,11 +232,13 @@ impl GmpRequest for ModifyNoteRequest {
     type Response = ModifyNoteResponse;
 }
 
-/// Semantic request for deleting a note.
+/// Request for deleting a note.
 #[derive(Debug, Clone)]
 pub struct DeleteNoteRequest {
-    note_id: EntityId,
-    ultimate: bool,
+    /// Note identifier to delete.
+    pub note_id: EntityId,
+    /// Whether to delete permanently instead of moving to the trashcan.
+    pub ultimate: bool,
 }
 
 impl DeleteNoteRequest {
@@ -188,9 +249,13 @@ impl DeleteNoteRequest {
     }
 }
 
-impl Request for DeleteNoteRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_note(&self.note_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteNoteRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_note"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_note_command(self).to_bytes())
     }
 }
 
@@ -198,254 +263,318 @@ impl GmpRequest for DeleteNoteRequest {
     type Response = DeleteNoteResponse;
 }
 
-/// Build a clone request for an existing note.
-#[must_use]
-pub fn clone_note(note_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_note").child_with_text("copy", note_id.as_str())
-}
-
-/// Build a `create_note` request.
-#[must_use]
-pub fn create_note(nvt_oid: &str, opts: NoteOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_note");
-    cmd.add_element("nvt").set_attribute("oid", nvt_oid);
-    add_text_element(&mut cmd, "text", opts.text.as_deref());
-    if !opts.hosts.is_empty() {
-        cmd.add_element_with_text("hosts", &opts.hosts.join(","));
+pub(crate) fn validate_required(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.trim().is_empty() {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
     }
-    add_note_tail(
-        &mut cmd,
-        opts.port.as_deref(),
-        opts.severity.as_deref(),
-        opts.task_id.as_ref(),
-        opts.result_id.as_ref(),
-        opts.active,
-        opts.orphan,
-    );
-    cmd
 }
 
-/// Build a `get_notes` request.
-#[must_use]
-pub fn get_notes(opts: GetNotesOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_notes");
+pub(crate) fn validate_hosts(hosts: &[String]) -> Result<(), GmpRequestError> {
+    if hosts.iter().any(|host| host.trim().is_empty()) {
+        Err(GmpRequestError::invalid_field(
+            "hosts",
+            "must not contain empty entries",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn validate_optional_port(port: Option<&str>) -> Result<(), GmpRequestError> {
+    let Some(port) = port else {
+        return Ok(());
+    };
+    let valid_cpe = port
+        .strip_prefix("cpe:")
+        .is_some_and(|value| !value.is_empty() && !value.chars().any(char::is_whitespace));
+    let valid_service = port.split_once('/').is_some_and(|(number, protocol)| {
+        let valid_number = number == "general"
+            || (number.len() <= 5
+                && number
+                    .starts_with(|character: char| character.is_ascii_digit() && character != '0')
+                && number.chars().all(|character| character.is_ascii_digit()));
+        valid_number
+            && !protocol.is_empty()
+            && protocol
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric())
+    });
+    if valid_cpe || valid_service {
+        Ok(())
+    } else {
+        Err(GmpRequestError::invalid_field(
+            "port",
+            "must be cpe:<value>, general/<protocol>, or 1-5 digits/<protocol>",
+        ))
+    }
+}
+
+pub(crate) fn validate_optional_severity(
+    severity: Option<f64>,
+    field: &'static str,
+    allow_false_positive: bool,
+) -> Result<(), GmpRequestError> {
+    let Some(severity) = severity else {
+        return Ok(());
+    };
+    let special = severity == -1.0 || (allow_false_positive && severity == -3.0);
+    if severity.is_finite() && ((0.0..=10.0).contains(&severity) || special) {
+        Ok(())
+    } else {
+        Err(GmpRequestError::invalid_field(
+            field,
+            if allow_false_positive {
+                "must be finite and in 0..=10, -1 (log), or -3 (false positive)"
+            } else {
+                "must be finite and in 0..=10 or -1 (log)"
+            },
+        ))
+    }
+}
+
+pub(crate) fn validate_days_active(days_active: Option<i32>) -> Result<(), GmpRequestError> {
+    if days_active.is_some_and(|days| days < -1) {
+        Err(GmpRequestError::invalid_field(
+            "days_active",
+            "must be -1 (forever), 0 (disabled), or positive days",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn add_optional_text(command: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        command.add_element_with_text(name, value);
+    }
+}
+
+fn add_restrictions(
+    command: &mut XmlCommand,
+    hosts: &[String],
+    port: Option<&str>,
+    severity: Option<f64>,
+    task_id: Option<&EntityId>,
+    result_id: Option<&EntityId>,
+    days_active: Option<i32>,
+) {
+    if !hosts.is_empty() {
+        command.add_element_with_text("hosts", &hosts.join(","));
+    }
+    add_optional_text(command, "port", port);
+    if let Some(severity) = severity {
+        command.add_element_with_text("severity", &severity.to_string());
+    }
+    add_optional_id_element(command, "task", task_id);
+    add_optional_id_element(command, "result", result_id);
+    if let Some(days_active) = days_active {
+        command.add_element_with_text("active", &days_active.to_string());
+    }
+}
+
+fn get_notes_command(request: &GetNotesRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("get_notes");
     add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        &mut command,
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    set_optional_bool_attr(&mut cmd, "result", opts.result);
-    cmd
+    set_optional_bool_attr(&mut command, "trash", request.trash);
+    set_optional_bool_attr(&mut command, "details", request.details);
+    set_optional_bool_attr(&mut command, "result", request.result);
+    command
 }
 
-/// Build a `get_note` request.
-#[must_use]
-pub fn get_note(note_id: &EntityId) -> impl Request {
+fn get_note_command(request: &GetNoteRequest) -> XmlCommand {
     XmlCommand::new("get_notes")
-        .attribute("note_id", note_id.as_str())
+        .attribute("note_id", request.note_id.as_str())
         .attribute("details", "1")
 }
 
-/// Build a `modify_note` request.
-#[must_use]
-pub fn modify_note(note_id: &EntityId, opts: ModifyNoteOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_note").attribute("note_id", note_id.as_str());
-    add_text_element(&mut cmd, "text", opts.text.as_deref());
-    add_hosts_update(&mut cmd, &opts.hosts);
-    add_note_tail(
-        &mut cmd,
-        opts.port.as_deref(),
-        opts.severity.as_deref(),
-        opts.task_id.as_ref(),
-        opts.result_id.as_ref(),
-        opts.active,
-        opts.orphan,
+fn create_note_command(request: &CreateNoteRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("create_note");
+    command
+        .add_element("nvt")
+        .set_attribute("oid", &request.nvt_oid);
+    command.add_element_with_text("text", &request.text);
+    add_restrictions(
+        &mut command,
+        &request.hosts,
+        request.port.as_deref(),
+        request.severity,
+        request.task_id.as_ref(),
+        request.result_id.as_ref(),
+        request.days_active,
     );
-    cmd
+    command
 }
 
-/// Build a `delete_note` request.
-#[must_use]
-pub fn delete_note(note_id: &EntityId, ultimate: bool) -> impl Request {
+fn clone_note_command(request: &CloneNoteRequest) -> XmlCommand {
+    XmlCommand::new("create_note").child_with_text("copy", request.note_id.as_str())
+}
+
+fn modify_note_command(request: &ModifyNoteRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("modify_note").attribute("note_id", request.note_id.as_str());
+    command.add_element_with_text("text", &request.text);
+    if let Some(nvt_oid) = request.nvt_oid.as_deref() {
+        command.add_element("nvt").set_attribute("oid", nvt_oid);
+    }
+    add_restrictions(
+        &mut command,
+        &request.hosts,
+        request.port.as_deref(),
+        request.severity,
+        request.task_id.as_ref(),
+        request.result_id.as_ref(),
+        request.days_active,
+    );
+    command
+}
+
+fn delete_note_command(request: &DeleteNoteRequest) -> XmlCommand {
     XmlCommand::new("delete_note")
-        .attribute("note_id", note_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
-}
-
-fn add_note_tail(
-    cmd: &mut XmlCommand,
-    port: Option<&str>,
-    severity: Option<&str>,
-    task_id: Option<&EntityId>,
-    result_id: Option<&EntityId>,
-    active: Option<bool>,
-    orphan: Option<bool>,
-) {
-    add_text_element(cmd, "port", port);
-    add_text_element(cmd, "severity", severity);
-    if let Some(task_id) = task_id {
-        cmd.add_element("task")
-            .set_attribute("id", task_id.as_str());
-    }
-    if let Some(result_id) = result_id {
-        cmd.add_element("result")
-            .set_attribute("id", result_id.as_str());
-    }
-    if let Some(active) = active {
-        cmd.add_element_with_text("active", bool_str(active));
-    }
-    if let Some(orphan) = orphan {
-        cmd.add_element_with_text("orphan", bool_str(orphan));
-    }
-}
-
-fn add_hosts_update(cmd: &mut XmlCommand, update: &CollectionUpdate<String>) {
-    match update {
-        CollectionUpdate::Omitted => {}
-        CollectionUpdate::Replace(hosts) => {
-            cmd.add_element_with_text("hosts", &hosts.join(","));
-        }
-        CollectionUpdate::Clear => {
-            cmd.add_element_with_text("hosts", "");
-        }
-    }
+        .attribute("note_id", request.note_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
+    fn request_xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(request.encode(GmpVersion(22, 8)).expect("valid request"))
+            .expect("valid UTF-8")
+    }
+
     #[test]
-    fn semantic_note_requests_match_builder_bytes_and_responses() {
+    fn note_requests_have_independent_exact_wire_shapes() {
+        assert_eq!(
+            request_xml(&GetNotesRequest {
+                filter_string: Some("text=body".into()),
+                filter_id: Some(id("filter-1")),
+                trash: Some(false),
+                details: Some(true),
+                result: Some(true),
+            }),
+            "<get_notes details=\"1\" filt_id=\"filter-1\" filter=\"text=body\" result=\"1\" trash=\"0\"/>"
+        );
+        assert_eq!(
+            request_xml(&GetNoteRequest::new(id("note-1"))),
+            "<get_notes details=\"1\" note_id=\"note-1\"/>"
+        );
+
+        let mut create = CreateNoteRequest::new("1.3.6.1", "body");
+        create.hosts = vec!["192.0.2.1".into(), "192.0.2.2".into()];
+        create.port = Some("22/tcp".into());
+        create.severity = Some(7.5);
+        create.task_id = Some(id("task-1"));
+        create.result_id = Some(id("result-1"));
+        create.days_active = Some(-1);
+        assert_eq!(
+            request_xml(&create),
+            "<create_note><nvt oid=\"1.3.6.1\"/><text>body</text><hosts>192.0.2.1,192.0.2.2</hosts><port>22/tcp</port><severity>7.5</severity><task id=\"task-1\"/><result id=\"result-1\"/><active>-1</active></create_note>"
+        );
+        assert!(!request_xml(&create).contains("orphan"));
+
+        assert_eq!(
+            request_xml(&CloneNoteRequest::new(id("note-1"))),
+            "<create_note><copy>note-1</copy></create_note>"
+        );
+
+        let mut modify = ModifyNoteRequest::new(id("note-1"), "updated");
+        modify.nvt_oid = Some("1.3.6.2".into());
+        modify.days_active = Some(0);
+        assert_eq!(
+            request_xml(&modify),
+            "<modify_note note_id=\"note-1\"><text>updated</text><nvt oid=\"1.3.6.2\"/><active>0</active></modify_note>"
+        );
+
+        assert_eq!(
+            request_xml(&DeleteNoteRequest::new(id("note-1"), true)),
+            "<delete_note note_id=\"note-1\" ultimate=\"1\"/>"
+        );
+    }
+
+    #[test]
+    fn invalid_final_note_values_are_rejected() {
+        let mut create = CreateNoteRequest::new("", "body");
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "nvt_oid",
+                ..
+            })
+        ));
+
+        create.nvt_oid = "1.3.6.1".into();
+        create.text.clear();
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField { field: "text", .. })
+        ));
+
+        let mut modify = ModifyNoteRequest::new(id("note-1"), "body");
+        modify.port = Some("ssh".into());
+        assert!(matches!(
+            modify.validate(),
+            Err(GmpRequestError::InvalidField { field: "port", .. })
+        ));
+
+        modify.port = None;
+        modify.severity = Some(f64::NAN);
+        assert!(matches!(
+            modify.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "severity",
+                ..
+            })
+        ));
+
+        modify.severity = None;
+        modify.days_active = Some(-2);
+        assert!(matches!(
+            modify.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "days_active",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn note_requests_keep_static_response_associations() {
         fn associated<R, T>(_: &R)
         where
             R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
+            T: GmpResponse,
         {
         }
-        let note_id = id("note-1");
-        let get_opts = GetNotesOpts {
-            details: Some(true),
-            result: Some(true),
-            ..Default::default()
-        };
-        let opts = NoteOpts {
-            text: Some("body".into()),
-            hosts: vec!["192.0.2.1".into()],
-            ..Default::default()
-        };
-        let modify_opts = ModifyNoteOpts {
-            hosts: CollectionUpdate::Clear,
-            ..Default::default()
-        };
 
-        let list = GetNotesRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_notes(get_opts).to_bytes());
-        associated::<_, GetNotesResponse>(&list);
-        let get = GetNoteRequest::new(note_id.clone());
-        assert_eq!(get.to_bytes(), get_note(&note_id).to_bytes());
-        associated::<_, GetNotesResponse>(&get);
-        let create = CreateNoteRequest::new("1.3.6.1", opts.clone());
-        assert_eq!(create.to_bytes(), create_note("1.3.6.1", opts).to_bytes());
-        associated::<_, CreateNoteResponse>(&create);
-        let clone = CloneNoteRequest::new(note_id.clone());
-        assert_eq!(clone.to_bytes(), clone_note(&note_id).to_bytes());
-        associated::<_, CreateNoteResponse>(&clone);
-        let modify = ModifyNoteRequest::new(note_id.clone(), modify_opts.clone());
-        assert_eq!(
-            modify.to_bytes(),
-            modify_note(&note_id, modify_opts).to_bytes()
-        );
-        associated::<_, ModifyNoteResponse>(&modify);
-        let delete = DeleteNoteRequest::new(note_id.clone(), true);
-        assert_eq!(delete.to_bytes(), delete_note(&note_id, true).to_bytes());
-        associated::<_, DeleteNoteResponse>(&delete);
+        associated::<_, GetNotesResponse>(&GetNotesRequest::default());
+        associated::<_, GetNotesResponse>(&GetNoteRequest::new(id("note-1")));
+        associated::<_, CreateNoteResponse>(&CreateNoteRequest::new("1.3.6.1", "body"));
+        associated::<_, CreateNoteResponse>(&CloneNoteRequest::new(id("note-1")));
+        associated::<_, ModifyNoteResponse>(&ModifyNoteRequest::new(id("note-1"), "body"));
+        associated::<_, DeleteNoteResponse>(&DeleteNoteRequest::new(id("note-1"), false));
     }
 
     #[test]
-    fn note_commands_build_xml() {
-        let rendered = xml(create_note(
-            "1.3.6.1",
-            NoteOpts {
-                text: Some("body".into()),
-                hosts: vec!["1.1.1.1".into()],
-                task_id: Some(id("t1")),
-                active: Some(true),
-                ..Default::default()
-            },
-        ));
-        assert!(rendered.contains("<nvt oid=\"1.3.6.1\""));
-        assert!(rendered.contains("<text>body</text>"));
-        assert_eq!(
-            xml(clone_note(&id("n1"))),
-            "<create_note><copy>n1</copy></create_note>"
-        );
-        let rendered = xml(get_note(&id("n1")));
-        assert!(rendered.contains("<get_notes "));
-        assert!(rendered.contains("note_id=\"n1\""));
-        assert!(rendered.contains("details=\"1\""));
-    }
+    fn note_aliases_keep_wire_and_capability_names() {
+        let detail = GetNoteRequest::new(id("note-1"));
+        let detail_command = detail.command().expect("typed command");
+        assert_eq!(detail_command.wire_name(), "get_notes");
+        assert_eq!(detail_command.semantic_name(), Some("get_note"));
 
-    #[test]
-    fn note_modify_get_delete_build_xml() {
-        let rendered = xml(get_notes(GetNotesOpts {
-            filter_string: Some("name=foo".into()),
-            details: Some(true),
-            result: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("filter=\"name=foo\""));
-        assert!(rendered.contains("details=\"1\""));
-        assert!(rendered.contains("result=\"1\""));
-        let rendered = xml(modify_note(
-            &id("n1"),
-            ModifyNoteOpts {
-                text: Some("updated".into()),
-                ..Default::default()
-            },
-        ));
-        assert_eq!(
-            rendered,
-            "<modify_note note_id=\"n1\"><text>updated</text></modify_note>"
-        );
-        assert_eq!(
-            xml(delete_note(&id("n1"), true)),
-            "<delete_note note_id=\"n1\" ultimate=\"1\"/>"
-        );
-    }
-
-    #[test]
-    fn modify_note_distinguishes_omitted_replaced_and_cleared_hosts() {
-        assert_eq!(
-            xml(modify_note(&id("n1"), ModifyNoteOpts::default())),
-            "<modify_note note_id=\"n1\"/>"
-        );
-        assert_eq!(
-            xml(modify_note(
-                &id("n1"),
-                ModifyNoteOpts {
-                    hosts: CollectionUpdate::replace(["192.0.2.1".into(), "192.0.2.2".into()]),
-                    ..Default::default()
-                }
-            )),
-            "<modify_note note_id=\"n1\"><hosts>192.0.2.1,192.0.2.2</hosts></modify_note>"
-        );
-        assert_eq!(
-            xml(modify_note(
-                &id("n1"),
-                ModifyNoteOpts {
-                    hosts: CollectionUpdate::Clear,
-                    ..Default::default()
-                }
-            )),
-            "<modify_note note_id=\"n1\"><hosts></hosts></modify_note>"
-        );
+        let clone = CloneNoteRequest::new(id("note-1"));
+        let clone_command = clone.command().expect("typed command");
+        assert_eq!(clone_command.wire_name(), "create_note");
+        assert_eq!(clone_command.semantic_name(), Some("clone_note"));
     }
 }

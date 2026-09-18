@@ -12,12 +12,12 @@ use gvm_gmp::commands::filters::{
     GetFiltersRequest, ModifyFilterRequest,
 };
 use gvm_gmp::commands::notes::{
-    CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesOpts,
-    GetNotesRequest, ModifyNoteOpts, ModifyNoteRequest, NoteOpts,
+    CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesRequest,
+    ModifyNoteRequest,
 };
 use gvm_gmp::commands::overrides::{
     CloneOverrideRequest, CreateOverrideRequest, DeleteOverrideRequest, GetOverrideRequest,
-    GetOverridesOpts, GetOverridesRequest, ModifyOverrideOpts, ModifyOverrideRequest, OverrideOpts,
+    GetOverridesRequest, ModifyOverrideRequest,
 };
 use gvm_gmp::commands::tags::{
     CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsRequest,
@@ -31,7 +31,6 @@ use gvm_gmp::responses::{
     GetTagsResponse, ModifyAlertResponse, ModifyFilterResponse, ModifyNoteResponse,
     ModifyOverrideResponse, ModifyTagResponse,
 };
-use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Alerts ────────────────────────────────────────────────────────────────
@@ -198,16 +197,22 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_notes(&mut self, opts: GetNotesOpts) -> Result<GetNotesResponse, GvmError> {
-        self.execute(GetNotesRequest::new(opts)).await
+    pub async fn get_notes(
+        &mut self,
+        request: GetNotesRequest,
+    ) -> Result<GetNotesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a detailed single-note request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_note(&mut self, note_id: &EntityId) -> Result<GetNotesResponse, GvmError> {
-        self.execute(GetNoteRequest::new(note_id.clone())).await
+    pub async fn get_note(
+        &mut self,
+        request: GetNoteRequest,
+    ) -> Result<GetNotesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `create_note` request and return a typed [`CreateNoteResponse`].
@@ -216,18 +221,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_note(
         &mut self,
-        nvt_oid: &str,
-        opts: NoteOpts,
+        request: CreateNoteRequest,
     ) -> Result<CreateNoteResponse, GvmError> {
-        self.execute(CreateNoteRequest::new(nvt_oid, opts)).await
+        self.execute(request).await
     }
 
     /// Clone a note through `create_note`.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn clone_note(&mut self, note_id: &EntityId) -> Result<CreateNoteResponse, GvmError> {
-        self.execute(CloneNoteRequest::new(note_id.clone())).await
+    pub async fn clone_note(
+        &mut self,
+        request: CloneNoteRequest,
+    ) -> Result<CreateNoteResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `modify_note` request.
@@ -236,11 +243,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_note(
         &mut self,
-        note_id: &EntityId,
-        opts: ModifyNoteOpts,
+        request: ModifyNoteRequest,
     ) -> Result<ModifyNoteResponse, GvmError> {
-        self.execute(ModifyNoteRequest::new(note_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_note` request.
@@ -249,11 +254,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_note(
         &mut self,
-        note_id: &EntityId,
-        ultimate: bool,
+        request: DeleteNoteRequest,
     ) -> Result<DeleteNoteResponse, GvmError> {
-        self.execute(DeleteNoteRequest::new(note_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     // ── Overrides ─────────────────────────────────────────────────────────────
@@ -264,9 +267,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_overrides(
         &mut self,
-        opts: GetOverridesOpts,
+        request: GetOverridesRequest,
     ) -> Result<GetOverridesResponse, GvmError> {
-        self.execute(GetOverridesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a detailed single-override request.
@@ -275,10 +278,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_override(
         &mut self,
-        override_id: &EntityId,
+        request: GetOverrideRequest,
     ) -> Result<GetOverridesResponse, GvmError> {
-        self.execute(GetOverrideRequest::new(override_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_override` request and return a typed [`CreateOverrideResponse`].
@@ -287,11 +289,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_override(
         &mut self,
-        nvt_oid: &str,
-        opts: OverrideOpts,
+        request: CreateOverrideRequest,
     ) -> Result<CreateOverrideResponse, GvmError> {
-        self.execute(CreateOverrideRequest::new(nvt_oid, opts))
-            .await
+        self.execute(request).await
     }
 
     /// Clone an override through `create_override`.
@@ -300,10 +300,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_override(
         &mut self,
-        override_id: &EntityId,
+        request: CloneOverrideRequest,
     ) -> Result<CreateOverrideResponse, GvmError> {
-        self.execute(CloneOverrideRequest::new(override_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_override` request.
@@ -312,11 +311,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_override(
         &mut self,
-        override_id: &EntityId,
-        opts: ModifyOverrideOpts,
+        request: ModifyOverrideRequest,
     ) -> Result<ModifyOverrideResponse, GvmError> {
-        self.execute(ModifyOverrideRequest::new(override_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_override` request.
@@ -325,11 +322,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_override(
         &mut self,
-        override_id: &EntityId,
-        ultimate: bool,
+        request: DeleteOverrideRequest,
     ) -> Result<DeleteOverrideResponse, GvmError> {
-        self.execute(DeleteOverrideRequest::new(override_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     // ── Tags ──────────────────────────────────────────────────────────────────

@@ -42,14 +42,20 @@ use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
-use gvm_gmp::commands::notes::{GetNotesOpts, ModifyNoteOpts, NoteOpts};
+use gvm_gmp::commands::notes::{
+    CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesRequest,
+    ModifyNoteRequest,
+};
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
-use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
+use gvm_gmp::commands::overrides::{
+    CloneOverrideRequest, CreateOverrideRequest, DeleteOverrideRequest, GetOverrideRequest,
+    GetOverridesRequest, ModifyOverrideRequest,
+};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
@@ -111,7 +117,7 @@ use gvm_gmp::commands::web_application_targets::{
     GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
 use gvm_gmp::responses::{ActionResponse, ParseError};
-use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
+use gvm_gmp::types::{EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, EntityType, FeedType, GmpRequest, PortRangeType,
     ScannerType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
@@ -2783,8 +2789,8 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_alerts(GetAlertsRequest::default()));
     assert_typed_success!(client.get_credentials(GetCredentialsRequest::default()));
     assert_typed_success!(client.get_filters(GetFiltersRequest::default()));
-    assert_typed_success!(client.get_notes(GetNotesOpts::default()));
-    assert_typed_success!(client.get_overrides(GetOverridesOpts::default()));
+    assert_typed_success!(client.get_notes(GetNotesRequest::default()));
+    assert_typed_success!(client.get_overrides(GetOverridesRequest::default()));
     assert_typed_success!(client.get_schedules(GetSchedulesRequest::default()));
     assert_typed_success!(client.get_tags(GetTagsRequest::default()));
     assert_typed_success!(client.get_tickets(GetTicketsOpts::default()));
@@ -2870,10 +2876,14 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     assert_create_success!(client.create_port_list(CreatePortListRequest::new("ports")));
     assert_create_success!(client.create_alert(alert_create_request("alert")));
     assert_create_success!(client.create_filter(CreateFilterRequest::new("filter")));
-    assert_create_success!(client.create_note("1.3.6.1.4.1.25623.1.0.1", NoteOpts::default()));
     assert_create_success!(
-        client.create_override("1.3.6.1.4.1.25623.1.0.1", OverrideOpts::default())
+        client.create_note(CreateNoteRequest::new("1.3.6.1.4.1.25623.1.0.1", "note",))
     );
+    assert_create_success!(client.create_override(CreateOverrideRequest::new(
+        "1.3.6.1.4.1.25623.1.0.1",
+        "override",
+        5.0,
+    )));
     assert_create_success!(client.create_schedule({
         let mut request = CreateScheduleRequest::new("schedule", "BEGIN:VCALENDAR\nEND:VCALENDAR");
         request.timezone = Some("UTC".into());
@@ -3099,24 +3109,18 @@ async fn notes_execute_through_typed_facade() {
     server.clear_history();
     let resource_id = id("resource-1");
 
-    assert_typed_success!(client.get_notes(GetNotesOpts::default()));
-    assert_typed_success!(client.get_note(&resource_id));
-    assert_create_success!(client.create_note(
-        "1.3.6.1.4.1.25623.1.0.1",
-        NoteOpts {
-            hosts: vec!["192.0.2.1".into()],
-            ..Default::default()
-        }
-    ));
-    assert_create_success!(client.clone_note(&resource_id));
-    assert_typed_success!(client.modify_note(
-        &resource_id,
-        ModifyNoteOpts {
-            hosts: CollectionUpdate::Clear,
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.delete_note(&resource_id, true));
+    assert_typed_success!(client.get_notes(GetNotesRequest::default()));
+    assert_typed_success!(client.get_note(GetNoteRequest::new(resource_id.clone())));
+    assert_create_success!(client.create_note({
+        let mut request = CreateNoteRequest::new("1.3.6.1.4.1.25623.1.0.1", "note body");
+        request.hosts = vec!["192.0.2.1".into()];
+        request
+    }));
+    assert_create_success!(client.clone_note(CloneNoteRequest::new(resource_id.clone())));
+    assert_typed_success!(
+        client.modify_note(ModifyNoteRequest::new(resource_id.clone(), "updated note"))
+    );
+    assert_typed_success!(client.delete_note(DeleteNoteRequest::new(resource_id.clone(), true)));
 
     let history = server.command_history();
     let commands = history
@@ -3138,9 +3142,9 @@ async fn notes_execute_through_typed_facade() {
         .iter()
         .find(|record| record.command_name() == "modify_note")
         .expect("modify_note history");
-    assert!(std::str::from_utf8(modify_note.raw_xml())
+    assert!(!std::str::from_utf8(modify_note.raw_xml())
         .expect("request XML")
-        .contains("<hosts></hosts>"));
+        .contains("<hosts"));
     let delete_note = history
         .iter()
         .find(|record| record.command_name() == "delete_note")
@@ -3178,24 +3182,22 @@ async fn overrides_execute_through_typed_facade() {
     server.clear_history();
     let resource_id = id("resource-1");
 
-    assert_typed_success!(client.get_overrides(GetOverridesOpts::default()));
-    assert_typed_success!(client.get_override(&resource_id));
-    assert_create_success!(client.create_override(
+    assert_typed_success!(client.get_overrides(GetOverridesRequest::default()));
+    assert_typed_success!(client.get_override(GetOverrideRequest::new(resource_id.clone())));
+    assert_create_success!(client.create_override(CreateOverrideRequest::new(
         "1.3.6.1.4.1.25623.1.0.1",
-        OverrideOpts {
-            new_severity: Some("3.0".into()),
-            ..Default::default()
-        }
-    ));
-    assert_create_success!(client.clone_override(&resource_id));
-    assert_typed_success!(client.modify_override(
-        &resource_id,
-        ModifyOverrideOpts {
-            hosts: CollectionUpdate::replace(["192.0.2.2".into()]),
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.delete_override(&resource_id, false));
+        "override body",
+        3.0,
+    )));
+    assert_create_success!(client.clone_override(CloneOverrideRequest::new(resource_id.clone())));
+    assert_typed_success!(client.modify_override({
+        let mut request = ModifyOverrideRequest::new(resource_id.clone(), "updated override", 3.0);
+        request.hosts = vec!["192.0.2.2".into()];
+        request
+    }));
+    assert_typed_success!(
+        client.delete_override(DeleteOverrideRequest::new(resource_id.clone(), false))
+    );
 
     let commands = server
         .command_history()
@@ -3238,7 +3240,7 @@ async fn notes_and_overrides_preserve_status_and_parse_context() {
     let mut client = client(&server).await;
 
     let note_error = client
-        .get_note(&id("note-1"))
+        .get_note(GetNoteRequest::new(id("note-1")))
         .await
         .expect_err("non-success note response should fail");
     assert!(matches!(
@@ -3248,7 +3250,7 @@ async fn notes_and_overrides_preserve_status_and_parse_context() {
     ));
 
     let override_error = client
-        .clone_override(&id("override-1"))
+        .clone_override(CloneOverrideRequest::new(id("override-1")))
         .await
         .expect_err("missing cloned override id should fail");
     assert!(matches!(

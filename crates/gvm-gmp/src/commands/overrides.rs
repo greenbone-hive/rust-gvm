@@ -1,62 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Override command builders.
+//! Canonical requests for override operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use super::notes::{
+    validate_days_active, validate_hosts, validate_optional_port, validate_optional_severity,
+    validate_required,
+};
+use crate::common::{add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr};
 use crate::responses::{
     CreateOverrideResponse, DeleteOverrideResponse, GetOverridesResponse, ModifyOverrideResponse,
 };
-use crate::types::{CollectionUpdate, EntityId};
-use crate::GmpRequest;
+use crate::types::EntityId;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for override create requests.
+/// Request for listing overrides.
 #[derive(Debug, Clone, Default)]
-pub struct OverrideOpts {
-    /// Optional text body.
-    pub text: Option<String>,
-    /// Host entries associated with the request.
-    pub hosts: Vec<String>,
-    /// Optional port selector.
-    pub port: Option<String>,
-    /// Optional severity value.
-    pub severity: Option<String>,
-    /// Optional replacement severity value.
-    pub new_severity: Option<String>,
-    /// Optional task identifier.
-    pub task_id: Option<EntityId>,
-    /// Optional result identifier.
-    pub result_id: Option<EntityId>,
-    /// Whether the resource should be active.
-    pub active: Option<bool>,
-}
-
-/// Optional fields for `modify_override` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyOverrideOpts {
-    /// Optional text body.
-    pub text: Option<String>,
-    /// Host update: omit, replace, or explicitly clear.
-    pub hosts: CollectionUpdate<String>,
-    /// Optional port selector.
-    pub port: Option<String>,
-    /// Optional severity value.
-    pub severity: Option<String>,
-    /// Optional replacement severity value.
-    pub new_severity: Option<String>,
-    /// Optional task identifier.
-    pub task_id: Option<EntityId>,
-    /// Optional result identifier.
-    pub result_id: Option<EntityId>,
-    /// Whether the resource should be active.
-    pub active: Option<bool>,
-}
-
-/// Options for `get_overrides` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetOverridesOpts {
+pub struct GetOverridesRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -65,25 +27,17 @@ pub struct GetOverridesOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
-    /// Whether to include associated result references in the response.
+    /// Whether to include associated result references.
     pub result: Option<bool>,
 }
 
-/// Semantic request for listing overrides.
-#[derive(Debug, Clone, Default)]
-pub struct GetOverridesRequest(GetOverridesOpts);
-
-impl GetOverridesRequest {
-    /// Create an override-list request.
-    #[must_use]
-    pub fn new(opts: GetOverridesOpts) -> Self {
-        Self(opts)
+impl GmpRequestCodec for GetOverridesRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_overrides"))
     }
-}
 
-impl Request for GetOverridesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_overrides(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_overrides_command(self).to_bytes())
     }
 }
 
@@ -91,56 +45,97 @@ impl GmpRequest for GetOverridesRequest {
     type Response = GetOverridesResponse;
 }
 
-macro_rules! override_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(override_id: EntityId) -> Self {
-                Self(override_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
+/// Request for one detailed override.
+#[derive(Debug, Clone)]
+pub struct GetOverrideRequest {
+    /// Override identifier to retrieve.
+    pub override_id: EntityId,
 }
 
-override_id_request!(GetOverrideRequest, GetOverridesResponse, get_override);
-override_id_request!(CloneOverrideRequest, CreateOverrideResponse, clone_override);
+impl GetOverrideRequest {
+    /// Create a detailed single-override request.
+    #[must_use]
+    pub fn new(override_id: EntityId) -> Self {
+        Self { override_id }
+    }
+}
 
-/// Semantic request for creating an override.
+impl GmpRequestCodec for GetOverrideRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_overrides",
+            "get_override",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_override_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for GetOverrideRequest {
+    type Response = GetOverridesResponse;
+}
+
+/// Request for creating an override.
 #[derive(Debug, Clone)]
 pub struct CreateOverrideRequest {
-    nvt_oid: String,
-    opts: OverrideOpts,
+    /// OID of the NVT to which the override applies.
+    pub nvt_oid: String,
+    /// Override text.
+    pub text: String,
+    /// Host restrictions. An empty list means any host.
+    pub hosts: Vec<String>,
+    /// Optional result-port restriction such as `22/tcp` or `general/tcp`.
+    pub port: Option<String>,
+    /// Optional original-severity restriction in `0..=10`, or `-1` for log.
+    pub severity: Option<f64>,
+    /// Required replacement severity in `0..=10`, `-1` for log, or `-3` for false positive.
+    pub new_severity: f64,
+    /// Optional task restriction.
+    pub task_id: Option<EntityId>,
+    /// Optional result restriction.
+    pub result_id: Option<EntityId>,
+    /// Optional activation duration: `-1` forever, `0` disabled, or positive days.
+    pub days_active: Option<i32>,
 }
 
 impl CreateOverrideRequest {
-    /// Create an override-creation request.
+    /// Create an override request with gvmd's required values.
     #[must_use]
-    pub fn new(nvt_oid: impl Into<String>, opts: OverrideOpts) -> Self {
+    pub fn new(nvt_oid: impl Into<String>, text: impl Into<String>, new_severity: f64) -> Self {
         Self {
             nvt_oid: nvt_oid.into(),
-            opts,
+            text: text.into(),
+            hosts: Vec::new(),
+            port: None,
+            severity: None,
+            new_severity,
+            task_id: None,
+            result_id: None,
+            days_active: None,
         }
     }
 }
 
-impl Request for CreateOverrideRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_override(&self.nvt_oid, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateOverrideRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required(&self.nvt_oid, "nvt_oid")?;
+        validate_required(&self.text, "text")?;
+        validate_hosts(&self.hosts)?;
+        validate_optional_port(self.port.as_deref())?;
+        validate_optional_severity(self.severity, "severity", false)?;
+        validate_optional_severity(Some(self.new_severity), "new_severity", true)?;
+        validate_days_active(self.days_active)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_override"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(create_override_command(self).to_bytes())
     }
 }
 
@@ -148,24 +143,107 @@ impl GmpRequest for CreateOverrideRequest {
     type Response = CreateOverrideResponse;
 }
 
-/// Semantic request for modifying an override.
+/// Request for cloning an override through `create_override`.
 #[derive(Debug, Clone)]
-pub struct ModifyOverrideRequest {
-    override_id: EntityId,
-    opts: ModifyOverrideOpts,
+pub struct CloneOverrideRequest {
+    /// Existing override identifier to copy.
+    pub override_id: EntityId,
 }
 
-impl ModifyOverrideRequest {
-    /// Create an override-modification request.
+impl CloneOverrideRequest {
+    /// Create an override-clone request.
     #[must_use]
-    pub fn new(override_id: EntityId, opts: ModifyOverrideOpts) -> Self {
-        Self { override_id, opts }
+    pub fn new(override_id: EntityId) -> Self {
+        Self { override_id }
     }
 }
 
-impl Request for ModifyOverrideRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_override(&self.override_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CloneOverrideRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_override",
+            "clone_override",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(clone_override_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for CloneOverrideRequest {
+    type Response = CreateOverrideResponse;
+}
+
+/// Request for modifying an override.
+///
+/// gvmd requires [`Self::text`] and [`Self::new_severity`] on every
+/// modification. Omitted hosts, port, severity, task, and result values clear
+/// those restrictions. Omitted [`Self::nvt_oid`] and [`Self::days_active`]
+/// preserve their current values.
+#[derive(Debug, Clone)]
+pub struct ModifyOverrideRequest {
+    /// Override identifier to modify.
+    pub override_id: EntityId,
+    /// Required replacement override text.
+    pub text: String,
+    /// Required replacement severity.
+    pub new_severity: f64,
+    /// Optional replacement NVT OID; omission preserves the current NVT.
+    pub nvt_oid: Option<String>,
+    /// Replacement host restrictions. An empty list clears the restriction.
+    pub hosts: Vec<String>,
+    /// Replacement result-port restriction; omission clears it.
+    pub port: Option<String>,
+    /// Replacement original-severity restriction; omission clears it.
+    pub severity: Option<f64>,
+    /// Replacement task restriction; omission clears it.
+    pub task_id: Option<EntityId>,
+    /// Replacement result restriction; omission clears it.
+    pub result_id: Option<EntityId>,
+    /// Optional activation update; omission preserves the current activation.
+    pub days_active: Option<i32>,
+}
+
+impl ModifyOverrideRequest {
+    /// Create an override-modification request with cleared restrictions.
+    #[must_use]
+    pub fn new(override_id: EntityId, text: impl Into<String>, new_severity: f64) -> Self {
+        Self {
+            override_id,
+            text: text.into(),
+            new_severity,
+            nvt_oid: None,
+            hosts: Vec::new(),
+            port: None,
+            severity: None,
+            task_id: None,
+            result_id: None,
+            days_active: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for ModifyOverrideRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required(&self.text, "text")?;
+        validate_optional_severity(Some(self.new_severity), "new_severity", true)?;
+        if let Some(nvt_oid) = self.nvt_oid.as_deref() {
+            validate_required(nvt_oid, "nvt_oid")?;
+        }
+        validate_hosts(&self.hosts)?;
+        validate_optional_port(self.port.as_deref())?;
+        validate_optional_severity(self.severity, "severity", false)?;
+        validate_days_active(self.days_active)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_override"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(modify_override_command(self).to_bytes())
     }
 }
 
@@ -173,11 +251,13 @@ impl GmpRequest for ModifyOverrideRequest {
     type Response = ModifyOverrideResponse;
 }
 
-/// Semantic request for deleting an override.
+/// Request for deleting an override.
 #[derive(Debug, Clone)]
 pub struct DeleteOverrideRequest {
-    override_id: EntityId,
-    ultimate: bool,
+    /// Override identifier to delete.
+    pub override_id: EntityId,
+    /// Whether to delete permanently instead of moving to the trashcan.
+    pub ultimate: bool,
 }
 
 impl DeleteOverrideRequest {
@@ -191,9 +271,13 @@ impl DeleteOverrideRequest {
     }
 }
 
-impl Request for DeleteOverrideRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_override(&self.override_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteOverrideRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_override"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_override_command(self).to_bytes())
     }
 }
 
@@ -201,256 +285,238 @@ impl GmpRequest for DeleteOverrideRequest {
     type Response = DeleteOverrideResponse;
 }
 
-/// Build a clone request for an existing override.
-#[must_use]
-pub fn clone_override(override_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_override").child_with_text("copy", override_id.as_str())
-}
-
-/// Build a `create_override` request.
-#[must_use]
-pub fn create_override(nvt_oid: &str, opts: OverrideOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_override");
-    cmd.add_element("nvt").set_attribute("oid", nvt_oid);
-    add_text_element(&mut cmd, "text", opts.text.as_deref());
-    if !opts.hosts.is_empty() {
-        cmd.add_element_with_text("hosts", &opts.hosts.join(","));
+fn add_optional_text(command: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        command.add_element_with_text(name, value);
     }
-    add_override_tail(
-        &mut cmd,
-        opts.port.as_deref(),
-        opts.severity.as_deref(),
-        opts.new_severity.as_deref(),
-        opts.task_id.as_ref(),
-        opts.result_id.as_ref(),
-        opts.active,
-    );
-    cmd
 }
 
-/// Build a `get_overrides` request.
-#[must_use]
-pub fn get_overrides(opts: GetOverridesOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_overrides");
+fn add_restrictions(
+    command: &mut XmlCommand,
+    hosts: &[String],
+    port: Option<&str>,
+    severity: Option<f64>,
+    new_severity: f64,
+    task_id: Option<&EntityId>,
+    result_id: Option<&EntityId>,
+) {
+    if !hosts.is_empty() {
+        command.add_element_with_text("hosts", &hosts.join(","));
+    }
+    add_optional_text(command, "port", port);
+    if let Some(severity) = severity {
+        command.add_element_with_text("severity", &severity.to_string());
+    }
+    command.add_element_with_text("new_severity", &new_severity.to_string());
+    add_optional_id_element(command, "task", task_id);
+    add_optional_id_element(command, "result", result_id);
+}
+
+fn get_overrides_command(request: &GetOverridesRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("get_overrides");
     add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        &mut command,
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    set_optional_bool_attr(&mut cmd, "result", opts.result);
-    cmd
+    set_optional_bool_attr(&mut command, "trash", request.trash);
+    set_optional_bool_attr(&mut command, "details", request.details);
+    set_optional_bool_attr(&mut command, "result", request.result);
+    command
 }
 
-/// Build a `get_override` request.
-#[must_use]
-pub fn get_override(override_id: &EntityId) -> impl Request {
+fn get_override_command(request: &GetOverrideRequest) -> XmlCommand {
     XmlCommand::new("get_overrides")
-        .attribute("override_id", override_id.as_str())
+        .attribute("override_id", request.override_id.as_str())
         .attribute("details", "1")
 }
 
-/// Build a `modify_override` request.
-#[must_use]
-pub fn modify_override(override_id: &EntityId, opts: ModifyOverrideOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_override").attribute("override_id", override_id.as_str());
-    add_text_element(&mut cmd, "text", opts.text.as_deref());
-    add_hosts_update(&mut cmd, &opts.hosts);
-    add_override_tail(
-        &mut cmd,
-        opts.port.as_deref(),
-        opts.severity.as_deref(),
-        opts.new_severity.as_deref(),
-        opts.task_id.as_ref(),
-        opts.result_id.as_ref(),
-        opts.active,
+fn create_override_command(request: &CreateOverrideRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("create_override");
+    command
+        .add_element("nvt")
+        .set_attribute("oid", &request.nvt_oid);
+    command.add_element_with_text("text", &request.text);
+    add_restrictions(
+        &mut command,
+        &request.hosts,
+        request.port.as_deref(),
+        request.severity,
+        request.new_severity,
+        request.task_id.as_ref(),
+        request.result_id.as_ref(),
     );
-    cmd
+    if let Some(days_active) = request.days_active {
+        command.add_element_with_text("active", &days_active.to_string());
+    }
+    command
 }
 
-/// Build a `delete_override` request.
-#[must_use]
-pub fn delete_override(override_id: &EntityId, ultimate: bool) -> impl Request {
+fn clone_override_command(request: &CloneOverrideRequest) -> XmlCommand {
+    XmlCommand::new("create_override").child_with_text("copy", request.override_id.as_str())
+}
+
+fn modify_override_command(request: &ModifyOverrideRequest) -> XmlCommand {
+    let mut command =
+        XmlCommand::new("modify_override").attribute("override_id", request.override_id.as_str());
+    command.add_element_with_text("text", &request.text);
+    if let Some(nvt_oid) = request.nvt_oid.as_deref() {
+        command.add_element("nvt").set_attribute("oid", nvt_oid);
+    }
+    add_restrictions(
+        &mut command,
+        &request.hosts,
+        request.port.as_deref(),
+        request.severity,
+        request.new_severity,
+        request.task_id.as_ref(),
+        request.result_id.as_ref(),
+    );
+    if let Some(days_active) = request.days_active {
+        command.add_element_with_text("active", &days_active.to_string());
+    }
+    command
+}
+
+fn delete_override_command(request: &DeleteOverrideRequest) -> XmlCommand {
     XmlCommand::new("delete_override")
-        .attribute("override_id", override_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
-}
-
-fn add_override_tail(
-    cmd: &mut XmlCommand,
-    port: Option<&str>,
-    severity: Option<&str>,
-    new_severity: Option<&str>,
-    task_id: Option<&EntityId>,
-    result_id: Option<&EntityId>,
-    active: Option<bool>,
-) {
-    add_text_element(cmd, "port", port);
-    add_text_element(cmd, "severity", severity);
-    add_text_element(cmd, "new_severity", new_severity);
-    if let Some(task_id) = task_id {
-        cmd.add_element("task")
-            .set_attribute("id", task_id.as_str());
-    }
-    if let Some(result_id) = result_id {
-        cmd.add_element("result")
-            .set_attribute("id", result_id.as_str());
-    }
-    if let Some(active) = active {
-        cmd.add_element_with_text("active", bool_str(active));
-    }
-}
-
-fn add_hosts_update(cmd: &mut XmlCommand, update: &CollectionUpdate<String>) {
-    match update {
-        CollectionUpdate::Omitted => {}
-        CollectionUpdate::Replace(hosts) => {
-            cmd.add_element_with_text("hosts", &hosts.join(","));
-        }
-        CollectionUpdate::Clear => {
-            cmd.add_element_with_text("hosts", "");
-        }
-    }
+        .attribute("override_id", request.override_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
+    fn request_xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(request.encode(GmpVersion(22, 8)).expect("valid request"))
+            .expect("valid UTF-8")
+    }
+
     #[test]
-    fn semantic_override_requests_match_builder_bytes_and_responses() {
+    fn override_requests_have_independent_exact_wire_shapes() {
+        assert_eq!(
+            request_xml(&GetOverridesRequest {
+                filter_string: Some("text=body".into()),
+                filter_id: Some(id("filter-1")),
+                trash: Some(false),
+                details: Some(true),
+                result: Some(true),
+            }),
+            "<get_overrides details=\"1\" filt_id=\"filter-1\" filter=\"text=body\" result=\"1\" trash=\"0\"/>"
+        );
+        assert_eq!(
+            request_xml(&GetOverrideRequest::new(id("override-1"))),
+            "<get_overrides details=\"1\" override_id=\"override-1\"/>"
+        );
+
+        let mut create = CreateOverrideRequest::new("1.3.6.1", "body", 5.0);
+        create.hosts = vec!["192.0.2.1".into()];
+        create.port = Some("443/tcp".into());
+        create.severity = Some(7.5);
+        create.task_id = Some(id("task-1"));
+        create.result_id = Some(id("result-1"));
+        create.days_active = Some(-1);
+        assert_eq!(
+            request_xml(&create),
+            "<create_override><nvt oid=\"1.3.6.1\"/><text>body</text><hosts>192.0.2.1</hosts><port>443/tcp</port><severity>7.5</severity><new_severity>5</new_severity><task id=\"task-1\"/><result id=\"result-1\"/><active>-1</active></create_override>"
+        );
+
+        assert_eq!(
+            request_xml(&CloneOverrideRequest::new(id("override-1"))),
+            "<create_override><copy>override-1</copy></create_override>"
+        );
+
+        let mut modify = ModifyOverrideRequest::new(id("override-1"), "updated", -3.0);
+        modify.nvt_oid = Some("1.3.6.2".into());
+        modify.days_active = Some(0);
+        assert_eq!(
+            request_xml(&modify),
+            "<modify_override override_id=\"override-1\"><text>updated</text><nvt oid=\"1.3.6.2\"/><new_severity>-3</new_severity><active>0</active></modify_override>"
+        );
+
+        assert_eq!(
+            request_xml(&DeleteOverrideRequest::new(id("override-1"), false)),
+            "<delete_override override_id=\"override-1\" ultimate=\"0\"/>"
+        );
+    }
+
+    #[test]
+    fn invalid_final_override_values_are_rejected() {
+        let mut create = CreateOverrideRequest::new("1.3.6.1", "body", 11.0);
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "new_severity",
+                ..
+            })
+        ));
+
+        create.new_severity = 5.0;
+        create.hosts = vec![String::new()];
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField { field: "hosts", .. })
+        ));
+
+        let mut modify = ModifyOverrideRequest::new(id("override-1"), "", 5.0);
+        assert!(matches!(
+            modify.validate(),
+            Err(GmpRequestError::InvalidField { field: "text", .. })
+        ));
+
+        modify.text = "body".into();
+        modify.severity = Some(-3.0);
+        assert!(matches!(
+            modify.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "severity",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn override_requests_keep_static_response_associations() {
         fn associated<R, T>(_: &R)
         where
             R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
+            T: GmpResponse,
         {
         }
-        let override_id = id("override-1");
-        let get_opts = GetOverridesOpts {
-            details: Some(true),
-            result: Some(true),
-            ..Default::default()
-        };
-        let opts = OverrideOpts {
-            text: Some("body".into()),
-            hosts: vec!["192.0.2.1".into()],
-            new_severity: Some("3.0".into()),
-            ..Default::default()
-        };
-        let modify_opts = ModifyOverrideOpts {
-            hosts: CollectionUpdate::Clear,
-            ..Default::default()
-        };
 
-        let list = GetOverridesRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_overrides(get_opts).to_bytes());
-        associated::<_, GetOverridesResponse>(&list);
-        let get = GetOverrideRequest::new(override_id.clone());
-        assert_eq!(get.to_bytes(), get_override(&override_id).to_bytes());
-        associated::<_, GetOverridesResponse>(&get);
-        let create = CreateOverrideRequest::new("1.3.6.1", opts.clone());
-        assert_eq!(
-            create.to_bytes(),
-            create_override("1.3.6.1", opts).to_bytes()
-        );
-        associated::<_, CreateOverrideResponse>(&create);
-        let clone = CloneOverrideRequest::new(override_id.clone());
-        assert_eq!(clone.to_bytes(), clone_override(&override_id).to_bytes());
-        associated::<_, CreateOverrideResponse>(&clone);
-        let modify = ModifyOverrideRequest::new(override_id.clone(), modify_opts.clone());
-        assert_eq!(
-            modify.to_bytes(),
-            modify_override(&override_id, modify_opts).to_bytes()
-        );
-        associated::<_, ModifyOverrideResponse>(&modify);
-        let delete = DeleteOverrideRequest::new(override_id.clone(), true);
-        assert_eq!(
-            delete.to_bytes(),
-            delete_override(&override_id, true).to_bytes()
-        );
-        associated::<_, DeleteOverrideResponse>(&delete);
-    }
-
-    #[test]
-    fn override_commands_build_xml() {
-        let rendered = xml(create_override(
-            "oid",
-            OverrideOpts {
-                text: Some("body".into()),
-                new_severity: Some("7.5".into()),
-                ..Default::default()
-            },
+        associated::<_, GetOverridesResponse>(&GetOverridesRequest::default());
+        associated::<_, GetOverridesResponse>(&GetOverrideRequest::new(id("override-1")));
+        associated::<_, CreateOverrideResponse>(&CreateOverrideRequest::new(
+            "1.3.6.1", "body", 5.0,
         ));
-        assert!(rendered.contains("<nvt oid=\"oid\"/>"));
-        assert!(rendered.contains("<new_severity>7.5</new_severity>"));
-        assert_eq!(
-            xml(clone_override(&id("o1"))),
-            "<create_override><copy>o1</copy></create_override>"
-        );
-        assert_eq!(
-            xml(get_override(&id("o1"))),
-            "<get_overrides details=\"1\" override_id=\"o1\"/>"
-        );
-    }
-
-    #[test]
-    fn override_modify_get_delete_build_xml() {
-        let rendered = xml(get_overrides(GetOverridesOpts {
-            filter_string: Some("name=foo".into()),
-            details: Some(true),
-            result: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        assert!(rendered.contains("result=\"1\""));
-        let rendered = xml(modify_override(
-            &id("o1"),
-            ModifyOverrideOpts {
-                text: Some("updated".into()),
-                ..Default::default()
-            },
+        associated::<_, CreateOverrideResponse>(&CloneOverrideRequest::new(id("override-1")));
+        associated::<_, ModifyOverrideResponse>(&ModifyOverrideRequest::new(
+            id("override-1"),
+            "body",
+            5.0,
         ));
-        assert_eq!(
-            rendered,
-            "<modify_override override_id=\"o1\"><text>updated</text></modify_override>"
-        );
-        assert_eq!(
-            xml(delete_override(&id("o1"), false)),
-            "<delete_override override_id=\"o1\" ultimate=\"0\"/>"
-        );
+        associated::<_, DeleteOverrideResponse>(&DeleteOverrideRequest::new(
+            id("override-1"),
+            false,
+        ));
     }
 
     #[test]
-    fn modify_override_distinguishes_omitted_replaced_and_cleared_hosts() {
-        assert_eq!(
-            xml(modify_override(&id("o1"), ModifyOverrideOpts::default())),
-            "<modify_override override_id=\"o1\"/>"
-        );
-        assert_eq!(
-            xml(modify_override(
-                &id("o1"),
-                ModifyOverrideOpts {
-                    hosts: CollectionUpdate::replace(["192.0.2.1".into(), "192.0.2.2".into()]),
-                    ..Default::default()
-                }
-            )),
-            "<modify_override override_id=\"o1\"><hosts>192.0.2.1,192.0.2.2</hosts></modify_override>"
-        );
-        assert_eq!(
-            xml(modify_override(
-                &id("o1"),
-                ModifyOverrideOpts {
-                    hosts: CollectionUpdate::Clear,
-                    ..Default::default()
-                }
-            )),
-            "<modify_override override_id=\"o1\"><hosts></hosts></modify_override>"
-        );
+    fn override_aliases_keep_wire_and_capability_names() {
+        let detail = GetOverrideRequest::new(id("override-1"));
+        let detail_command = detail.command().expect("typed command");
+        assert_eq!(detail_command.wire_name(), "get_overrides");
+        assert_eq!(detail_command.semantic_name(), Some("get_override"));
+
+        let clone = CloneOverrideRequest::new(id("override-1"));
+        let clone_command = clone.command().expect("typed command");
+        assert_eq!(clone_command.wire_name(), "create_override");
+        assert_eq!(clone_command.semantic_name(), Some("clone_override"));
     }
 }
