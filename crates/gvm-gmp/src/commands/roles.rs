@@ -1,29 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Role command builders.
+//! Canonical requests for role operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::responses::{
     CreateRoleResponse, DeleteRoleResponse, GetRolesResponse, ModifyRoleResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for role create and modify requests.
+/// Request for listing roles.
 #[derive(Debug, Clone, Default)]
-pub struct RoleOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// User names associated with the request.
-    pub users: Vec<String>,
-}
-
-/// Options for `get_roles` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetRolesOpts {
+pub struct GetRolesRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -34,21 +25,13 @@ pub struct GetRolesOpts {
     pub details: Option<bool>,
 }
 
-/// Semantic request for listing roles.
-#[derive(Debug, Clone, Default)]
-pub struct GetRolesRequest(GetRolesOpts);
-
-impl GetRolesRequest {
-    /// Create a role-list request.
-    #[must_use]
-    pub fn new(opts: GetRolesOpts) -> Self {
-        Self(opts)
+impl GmpRequestCodec for GetRolesRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_roles"))
     }
-}
 
-impl Request for GetRolesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_roles(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_roles_command(self).to_bytes())
     }
 }
 
@@ -56,56 +39,71 @@ impl GmpRequest for GetRolesRequest {
     type Response = GetRolesResponse;
 }
 
-macro_rules! role_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(role_id: EntityId) -> Self {
-                Self(role_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
+/// Request for one detailed role.
+#[derive(Debug, Clone)]
+pub struct GetRoleRequest {
+    /// Role identifier to retrieve.
+    pub role_id: EntityId,
 }
 
-role_id_request!(GetRoleRequest, GetRolesResponse, get_role);
-role_id_request!(CloneRoleRequest, CreateRoleResponse, clone_role);
+impl GetRoleRequest {
+    /// Create a detailed single-role request.
+    #[must_use]
+    pub fn new(role_id: EntityId) -> Self {
+        Self { role_id }
+    }
+}
 
-/// Semantic request for creating a role.
+impl GmpRequestCodec for GetRoleRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_roles", "get_role"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_role_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for GetRoleRequest {
+    type Response = GetRolesResponse;
+}
+
+/// Request for creating a role.
 #[derive(Debug, Clone)]
 pub struct CreateRoleRequest {
-    name: String,
-    opts: RoleOpts,
+    /// Role name.
+    pub name: String,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// User names assigned to the role.
+    pub users: Vec<String>,
 }
 
 impl CreateRoleRequest {
-    /// Create a role-creation request.
+    /// Create a role request with the required role name.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: RoleOpts) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            opts,
+            comment: None,
+            users: Vec::new(),
         }
     }
 }
 
-impl Request for CreateRoleRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_role(&self.name, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateRoleRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")?;
+        validate_user_names(&self.users)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_role"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(create_role_command(self).to_bytes())
     }
 }
 
@@ -113,24 +111,99 @@ impl GmpRequest for CreateRoleRequest {
     type Response = CreateRoleResponse;
 }
 
-/// Semantic request for modifying a role.
+/// Request for cloning a role through `create_role`.
 #[derive(Debug, Clone)]
-pub struct ModifyRoleRequest {
-    role_id: EntityId,
-    opts: RoleOpts,
+pub struct CloneRoleRequest {
+    /// Existing role identifier to copy.
+    pub role_id: EntityId,
+    /// Optional name override.
+    ///
+    /// When omitted, gvmd chooses the first available
+    /// `<existing name> Clone <number>` name, starting at 1.
+    pub name: Option<String>,
+    /// Optional comment override. Omission or empty text preserves the existing comment.
+    pub comment: Option<String>,
 }
 
-impl ModifyRoleRequest {
-    /// Create a role-modification request.
+impl CloneRoleRequest {
+    /// Create a role-clone request.
     #[must_use]
-    pub fn new(role_id: EntityId, opts: RoleOpts) -> Self {
-        Self { role_id, opts }
+    pub fn new(role_id: EntityId) -> Self {
+        Self {
+            role_id,
+            name: None,
+            comment: None,
+        }
     }
 }
 
-impl Request for ModifyRoleRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_role(&self.role_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CloneRoleRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_non_empty(self.name.as_deref(), "name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("create_role", "clone_role"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(clone_role_command(self).to_bytes())
+    }
+}
+
+impl GmpRequest for CloneRoleRequest {
+    type Response = CreateRoleResponse;
+}
+
+/// Request for modifying a role.
+#[derive(Debug, Clone)]
+pub struct ModifyRoleRequest {
+    /// Role identifier to modify.
+    pub role_id: EntityId,
+    /// Final role name. gvmd replaces this value even when the child is omitted.
+    pub name: String,
+    /// Final comment. An empty string clears the comment.
+    pub comment: String,
+    /// Final user membership. An empty vector clears all users.
+    pub users: Vec<String>,
+}
+
+impl ModifyRoleRequest {
+    /// Create a complete role-modification request.
+    ///
+    /// gvmd replaces the name, comment, and membership on every
+    /// `modify_role` command, so callers must provide the final values for
+    /// all three fields.
+    #[must_use]
+    pub fn new(
+        role_id: EntityId,
+        name: impl Into<String>,
+        comment: impl Into<String>,
+        users: Vec<String>,
+    ) -> Self {
+        Self {
+            role_id,
+            name: name.into(),
+            comment: comment.into(),
+            users,
+        }
+    }
+}
+
+impl GmpRequestCodec for ModifyRoleRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")?;
+        validate_user_names(&self.users)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_role"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(modify_role_command(self).to_bytes())
     }
 }
 
@@ -138,11 +211,13 @@ impl GmpRequest for ModifyRoleRequest {
     type Response = ModifyRoleResponse;
 }
 
-/// Semantic request for deleting a role.
+/// Request for deleting a role.
 #[derive(Debug, Clone)]
 pub struct DeleteRoleRequest {
-    role_id: EntityId,
-    ultimate: bool,
+    /// Role identifier to delete.
+    pub role_id: EntityId,
+    /// Whether to delete permanently instead of moving the role to trash.
+    pub ultimate: bool,
 }
 
 impl DeleteRoleRequest {
@@ -153,9 +228,13 @@ impl DeleteRoleRequest {
     }
 }
 
-impl Request for DeleteRoleRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_role(&self.role_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteRoleRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_role"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_role_command(self).to_bytes())
     }
 }
 
@@ -163,157 +242,179 @@ impl GmpRequest for DeleteRoleRequest {
     type Response = DeleteRoleResponse;
 }
 
-/// Build a clone request for an existing role.
-#[must_use]
-pub fn clone_role(role_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_role").child_with_text("copy", role_id.as_str())
+fn require_non_empty(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `create_role` request.
-#[must_use]
-pub fn create_role(name: &str, opts: RoleOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_role");
-    cmd.add_element_with_text("name", name);
-    add_role_body(&mut cmd, &opts);
-    cmd
+fn validate_optional_non_empty(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    if value.is_some_and(str::is_empty) {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `get_roles` request.
-#[must_use]
-pub fn get_roles(opts: GetRolesOpts) -> impl Request {
+fn validate_user_names(users: &[String]) -> Result<(), GmpRequestError> {
+    if users.iter().any(String::is_empty) {
+        Err(GmpRequestError::invalid_field(
+            "users",
+            "user names must not be empty",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn get_roles_command(request: &GetRolesRequest) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_roles");
     add_filter_attrs(
         &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "trash", request.trash);
+    set_optional_bool_attr(&mut cmd, "details", request.details);
     cmd
 }
 
-/// Build a `get_role` request.
-#[must_use]
-pub fn get_role(role_id: &EntityId) -> impl Request {
+fn get_role_command(request: &GetRoleRequest) -> XmlCommand {
     XmlCommand::new("get_roles")
-        .attribute("role_id", role_id.as_str())
+        .attribute("role_id", request.role_id.as_str())
         .attribute("details", "1")
 }
 
-/// Build a `modify_role` request.
-#[must_use]
-pub fn modify_role(role_id: &EntityId, opts: RoleOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_role").attribute("role_id", role_id.as_str());
-    add_role_body(&mut cmd, &opts);
+fn create_role_command(request: &CreateRoleRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_role");
+    cmd.add_element_with_text("name", &request.name);
+    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    if !request.users.is_empty() {
+        cmd.add_element_with_text("users", &request.users.join(","));
+    }
     cmd
 }
 
-/// Build a `delete_role` request.
-#[must_use]
-pub fn delete_role(role_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_role")
-        .attribute("role_id", role_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+fn clone_role_command(request: &CloneRoleRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("create_role");
+    add_optional_text_element(&mut cmd, "name", request.name.as_deref());
+    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    cmd.add_element_with_text("copy", request.role_id.as_str());
+    cmd
 }
 
-fn add_role_body(cmd: &mut XmlCommand, opts: &RoleOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    if !opts.users.is_empty() {
-        cmd.add_element_with_text("users", &opts.users.join(","));
+fn modify_role_command(request: &ModifyRoleRequest) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_role").attribute("role_id", request.role_id.as_str());
+    cmd.add_element_with_text("name", &request.name);
+    cmd.add_element_with_text("comment", &request.comment);
+    cmd.add_element_with_text("users", &request.users.join(","));
+    cmd
+}
+
+fn add_optional_text_element(cmd: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        cmd.add_element_with_text(name, value);
     }
+}
+
+fn delete_role_command(request: &DeleteRoleRequest) -> XmlCommand {
+    XmlCommand::new("delete_role")
+        .attribute("role_id", request.role_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
-    #[test]
-    fn semantic_role_requests_match_builder_bytes_and_responses() {
-        fn associated<R, T>(_: &R)
-        where
-            R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
-        {
-        }
-        let role_id = id("role-1");
-        let get_opts = GetRolesOpts {
-            details: Some(true),
-            ..Default::default()
-        };
-        let opts = RoleOpts {
-            users: vec!["alice".into()],
-            ..Default::default()
-        };
-
-        let list = GetRolesRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_roles(get_opts).to_bytes());
-        associated::<_, GetRolesResponse>(&list);
-        let get = GetRoleRequest::new(role_id.clone());
-        assert_eq!(get.to_bytes(), get_role(&role_id).to_bytes());
-        associated::<_, GetRolesResponse>(&get);
-        let create = CreateRoleRequest::new("role", opts.clone());
-        assert_eq!(
-            create.to_bytes(),
-            create_role("role", opts.clone()).to_bytes()
-        );
-        associated::<_, CreateRoleResponse>(&create);
-        let clone = CloneRoleRequest::new(role_id.clone());
-        assert_eq!(clone.to_bytes(), clone_role(&role_id).to_bytes());
-        associated::<_, CreateRoleResponse>(&clone);
-        let modify = ModifyRoleRequest::new(role_id.clone(), opts.clone());
-        assert_eq!(modify.to_bytes(), modify_role(&role_id, opts).to_bytes());
-        associated::<_, ModifyRoleResponse>(&modify);
-        let delete = DeleteRoleRequest::new(role_id.clone(), true);
-        assert_eq!(delete.to_bytes(), delete_role(&role_id, true).to_bytes());
-        associated::<_, DeleteRoleResponse>(&delete);
+    fn xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(request.encode(GmpVersion(22, 8)).expect("valid request"))
+            .expect("valid UTF-8")
     }
 
     #[test]
-    fn role_commands_build_xml() {
-        let rendered = xml(create_role(
-            "role",
-            RoleOpts {
-                users: vec!["alice".into()],
-                ..Default::default()
-            },
-        ));
-        assert!(rendered.contains("<users>alice</users>"));
+    fn requests_encode_independent_exact_wire_shapes() {
+        let mut create = CreateRoleRequest::new("operators");
+        create.comment = Some("team".into());
+        create.users = vec!["alice".into(), "bob".into()];
         assert_eq!(
-            xml(clone_role(&id("r1"))),
-            "<create_role><copy>r1</copy></create_role>"
+            xml(&create),
+            "<create_role><name>operators</name><comment>team</comment><users>alice,bob</users></create_role>"
         );
+
+        let mut clone = CloneRoleRequest::new(id("role-1"));
+        clone.name = Some("operators-copy".into());
+        clone.comment = Some(String::new());
         assert_eq!(
-            xml(get_role(&id("r1"))),
-            "<get_roles details=\"1\" role_id=\"r1\"/>"
+            xml(&clone),
+            "<create_role><name>operators-copy</name><copy>role-1</copy></create_role>"
+        );
+
+        assert_eq!(
+            xml(&GetRoleRequest::new(id("role-1"))),
+            "<get_roles details=\"1\" role_id=\"role-1\"/>"
+        );
+
+        let modify = ModifyRoleRequest::new(id("role-1"), "renamed", "", Vec::new());
+        assert_eq!(
+            xml(&modify),
+            "<modify_role role_id=\"role-1\"><name>renamed</name><comment></comment><users></users></modify_role>"
+        );
+
+        assert_eq!(
+            xml(&DeleteRoleRequest::new(id("role-1"), true)),
+            "<delete_role role_id=\"role-1\" ultimate=\"1\"/>"
         );
     }
 
     #[test]
-    fn role_get_modify_delete_build_xml() {
-        let rendered = xml(get_roles(GetRolesOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        let rendered = xml(modify_role(
-            &id("r1"),
-            RoleOpts {
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
+    fn requests_validate_mutated_final_values() {
+        let mut create = CreateRoleRequest::new("operators");
+        create.name.clear();
+        assert!(matches!(
+            create.encode(GmpVersion(22, 8)),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
         ));
+
+        let modify = ModifyRoleRequest::new(id("role-1"), "operators", "team", vec![String::new()]);
+        assert!(matches!(
+            modify.encode(GmpVersion(22, 8)),
+            Err(GmpRequestError::InvalidField { field: "users", .. })
+        ));
+    }
+
+    #[test]
+    fn requests_expose_semantic_metadata_and_response_associations() {
+        fn assert_response<R: GmpRequest<Response = T>, T: GmpResponse>(_: &R) {}
+
         assert_eq!(
-            rendered,
-            "<modify_role role_id=\"r1\"><comment>updated</comment></modify_role>"
+            GetRoleRequest::new(id("role-1")).command(),
+            Some(GmpCommand::with_semantic_name("get_roles", "get_role"))
         );
         assert_eq!(
-            xml(delete_role(&id("r1"), false)),
-            "<delete_role role_id=\"r1\" ultimate=\"0\"/>"
+            CloneRoleRequest::new(id("role-1")).command(),
+            Some(GmpCommand::with_semantic_name("create_role", "clone_role"))
         );
+        assert_response::<_, GetRolesResponse>(&GetRolesRequest::default());
+        assert_response::<_, GetRolesResponse>(&GetRoleRequest::new(id("role-1")));
+        assert_response::<_, CreateRoleResponse>(&CreateRoleRequest::new("operators"));
+        assert_response::<_, CreateRoleResponse>(&CloneRoleRequest::new(id("role-1")));
+        assert_response::<_, ModifyRoleResponse>(&ModifyRoleRequest::new(
+            id("role-1"),
+            "operators",
+            "team",
+            Vec::new(),
+        ));
+        assert_response::<_, DeleteRoleResponse>(&DeleteRoleRequest::new(id("role-1"), false));
     }
 }

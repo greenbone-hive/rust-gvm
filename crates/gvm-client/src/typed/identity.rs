@@ -9,11 +9,11 @@ use gvm_gmp::commands::groups::{
 };
 use gvm_gmp::commands::permissions::{
     ClonePermissionRequest, CreatePermissionRequest, DeletePermissionRequest, GetPermissionRequest,
-    GetPermissionsOpts, GetPermissionsRequest, ModifyPermissionRequest, PermissionOpts,
+    GetPermissionsRequest, ModifyPermissionRequest,
 };
 use gvm_gmp::commands::roles::{
-    CloneRoleRequest, CreateRoleRequest, DeleteRoleRequest, GetRoleRequest, GetRolesOpts,
-    GetRolesRequest, ModifyRoleRequest, RoleOpts,
+    CloneRoleRequest, CreateRoleRequest, DeleteRoleRequest, GetRoleRequest, GetRolesRequest,
+    ModifyRoleRequest,
 };
 use gvm_gmp::commands::users::{
     CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
@@ -25,7 +25,6 @@ use gvm_gmp::responses::{
     GetGroupsResponse, GetPermissionsResponse, GetRolesResponse, GetUsersResponse,
     ModifyGroupResponse, ModifyPermissionResponse, ModifyRoleResponse, ModifyUserResponse,
 };
-use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Users ─────────────────────────────────────────────────────────────────
@@ -170,16 +169,22 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_roles(&mut self, opts: GetRolesOpts) -> Result<GetRolesResponse, GvmError> {
-        self.execute(GetRolesRequest::new(opts)).await
+    pub async fn get_roles(
+        &mut self,
+        request: GetRolesRequest,
+    ) -> Result<GetRolesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a single-role `get_roles` request and return a typed response.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_role(&mut self, role_id: &EntityId) -> Result<GetRolesResponse, GvmError> {
-        self.execute(GetRoleRequest::new(role_id.clone())).await
+    pub async fn get_role(
+        &mut self,
+        request: GetRoleRequest,
+    ) -> Result<GetRolesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `create_role` request and return a typed [`CreateRoleResponse`].
@@ -188,18 +193,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_role(
         &mut self,
-        name: &str,
-        opts: RoleOpts,
+        request: CreateRoleRequest,
     ) -> Result<CreateRoleResponse, GvmError> {
-        self.execute(CreateRoleRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Send a `clone_role` request and return a typed [`CreateRoleResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn clone_role(&mut self, role_id: &EntityId) -> Result<CreateRoleResponse, GvmError> {
-        self.execute(CloneRoleRequest::new(role_id.clone())).await
+    pub async fn clone_role(
+        &mut self,
+        request: CloneRoleRequest,
+    ) -> Result<CreateRoleResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `modify_role` request and return a typed [`ModifyRoleResponse`].
@@ -208,11 +215,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_role(
         &mut self,
-        role_id: &EntityId,
-        opts: RoleOpts,
+        request: ModifyRoleRequest,
     ) -> Result<ModifyRoleResponse, GvmError> {
-        self.execute(ModifyRoleRequest::new(role_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_role` request and return a typed [`DeleteRoleResponse`].
@@ -221,11 +226,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_role(
         &mut self,
-        role_id: &EntityId,
-        ultimate: bool,
+        request: DeleteRoleRequest,
     ) -> Result<DeleteRoleResponse, GvmError> {
-        self.execute(DeleteRoleRequest::new(role_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     // ── Permissions ───────────────────────────────────────────────────────────
@@ -236,9 +239,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_permissions(
         &mut self,
-        opts: GetPermissionsOpts,
+        request: GetPermissionsRequest,
     ) -> Result<GetPermissionsResponse, GvmError> {
-        self.execute(GetPermissionsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a single-permission `get_permissions` request and return a typed response.
@@ -247,10 +250,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_permission(
         &mut self,
-        permission_id: &EntityId,
+        request: GetPermissionRequest,
     ) -> Result<GetPermissionsResponse, GvmError> {
-        self.execute(GetPermissionRequest::new(permission_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_permission` request and return a typed [`CreatePermissionResponse`].
@@ -259,9 +261,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_permission(
         &mut self,
-        opts: PermissionOpts,
+        request: CreatePermissionRequest,
     ) -> Result<CreatePermissionResponse, GvmError> {
-        self.execute(CreatePermissionRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `clone_permission` request and return a typed [`CreatePermissionResponse`].
@@ -270,10 +272,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_permission(
         &mut self,
-        permission_id: &EntityId,
+        request: ClonePermissionRequest,
     ) -> Result<CreatePermissionResponse, GvmError> {
-        self.execute(ClonePermissionRequest::new(permission_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_permission` request and return a typed [`ModifyPermissionResponse`].
@@ -282,11 +283,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_permission(
         &mut self,
-        permission_id: &EntityId,
-        opts: PermissionOpts,
+        request: ModifyPermissionRequest,
     ) -> Result<ModifyPermissionResponse, GvmError> {
-        self.execute(ModifyPermissionRequest::new(permission_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_permission` request and return a typed [`DeletePermissionResponse`].
@@ -295,13 +294,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_permission(
         &mut self,
-        permission_id: &EntityId,
-        ultimate: bool,
+        request: DeletePermissionRequest,
     ) -> Result<DeletePermissionResponse, GvmError> {
-        self.execute(DeletePermissionRequest::new(
-            permission_id.clone(),
-            ultimate,
-        ))
-        .await
+        self.execute(request).await
     }
 }

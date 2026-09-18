@@ -59,7 +59,7 @@ use gvm_gmp::commands::overrides::{
     CloneOverrideRequest, CreateOverrideRequest, DeleteOverrideRequest, GetOverrideRequest,
     GetOverridesRequest, ModifyOverrideRequest,
 };
-use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
+use gvm_gmp::commands::permissions::*;
 use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
     DeletePortRangeRequest, GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
@@ -75,7 +75,7 @@ use gvm_gmp::commands::reports::{
     GetReportsRequest, ImportReportOpts, ImportReportRequest,
 };
 use gvm_gmp::commands::results::GetResultsOpts;
-use gvm_gmp::commands::roles::{GetRolesOpts, RoleOpts};
+use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::GetScanConfigsOpts;
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
@@ -618,6 +618,13 @@ impl GmpRequest for SemanticAliasRequest {
     type Response = ActionResponse;
 }
 
+fn permission_create_request() -> CreatePermissionRequest {
+    CreatePermissionRequest::new(
+        "get_tasks",
+        PermissionSubject::new(id(CREATED_ID), gvm_gmp::PermissionSubjectType::Role),
+    )
+}
+
 fn id(value: &str) -> EntityId {
     EntityId::new(value).expect("test entity id")
 }
@@ -881,12 +888,17 @@ async fn role_lifecycle_executes_through_typed_facade() {
     let mut client = client(&server).await;
     let entity_id = id(CREATED_ID);
 
-    assert_typed_success!(client.get_roles(GetRolesOpts::default()));
-    assert_typed_success!(client.get_role(&entity_id));
-    assert_create_success!(client.create_role("role", RoleOpts::default()));
-    assert_create_success!(client.clone_role(&entity_id));
-    assert_typed_success!(client.modify_role(&entity_id, RoleOpts::default()));
-    assert_typed_success!(client.delete_role(&entity_id, false));
+    assert_typed_success!(client.get_roles(GetRolesRequest::default()));
+    assert_typed_success!(client.get_role(GetRoleRequest::new(entity_id.clone())));
+    assert_create_success!(client.create_role(CreateRoleRequest::new("role")));
+    assert_create_success!(client.clone_role(CloneRoleRequest::new(entity_id.clone())));
+    assert_typed_success!(client.modify_role(ModifyRoleRequest::new(
+        entity_id.clone(),
+        "role",
+        "",
+        Vec::new()
+    )));
+    assert_typed_success!(client.delete_role(DeleteRoleRequest::new(entity_id.clone(), false)));
 
     server.shutdown().await;
 }
@@ -900,12 +912,14 @@ async fn permission_lifecycle_executes_through_typed_facade() {
     let mut client = client(&server).await;
     let entity_id = id(CREATED_ID);
 
-    assert_typed_success!(client.get_permissions(GetPermissionsOpts::default()));
-    assert_typed_success!(client.get_permission(&entity_id));
-    assert_create_success!(client.create_permission(PermissionOpts::default()));
-    assert_create_success!(client.clone_permission(&entity_id));
-    assert_typed_success!(client.modify_permission(&entity_id, PermissionOpts::default()));
-    assert_typed_success!(client.delete_permission(&entity_id, false));
+    assert_typed_success!(client.get_permissions(GetPermissionsRequest::default()));
+    assert_typed_success!(client.get_permission(GetPermissionRequest::new(entity_id.clone())));
+    assert_create_success!(client.create_permission(permission_create_request()));
+    assert_create_success!(client.clone_permission(ClonePermissionRequest::new(entity_id.clone())));
+    assert_typed_success!(client.modify_permission(ModifyPermissionRequest::new(entity_id.clone())));
+    assert_typed_success!(
+        client.delete_permission(DeletePermissionRequest::new(entity_id.clone(), false))
+    );
 
     server.shutdown().await;
 }
@@ -937,7 +951,7 @@ async fn identity_and_permission_facades_preserve_status_and_parse_context() {
         "identity conflict"
     );
     let parse_error = client
-        .clone_permission(&id("permission-1"))
+        .clone_permission(ClonePermissionRequest::new(id("permission-1")))
         .await
         .expect_err("missing cloned permission id should fail");
     assert!(matches!(
@@ -2814,8 +2828,8 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_tickets(GetTicketsOpts::default()));
     assert_typed_success!(client.get_users(GetUsersRequest::default()));
     assert_typed_success!(client.get_groups(GetGroupsRequest::default()));
-    assert_typed_success!(client.get_roles(GetRolesOpts::default()));
-    assert_typed_success!(client.get_permissions(GetPermissionsOpts::default()));
+    assert_typed_success!(client.get_roles(GetRolesRequest::default()));
+    assert_typed_success!(client.get_permissions(GetPermissionsRequest::default()));
     assert_typed_success!(client.get_hosts(GetHostsOpts::default()));
     assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
     assert_typed_success!(client.get_report_formats(GetReportFormatsOpts::default()));
@@ -2918,8 +2932,8 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     ));
     assert_create_success!(client.create_user(CreateUserRequest::new("user")));
     assert_create_success!(client.create_group(CreateGroupRequest::new("group")));
-    assert_create_success!(client.create_role("role", RoleOpts::default()));
-    assert_create_success!(client.create_permission(PermissionOpts::default()));
+    assert_create_success!(client.create_role(CreateRoleRequest::new("role")));
+    assert_create_success!(client.create_permission(permission_create_request()));
     assert_create_success!(client.create_host(HostOpts::named("192.0.2.10")));
     assert_create_success!(
         client.create_tls_certificate("certificate", TlsCertificateOpts::default())

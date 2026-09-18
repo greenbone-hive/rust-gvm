@@ -21,6 +21,7 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/scanner-request-gvmd-evidence.md`: pinned gvmd evidence for canonical scanner lifecycle requests, required create fields, relay behavior, clone overrides, and modify clearing semantics.
 - `docs/note-override-request-gvmd-evidence.md`: pinned gvmd evidence for canonical note/override lifecycles, required values, restriction replacement, activation, severity, and clone behavior.
 - `docs/user-group-request-gvmd-evidence.md`: pinned gvmd evidence for canonical user/group lifecycles, selectors, membership, host access, authentication sources, replacement, and clearing.
+- `docs/role-permission-request-gvmd-evidence.md`: pinned gvmd evidence for canonical role/permission lifecycles, partial references, replacement, clearing, and clone semantics.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -54,7 +55,7 @@ Adding or changing a GMP command:
   implement `GmpRequestCodec` directly, and update
   `docs/canonical-request-disposition.tsv`. Standard targets are the reference;
   alternate targets, agent groups, agents, integration configurations, port
-  lists, credentials, filters, tags, alerts, schedules, scanners, notes, and overrides show the same contract across their
+  lists, credentials, filters, tags, alerts, schedules, scanners, notes, overrides, users, groups, roles, and permissions show the same contract across their
   applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.

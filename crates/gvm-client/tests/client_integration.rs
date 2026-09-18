@@ -50,7 +50,7 @@ use gvm_gmp::commands::overrides::{
     CloneOverrideRequest, CreateOverrideRequest, DeleteOverrideRequest, GetOverrideRequest,
     GetOverridesRequest, ModifyOverrideRequest,
 };
-use gvm_gmp::commands::permissions::{modify_permission, GetPermissionsOpts, PermissionOpts};
+use gvm_gmp::commands::permissions::*;
 use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
     GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
@@ -58,7 +58,7 @@ use gvm_gmp::commands::port_lists::{
 use gvm_gmp::commands::reports::{
     get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
 };
-use gvm_gmp::commands::roles::RoleOpts;
+use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::{
     create_policy, get_policies, ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts,
     GetScanConfigsOpts,
@@ -3356,7 +3356,7 @@ async fn typed_permission_lifecycle_uses_nested_references() {
         .expect("authenticate should succeed");
 
     let role = client
-        .create_role("Permission Role", RoleOpts::default())
+        .create_role(CreateRoleRequest::new("Permission Role"))
         .await
         .expect("role should be created");
     let target = client
@@ -3369,19 +3369,20 @@ async fn typed_permission_lifecycle_uses_nested_references() {
         .expect("target should be created");
     server.clear_history();
     let permission = client
-        .create_permission(PermissionOpts {
+        .create_permission(CreatePermissionRequest {
             comment: Some("permission comment".into()),
-            name: Some("get_targets".into()),
-            resource_id: Some(target.id.clone()),
-            resource_type: Some("target".into()),
-            subject_type: Some(PermissionSubjectType::Role),
-            subject_id: Some(role.id.clone()),
+            name: "get_targets".into(),
+            resource: Some(PermissionResource {
+                id: target.id.clone(),
+                resource_type: Some("target".into()),
+            }),
+            subject: PermissionSubject::new(role.id.clone(), PermissionSubjectType::Role),
         })
         .await
         .expect("permission should be created");
 
     let permissions = client
-        .get_permissions(GetPermissionsOpts::default())
+        .get_permissions(GetPermissionsRequest::default())
         .await
         .expect("permission should be retrieved");
     let fetched = permission_by_id(&permissions, &permission.id);
@@ -3392,22 +3393,19 @@ async fn typed_permission_lifecycle_uses_nested_references() {
     assert_eq!(fetched.resource.as_ref().expect("resource").id, target.id);
 
     client
-        .call(modify_permission(
-            &permission.id,
-            PermissionOpts {
-                comment: Some("updated".into()),
-                resource_id: Some(target.id.clone()),
-                resource_type: Some("target".into()),
-                subject_type: Some(PermissionSubjectType::Role),
-                subject_id: Some(role.id.clone()),
-                ..Default::default()
-            },
-        ))
+        .modify_permission(ModifyPermissionRequest {
+            comment: Some("updated".into()),
+            resource_id: ScalarUpdate::Set(target.id.clone()),
+            resource_type: Some("target".into()),
+            subject_type: Some(PermissionSubjectType::Role),
+            subject_id: Some(role.id.clone()),
+            ..ModifyPermissionRequest::new(permission.id.clone())
+        })
         .await
         .expect("permission should be modified");
 
     let permissions = client
-        .get_permissions(GetPermissionsOpts::default())
+        .get_permissions(GetPermissionsRequest::default())
         .await
         .expect("modified permission should be retrieved");
     let fetched = permission_by_id(&permissions, &permission.id);
@@ -4258,11 +4256,11 @@ async fn typed_user_role_updates_preserve_replace_and_clear_state() {
         .expect("authenticate should succeed");
 
     let role_one = client
-        .create_role("Collection Role One", RoleOpts::default())
+        .create_role(CreateRoleRequest::new("Collection Role One"))
         .await
         .expect("first role should be created");
     let role_two = client
-        .create_role("Collection Role Two", RoleOpts::default())
+        .create_role(CreateRoleRequest::new("Collection Role Two"))
         .await
         .expect("second role should be created");
     let mut create_user = CreateUserRequest::new("Collection User");
@@ -6675,6 +6673,88 @@ async fn send_after_disconnect_returns_connection_error() {
         GvmError::Connection(ConnectionError::NotConnected) => {}
         other => panic!("expected connection error, got {other:?}"),
     }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_role_helpers_cover_full_lifecycle() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+
+    let mut create = CreateRoleRequest::new("Operators");
+    create.comment = Some("Initial role".into());
+    create.users = vec!["alice".into(), "bob".into()];
+    let role_id = client
+        .create_role(create)
+        .await
+        .expect("create_role should succeed")
+        .id;
+
+    let roles = client
+        .get_roles(GetRolesRequest::default())
+        .await
+        .expect("get_roles should succeed");
+    assert!(roles.items.iter().any(|role| role.meta.id == role_id));
+    let role = client
+        .get_role(GetRoleRequest::new(role_id.clone()))
+        .await
+        .expect("get_role should succeed")
+        .items
+        .pop()
+        .expect("created role should be returned");
+    assert_eq!(role.meta.name, "Operators");
+    assert_eq!(role.meta.comment.as_deref(), Some("Initial role"));
+    assert_eq!(role.users, ["alice", "bob"]);
+
+    client
+        .modify_role(ModifyRoleRequest::new(
+            role_id.clone(),
+            "Renamed Operators",
+            "",
+            Vec::new(),
+        ))
+        .await
+        .expect("modify_role should succeed");
+    let modified = client
+        .get_role(GetRoleRequest::new(role_id.clone()))
+        .await
+        .expect("modified role should be returned")
+        .items
+        .pop()
+        .expect("modified role should exist");
+    assert_eq!(modified.meta.name, "Renamed Operators");
+    assert_eq!(modified.meta.comment, None);
+    assert!(modified.users.is_empty());
+
+    let mut clone = CloneRoleRequest::new(role_id.clone());
+    clone.name = Some("Cloned Operators".into());
+    clone.comment = Some("clone".into());
+    let clone_id = client
+        .clone_role(clone)
+        .await
+        .expect("clone_role should succeed")
+        .id;
+    let cloned = client
+        .get_role(GetRoleRequest::new(clone_id.clone()))
+        .await
+        .expect("cloned role should be returned")
+        .items
+        .pop()
+        .expect("cloned role should exist");
+    assert_eq!(cloned.meta.name, "Cloned Operators");
+    assert_eq!(cloned.meta.comment.as_deref(), Some("clone"));
+
+    client
+        .delete_role(DeleteRoleRequest::new(clone_id, true))
+        .await
+        .expect("delete cloned role should succeed");
+    client
+        .delete_role(DeleteRoleRequest::new(role_id, true))
+        .await
+        .expect("delete original role should succeed");
 
     server.shutdown().await;
 }

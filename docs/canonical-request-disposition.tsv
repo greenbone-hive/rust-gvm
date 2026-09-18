@@ -101,12 +101,12 @@ builder	crates/gvm-gmp/src/commands/overrides.rs	delete_override	removed	Removed
 builder	crates/gvm-gmp/src/commands/overrides.rs	get_override	removed	Removed by #633; GetOverrideRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/overrides.rs	get_overrides	removed	Removed by #633; GetOverridesRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/overrides.rs	modify_override	removed	Removed by #633; ModifyOverrideRequest owns canonical validation and encoding.
-builder	crates/gvm-gmp/src/commands/permissions.rs	clone_permission	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/permissions.rs	create_permission	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/permissions.rs	delete_permission	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/permissions.rs	get_permission	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/permissions.rs	get_permissions	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/permissions.rs	modify_permission	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/permissions.rs	clone_permission	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/permissions.rs	create_permission	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/permissions.rs	delete_permission	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/permissions.rs	get_permission	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/permissions.rs	get_permissions	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/permissions.rs	modify_permission	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 builder	crates/gvm-gmp/src/commands/port_lists.rs	clone_port_list	removed	Removed by #617; ClonePortListRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/port_lists.rs	create_port_list	removed	Removed by #617; CreatePortListRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/port_lists.rs	create_port_range	removed	Removed by #617; CreatePortRangeRequest owns validation and canonical encoding.
@@ -157,12 +157,12 @@ builder	crates/gvm-gmp/src/commands/reports.rs	get_scan_report	transitional	Pend
 builder	crates/gvm-gmp/src/commands/reports.rs	import_report	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/results.rs	get_result	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/results.rs	get_results	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/roles.rs	clone_role	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/roles.rs	create_role	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/roles.rs	delete_role	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/roles.rs	get_role	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/roles.rs	get_roles	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/roles.rs	modify_role	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/roles.rs	clone_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/roles.rs	create_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/roles.rs	delete_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/roles.rs	get_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/roles.rs	get_roles	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+builder	crates/gvm-gmp/src/commands/roles.rs	modify_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	clone_policy	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	clone_scan_config	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	create_policy	transitional	Pending bounded family migration under #602.
@@ -363,28 +363,28 @@ facade	crates/gvm-client/src/typed/automation.rs	trigger_alert	retained-construc
 facade	crates/gvm-client/src/typed/core.rs	authenticate	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/core.rs	get_version	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/identity.rs	clone_group	retained-construction	Retained for discoverability; accepts the canonical CloneGroupRequest unchanged.
-facade	crates/gvm-client/src/typed/identity.rs	clone_permission	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/identity.rs	clone_role	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/identity.rs	clone_permission	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+facade	crates/gvm-client/src/typed/identity.rs	clone_role	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	clone_user	retained-construction	Retained for discoverability; accepts the canonical CloneUserRequest unchanged.
 facade	crates/gvm-client/src/typed/identity.rs	create_group	retained-construction	Retained for discoverability; accepts the canonical CreateGroupRequest unchanged.
-facade	crates/gvm-client/src/typed/identity.rs	create_permission	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/identity.rs	create_role	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/identity.rs	create_permission	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+facade	crates/gvm-client/src/typed/identity.rs	create_role	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	create_user	retained-construction	Retained for discoverability; accepts the canonical CreateUserRequest unchanged.
 facade	crates/gvm-client/src/typed/identity.rs	delete_group	retained-construction	Retained for discoverability; accepts the canonical DeleteGroupRequest unchanged.
-facade	crates/gvm-client/src/typed/identity.rs	delete_permission	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/identity.rs	delete_role	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/identity.rs	delete_permission	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+facade	crates/gvm-client/src/typed/identity.rs	delete_role	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	delete_user	retained-construction	Retained for discoverability; accepts the canonical DeleteUserRequest unchanged.
 facade	crates/gvm-client/src/typed/identity.rs	get_group	retained-construction	Retained for discoverability; accepts the canonical GetGroupRequest unchanged.
 facade	crates/gvm-client/src/typed/identity.rs	get_groups	retained-construction	Retained for discoverability; accepts the canonical GetGroupsRequest unchanged.
-facade	crates/gvm-client/src/typed/identity.rs	get_permission	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/identity.rs	get_permissions	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/identity.rs	get_role	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/identity.rs	get_roles	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/identity.rs	get_permission	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+facade	crates/gvm-client/src/typed/identity.rs	get_permissions	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+facade	crates/gvm-client/src/typed/identity.rs	get_role	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+facade	crates/gvm-client/src/typed/identity.rs	get_roles	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	get_user	retained-construction	Retained for discoverability; accepts the canonical GetUserRequest unchanged.
 facade	crates/gvm-client/src/typed/identity.rs	get_users	retained-construction	Retained for discoverability; accepts the canonical GetUsersRequest unchanged.
 facade	crates/gvm-client/src/typed/identity.rs	modify_group	retained-construction	Retained for discoverability; accepts the canonical ModifyGroupRequest unchanged.
-facade	crates/gvm-client/src/typed/identity.rs	modify_permission	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/identity.rs	modify_role	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/identity.rs	modify_permission	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+facade	crates/gvm-client/src/typed/identity.rs	modify_role	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	modify_user	retained-construction	Retained for discoverability; accepts the canonical ModifyUserRequest unchanged.
 facade	crates/gvm-client/src/typed/reports.rs	clone_report_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	clone_report_format	transitional	Pending bounded family migration under #602.
@@ -641,8 +641,8 @@ options	crates/gvm-gmp/src/commands/operating_systems.rs	GetOperatingSystemsOpts
 options	crates/gvm-gmp/src/commands/overrides.rs	GetOverridesOpts	removed	Removed by #633; fields now belong to GetOverridesRequest.
 options	crates/gvm-gmp/src/commands/overrides.rs	ModifyOverrideOpts	removed	Removed by #633; fields now belong to ModifyOverrideRequest.
 options	crates/gvm-gmp/src/commands/overrides.rs	OverrideOpts	removed	Removed by #633; create fields now belong to CreateOverrideRequest.
-options	crates/gvm-gmp/src/commands/permissions.rs	GetPermissionsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/permissions.rs	PermissionOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/permissions.rs	GetPermissionsOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+options	crates/gvm-gmp/src/commands/permissions.rs	PermissionOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 options	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListsOpts	removed	Removed by #617; fields now belong to GetPortListsRequest.
 options	crates/gvm-gmp/src/commands/port_lists.rs	ModifyPortListOpts	removed	Removed by #617; fields now belong to ModifyPortListRequest.
 options	crates/gvm-gmp/src/commands/port_lists.rs	PortListOpts	removed	Removed by #617; fields now belong to CreatePortListRequest.
@@ -662,8 +662,8 @@ options	crates/gvm-gmp/src/commands/reports.rs	GetReportsOpts	transitional	Pendi
 options	crates/gvm-gmp/src/commands/reports.rs	GetScanReportOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/reports.rs	ImportReportOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/results.rs	GetResultsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/roles.rs	GetRolesOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/roles.rs	RoleOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/roles.rs	GetRolesOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
+options	crates/gvm-gmp/src/commands/roles.rs	RoleOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	ConfigOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	GetPolicyOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesOpts	transitional	Pending bounded family migration under #602.
@@ -808,10 +808,12 @@ request	crates/gvm-gmp/src/commands/overrides.rs	DeleteOverrideRequest	canonical
 request	crates/gvm-gmp/src/commands/overrides.rs	GetOverrideRequest	canonical-request	Complete detail input; direct encoder with semantic detail identity and response association.
 request	crates/gvm-gmp/src/commands/overrides.rs	GetOverridesRequest	canonical-request	Complete list input; direct encoder and response association.
 request	crates/gvm-gmp/src/commands/overrides.rs	ModifyOverrideRequest	canonical-request	Complete modify input; direct encoder with required replacement severity and gvmd clear/preserve semantics.
-request	crates/gvm-gmp/src/commands/permissions.rs	CreatePermissionRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/permissions.rs	DeletePermissionRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/permissions.rs	GetPermissionsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/permissions.rs	ModifyPermissionRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/permissions.rs	ClonePermissionRequest	canonical-request	Complete semantic alias owns inputs, encoding and response association; formerly macro-generated.
+request	crates/gvm-gmp/src/commands/permissions.rs	CreatePermissionRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+request	crates/gvm-gmp/src/commands/permissions.rs	DeletePermissionRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+request	crates/gvm-gmp/src/commands/permissions.rs	GetPermissionRequest	canonical-request	Complete semantic alias owns inputs, encoding and response association; formerly macro-generated.
+request	crates/gvm-gmp/src/commands/permissions.rs	GetPermissionsRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+request	crates/gvm-gmp/src/commands/permissions.rs	ModifyPermissionRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 request	crates/gvm-gmp/src/commands/port_lists.rs	ClonePortListRequest	canonical-request	Complete clone input with semantic alias metadata, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/port_lists.rs	CreatePortListRequest	canonical-request	Complete create input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/port_lists.rs	CreatePortRangeRequest	canonical-request	Complete range input with final-value validation, direct metadata/encoding, and typed response.
@@ -845,10 +847,12 @@ request	crates/gvm-gmp/src/commands/reports.rs	GetScanReportRequest	transitional
 request	crates/gvm-gmp/src/commands/reports.rs	ImportReportRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/results.rs	GetResultRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/results.rs	GetResultsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/roles.rs	CreateRoleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/roles.rs	DeleteRoleRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/roles.rs	GetRolesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/roles.rs	ModifyRoleRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/roles.rs	CloneRoleRequest	canonical-request	Complete semantic alias owns inputs, encoding and response association; formerly macro-generated.
+request	crates/gvm-gmp/src/commands/roles.rs	CreateRoleRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+request	crates/gvm-gmp/src/commands/roles.rs	DeleteRoleRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+request	crates/gvm-gmp/src/commands/roles.rs	GetRoleRequest	canonical-request	Complete semantic alias owns inputs, encoding and response association; formerly macro-generated.
+request	crates/gvm-gmp/src/commands/roles.rs	GetRolesRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
+request	crates/gvm-gmp/src/commands/roles.rs	ModifyRoleRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ClonePolicyRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	CloneScanConfigRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	CreatePolicyRequest	transitional	Pending bounded family migration under #602.
