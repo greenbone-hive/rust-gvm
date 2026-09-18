@@ -59,6 +59,37 @@ layer at
 The canonical request rejects ambiguous selectors and ambiguous inheritors
 before transport.
 
+## User deletion has no `ultimate` input
+
+At the pinned commit, the supported deletion input is a user selector and an
+optional inheritor selector. Three independent layers agree:
+
+- [`GMP.xml.in` lines 8548–8593](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/schema_formats/XML/GMP.xml.in#L8548-L8593)
+  defines `user_id` or `name`, with optional `inheritor_id` or
+  `inheritor_name`. It does not define `ultimate`.
+- The [`DELETE_USER` parser branch, `gmp.c` lines 5461–5474](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp.c#L5461-L5474)
+  reads only those four attributes. It never parses `ultimate`.
+- The [handler call, `gmp.c` lines 22228–22234](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp.c#L22228-L22234)
+  passes the selectors and a constant `1` to the
+  [management function, `manage_sql_users.c` lines 938–955](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_users.c#L938-L955).
+  That integer is `forbid_super_admin`, not an ultimate/trash switch; the
+  function has no `ultimate` argument.
+
+The internal [`delete_user_data_t`, `gmp.c` lines 1721–1731](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp.c#L1721-L1731)
+retains a stale `ultimate` member and trashcan comment. Neither the parser nor
+the management call uses it, so the declaration is not evidence of a supported
+wire input.
+
+The [v0.6.0 Rust builder](https://github.com/greenbone-hive/rust-gvm/blob/v0.6.0/crates/gvm-gmp/src/commands/users.rs#L177-L184)
+accepted `delete_user(&user_id, ultimate)` and serialized the boolean. The
+pinned gvmd implementation ignores that attribute. Removing it from
+`DeleteUserRequest` is an intentional protocol-drift correction under #602 and
+ADR 0002, not loss of a supported deletion mode. Both old boolean values migrate
+to the same canonical request. See the
+[v0.7 user/group migration](v0.7.0-migration.md#users-and-groups) for selector
+and inheritance mapping. Exact-wire tests in `test_users.rs` guard the supported
+attribute set; they do not substitute for live-gvmd conformance testing.
+
 ## Group replacement behavior
 
 The modify-group parser initializes name, comment, and users to empty values

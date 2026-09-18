@@ -603,6 +603,11 @@ clear them. Detail and clone retain distinct semantic identities over their
 shared list/create wire commands. Password-bearing request diagnostics and wire
 traces remain redacted.
 
+`DeleteUserRequest` intentionally removes the old `ultimate` boolean, which
+pinned gvmd ignores. Use `new(user_id)` or `by_name(name)` and optionally set
+one inheritor selector. See the [v0.7 migration mapping](v0.7.0-migration.md#users-and-groups)
+and [pinned deletion evidence](user-group-request-gvmd-evidence.md#user-deletion-has-no-ultimate-input).
+
 ## Role and permission families
 
 All twelve lifecycle helpers accept complete request values. `RoleOpts`,
