@@ -162,9 +162,10 @@ pub type DeleteUserResponse = ActionResponse;
 
 #[cfg(test)]
 mod tests {
-    use gvm_protocol::{Request, Response};
+    use gvm_protocol::Response;
 
-    use crate::commands::users::{modify_user, ModifyUserOpts};
+    use crate::commands::users::ModifyUserRequest;
+    use crate::GmpRequestCodec;
 
     use super::*;
 
@@ -323,16 +324,15 @@ mod tests {
 
         let parsed = GetUsersResponse::from_response(&response).expect("users parse");
         let user = &parsed.items[0];
+        let mut request = ModifyUserRequest::new(
+            user.meta.id.clone(),
+            user.host_access().expect("response carries host access"),
+        );
+        request.comment = Some("updated".into());
         let rendered = String::from_utf8(
-            modify_user(
-                &user.meta.id,
-                ModifyUserOpts {
-                    comment: Some("updated".into()),
-                    host_access: user.host_access(),
-                    ..Default::default()
-                },
-            )
-            .to_bytes(),
+            request
+                .encode(GmpVersion(22, 8))
+                .expect("valid modify-user request"),
         )
         .expect("request XML should be UTF-8");
 

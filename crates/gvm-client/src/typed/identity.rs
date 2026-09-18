@@ -4,8 +4,8 @@
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::groups::{
-    CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsOpts,
-    GetGroupsRequest, GroupOpts, ModifyGroupRequest,
+    CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsRequest,
+    ModifyGroupRequest,
 };
 use gvm_gmp::commands::permissions::{
     ClonePermissionRequest, CreatePermissionRequest, DeletePermissionRequest, GetPermissionRequest,
@@ -16,8 +16,8 @@ use gvm_gmp::commands::roles::{
     GetRolesRequest, ModifyRoleRequest, RoleOpts,
 };
 use gvm_gmp::commands::users::{
-    CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersOpts,
-    GetUsersRequest, ModifyUserOpts, ModifyUserRequest, UserOpts,
+    CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
+    ModifyUserRequest,
 };
 use gvm_gmp::responses::{
     CreateGroupResponse, CreatePermissionResponse, CreateRoleResponse, CreateUserResponse,
@@ -34,16 +34,22 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_users(&mut self, opts: GetUsersOpts) -> Result<GetUsersResponse, GvmError> {
-        self.execute(GetUsersRequest::new(opts)).await
+    pub async fn get_users(
+        &mut self,
+        request: GetUsersRequest,
+    ) -> Result<GetUsersResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a single-user `get_users` request and return a typed response.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_user(&mut self, user_id: &EntityId) -> Result<GetUsersResponse, GvmError> {
-        self.execute(GetUserRequest::new(user_id.clone())).await
+    pub async fn get_user(
+        &mut self,
+        request: GetUserRequest,
+    ) -> Result<GetUsersResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `create_user` request and return a typed [`CreateUserResponse`].
@@ -52,18 +58,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_user(
         &mut self,
-        name: &str,
-        opts: UserOpts,
+        request: CreateUserRequest,
     ) -> Result<CreateUserResponse, GvmError> {
-        self.execute(CreateUserRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Send a `clone_user` request and return a typed [`CreateUserResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn clone_user(&mut self, user_id: &EntityId) -> Result<CreateUserResponse, GvmError> {
-        self.execute(CloneUserRequest::new(user_id.clone())).await
+    pub async fn clone_user(
+        &mut self,
+        request: CloneUserRequest,
+    ) -> Result<CreateUserResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `modify_user` request and return a typed [`ModifyUserResponse`].
@@ -72,11 +80,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_user(
         &mut self,
-        user_id: &EntityId,
-        opts: ModifyUserOpts,
+        request: ModifyUserRequest,
     ) -> Result<ModifyUserResponse, GvmError> {
-        self.execute(ModifyUserRequest::new(user_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_user` request and return a typed [`DeleteUserResponse`].
@@ -85,11 +91,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_user(
         &mut self,
-        user_id: &EntityId,
-        ultimate: bool,
+        request: DeleteUserRequest,
     ) -> Result<DeleteUserResponse, GvmError> {
-        self.execute(DeleteUserRequest::new(user_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     // ── Groups ────────────────────────────────────────────────────────────────
@@ -98,16 +102,22 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_groups(&mut self, opts: GetGroupsOpts) -> Result<GetGroupsResponse, GvmError> {
-        self.execute(GetGroupsRequest::new(opts)).await
+    pub async fn get_groups(
+        &mut self,
+        request: GetGroupsRequest,
+    ) -> Result<GetGroupsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a single-group `get_groups` request and return a typed response.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_group(&mut self, group_id: &EntityId) -> Result<GetGroupsResponse, GvmError> {
-        self.execute(GetGroupRequest::new(group_id.clone())).await
+    pub async fn get_group(
+        &mut self,
+        request: GetGroupRequest,
+    ) -> Result<GetGroupsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `create_group` request and return a typed [`CreateGroupResponse`].
@@ -116,10 +126,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_group(
         &mut self,
-        name: &str,
-        opts: GroupOpts,
+        request: CreateGroupRequest,
     ) -> Result<CreateGroupResponse, GvmError> {
-        self.execute(CreateGroupRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Send a `clone_group` request and return a typed [`CreateGroupResponse`].
@@ -128,9 +137,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_group(
         &mut self,
-        group_id: &EntityId,
+        request: CloneGroupRequest,
     ) -> Result<CreateGroupResponse, GvmError> {
-        self.execute(CloneGroupRequest::new(group_id.clone())).await
+        self.execute(request).await
     }
 
     /// Send a `modify_group` request and return a typed [`ModifyGroupResponse`].
@@ -139,11 +148,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_group(
         &mut self,
-        group_id: &EntityId,
-        opts: GroupOpts,
+        request: ModifyGroupRequest,
     ) -> Result<ModifyGroupResponse, GvmError> {
-        self.execute(ModifyGroupRequest::new(group_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_group` request and return a typed [`DeleteGroupResponse`].
@@ -152,11 +159,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_group(
         &mut self,
-        group_id: &EntityId,
-        ultimate: bool,
+        request: DeleteGroupRequest,
     ) -> Result<DeleteGroupResponse, GvmError> {
-        self.execute(DeleteGroupRequest::new(group_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     // ── Roles ─────────────────────────────────────────────────────────────────

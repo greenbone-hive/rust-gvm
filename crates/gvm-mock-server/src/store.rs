@@ -543,6 +543,36 @@ impl Resource {
                     ));
                 }
             }
+            if let Some(group_ids) = self.attr("group_ids") {
+                xml.push_str("<groups>");
+                for group_id in group_ids.split(',').filter(|group_id| !group_id.is_empty()) {
+                    let group_id_attr = xml_escape_attr(group_id);
+                    let group_id = xml_escape(group_id);
+                    xml.push_str(&format!(
+                        "<group id=\"{group_id_attr}\"><name>{group_id}</name></group>"
+                    ));
+                }
+                xml.push_str("</groups>");
+            }
+            if let Some(hosts) = self.attr("hosts") {
+                xml.push_str(&format!(
+                    "<hosts allow=\"{}\">{}</hosts>",
+                    xml_escape_attr(self.attr("hosts_allow").unwrap_or("1")),
+                    xml_escape(hosts),
+                ));
+            }
+            if let Some(source) = self.attr("auth_source") {
+                xml.push_str(&format!(
+                    "<sources><source>{}</source></sources>",
+                    xml_escape(source),
+                ));
+            }
+        }
+        if self.resource_type == "group" {
+            xml.push_str(&format!(
+                "<users>{}</users>",
+                xml_escape(self.attr("users").unwrap_or_default()),
+            ));
         }
         if self.resource_type == "target" {
             let alive_test = self
@@ -742,7 +772,15 @@ impl Resource {
             {
                 continue;
             }
-            if self.resource_type == "user" && k == "role_ids" {
+            if self.resource_type == "user"
+                && matches!(
+                    k.as_str(),
+                    "role_ids" | "group_ids" | "hosts" | "hosts_allow" | "auth_source"
+                )
+            {
+                continue;
+            }
+            if self.resource_type == "group" && matches!(k.as_str(), "users" | "special_full") {
                 continue;
             }
             if self.resource_type == "target"

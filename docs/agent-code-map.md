@@ -20,6 +20,7 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/schedule-request-gvmd-evidence.md`: pinned gvmd evidence for canonical schedule lifecycle requests, required iCalendar data, timezone behavior, clone overrides, and modify clearing semantics.
 - `docs/scanner-request-gvmd-evidence.md`: pinned gvmd evidence for canonical scanner lifecycle requests, required create fields, relay behavior, clone overrides, and modify clearing semantics.
 - `docs/note-override-request-gvmd-evidence.md`: pinned gvmd evidence for canonical note/override lifecycles, required values, restriction replacement, activation, severity, and clone behavior.
+- `docs/user-group-request-gvmd-evidence.md`: pinned gvmd evidence for canonical user/group lifecycles, selectors, membership, host access, authentication sources, replacement, and clearing.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow

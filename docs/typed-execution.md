@@ -348,18 +348,21 @@ changing raw `send` or `call` behavior.
 
 ## Identity and authorization lifecycles
 
-Users, groups, roles, and permissions each expose semantic list, detailed-get,
-create, clone, modify, and delete request values. The list/detail and
-create/clone pairs remain separate Rust types despite sharing XML roots and
-response models, making the caller's intent explicit without introducing a
-second wire encoder.
+Users and groups expose twelve complete canonical list, detailed-get, create,
+clone, modify, and delete request values. Their five former option bags and
+twelve forwarding builders are removed. The list/detail and create/clone pairs
+remain separate Rust types despite sharing XML roots and response models,
+making the caller's intent explicit without introducing a second wire encoder.
+The request values own authentication source, host access, group membership,
+role assignment, user membership, replacement, and explicit clearing. Password
+diagnostics and wire traces remain redacted. The twelve corresponding
+`GmpClient` convenience methods accept each request unchanged and delegate to
+`execute`; raw `send` and `call` remain available.
 
-All 24 requests delegate to the established builders. This preserves the full
-user authentication and host-access shape, including explicit role clearing,
-as well as group membership, role membership, and permission subject/resource
-relationships. User option debug output redacts password values. The
-corresponding `GmpClient` convenience methods now use `execute`; existing
-builders, response types, `send`, and `call` remain source-compatible.
+Roles and permissions retain the earlier additive typed-execution surface
+until their bounded canonical-request slice. Their semantic request values
+still delegate to the existing builders and preserve role membership and
+permission subject/resource relationships.
 
 ## NVT and SecInfo queries
 

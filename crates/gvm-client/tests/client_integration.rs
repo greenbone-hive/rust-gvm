@@ -28,6 +28,10 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreCredentialRequest, ModifyCredentialStoreRequest,
     VerifyCredentialStoreRequest,
 };
+use gvm_gmp::commands::groups::{
+    CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsRequest,
+    ModifyGroupRequest,
+};
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
@@ -82,7 +86,10 @@ use gvm_gmp::commands::tasks::{
 use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
 };
-use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
+use gvm_gmp::commands::users::{
+    CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
+    ModifyUserRequest, UserHostAccess,
+};
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
@@ -100,7 +107,7 @@ use gvm_gmp::{
     GmpRequestError, PermissionSubjectType, PortRangeType, ScalarUpdate, ScheduleDefinition,
     ScheduleInput, ScheduleRecurrence, ScheduleRecurrenceObservation, ScheduleTimestamp,
     ScheduleTimezone, ServicePort, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TargetHost,
-    TargetHosts, TargetPortSelection, TicketStatus,
+    TargetHosts, TargetPortSelection, TicketStatus, UserAuthType,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -2469,22 +2476,18 @@ async fn typed_user_rename_round_trip() {
         .expect("authentication should succeed");
 
     let user = client
-        .create_user("old-user", UserOpts::default())
+        .create_user(CreateUserRequest::new("old-user"))
         .await
         .expect("user creation should succeed");
+    let mut modify = ModifyUserRequest::new(user.id.clone(), UserHostAccess::allow(""));
+    modify.new_name = Some("renamed-user".into());
+    modify.comment = Some("renamed through typed client".into());
     client
-        .modify_user(
-            &user.id,
-            ModifyUserOpts {
-                new_name: Some("renamed-user".into()),
-                comment: Some("renamed through typed client".into()),
-                ..Default::default()
-            },
-        )
+        .modify_user(modify)
         .await
         .expect("user rename should succeed");
     let users = client
-        .get_users(GetUsersOpts::default())
+        .get_users(GetUsersRequest::default())
         .await
         .expect("user read-back should succeed");
     let renamed_user = users
@@ -4262,28 +4265,20 @@ async fn typed_user_role_updates_preserve_replace_and_clear_state() {
         .create_role("Collection Role Two", RoleOpts::default())
         .await
         .expect("second role should be created");
+    let mut create_user = CreateUserRequest::new("Collection User");
+    create_user.role_ids = vec![role_one.id.clone()];
     let user = client
-        .create_user(
-            "Collection User",
-            UserOpts {
-                role_ids: vec![role_one.id.clone()],
-                ..Default::default()
-            },
-        )
+        .create_user(create_user)
         .await
         .expect("user should be created");
+    let mut preserve_roles = ModifyUserRequest::new(user.id.clone(), UserHostAccess::allow(""));
+    preserve_roles.comment = Some("roles omitted".into());
     client
-        .modify_user(
-            &user.id,
-            ModifyUserOpts {
-                comment: Some("roles omitted".into()),
-                ..Default::default()
-            },
-        )
+        .modify_user(preserve_roles)
         .await
         .expect("user should be modified without changing roles");
     let users = client
-        .get_users(GetUsersOpts::default())
+        .get_users(GetUsersRequest::default())
         .await
         .expect("users should be retrieved");
     let fetched_user = users
@@ -4300,28 +4295,20 @@ async fn typed_user_role_updates_preserve_replace_and_clear_state() {
         vec![role_one.id.clone()]
     );
 
+    let mut replace_roles = ModifyUserRequest::new(user.id.clone(), UserHostAccess::allow(""));
+    replace_roles.role_ids = CollectionUpdate::replace([role_two.id.clone()]);
     client
-        .modify_user(
-            &user.id,
-            ModifyUserOpts {
-                role_ids: CollectionUpdate::replace([role_two.id.clone()]),
-                ..Default::default()
-            },
-        )
+        .modify_user(replace_roles)
         .await
         .expect("user roles should be replaced");
+    let mut clear_roles = ModifyUserRequest::new(user.id.clone(), UserHostAccess::allow(""));
+    clear_roles.role_ids = CollectionUpdate::Clear;
     client
-        .modify_user(
-            &user.id,
-            ModifyUserOpts {
-                role_ids: CollectionUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_user(clear_roles)
         .await
         .expect("user roles should be cleared");
     let users = client
-        .get_users(GetUsersOpts::default())
+        .get_users(GetUsersRequest::default())
         .await
         .expect("modified users should be retrieved");
     let fetched_user = users
@@ -5816,6 +5803,250 @@ async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
 
     typed_scan_config_lifecycle(&mut client).await;
     typed_scanner_lifecycle(&mut client).await;
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_user_and_group_requests_fail_before_transport() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+    server.clear_history();
+
+    let error = client
+        .create_user(CreateUserRequest::new(""))
+        .await
+        .expect_err("an empty user name should be rejected locally");
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+
+    let error = client
+        .modify_group(ModifyGroupRequest::new(
+            EntityId::new("group-1").expect("valid group id"),
+            "",
+            "comment",
+            Vec::new(),
+        ))
+        .await
+        .expect_err("an empty final group name should be rejected locally");
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_group_helpers_cover_full_lifecycle() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+
+    let mut create = CreateGroupRequest::new("Operators");
+    create.comment = Some("Initial group".into());
+    create.users = vec!["alice".into(), "bob".into()];
+    create.special_full = true;
+    let group_id = client
+        .create_group(create)
+        .await
+        .expect("create_group should succeed")
+        .id;
+
+    let groups = client
+        .get_groups(GetGroupsRequest::default())
+        .await
+        .expect("get_groups should succeed");
+    assert!(groups.items.iter().any(|group| group.meta.id == group_id));
+    let group = client
+        .get_group(GetGroupRequest::new(group_id.clone()))
+        .await
+        .expect("get_group should succeed")
+        .items
+        .pop()
+        .expect("created group should be returned");
+    assert_eq!(group.meta.name, "Operators");
+    assert_eq!(group.meta.comment.as_deref(), Some("Initial group"));
+    assert_eq!(group.users, ["alice", "bob"]);
+
+    client
+        .modify_group(ModifyGroupRequest::new(
+            group_id.clone(),
+            "Renamed Operators",
+            "",
+            Vec::new(),
+        ))
+        .await
+        .expect("modify_group should succeed");
+    let modified = client
+        .get_group(GetGroupRequest::new(group_id.clone()))
+        .await
+        .expect("modified group should be returned")
+        .items
+        .pop()
+        .expect("modified group should exist");
+    assert_eq!(modified.meta.name, "Renamed Operators");
+    assert_eq!(modified.meta.comment, None);
+    assert!(modified.users.is_empty());
+
+    let mut clone = CloneGroupRequest::new(group_id.clone());
+    clone.name = Some("Cloned Operators".into());
+    clone.comment = Some("clone".into());
+    let clone_id = client
+        .clone_group(clone)
+        .await
+        .expect("clone_group should succeed")
+        .id;
+    let cloned = client
+        .get_group(GetGroupRequest::new(clone_id.clone()))
+        .await
+        .expect("cloned group should be returned")
+        .items
+        .pop()
+        .expect("cloned group should exist");
+    assert_eq!(cloned.meta.name, "Cloned Operators");
+    assert_eq!(cloned.meta.comment.as_deref(), Some("clone"));
+
+    client
+        .delete_group(DeleteGroupRequest::new(clone_id, true))
+        .await
+        .expect("delete cloned group should succeed");
+    client
+        .delete_group(DeleteGroupRequest::new(group_id, true))
+        .await
+        .expect("delete original group should succeed");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn typed_user_helpers_cover_full_lifecycle_and_redact_password_trace() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let trace_events = Arc::clone(&events);
+    let mut client = GmpClient::connect_with_wire_trace(unix_connection(&server), move |event| {
+        trace_events.lock().expect("trace lock").push(event);
+    })
+    .await
+    .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authentication should succeed");
+
+    let mut create_group = CreateGroupRequest::new("User Membership");
+    create_group.users = vec!["alice".into()];
+    let group_id = client
+        .create_group(create_group)
+        .await
+        .expect("supporting group should be created")
+        .id;
+
+    let mut create = CreateUserRequest::new("alice");
+    create.comment = Some("Initial user".into());
+    create.password = Some("create-password-secret".into());
+    create.host_access = Some(UserHostAccess::deny("192.0.2.0/24"));
+    create.group_ids = vec![group_id.clone()];
+    create.auth_source = Some(UserAuthType::File);
+    let user_id = client
+        .create_user(create)
+        .await
+        .expect("create_user should succeed")
+        .id;
+
+    let users = client
+        .get_users(GetUsersRequest::default())
+        .await
+        .expect("get_users should succeed");
+    assert!(users.items.iter().any(|user| user.meta.id == user_id));
+    let user = client
+        .get_user(GetUserRequest::new(user_id.clone()))
+        .await
+        .expect("get_user should succeed")
+        .items
+        .pop()
+        .expect("created user should be returned");
+    assert_eq!(user.meta.name, "alice");
+    assert_eq!(user.meta.comment.as_deref(), Some("Initial user"));
+    assert_eq!(
+        user.host_access(),
+        Some(UserHostAccess::deny("192.0.2.0/24"))
+    );
+    assert_eq!(user.groups.len(), 1);
+    assert_eq!(user.groups[0].id, group_id);
+    assert_eq!(user.authentication_type.as_deref(), Some("file"));
+
+    let mut modify = ModifyUserRequest::new(user_id.clone(), UserHostAccess::allow(""));
+    modify.new_name = Some("alice-renamed".into());
+    modify.comment = Some(String::new());
+    modify.password = Some("modify-password-secret".into());
+    modify.group_ids = CollectionUpdate::Clear;
+    client
+        .modify_user(modify)
+        .await
+        .expect("modify_user should succeed");
+    let modified = client
+        .get_user(GetUserRequest::new(user_id.clone()))
+        .await
+        .expect("modified user should be returned")
+        .items
+        .pop()
+        .expect("modified user should exist");
+    assert_eq!(modified.meta.name, "alice-renamed");
+    assert_eq!(modified.meta.comment, None);
+    assert_eq!(modified.host_access(), Some(UserHostAccess::allow("")));
+    assert!(modified.groups.is_empty());
+
+    let mut clone = CloneUserRequest::new(user_id.clone());
+    clone.name = Some("alice-clone".into());
+    clone.comment = Some("clone".into());
+    let clone_id = client
+        .clone_user(clone)
+        .await
+        .expect("clone_user should succeed")
+        .id;
+    let cloned = client
+        .get_user(GetUserRequest::new(clone_id.clone()))
+        .await
+        .expect("cloned user should be returned")
+        .items
+        .pop()
+        .expect("cloned user should exist");
+    assert_eq!(cloned.meta.name, "alice-clone");
+    assert_eq!(cloned.meta.comment.as_deref(), Some("clone"));
+
+    client
+        .delete_user(DeleteUserRequest::new(clone_id))
+        .await
+        .expect("delete cloned user should succeed");
+    client
+        .delete_user(DeleteUserRequest::new(user_id))
+        .await
+        .expect("delete original user should succeed");
+    client
+        .delete_group(DeleteGroupRequest::new(group_id, true))
+        .await
+        .expect("delete supporting group should succeed");
+
+    let trace = events
+        .lock()
+        .expect("trace lock")
+        .iter()
+        .map(event_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!trace.contains("create-password-secret"));
+    assert!(!trace.contains("modify-password-secret"));
+    assert!(trace.contains("<password><redacted/></password>"));
 
     server.shutdown().await;
 }

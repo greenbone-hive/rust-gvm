@@ -552,6 +552,57 @@ The canonical note surface removes the parser-ignored `orphan` child. Detail
 and clone keep distinct semantic identities over the shared list/create wire
 commands.
 
+## User and group families
+
+The user/group slice removes `UserOpts`, `ModifyUserOpts`, `GetUsersOpts`,
+`GroupOpts`, `GetGroupsOpts`, and all twelve free builders. List, detail,
+create, clone, modify, and delete inputs now live on twelve complete canonical
+request values, and all twelve named client methods accept those values
+unchanged:
+
+```rust
+use gvm_gmp::commands::groups::{
+    CreateGroupRequest, ModifyGroupRequest,
+};
+use gvm_gmp::commands::users::{
+    CreateUserRequest, ModifyUserRequest, UserHostAccess,
+};
+use gvm_gmp::CollectionUpdate;
+
+let mut group = CreateGroupRequest::new("operators");
+group.users = vec!["alice".into(), "bob".into()];
+let group = client.create_group(group).await?;
+
+let mut user = CreateUserRequest::new("alice");
+user.password = Some(password);
+user.host_access = Some(UserHostAccess::deny("192.0.2.0/24"));
+user.group_ids = vec![group.id.clone()];
+let user = client.create_user(user).await?;
+
+let mut modify =
+    ModifyUserRequest::new(user.id, UserHostAccess::allow(""));
+modify.group_ids = CollectionUpdate::Clear;
+client.modify_user(modify).await?;
+
+client
+    .modify_group(ModifyGroupRequest::new(
+        group.id,
+        "operators",
+        "",
+        Vec::new(),
+    ))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+User role and group updates distinguish preservation, replacement, and
+clearing. Host access is a required final value on modification because gvmd
+replaces it even when the legacy child was omitted. Group modification owns the
+final name, comment, and user membership; empty comment and membership values
+clear them. Detail and clone retain distinct semantic identities over their
+shared list/create wire commands. Password-bearing request diagnostics and wire
+traces remain redacted.
+
 ## Tag family
 
 The tag slice removes `TagOpts`, `GetTagsOpts`, and all six free builders.

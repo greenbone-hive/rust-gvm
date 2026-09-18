@@ -5,43 +5,60 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::groups::*;
+use gvm_gmp::{GmpRequestCodec, GmpRequestError, GmpVersion};
 
-#[test]
-fn test_create_group_basic() {
-    assert_eq!(
-        xml(create_group("g", Default::default())),
-        "<create_group><name>g</name></create_group>"
-    );
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap()
 }
 
 #[test]
-fn test_create_group_with_users() {
+fn canonical_group_requests_encode_exact_xml() {
+    let mut create = CreateGroupRequest::new("g");
+    create.comment = Some("c".into());
+    create.users = vec!["alice".into(), "bob".into()];
+    create.special_full = true;
     assert_eq!(
-        xml(create_group(
-            "g",
-            GroupOpts {
-                comment: Some("c".into()),
-                users: vec!["alice".into(), "bob".into()]
-            }
-        )),
-        "<create_group><name>g</name><comment>c</comment><users>alice,bob</users></create_group>"
+        xml(&create),
+        "<create_group><name>g</name><comment>c</comment><specials><full/></specials><users>alice,bob</users></create_group>"
     );
-}
 
-#[test]
-fn test_group_get_modify_delete() {
+    let mut clone = CloneGroupRequest::new(id("g1"));
+    clone.name = Some("copy".into());
+    clone.comment = Some(String::new());
     assert_eq!(
-        xml(clone_group(&id("g1"))),
-        "<create_group><copy>g1</copy></create_group>"
+        xml(&clone),
+        "<create_group><name>copy</name><comment></comment><copy>g1</copy></create_group>"
     );
     assert_eq!(
-        xml(get_group(&id("g1"))),
+        xml(&GetGroupRequest::new(id("g1"))),
         "<get_groups details=\"1\" group_id=\"g1\"/>"
     );
+
+    let modify = ModifyGroupRequest::new(id("g1"), "g", "", Vec::new());
     assert_eq!(
-        xml(delete_group(&id("g1"), false)),
+        xml(&modify),
+        "<modify_group group_id=\"g1\"><name>g</name><comment></comment><users></users></modify_group>"
+    );
+    assert_eq!(
+        xml(&DeleteGroupRequest::new(id("g1"), false)),
         "<delete_group group_id=\"g1\" ultimate=\"0\"/>"
     );
+}
+
+#[test]
+fn canonical_group_requests_reject_invalid_final_values() {
+    let mut create = CreateGroupRequest::new("g");
+    create.users.push(String::new());
+    assert!(matches!(
+        create.encode(GmpVersion(22, 8)),
+        Err(GmpRequestError::InvalidField { field: "users", .. })
+    ));
+
+    let modify = ModifyGroupRequest::new(id("g1"), "", "comment", Vec::new());
+    assert!(matches!(
+        modify.encode(GmpVersion(22, 8)),
+        Err(GmpRequestError::InvalidField { field: "name", .. })
+    ));
 }
