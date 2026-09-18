@@ -219,4 +219,40 @@ mod tests {
         assert_eq!(perm.resource_type, None);
         assert_eq!(perm.resource, None);
     }
+    #[test]
+    fn parses_pinned_command_level_resource_and_identity_subject_shape() {
+        let response = Response::from(
+            r#"<get_permissions_response status="200" status_text="OK">
+            <permission id="p1"><name>get_tasks</name>
+              <resource id=""><name></name><type></type><trash>0</trash><deleted>0</deleted></resource>
+              <subject id="r1"><name>Operators</name><type>role</type><trash>0</trash><permissions/></subject>
+            </permission></get_permissions_response>"#,
+        );
+        let parsed =
+            GetPermissionsResponse::from_response(&response).expect("command-level permission");
+        assert_eq!(parsed.items[0].resource, None);
+        assert_eq!(parsed.items[0].resource_type, None);
+        assert_eq!(parsed.items[0].subject_type.as_deref(), Some("role"));
+        assert_eq!(
+            parsed.items[0]
+                .subject
+                .as_ref()
+                .expect("subject")
+                .id
+                .as_str(),
+            "r1"
+        );
+    }
+
+    #[test]
+    fn malformed_reference_remains_a_response_parse_error() {
+        let response = Response::from(
+            r#"<get_permissions_response status="200" status_text="OK">
+            <permission id="p1"><name>get_tasks</name><subject><name>Operators</name><type>role</type></subject></permission>
+            </get_permissions_response>"#,
+        );
+        assert!(
+            matches!(GetPermissionsResponse::from_response(&response), Err(ParseError::MissingElement(field)) if field == "subject.id")
+        );
+    }
 }

@@ -123,6 +123,18 @@ Alert data values are redacted from request diagnostics and wire traces.
 Independent [alert gvmd evidence](alert-request-gvmd-evidence.md) records those
 contracts.
 
+Issue #602 converts all twelve role and permission lifecycle operations to
+complete canonical requests. Role clone omission follows gvmd's deterministic
+`<existing name> Clone <number>` generation, while explicit overrides remain
+exact. Explicit clone-name collisions return 400 atomically before either the
+role or eligible permissions are copied, while names held only by trashed roles
+remain reusable. The stateful mock also maps a stored `Super` resource clear to
+gvmd's 404 resource-find result and rolls back the whole modification. When the
+same clear supplies a non-identity resource type, gvmd validates that type first,
+returns 400, and likewise rolls back the accompanying comment update. Independent
+[role/permission gvmd evidence](role-permission-request-gvmd-evidence.md)
+records these contracts and the mock's bounded authorization model.
+
 Issue #629 converts the six schedule operations to complete canonical
 requests. Two redundant options types, eight free builders, and the duplicate
 typed create/modify wrappers and facade methods are removed. `ScheduleInput`
@@ -170,6 +182,16 @@ and clone retain semantic aliases, final values fail validation before support
 checks or transport, and password diagnostics and wire traces remain redacted.
 Independent [user/group gvmd evidence](user-group-request-gvmd-evidence.md)
 records those contracts.
+
+The next #602 slice converts all twelve role and permission lifecycle operations
+to complete requests and request-accepting facades. Four option bags and twelve
+forwarding builders are removed. Role modification owns final name, comment,
+and membership; permission modification preserves omitted fields and supports
+partial subject/resource references and explicit resource clearing. Detail and
+clone metadata retain their aliases. Role clones omit membership and copy
+command-level permissions in the stateful mock; permission clones support only
+comment overrides. [Pinned role/permission evidence](role-permission-request-gvmd-evidence.md)
+records these contracts separately from mock validation.
 
 The sections below retain the bounded delivery history for each migrated
 family.

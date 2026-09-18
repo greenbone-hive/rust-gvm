@@ -603,6 +603,64 @@ clear them. Detail and clone retain distinct semantic identities over their
 shared list/create wire commands. Password-bearing request diagnostics and wire
 traces remain redacted.
 
+## Role and permission families
+
+All twelve lifecycle helpers accept complete request values. `RoleOpts`,
+`GetRolesOpts`, `PermissionOpts`, `GetPermissionsOpts`, and all twelve free
+builders are removed. The list/detail/create/clone/modify/delete request types
+remain under `commands::roles` and `commands::permissions` and can be passed
+either to the corresponding facade method or directly to `execute`.
+
+```rust
+use gvm_gmp::commands::roles::{CreateRoleRequest, ModifyRoleRequest};
+use gvm_gmp::commands::permissions::{
+    CreatePermissionRequest, ModifyPermissionRequest, PermissionSubject,
+};
+use gvm_gmp::{PermissionSubjectType, ScalarUpdate};
+
+let role = client.create_role(CreateRoleRequest::new("operators")).await?;
+let permission = client.create_permission(CreatePermissionRequest::new(
+    "get_tasks",
+    PermissionSubject::new(role.id.clone(), PermissionSubjectType::Role),
+)).await?;
+
+// gvmd replaces all three values on every role modification.
+client.modify_role(ModifyRoleRequest::new(
+    role.id, "operators", "", Vec::new(),
+)).await?;
+
+let mut modify = ModifyPermissionRequest::new(permission.id);
+modify.comment = Some(String::new()); // Clear; None preserves.
+modify.resource_id = ScalarUpdate::Clear; // <resource id="0"/>.
+client.modify_permission(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Permission creation requires a complete subject, using `PermissionSubject`.
+Its optional `PermissionResource` requires an ID; normal command names infer
+the resource type, while `Super` requires an explicit `user`, `group`, or `role`
+type. Permission modification keeps subject ID/type and resource ID/type
+independently expressible, matching gvmd's preservation of omitted counterparts.
+For `Super`, supply both resource ID and type to replace an existing identity
+resource type; a type-only update can retain the stored identity type.
+Unknown permission names and checks requiring existing server state remain
+gvmd's responsibility.
+
+`CloneRoleRequest` supports name/comment overrides. When its name is omitted,
+gvmd chooses the first available `<existing name> Clone <number>` value,
+starting at 1. An explicit name that belongs to an active role returns 400
+before the role or its eligible permissions are copied; a trashed role does not
+reserve its name. `ClonePermissionRequest` supports only comment. Empty or
+omitted clone comments preserve the original. Role cloning copies eligible
+permissions, not user membership. Clearing the resource from a stored `Super`
+permission receives gvmd's resource-not-found response and rolls back every
+requested change. If that clear also supplies a non-identity resource type,
+gvmd validates the supplied type first and returns 400, including rollback of
+an accompanying comment change. Detail and clone requests retain their semantic
+aliases over list/create wire roots. See the
+[pinned evidence](role-permission-request-gvmd-evidence.md) for source references
+and the mock's bounded scope.
+
 ## Tag family
 
 The tag slice removes `TagOpts`, `GetTagsOpts`, and all six free builders.

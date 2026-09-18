@@ -568,7 +568,7 @@ impl Resource {
                 ));
             }
         }
-        if self.resource_type == "group" {
+        if matches!(self.resource_type.as_str(), "group" | "role") {
             xml.push_str(&format!(
                 "<users>{}</users>",
                 xml_escape(self.attr("users").unwrap_or_default()),
@@ -780,7 +780,9 @@ impl Resource {
             {
                 continue;
             }
-            if self.resource_type == "group" && matches!(k.as_str(), "users" | "special_full") {
+            if matches!(self.resource_type.as_str(), "group" | "role")
+                && matches!(k.as_str(), "users" | "special_full")
+            {
                 continue;
             }
             if self.resource_type == "target"
@@ -989,6 +991,22 @@ fn active_typed_resource<'a>(
         .get(id)
         .filter(|resource| !resource.trashed && resource.resource_type == resource_type)
         .ok_or_else(|| StoreError::NotFound(resource_type.to_string()))
+}
+
+fn unique_clone_name(inner: &StoreInner, resource_type: &str, original_name: &str) -> String {
+    let mut number = 1_u64;
+    loop {
+        let candidate = format!("{original_name} Clone {number}");
+        let exists = inner.resources.values().any(|resource| {
+            !resource.trashed
+                && resource.resource_type == resource_type
+                && resource.name == candidate
+        });
+        if !exists {
+            return candidate;
+        }
+        number += 1;
+    }
 }
 
 fn validate_task_reference(
@@ -1830,7 +1848,12 @@ impl ResourceStore {
         Some(new_id)
     }
 
-    pub(crate) fn clone_typed(&self, id: &Uuid, resource_type: &str) -> Result<Uuid, StoreError> {
+    pub(crate) fn clone_typed(
+        &self,
+        id: &Uuid,
+        resource_type: &str,
+        clone_name: Option<&str>,
+    ) -> Result<Uuid, StoreError> {
         let mut inner = self.inner.write().expect("store lock poisoned");
         let original = inner
             .resources
@@ -1860,6 +1883,47 @@ impl ResourceStore {
             };
             copy.set_attr("status", status.as_str());
             copy.attrs.remove("report_id");
+        }
+        if resource_type == "role" {
+            copy.name = if let Some(name) = clone_name.filter(|name| !name.is_empty()) {
+                let name_exists = inner.resources.values().any(|resource| {
+                    !resource.trashed
+                        && resource.resource_type == resource_type
+                        && resource.name == name
+                });
+                if name_exists {
+                    return Err(StoreError::InvalidArgument("Role exists already"));
+                }
+                name.to_string()
+            } else {
+                unique_clone_name(&inner, resource_type, &copy.name)
+            };
+            // gvmd copies role permissions, but not role_users membership.
+            copy.set_attr("users", "");
+            let source_id = id.to_string();
+            let copied_id = copy.id.to_string();
+            let permissions = inner
+                .resources
+                .values()
+                .filter(|permission| {
+                    !permission.trashed
+                        && permission.resource_type == "permission"
+                        && permission.attr("subject_type") == Some("role")
+                        && permission.attr("subject_id") == Some(source_id.as_str())
+                        && permission.attr("resource_id").is_none_or(str::is_empty)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            // The mock has no ownerless built-in permissions. Its command-level
+            // permissions model the other branch of gvmd's role-copy predicate.
+            for mut permission in permissions {
+                permission.id = Uuid::new_v4();
+                permission.set_attr("subject_id", &copied_id);
+                let now = now_iso();
+                permission.creation_time = now.clone();
+                permission.modification_time = now;
+                insert_resource(&mut inner, permission);
+            }
         }
         let now = now_iso();
         copy.creation_time = now.clone();
@@ -3043,7 +3107,7 @@ mod tests {
             .create_linked_report(Resource::new("report", "Linked"), Some(task_id))
             .expect("linked report");
         let report_copy = store
-            .clone_typed(&report_id, "report")
+            .clone_typed(&report_id, "report", None)
             .expect("clone linked report");
         assert_eq!(
             store
@@ -3057,7 +3121,7 @@ mod tests {
         malformed_report.set_attr("task_id", "not-a-uuid");
         let malformed_report_id = store.create(malformed_report);
         assert_eq!(
-            store.clone_typed(&malformed_report_id, "report"),
+            store.clone_typed(&malformed_report_id, "report", None),
             Err(StoreError::Inconsistent("report task"))
         );
 
@@ -3065,7 +3129,7 @@ mod tests {
         missing_task_report.set_attr("task_id", &Uuid::new_v4().to_string());
         let missing_task_report_id = store.create(missing_task_report);
         assert_eq!(
-            store.clone_typed(&missing_task_report_id, "report"),
+            store.clone_typed(&missing_task_report_id, "report", None),
             Err(StoreError::NotFound("task".to_string()))
         );
 
@@ -3083,7 +3147,7 @@ mod tests {
             )
             .expect("import task");
         let import_copy = store
-            .clone_typed(&import_task_id, "task")
+            .clone_typed(&import_task_id, "task", None)
             .expect("clone import task");
         assert_eq!(
             store.get(&import_copy).expect("import copy").attr("status"),
@@ -3108,7 +3172,7 @@ mod tests {
         multiple_targets.set_attr("status", TaskStatus::New.as_str());
         let multiple_targets_id = store.create(multiple_targets);
         assert_eq!(
-            store.clone_typed(&multiple_targets_id, "task"),
+            store.clone_typed(&multiple_targets_id, "task", None),
             Err(StoreError::Inconsistent("task target"))
         );
 
@@ -3119,7 +3183,7 @@ mod tests {
         missing_config.set_attr("status", TaskStatus::New.as_str());
         let missing_config_id = store.create(missing_config);
         assert_eq!(
-            store.clone_typed(&missing_config_id, "task"),
+            store.clone_typed(&missing_config_id, "task", None),
             Err(StoreError::NotFound("config".to_string()))
         );
     }

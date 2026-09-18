@@ -791,14 +791,21 @@ impl SessionHandler {
         // Check for clone (copy element)
         if let Some(copy_id) = parse_element_text(raw_xml, "copy") {
             if let Ok(uuid) = Uuid::parse_str(&copy_id) {
-                match store.clone_typed(&uuid, resource_type) {
+                let name = (resource_type != "permission")
+                    .then(|| parse_element_text(raw_xml, "name"))
+                    .flatten();
+                match store.clone_typed(&uuid, resource_type, name.as_deref()) {
                     Ok(new_id) => {
                         if matches!(
                             resource_type,
-                            "filter" | "scanner" | "tag" | "group" | "user"
+                            "filter" | "scanner" | "tag" | "group" | "user" | "role" | "permission"
                         ) {
-                            let name = parse_element_text(raw_xml, "name");
-                            let comment = element_text_including_empty(cmd, raw_xml, "comment");
+                            let comment = if matches!(resource_type, "role" | "permission") {
+                                // The pinned create parsers do not initialize empty comments.
+                                parse_element_text(raw_xml, "comment")
+                            } else {
+                                element_text_including_empty(cmd, raw_xml, "comment")
+                            };
                             if resource_type == "scanner" || name.is_some() || comment.is_some() {
                                 store.modify_typed(&new_id, resource_type, |resource| {
                                     if resource_type == "scanner" {
@@ -1307,6 +1314,9 @@ impl SessionHandler {
         }
         if resource_type == "permission" {
             set_permission_references(&mut resource, cmd);
+            if let Err(error) = validate_permission_shape(&resource) {
+                return permission_shape_error_response(&cmd.name, error);
+            }
         }
 
         // Task-specific: extract references
@@ -1467,10 +1477,10 @@ impl SessionHandler {
             }
         }
 
-        if resource_type == "group" {
+        if matches!(resource_type, "group" | "role") {
             let users = element_text_including_empty(cmd, raw_xml, "users").unwrap_or_default();
             resource.set_attr("users", &users);
-            if has_nested_child(cmd, "specials", "full") {
+            if resource_type == "group" && has_nested_child(cmd, "specials", "full") {
                 resource.set_attr("special_full", "1");
             }
         }
@@ -1827,7 +1837,7 @@ impl SessionHandler {
             parse_element_text(raw_xml, "new_name")
         } else if resource_type == "alert" {
             cmd.child_text("name").map(str::to_string)
-        } else if resource_type == "group" {
+        } else if matches!(resource_type, "group" | "role") {
             element_text_including_empty(cmd, raw_xml, "name")
         } else {
             parse_element_text(raw_xml, "name")
@@ -1835,7 +1845,7 @@ impl SessionHandler {
         let new_text = parse_element_text(raw_xml, "text");
         let new_comment = if matches!(
             resource_type,
-            "filter" | "scanner" | "schedule" | "tag" | "group" | "user"
+            "filter" | "scanner" | "schedule" | "tag" | "group" | "user" | "role" | "permission"
         ) {
             element_text_including_empty(cmd, raw_xml, "comment")
         } else {
@@ -2012,7 +2022,7 @@ impl SessionHandler {
         let new_user_auth_source = (resource_type == "user")
             .then(|| nested_child_text(cmd, &["sources", "source"]))
             .flatten();
-        let new_group_users = (resource_type == "group")
+        let new_group_users = matches!(resource_type, "group" | "role")
             .then(|| element_text_including_empty(cmd, raw_xml, "users").unwrap_or_default());
         let new_login = parse_element_text(raw_xml, "login");
         let new_allow_insecure = parse_element_text(raw_xml, "allow_insecure");
@@ -2136,6 +2146,17 @@ impl SessionHandler {
             }
         }
 
+        if resource_type == "permission" {
+            if let Some(mut candidate) = store.get_typed(&uuid, "permission") {
+                if let Some(name) = &new_name {
+                    candidate.name.clone_from(name);
+                }
+                set_permission_references(&mut candidate, cmd);
+                if let Err(error) = validate_permission_shape(&candidate) {
+                    return permission_shape_error_response(&cmd.name, error);
+                }
+            }
+        }
         let update_resource = |r: &mut Resource| {
             if matches!(resource_type, "note" | "override") {
                 r.name.clone_from(
@@ -2156,12 +2177,12 @@ impl SessionHandler {
                         r.remove_attr(attribute);
                     }
                 }
-            } else if matches!(resource_type, "port_list" | "group") {
+            } else if matches!(resource_type, "port_list" | "group" | "role") {
                 r.name = new_name.clone().unwrap_or_default();
             } else if let Some(ref name) = new_name {
                 r.name.clone_from(name);
             }
-            if matches!(resource_type, "port_list" | "group") {
+            if matches!(resource_type, "port_list" | "group" | "role") {
                 r.comment = new_comment.clone().unwrap_or_default();
             } else if let Some(ref comment) = new_comment {
                 r.comment.clone_from(comment);
@@ -5146,7 +5167,58 @@ fn credential_kdcs(cmd: &ParsedCommand) -> Option<Vec<String>> {
         })
 }
 
+#[derive(Clone, Copy)]
+enum PermissionShapeError {
+    Malformed(&'static str),
+    MissingResource,
+}
+
+fn permission_shape_error_response(command: &str, error: PermissionShapeError) -> Vec<u8> {
+    match error {
+        PermissionShapeError::Malformed(message) => error_response(command, 400, message),
+        PermissionShapeError::MissingResource => error_response(command, 404, "Resource not found"),
+    }
+}
+
+fn validate_permission_shape(resource: &Resource) -> Result<(), PermissionShapeError> {
+    if resource.name.is_empty() || resource.name.eq_ignore_ascii_case("get_version") {
+        return Err(PermissionShapeError::Malformed("Invalid permission name"));
+    }
+    if resource
+        .attr("subject_id")
+        .is_none_or(|id| id.is_empty() || id == "0")
+        || !matches!(
+            resource.attr("subject_type"),
+            Some("user" | "group" | "role")
+        )
+    {
+        return Err(PermissionShapeError::Malformed(
+            "A subject identifier and type are required",
+        ));
+    }
+    if resource.name.eq_ignore_ascii_case("super") {
+        if !matches!(
+            resource.attr("resource_type"),
+            None | Some("user" | "group" | "role")
+        ) {
+            return Err(PermissionShapeError::Malformed(
+                "Super requires an identity resource",
+            ));
+        }
+        if resource.attr("resource_id").is_none() || resource.attr("resource_type").is_none() {
+            return Err(PermissionShapeError::MissingResource);
+        }
+    }
+    Ok(())
+}
+
 fn set_permission_references(resource: &mut Resource, cmd: &ParsedCommand) {
+    let existing_identity_type = resource
+        .attr("resource_type")
+        .filter(|kind| matches!(*kind, "user" | "group" | "role"))
+        .map(str::to_string);
+    let replaces_resource_type = cmd.child_attr("resource", "id").is_some()
+        && nested_child_text(cmd, &["resource", "type"]).is_some();
     for (element, id_key, type_key) in [
         ("subject", "subject_id", "subject_type"),
         ("resource", "resource_id", "resource_type"),
@@ -5155,12 +5227,39 @@ fn set_permission_references(resource: &mut Resource, cmd: &ParsedCommand) {
             .child_attr(element, "id")
             .filter(|value| !value.is_empty())
         {
-            resource.set_attr(id_key, id);
+            if element == "resource" && id == "0" {
+                resource.remove_attr(id_key);
+                resource.remove_attr(type_key);
+            } else {
+                resource.set_attr(id_key, id);
+            }
         }
         if let Some(reference_type) =
             nested_child_text(cmd, &[element, "type"]).filter(|value| !value.is_empty())
         {
             resource.set_attr(type_key, &reference_type);
+        }
+    }
+    // Pinned manage_commands.c derives ordinary resource types from the
+    // command suffix. Super instead keeps its explicit identity resource type.
+    if resource.name.eq_ignore_ascii_case("super") {
+        resource.name = "Super".into();
+        if let Some(kind) = existing_identity_type.filter(|_| {
+            cmd.name == "modify_permission"
+                && !replaces_resource_type
+                && resource.attr("resource_id").is_some()
+        }) {
+            resource.set_attr("resource_type", &kind);
+        }
+    } else {
+        resource.name.make_ascii_lowercase();
+        if let Some((_, suffix)) = resource
+            .name
+            .split_once('_')
+            .filter(|_| resource.attr("resource_id").is_some())
+        {
+            let kind = suffix.strip_suffix('s').unwrap_or(suffix).to_string();
+            resource.set_attr("resource_type", &kind);
         }
     }
 }
@@ -5196,11 +5295,12 @@ mod tests {
         assert_eq!(permission.attr("subject_id"), None);
         assert_eq!(permission.attr("subject_type"), Some("role"));
         assert_eq!(permission.attr("resource_id"), Some("target-1"));
-        assert_eq!(permission.attr("resource_type"), None);
+        assert_eq!(permission.attr("resource_type"), Some("target"));
         let xml = permission.to_xml();
         assert!(!xml.contains("<subject"));
-        assert!(xml.contains(r#"<resource id="target-1"><name></name></resource>"#));
-        assert!(!xml.contains("<type>"));
+        assert!(
+            xml.contains(r#"<resource id="target-1"><name></name><type>target</type></resource>"#)
+        );
     }
 
     #[test]
