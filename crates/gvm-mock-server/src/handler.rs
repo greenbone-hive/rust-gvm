@@ -793,11 +793,15 @@ impl SessionHandler {
             if let Ok(uuid) = Uuid::parse_str(&copy_id) {
                 match store.clone_typed(&uuid, resource_type) {
                     Ok(new_id) => {
-                        if matches!(resource_type, "filter" | "tag") {
+                        if matches!(resource_type, "filter" | "scanner" | "tag") {
                             let name = parse_element_text(raw_xml, "name");
                             let comment = element_text_including_empty(cmd, raw_xml, "comment");
-                            if name.is_some() || comment.is_some() {
+                            if resource_type == "scanner" || name.is_some() || comment.is_some() {
                                 store.modify_typed(&new_id, resource_type, |resource| {
+                                    if resource_type == "scanner" {
+                                        resource.remove_attr("relay_host");
+                                        resource.remove_attr("relay_port");
+                                    }
                                     if let Some(name) = name {
                                         resource.name = name;
                                     }
@@ -856,6 +860,36 @@ impl SessionHandler {
         );
         if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
+        }
+        if resource_type == "scanner" {
+            let Some(host) =
+                parse_element_text(raw_xml, "host").filter(|value| !value.trim().is_empty())
+            else {
+                return error_response(&cmd.name, 400, "Missing required element: host");
+            };
+            if host.starts_with('/') {
+                return error_response(&cmd.name, 400, "Invalid scanner host");
+            }
+            let Some(_) = parse_element_text(raw_xml, "port")
+                .and_then(|value| value.parse::<u16>().ok())
+                .filter(|port| *port != 0)
+            else {
+                return error_response(&cmd.name, 400, "Invalid scanner port");
+            };
+            if parse_element_text(raw_xml, "type").is_none_or(|value| value.trim().is_empty()) {
+                return error_response(&cmd.name, 400, "Missing required element: type");
+            }
+            let relay_host = parse_element_text(raw_xml, "relay_host");
+            let relay_port = parse_element_text(raw_xml, "relay_port");
+            match (relay_host.as_deref(), relay_port.as_deref()) {
+                (None, None) => {}
+                (Some(host), None) if host.starts_with('/') => {}
+                (Some(host), Some(port))
+                    if !host.trim().is_empty()
+                        && !host.starts_with('/')
+                        && port.parse::<u16>().is_ok_and(|port| port != 0) => {}
+                _ => return error_response(&cmd.name, 400, "Invalid scanner relay"),
+            }
         }
         let tag_resources = if resource_type == "tag" {
             match tag_resource_selection(cmd) {
@@ -1148,8 +1182,8 @@ impl SessionHandler {
             }
         }
         if resource_type == "scanner" {
-            for field in ["host", "port", "type", "ca_pub"] {
-                if let Some(value) = parse_element_text(raw_xml, field) {
+            for field in ["host", "port", "type", "ca_pub", "relay_host", "relay_port"] {
+                if let Some(value) = element_text_including_empty(cmd, raw_xml, field) {
                     resource.set_attr(field, &value);
                 }
             }
@@ -1719,7 +1753,7 @@ impl SessionHandler {
             parse_element_text(raw_xml, "name")
         };
         let new_text = parse_element_text(raw_xml, "text");
-        let new_comment = if matches!(resource_type, "filter" | "schedule" | "tag") {
+        let new_comment = if matches!(resource_type, "filter" | "scanner" | "schedule" | "tag") {
             element_text_including_empty(cmd, raw_xml, "comment")
         } else {
             parse_element_text(raw_xml, "comment")
@@ -1800,7 +1834,15 @@ impl SessionHandler {
         let new_assignee_id = nested_child_attr(cmd, &["assigned_to", "user"], "id");
         let new_port = parse_element_text(raw_xml, "port");
         let new_type = parse_element_text(raw_xml, "type");
-        let new_ca_pub = parse_element_text(raw_xml, "ca_pub");
+        let new_ca_pub = if resource_type == "scanner" {
+            element_text_including_empty(cmd, raw_xml, "ca_pub")
+        } else {
+            parse_element_text(raw_xml, "ca_pub")
+        };
+        let new_relay_host = (resource_type == "scanner")
+            .then(|| element_text_including_empty(cmd, raw_xml, "relay_host"))
+            .flatten();
+        let new_relay_port = parse_element_text(raw_xml, "relay_port");
         let new_severity = parse_element_text(raw_xml, "severity");
         let new_new_severity = parse_element_text(raw_xml, "new_severity");
         let new_active = parse_element_text(raw_xml, "active");
@@ -2014,10 +2056,7 @@ impl SessionHandler {
             if let Some(ref task_id) = new_task_id {
                 r.set_attr("task_id", task_id);
             }
-            if matches!(
-                resource_type,
-                "oci_image_target" | "web_application_target" | "scanner"
-            ) {
+            if matches!(resource_type, "oci_image_target" | "web_application_target") {
                 if let Some(ref credential_id) = new_credential_id {
                     r.set_attr("credential_id", credential_id);
                 }
@@ -2026,11 +2065,33 @@ impl SessionHandler {
                 r.set_attr("port", port);
             }
             if resource_type == "scanner" {
+                if let Some(ref credential_id) = new_credential_id {
+                    if credential_id.is_empty() || credential_id == "0" {
+                        r.remove_attr("credential_id");
+                    } else {
+                        r.set_attr("credential_id", credential_id);
+                    }
+                }
                 if let Some(ref scanner_type) = new_type {
                     r.set_attr("type", scanner_type);
                 }
                 if let Some(ref ca_pub) = new_ca_pub {
-                    r.set_attr("ca_pub", ca_pub);
+                    if ca_pub.is_empty() {
+                        r.remove_attr("ca_pub");
+                    } else {
+                        r.set_attr("ca_pub", ca_pub);
+                    }
+                }
+                if let Some(ref relay_host) = new_relay_host {
+                    if relay_host.is_empty() {
+                        r.remove_attr("relay_host");
+                        r.remove_attr("relay_port");
+                    } else {
+                        r.set_attr("relay_host", relay_host);
+                    }
+                }
+                if let Some(ref relay_port) = new_relay_port {
+                    r.set_attr("relay_port", relay_port);
                 }
             }
             if let Some(ref severity) = new_severity {

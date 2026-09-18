@@ -13,7 +13,7 @@ use gvm_gmp::commands::scan_configs::{
 };
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
-    GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
+    GetScannersRequest, ModifyScannerRequest, VerifyScannerRequest,
 };
 use gvm_gmp::commands::schedules::{
     CloneScheduleRequest, CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest,
@@ -295,9 +295,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_scanners(
         &mut self,
-        opts: GetScannersOpts,
+        request: GetScannersRequest,
     ) -> Result<GetScannersResponse, GvmError> {
-        self.execute(GetScannersRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `create_scanner` request and return a typed [`CreateScannerResponse`].
@@ -306,10 +306,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_scanner(
         &mut self,
-        name: &str,
-        opts: ScannerOpts,
+        request: CreateScannerRequest,
     ) -> Result<CreateScannerResponse, GvmError> {
-        self.execute(CreateScannerRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_scanner` request and return a typed [`GetScannersResponse`].
@@ -318,10 +317,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_scanner(
         &mut self,
-        scanner_id: &EntityId,
+        request: GetScannerRequest,
     ) -> Result<GetScannersResponse, GvmError> {
-        self.execute(GetScannerRequest::new(scanner_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_scanner` request and return a typed [`ModifyScannerResponse`].
@@ -330,11 +328,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_scanner(
         &mut self,
-        scanner_id: &EntityId,
-        opts: ScannerOpts,
+        request: ModifyScannerRequest,
     ) -> Result<ModifyScannerResponse, GvmError> {
-        self.execute(ModifyScannerRequest::new(scanner_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_scanner` request and return a typed [`DeleteScannerResponse`].
@@ -343,11 +339,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_scanner(
         &mut self,
-        scanner_id: &EntityId,
-        ultimate: bool,
+        request: DeleteScannerRequest,
     ) -> Result<DeleteScannerResponse, GvmError> {
-        self.execute(DeleteScannerRequest::new(scanner_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `verify_scanner` request and return a typed [`VerifyScannerResponse`].
@@ -356,10 +350,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn verify_scanner(
         &mut self,
-        scanner_id: &EntityId,
+        request: VerifyScannerRequest,
     ) -> Result<VerifyScannerResponse, GvmError> {
-        self.execute(VerifyScannerRequest::new(scanner_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `clone_scanner` request and return a typed [`CreateScannerResponse`].
@@ -368,10 +361,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_scanner(
         &mut self,
-        scanner_id: &EntityId,
+        request: CloneScannerRequest,
     ) -> Result<CreateScannerResponse, GvmError> {
-        self.execute(CloneScannerRequest::new(scanner_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     // ── Tasks ─────────────────────────────────────────────────────────────────

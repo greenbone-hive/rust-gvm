@@ -145,6 +145,35 @@ let tags = client
     .await?;
 ```
 
+#### Canonical scanners
+
+Scanner operations use complete request values, including gvmd's relay fields
+and explicit clear semantics:
+
+```rust
+use gvm_gmp::commands::scanners::{CreateScannerRequest, ModifyScannerRequest};
+use gvm_gmp::{ScalarUpdate, ScannerType};
+
+let mut create = CreateScannerRequest::new(
+    "Remote scanner",
+    "scanner.example",
+    9390,
+    ScannerType::OpenVasScanner,
+);
+create.relay_host = Some("relay.example".into());
+create.relay_port = Some(9391);
+let created = client.create_scanner(create).await?;
+
+let mut modify = ModifyScannerRequest::new(created.id);
+modify.credential_id = ScalarUpdate::Clear;
+modify.relay_host = Some(String::new());
+client.modify_scanner(modify).await?;
+```
+
+Create validates the required name, host, non-zero port, scanner type, and
+relay shape before transport. Modify distinguishes omission from explicit
+clearing for credentials, CA certificates, comments, and relays.
+
 #### Typed schedules
 
 Common schedule recurrence does not require callers to construct or parse

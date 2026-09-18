@@ -30,6 +30,7 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
+use gvm_gmp::commands::scanners::CreateScannerRequest;
 use gvm_gmp::commands::schedules::ModifyScheduleRequest;
 use gvm_gmp::commands::tags::{CreateTagRequest, TagResources};
 use gvm_gmp::commands::targets::CreateTargetRequest;
@@ -41,7 +42,8 @@ use gvm_gmp::commands::web_application_targets::{
 use gvm_gmp::responses::ActionResponse;
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, EntityType, GmpCommand, GmpRequest, GmpRequestCodec,
-    GmpRequestError, GmpVersion, ServicePort, TargetHost, TargetHosts, TargetPortSelection,
+    GmpRequestError, GmpVersion, ScannerType, ServicePort, TargetHost, TargetHosts,
+    TargetPortSelection,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -848,6 +850,34 @@ async fn invalid_schedule_final_value_fails_before_transport() {
             field: "icalendar",
             ..
         })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_scanner_final_value_fails_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let mut request = CreateScannerRequest::new(
+        "scanner",
+        "scanner.example",
+        9390,
+        ScannerType::OpenVasScanner,
+    );
+    request.port = 0;
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("mutated zero scanner port should fail before transport");
+
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field: "port", .. })
     ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;

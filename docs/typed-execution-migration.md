@@ -429,6 +429,43 @@ trigger preserve distinct semantic identities over shared XML roots. Trigger
 continues to decode `GetReportsResponse`. Alert data values are redacted from
 request diagnostics and wire traces.
 
+## Scanner family
+
+The scanner slice removes `ScannerOpts`, `GetScannersOpts`, and all seven free
+builders. List, detail, create, clone, modify, delete, and verify inputs now
+live on complete canonical request values, and the seven named client methods
+accept those values unchanged:
+
+```rust
+use gvm_gmp::commands::scanners::{
+    CreateScannerRequest, ModifyScannerRequest,
+};
+use gvm_gmp::{ScalarUpdate, ScannerType};
+
+let mut create = CreateScannerRequest::new(
+    "remote",
+    "scanner.example",
+    9390,
+    ScannerType::OpenVasScanner,
+);
+create.relay_host = Some("relay.example".into());
+create.relay_port = Some(9391);
+let created = client.create_scanner(create).await?;
+
+let mut modify = ModifyScannerRequest::new(created.id);
+modify.ca_pub = Some(String::new());
+modify.credential_id = ScalarUpdate::Clear;
+modify.relay_host = Some(String::new());
+client.modify_scanner(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Creation requires a non-empty name and host, a non-zero port, and a scanner
+type. The primary host cannot be a Unix socket over GMP. Network relays require
+a non-zero relay port, while Unix-socket relays omit it. On modify, omission
+preserves existing fields; empty comment, CA, and relay elements clear them,
+and `ScalarUpdate::Clear` detaches the credential.
+
 ## Schedule family
 
 The schedule slice removes `ScheduleOpts`, `GetSchedulesOpts`, all eight free

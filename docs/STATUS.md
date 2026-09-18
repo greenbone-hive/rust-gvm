@@ -135,6 +135,17 @@ name/comment overrides. Independent
 [schedule gvmd evidence](schedule-request-gvmd-evidence.md) records those
 contracts.
 
+Issue #631 converts all seven scanner operations to complete canonical
+requests. Two redundant options types and seven free builders are removed; the
+seven named facade methods accept request values unchanged. Create owns gvmd's
+required name, host, port, and scanner type, while create/modify/response
+models now include relay host and port. Modify distinguishes omission from
+explicit clearing for comment, CA certificate, credential relationship, and
+relay. Final host, port, and relay shapes fail validation before support checks
+or transport. Independent
+[scanner gvmd evidence](scanner-request-gvmd-evidence.md) records those
+contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 

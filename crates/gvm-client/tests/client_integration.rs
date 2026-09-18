@@ -51,7 +51,10 @@ use gvm_gmp::commands::scan_configs::{
     create_policy, get_policies, ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts,
     GetScanConfigsOpts,
 };
-use gvm_gmp::commands::scanners::ScannerOpts;
+use gvm_gmp::commands::scanners::{
+    CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
+    GetScannersRequest, ModifyScannerRequest, VerifyScannerRequest,
+};
 use gvm_gmp::commands::schedules::{
     CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest, GetSchedulesRequest,
     ModifyScheduleRequest,
@@ -5584,26 +5587,34 @@ async fn typed_scan_config_lifecycle(client: &mut GmpClient<UnixSocketConnection
         .expect("delete original config should succeed");
 }
 
+struct ScannerConnectionExpectation<'a> {
+    name: &'a str,
+    host: &'a str,
+    port: u16,
+    scanner_type: &'a str,
+    ca_pub: &'a str,
+    credential_id: &'a str,
+    relay_host: &'a str,
+    relay_port: u16,
+}
+
 fn assert_scanner_connection_fields(
     scanner: &gvm_gmp::responses::Scanner,
-    name: &str,
-    host: &str,
-    port: u16,
-    scanner_type: &str,
-    ca_pub: &str,
-    credential_id: &str,
+    expected: &ScannerConnectionExpectation<'_>,
 ) {
-    assert_eq!(scanner.meta.name, name);
-    assert_eq!(scanner.host.as_deref(), Some(host));
-    assert_eq!(scanner.port, Some(port));
-    assert_eq!(scanner.scanner_type.as_deref(), Some(scanner_type));
-    assert_eq!(scanner.ca_pub.as_deref(), Some(ca_pub));
+    assert_eq!(scanner.meta.name, expected.name);
+    assert_eq!(scanner.host.as_deref(), Some(expected.host));
+    assert_eq!(scanner.port, Some(expected.port));
+    assert_eq!(scanner.scanner_type.as_deref(), Some(expected.scanner_type));
+    assert_eq!(scanner.ca_pub.as_deref(), Some(expected.ca_pub));
+    assert_eq!(scanner.relay_host.as_deref(), Some(expected.relay_host));
+    assert_eq!(scanner.relay_port, Some(expected.relay_port));
     assert_eq!(
         scanner
             .credential
             .as_ref()
             .map(|credential| credential.id.as_str()),
-        Some(credential_id)
+        Some(expected.credential_id)
     );
 }
 
@@ -5611,22 +5622,23 @@ async fn assert_partial_scanner_modify_preserves_fields(
     client: &mut GmpClient<UnixSocketConnection>,
     scanner_id: &EntityId,
 ) {
+    let mut request = ModifyScannerRequest::new(scanner_id.clone());
+    request.comment = Some("omitted fields stay unchanged".into());
     client
-        .modify_scanner(
-            scanner_id,
-            ScannerOpts {
-                comment: Some("omitted fields stay unchanged".into()),
-                ..Default::default()
-            },
-        )
+        .modify_scanner(request)
         .await
         .expect("partial modify_scanner should succeed");
     let scanner = client
-        .get_scanner(scanner_id)
+        .get_scanner(GetScannerRequest::new(scanner_id.clone()))
         .await
         .expect("get_scanner after partial modify should succeed");
     assert_eq!(scanner.items[0].port, Some(9391));
     assert_eq!(scanner.items[0].ca_pub.as_deref(), Some("Replacement CA"));
+    assert_eq!(
+        scanner.items[0].relay_host.as_deref(),
+        Some("relay-2.example")
+    );
+    assert_eq!(scanner.items[0].relay_port, Some(9393));
     assert_eq!(
         scanner.items[0]
             .credential
@@ -5636,57 +5648,115 @@ async fn assert_partial_scanner_modify_preserves_fields(
     );
 }
 
+async fn assert_scanner_clone_and_clear(
+    client: &mut GmpClient<UnixSocketConnection>,
+    scanner_id: &EntityId,
+) {
+    let mut clone = CloneScannerRequest::new(scanner_id.clone());
+    clone.name = Some("Cloned Scanner".into());
+    clone.comment = Some(String::new());
+    let cloned_scanner = client
+        .clone_scanner(clone)
+        .await
+        .expect("clone_scanner should succeed");
+    let cloned_scanner_id = cloned_scanner.id;
+    let cloned_scanner_response = client
+        .get_scanner(GetScannerRequest::new(cloned_scanner_id.clone()))
+        .await
+        .expect("get cloned scanner should succeed");
+    assert_eq!(cloned_scanner_response.items[0].meta.name, "Cloned Scanner");
+    assert_eq!(cloned_scanner_response.items[0].meta.comment, None);
+    assert_eq!(cloned_scanner_response.items[0].relay_host, None);
+    assert_eq!(cloned_scanner_response.items[0].relay_port, None);
+
+    let mut clear = ModifyScannerRequest::new(scanner_id.clone());
+    clear.comment = Some(String::new());
+    clear.ca_pub = Some(String::new());
+    clear.credential_id = ScalarUpdate::Clear;
+    clear.relay_host = Some(String::new());
+    client
+        .modify_scanner(clear)
+        .await
+        .expect("clearing scanner fields should succeed");
+    let cleared = client
+        .get_scanner(GetScannerRequest::new(scanner_id.clone()))
+        .await
+        .expect("get cleared scanner should succeed");
+    assert_eq!(cleared.items[0].meta.comment, None);
+    assert_eq!(cleared.items[0].ca_pub, None);
+    assert_eq!(cleared.items[0].credential, None);
+    assert_eq!(cleared.items[0].relay_host, None);
+    assert_eq!(cleared.items[0].relay_port, None);
+
+    client
+        .delete_scanner(DeleteScannerRequest::new(cloned_scanner_id, true))
+        .await
+        .expect("delete cloned scanner should succeed");
+}
+
 async fn typed_scanner_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
+    let mut create = CreateScannerRequest::new(
+        "Typed Scanner",
+        "scanner.example",
+        9390,
+        gvm_gmp::ScannerType::OpenVasScanner,
+    );
+    create.ca_pub = Some("Initial CA".into());
+    create.credential_id = Some(EntityId::new("credential-1").expect("valid id"));
+    create.relay_host = Some("relay.example".into());
+    create.relay_port = Some(9391);
     let created_scanner = client
-        .create_scanner(
-            "Typed Scanner",
-            ScannerOpts {
-                host: Some("scanner.example".into()),
-                port: Some(9390),
-                scanner_type: Some(gvm_gmp::ScannerType::OpenVasScanner),
-                ca_pub: Some("Initial CA".into()),
-                credential_id: Some(EntityId::new("credential-1").expect("valid id")),
-                ..Default::default()
-            },
-        )
+        .create_scanner(create)
         .await
         .expect("create_scanner should succeed");
     let scanner_id = created_scanner.id;
 
+    let listed_scanners = client
+        .get_scanners(GetScannersRequest::default())
+        .await
+        .expect("get_scanners should succeed");
+    assert!(listed_scanners
+        .items
+        .iter()
+        .any(|scanner| scanner.meta.id == scanner_id));
+
     let fetched_scanner = client
-        .get_scanner(&scanner_id)
+        .get_scanner(GetScannerRequest::new(scanner_id.clone()))
         .await
         .expect("get_scanner should succeed");
     assert_eq!(fetched_scanner.items.len(), 1);
     assert_eq!(fetched_scanner.items[0].meta.id, scanner_id);
     assert_scanner_connection_fields(
         &fetched_scanner.items[0],
-        "Typed Scanner",
-        "scanner.example",
-        9390,
-        "2",
-        "Initial CA",
-        "credential-1",
+        &ScannerConnectionExpectation {
+            name: "Typed Scanner",
+            host: "scanner.example",
+            port: 9390,
+            scanner_type: "2",
+            ca_pub: "Initial CA",
+            credential_id: "credential-1",
+            relay_host: "relay.example",
+            relay_port: 9391,
+        },
     );
 
+    let mut modify = ModifyScannerRequest::new(scanner_id.clone());
+    modify.name = Some("Renamed Scanner".into());
+    modify.comment = Some("updated".into());
+    modify.host = Some("127.0.0.1".into());
+    modify.port = Some(9391);
+    modify.scanner_type = Some(gvm_gmp::ScannerType::GreenBoneSensorType);
+    modify.ca_pub = Some("Replacement CA".into());
+    modify.credential_id = ScalarUpdate::set(EntityId::new("credential-2").expect("valid id"));
+    modify.relay_host = Some("relay-2.example".into());
+    modify.relay_port = Some(9393);
     client
-        .modify_scanner(
-            &scanner_id,
-            ScannerOpts {
-                name: Some("Renamed Scanner".into()),
-                comment: Some("updated".into()),
-                host: Some("127.0.0.1".into()),
-                port: Some(9391),
-                scanner_type: Some(gvm_gmp::ScannerType::GreenBoneSensorType),
-                ca_pub: Some("Replacement CA".into()),
-                credential_id: Some(EntityId::new("credential-2").expect("valid id")),
-            },
-        )
+        .modify_scanner(modify)
         .await
         .expect("modify_scanner should succeed");
 
     let updated_scanner = client
-        .get_scanner(&scanner_id)
+        .get_scanner(GetScannerRequest::new(scanner_id.clone()))
         .await
         .expect("get_scanner after modify should succeed");
     assert_eq!(
@@ -5695,41 +5765,28 @@ async fn typed_scanner_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
     );
     assert_scanner_connection_fields(
         &updated_scanner.items[0],
-        "Renamed Scanner",
-        "127.0.0.1",
-        9391,
-        "5",
-        "Replacement CA",
-        "credential-2",
+        &ScannerConnectionExpectation {
+            name: "Renamed Scanner",
+            host: "127.0.0.1",
+            port: 9391,
+            scanner_type: "5",
+            ca_pub: "Replacement CA",
+            credential_id: "credential-2",
+            relay_host: "relay-2.example",
+            relay_port: 9393,
+        },
     );
 
     assert_partial_scanner_modify_preserves_fields(client, &scanner_id).await;
 
     client
-        .verify_scanner(&scanner_id)
+        .verify_scanner(VerifyScannerRequest::new(scanner_id.clone()))
         .await
         .expect("verify_scanner should succeed");
 
-    let cloned_scanner = client
-        .clone_scanner(&scanner_id)
-        .await
-        .expect("clone_scanner should succeed");
-    let cloned_scanner_id = cloned_scanner.id;
-    let cloned_scanner_response = client
-        .get_scanner(&cloned_scanner_id)
-        .await
-        .expect("get cloned scanner should succeed");
-    assert_eq!(
-        cloned_scanner_response.items[0].meta.name,
-        "Renamed Scanner"
-    );
-
+    assert_scanner_clone_and_clear(client, &scanner_id).await;
     client
-        .delete_scanner(&cloned_scanner_id, true)
-        .await
-        .expect("delete cloned scanner should succeed");
-    client
-        .delete_scanner(&scanner_id, true)
+        .delete_scanner(DeleteScannerRequest::new(scanner_id, true))
         .await
         .expect("delete original scanner should succeed");
 }
