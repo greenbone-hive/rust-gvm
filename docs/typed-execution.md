@@ -284,6 +284,20 @@ tag-on-tag resources fail final-value validation before support checks or
 transport. Modify preserves explicit empty comment/value elements so callers
 can clear them. The unsupported transitional `severity` field is removed.
 
+## Canonical scanner requests
+
+Scanner list, detail, create, clone, modify, delete, and verify operations use
+seven complete canonical requests. `ScannerOpts`, `GetScannersOpts`, and the
+seven forwarding builders are removed; named client methods accept the same
+request values and delegate to `execute`.
+
+Create owns gvmd's required name, host, port, and scanner type. Relay host and
+port are represented on create, modify, and response values. Modify uses
+`ScalarUpdate<EntityId>` for the credential relationship and explicit empty
+text for comment, CA certificate, and relay clearing. Omission preserves the
+corresponding value. Detail and clone retain semantic identities over the
+`get_scanners` and `create_scanner` wire roots.
+
 ## Alert and schedule command shapes
 
 Alert list, detail, create, clone, modify, delete, test, and trigger operations

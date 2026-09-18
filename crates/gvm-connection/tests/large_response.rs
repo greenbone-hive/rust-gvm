@@ -78,7 +78,7 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
 
     let scanner_response = send(
         conn,
-        b"<create_scanner><name>large-response-scanner</name></create_scanner>".as_slice(),
+        b"<create_scanner><name>large-response-scanner</name><host>scanner.example</host><port>9390</port><type>2</type></create_scanner>".as_slice(),
     )
     .await;
     assert_eq!(scanner_response.status_code(), Some(201));

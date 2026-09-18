@@ -18,6 +18,7 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/filter-request-gvmd-evidence.md`: pinned gvmd evidence for canonical filter lifecycle requests, rename/clone overrides, alert expansion, and removal of the unsupported sort-order child.
 - `docs/alert-request-gvmd-evidence.md`: pinned gvmd evidence for canonical alert lifecycle requests, clone overrides, modify semantics, trigger aliasing, and secret-bearing nested data.
 - `docs/schedule-request-gvmd-evidence.md`: pinned gvmd evidence for canonical schedule lifecycle requests, required iCalendar data, timezone behavior, clone overrides, and modify clearing semantics.
+- `docs/scanner-request-gvmd-evidence.md`: pinned gvmd evidence for canonical scanner lifecycle requests, required create fields, relay behavior, clone overrides, and modify clearing semantics.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -51,7 +52,7 @@ Adding or changing a GMP command:
   implement `GmpRequestCodec` directly, and update
   `docs/canonical-request-disposition.tsv`. Standard targets are the reference;
   alternate targets, agent groups, agents, integration configurations, port
-  lists, credentials, filters, tags, alerts, and schedules show the same contract across their
+  lists, credentials, filters, tags, alerts, schedules, and scanners show the same contract across their
   applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.

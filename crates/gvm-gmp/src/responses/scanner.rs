@@ -22,6 +22,8 @@ pub struct Scanner {
     pub scanner_type: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
+    pub relay_host: Option<String>,
+    pub relay_port: Option<u16>,
     pub ca_pub: Option<String>,
     pub credential: Option<NamedEntity>,
 }
@@ -52,6 +54,8 @@ impl Scanner {
             scanner_type: node.optional_child_text("type"),
             host: node.optional_child_text("host"),
             port: optional_u16(node, "port", "port")?,
+            relay_host: node.optional_child_text("relay_host"),
+            relay_port: optional_u16(node, "relay_port", "relay_port")?.filter(|port| *port != 0),
             ca_pub: node.optional_child_text("ca_pub"),
             credential: parse_named_entity(node, "credential")?,
         })
@@ -129,11 +133,15 @@ mod tests {
                     <type>OpenVAS</type>
                     <host>127.0.0.1</host>
                     <port>9390</port>
+                    <relay_host>relay.example</relay_host>
+                    <relay_port>9391</relay_port>
                     <ca_pub>CA certificate</ca_pub>
                     <credential id="cred-1"><name>OSP Credential</name></credential>
                 </scanner>
                 <scanner id="scanner-2">
                     <name>Secondary Scanner</name>
+                    <relay_host></relay_host>
+                    <relay_port>0</relay_port>
                 </scanner>
                 <scanner_count>2<filtered>2</filtered></scanner_count>
             </get_scanners_response>"#,
@@ -144,6 +152,8 @@ mod tests {
         assert_eq!(parsed.items.len(), 2);
         assert_eq!(parsed.items[0].scanner_type.as_deref(), Some("OpenVAS"));
         assert_eq!(parsed.items[0].port, Some(9390));
+        assert_eq!(parsed.items[0].relay_host.as_deref(), Some("relay.example"));
+        assert_eq!(parsed.items[0].relay_port, Some(9391));
         assert_eq!(parsed.items[0].ca_pub.as_deref(), Some("CA certificate"));
         assert!(parsed.items[0].meta.writable);
         assert!(!parsed.items[0].meta.in_use);
@@ -162,6 +172,8 @@ mod tests {
                 .map(|credential| credential.name.as_str()),
             Some("OSP Credential")
         );
+        assert_eq!(parsed.items[1].relay_host, None);
+        assert_eq!(parsed.items[1].relay_port, None);
     }
 
     #[test]
@@ -218,6 +230,8 @@ mod tests {
 
         assert_eq!(scanner.host, None);
         assert_eq!(scanner.port, None);
+        assert_eq!(scanner.relay_host, None);
+        assert_eq!(scanner.relay_port, None);
         assert_eq!(scanner.ca_pub, None);
         assert_eq!(scanner.credential, None);
     }

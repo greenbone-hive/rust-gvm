@@ -1004,7 +1004,7 @@ async fn stateful_system_reports_follow_gvmd_request_and_response_shapes() {
 
     let scanner = send_recv(
         &mut stream,
-        b"<create_scanner><name>System Report Scanner</name></create_scanner>",
+        b"<create_scanner><name>System Report Scanner</name><host>scanner.example</host><port>9390</port><type>2</type></create_scanner>",
     )
     .await;
     assert_eq!(scanner.status_code(), Some(201));

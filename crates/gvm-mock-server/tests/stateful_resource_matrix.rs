@@ -618,7 +618,7 @@ async fn matrix_scanners_full_lifecycle_helpers() {
 
     let scanner_id = create_and_get_id(
         &mut stream,
-        b"<create_scanner><name>Matrix Scanner</name></create_scanner>",
+        b"<create_scanner><name>Matrix Scanner</name><host>scanner.example</host><port>9390</port><type>2</type></create_scanner>",
         "create_scanner",
     )
     .await;

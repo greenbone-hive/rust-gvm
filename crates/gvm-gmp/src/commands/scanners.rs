@@ -1,44 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Scanner command builders.
+//! Canonical requests for scanner operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::common::{
+    add_filter_attrs, add_optional_id_element, add_scalar_id_update, bool_str,
+    set_optional_bool_attr,
+};
 use crate::enums::ScannerType;
 use crate::responses::{
     CreateScannerResponse, DeleteScannerResponse, GetScannersResponse, ModifyScannerResponse,
     VerifyScannerResponse,
 };
-use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::types::{EntityId, ScalarUpdate};
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields shared by scanner create and modify requests.
-///
-/// [`create_scanner`] takes its name as a separate required argument and does
-/// not read [`Self::name`]. All other fields apply to both request types.
+/// Request for listing scanners.
 #[derive(Debug, Clone, Default)]
-pub struct ScannerOpts {
-    /// Optional replacement name emitted only by [`modify_scanner`].
-    pub name: Option<String>,
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional host name or address.
-    pub host: Option<String>,
-    /// Optional port selector.
-    pub port: Option<u16>,
-    /// Optional scanner type.
-    pub scanner_type: Option<ScannerType>,
-    /// Optional CA certificate in PEM format.
-    pub ca_pub: Option<String>,
-    /// Optional credential identifier.
-    pub credential_id: Option<EntityId>,
-}
-
-/// Options for `get_scanners` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetScannersOpts {
+pub struct GetScannersRequest {
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -49,34 +30,13 @@ pub struct GetScannersOpts {
     pub details: Option<bool>,
 }
 
-/// Semantic request for listing scanners.
-///
-/// The associated response is fixed at compile time:
-///
-/// ```compile_fail
-/// use gvm_gmp::commands::scanners::{GetScannersOpts, GetScannersRequest};
-/// use gvm_gmp::responses::CreateScannerResponse;
-/// use gvm_gmp::GmpRequest;
-///
-/// fn require_create<R: GmpRequest<Response = CreateScannerResponse>>(_: R) {}
-/// require_create(GetScannersRequest::new(GetScannersOpts::default()));
-/// ```
-#[derive(Debug, Clone, Default)]
-pub struct GetScannersRequest {
-    opts: GetScannersOpts,
-}
-
-impl GetScannersRequest {
-    /// Create a scanner list request.
-    #[must_use]
-    pub fn new(opts: GetScannersOpts) -> Self {
-        Self { opts }
+impl GmpRequestCodec for GetScannersRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_scanners"))
     }
-}
 
-impl Request for GetScannersRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_scanners(self.opts.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_scanners_command(self).to_bytes())
     }
 }
 
@@ -84,10 +44,11 @@ impl GmpRequest for GetScannersRequest {
     type Response = GetScannersResponse;
 }
 
-/// Semantic request for one detailed scanner.
+/// Request for one detailed scanner.
 #[derive(Debug, Clone)]
 pub struct GetScannerRequest {
-    scanner_id: EntityId,
+    /// Scanner identifier to retrieve.
+    pub scanner_id: EntityId,
 }
 
 impl GetScannerRequest {
@@ -98,9 +59,16 @@ impl GetScannerRequest {
     }
 }
 
-impl Request for GetScannerRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_scanner(&self.scanner_id).to_bytes()
+impl GmpRequestCodec for GetScannerRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_scanners",
+            "get_scanner",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(get_scanner_command(self).to_bytes())
     }
 }
 
@@ -108,27 +76,67 @@ impl GmpRequest for GetScannerRequest {
     type Response = GetScannersResponse;
 }
 
-/// Semantic request for creating a scanner.
+/// Request for creating a scanner.
 #[derive(Debug, Clone)]
 pub struct CreateScannerRequest {
-    name: String,
-    opts: ScannerOpts,
+    /// Scanner name.
+    pub name: String,
+    /// Optional resource comment.
+    pub comment: Option<String>,
+    /// Scanner hostname or IP address.
+    pub host: String,
+    /// Scanner service port.
+    pub port: u16,
+    /// Scanner protocol type.
+    pub scanner_type: ScannerType,
+    /// Optional CA certificate used to verify the scanner certificate.
+    pub ca_pub: Option<String>,
+    /// Optional client-certificate credential relationship.
+    pub credential_id: Option<EntityId>,
+    /// Optional relay hostname, IP address, or supported Unix-socket path.
+    pub relay_host: Option<String>,
+    /// Optional relay service port.
+    pub relay_port: Option<u16>,
 }
 
 impl CreateScannerRequest {
-    /// Create a scanner creation request.
+    /// Create a scanner request with the values required by gvmd.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: ScannerOpts) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        host: impl Into<String>,
+        port: u16,
+        scanner_type: ScannerType,
+    ) -> Self {
         Self {
             name: name.into(),
-            opts,
+            comment: None,
+            host: host.into(),
+            port,
+            scanner_type,
+            ca_pub: None,
+            credential_id: None,
+            relay_host: None,
+            relay_port: None,
         }
     }
 }
 
-impl Request for CreateScannerRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_scanner(&self.name, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateScannerRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        require_non_empty(&self.name, "name")?;
+        validate_host(&self.host, "host")?;
+        validate_port(self.port, "port")?;
+        validate_create_relay(self.relay_host.as_deref(), self.relay_port)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_scanner"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(create_scanner_command(self).to_bytes())
     }
 }
 
@@ -136,23 +144,44 @@ impl GmpRequest for CreateScannerRequest {
     type Response = CreateScannerResponse;
 }
 
-/// Semantic request for cloning a scanner.
+/// Request for cloning a scanner through `create_scanner`.
 #[derive(Debug, Clone)]
 pub struct CloneScannerRequest {
-    scanner_id: EntityId,
+    /// Existing scanner identifier to copy.
+    pub scanner_id: EntityId,
+    /// Optional name override. Omission copies the existing name.
+    pub name: Option<String>,
+    /// Optional comment override. Omission copies the existing comment.
+    pub comment: Option<String>,
 }
 
 impl CloneScannerRequest {
-    /// Create a scanner clone request.
+    /// Create a scanner-clone request.
     #[must_use]
     pub fn new(scanner_id: EntityId) -> Self {
-        Self { scanner_id }
+        Self {
+            scanner_id,
+            name: None,
+            comment: None,
+        }
     }
 }
 
-impl Request for CloneScannerRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        clone_scanner(&self.scanner_id).to_bytes()
+impl GmpRequestCodec for CloneScannerRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_non_empty(self.name.as_deref(), "name")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_scanner",
+            "clone_scanner",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(clone_scanner_command(self).to_bytes())
     }
 }
 
@@ -160,24 +189,69 @@ impl GmpRequest for CloneScannerRequest {
     type Response = CreateScannerResponse;
 }
 
-/// Semantic request for modifying a scanner.
+/// Request for modifying a scanner.
 #[derive(Debug, Clone)]
 pub struct ModifyScannerRequest {
-    scanner_id: EntityId,
-    opts: ScannerOpts,
+    /// Scanner identifier to modify.
+    pub scanner_id: EntityId,
+    /// Optional replacement name.
+    pub name: Option<String>,
+    /// Optional replacement comment. An empty string clears the comment.
+    pub comment: Option<String>,
+    /// Optional replacement hostname or IP address.
+    pub host: Option<String>,
+    /// Optional replacement service port.
+    pub port: Option<u16>,
+    /// Optional replacement scanner type.
+    pub scanner_type: Option<ScannerType>,
+    /// Optional replacement CA certificate. An empty string restores gvmd's default.
+    pub ca_pub: Option<String>,
+    /// Client-certificate credential update: preserve, set, or detach.
+    pub credential_id: ScalarUpdate<EntityId>,
+    /// Optional relay-host update. An empty string clears the relay.
+    pub relay_host: Option<String>,
+    /// Optional replacement relay service port.
+    pub relay_port: Option<u16>,
 }
 
 impl ModifyScannerRequest {
-    /// Create a scanner modification request.
+    /// Create a scanner-modification request with no field updates.
     #[must_use]
-    pub fn new(scanner_id: EntityId, opts: ScannerOpts) -> Self {
-        Self { scanner_id, opts }
+    pub fn new(scanner_id: EntityId) -> Self {
+        Self {
+            scanner_id,
+            name: None,
+            comment: None,
+            host: None,
+            port: None,
+            scanner_type: None,
+            ca_pub: None,
+            credential_id: ScalarUpdate::Omitted,
+            relay_host: None,
+            relay_port: None,
+        }
     }
 }
 
-impl Request for ModifyScannerRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_scanner(&self.scanner_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for ModifyScannerRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_non_empty(self.name.as_deref(), "name")?;
+        if let Some(host) = self.host.as_deref() {
+            validate_host(host, "host")?;
+        }
+        if let Some(port) = self.port {
+            validate_port(port, "port")?;
+        }
+        validate_modify_relay(self.relay_host.as_deref(), self.relay_port)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_scanner"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(modify_scanner_command(self).to_bytes())
     }
 }
 
@@ -185,15 +259,17 @@ impl GmpRequest for ModifyScannerRequest {
     type Response = ModifyScannerResponse;
 }
 
-/// Semantic request for deleting a scanner.
+/// Request for deleting a scanner.
 #[derive(Debug, Clone)]
 pub struct DeleteScannerRequest {
-    scanner_id: EntityId,
-    ultimate: bool,
+    /// Scanner identifier to delete.
+    pub scanner_id: EntityId,
+    /// Whether to delete permanently instead of moving to the trashcan.
+    pub ultimate: bool,
 }
 
 impl DeleteScannerRequest {
-    /// Create a scanner deletion request.
+    /// Create a scanner-deletion request.
     #[must_use]
     pub fn new(scanner_id: EntityId, ultimate: bool) -> Self {
         Self {
@@ -203,9 +279,13 @@ impl DeleteScannerRequest {
     }
 }
 
-impl Request for DeleteScannerRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_scanner(&self.scanner_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteScannerRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_scanner"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_scanner_command(self).to_bytes())
     }
 }
 
@@ -213,23 +293,28 @@ impl GmpRequest for DeleteScannerRequest {
     type Response = DeleteScannerResponse;
 }
 
-/// Semantic request for verifying a scanner.
+/// Request for verifying a scanner connection.
 #[derive(Debug, Clone)]
 pub struct VerifyScannerRequest {
-    scanner_id: EntityId,
+    /// Scanner identifier to verify.
+    pub scanner_id: EntityId,
 }
 
 impl VerifyScannerRequest {
-    /// Create a scanner verification request.
+    /// Create a scanner-verification request.
     #[must_use]
     pub fn new(scanner_id: EntityId) -> Self {
         Self { scanner_id }
     }
 }
 
-impl Request for VerifyScannerRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        verify_scanner(&self.scanner_id).to_bytes()
+impl GmpRequestCodec for VerifyScannerRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("verify_scanner"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(verify_scanner_command(self).to_bytes())
     }
 }
 
@@ -237,237 +322,328 @@ impl GmpRequest for VerifyScannerRequest {
     type Response = VerifyScannerResponse;
 }
 
-/// Build a clone request for an existing scanner.
-#[must_use]
-pub fn clone_scanner(scanner_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_scanner").child_with_text("copy", scanner_id.as_str())
+fn require_non_empty(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
+    }
 }
 
-/// Build a `create_scanner` request.
-#[must_use]
-pub fn create_scanner(name: &str, opts: ScannerOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_scanner");
-    cmd.add_element_with_text("name", name);
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_text_element(&mut cmd, "host", opts.host.as_deref());
-    if let Some(port) = opts.port {
-        cmd.add_element_with_text("port", &port.to_string());
+fn validate_optional_non_empty(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    if value.is_some_and(str::is_empty) {
+        Err(GmpRequestError::invalid_field(field, "must not be empty"))
+    } else {
+        Ok(())
     }
-    if let Some(scanner_type) = opts.scanner_type {
-        cmd.add_element_with_text("type", scanner_type.as_scanner_type());
-    }
-    add_text_element(&mut cmd, "ca_pub", opts.ca_pub.as_deref());
-    if let Some(credential_id) = opts.credential_id.as_ref() {
-        cmd.add_element("credential")
-            .set_attribute("id", credential_id.as_str());
-    }
-    cmd
 }
 
-/// Build a `get_scanners` request.
-#[must_use]
-pub fn get_scanners(opts: GetScannersOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_scanners");
+fn validate_host(host: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    require_non_empty(host, field)?;
+    if host.starts_with('/') {
+        Err(GmpRequestError::invalid_field(
+            field,
+            "Unix socket paths are not accepted over GMP",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_port(port: u16, field: &'static str) -> Result<(), GmpRequestError> {
+    if port == 0 {
+        Err(GmpRequestError::invalid_field(field, "must be non-zero"))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_create_relay(
+    relay_host: Option<&str>,
+    relay_port: Option<u16>,
+) -> Result<(), GmpRequestError> {
+    match (relay_host, relay_port) {
+        (None, None) => Ok(()),
+        (None, Some(_)) => Err(GmpRequestError::invalid_field(
+            "relay_port",
+            "requires relay_host",
+        )),
+        (Some(""), _) => Err(GmpRequestError::invalid_field(
+            "relay_host",
+            "must not be empty on create",
+        )),
+        (Some(host), Some(_)) if host.starts_with('/') => Err(GmpRequestError::invalid_field(
+            "relay_port",
+            "must be omitted for a Unix-socket relay",
+        )),
+        (Some(host), None) if !host.starts_with('/') => Err(GmpRequestError::invalid_field(
+            "relay_port",
+            "is required for a network relay",
+        )),
+        (Some(_), Some(port)) => validate_port(port, "relay_port"),
+        (Some(_), None) => Ok(()),
+    }
+}
+
+fn validate_modify_relay(
+    relay_host: Option<&str>,
+    relay_port: Option<u16>,
+) -> Result<(), GmpRequestError> {
+    if let Some(port) = relay_port {
+        validate_port(port, "relay_port")?;
+    }
+    if relay_host == Some("") && relay_port.is_some() {
+        return Err(GmpRequestError::invalid_field(
+            "relay_port",
+            "must be omitted when clearing relay_host",
+        ));
+    }
+    if relay_host.is_some_and(|host| host.starts_with('/')) && relay_port.is_some() {
+        return Err(GmpRequestError::invalid_field(
+            "relay_port",
+            "must be omitted for a Unix-socket relay",
+        ));
+    }
+    Ok(())
+}
+
+fn add_optional_text_element(command: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        command.add_element_with_text(name, value);
+    }
+}
+
+fn get_scanners_command(request: &GetScannersRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("get_scanners");
     add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        &mut command,
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    cmd
+    set_optional_bool_attr(&mut command, "trash", request.trash);
+    set_optional_bool_attr(&mut command, "details", request.details);
+    command
 }
 
-/// Build a `get_scanner` request.
-#[must_use]
-pub fn get_scanner(scanner_id: &EntityId) -> impl Request {
+fn get_scanner_command(request: &GetScannerRequest) -> XmlCommand {
     XmlCommand::new("get_scanners")
-        .attribute("scanner_id", scanner_id.as_str())
+        .attribute("scanner_id", request.scanner_id.as_str())
         .attribute("details", "1")
 }
 
-/// Build a `modify_scanner` request.
-#[must_use]
-pub fn modify_scanner(scanner_id: &EntityId, opts: ScannerOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_scanner").attribute("scanner_id", scanner_id.as_str());
-    add_text_element(&mut cmd, "name", opts.name.as_deref());
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_text_element(&mut cmd, "host", opts.host.as_deref());
-    if let Some(port) = opts.port {
-        cmd.add_element_with_text("port", &port.to_string());
+fn create_scanner_command(request: &CreateScannerRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("create_scanner");
+    command.add_element_with_text("name", &request.name);
+    add_optional_text_element(&mut command, "comment", request.comment.as_deref());
+    command.add_element_with_text("host", &request.host);
+    command.add_element_with_text("port", &request.port.to_string());
+    command.add_element_with_text("type", request.scanner_type.as_scanner_type());
+    add_optional_text_element(&mut command, "ca_pub", request.ca_pub.as_deref());
+    add_optional_id_element(&mut command, "credential", request.credential_id.as_ref());
+    add_optional_text_element(&mut command, "relay_host", request.relay_host.as_deref());
+    if let Some(port) = request.relay_port {
+        command.add_element_with_text("relay_port", &port.to_string());
     }
-    if let Some(scanner_type) = opts.scanner_type {
-        cmd.add_element_with_text("type", scanner_type.as_scanner_type());
-    }
-    add_text_element(&mut cmd, "ca_pub", opts.ca_pub.as_deref());
-    if let Some(credential_id) = opts.credential_id.as_ref() {
-        cmd.add_element("credential")
-            .set_attribute("id", credential_id.as_str());
-    }
-    cmd
+    command
 }
 
-/// Build a `delete_scanner` request.
-#[must_use]
-pub fn delete_scanner(scanner_id: &EntityId, ultimate: bool) -> impl Request {
+fn clone_scanner_command(request: &CloneScannerRequest) -> XmlCommand {
+    let mut command = XmlCommand::new("create_scanner");
+    add_optional_text_element(&mut command, "name", request.name.as_deref());
+    add_optional_text_element(&mut command, "comment", request.comment.as_deref());
+    command.add_element_with_text("copy", request.scanner_id.as_str());
+    command
+}
+
+fn modify_scanner_command(request: &ModifyScannerRequest) -> XmlCommand {
+    let mut command =
+        XmlCommand::new("modify_scanner").attribute("scanner_id", request.scanner_id.as_str());
+    add_optional_text_element(&mut command, "name", request.name.as_deref());
+    add_optional_text_element(&mut command, "comment", request.comment.as_deref());
+    add_optional_text_element(&mut command, "host", request.host.as_deref());
+    if let Some(port) = request.port {
+        command.add_element_with_text("port", &port.to_string());
+    }
+    if let Some(scanner_type) = request.scanner_type {
+        command.add_element_with_text("type", scanner_type.as_scanner_type());
+    }
+    add_optional_text_element(&mut command, "ca_pub", request.ca_pub.as_deref());
+    add_scalar_id_update(&mut command, "credential", &request.credential_id);
+    add_optional_text_element(&mut command, "relay_host", request.relay_host.as_deref());
+    if let Some(port) = request.relay_port {
+        command.add_element_with_text("relay_port", &port.to_string());
+    }
+    command
+}
+
+fn delete_scanner_command(request: &DeleteScannerRequest) -> XmlCommand {
     XmlCommand::new("delete_scanner")
-        .attribute("scanner_id", scanner_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+        .attribute("scanner_id", request.scanner_id.as_str())
+        .attribute("ultimate", bool_str(request.ultimate))
 }
 
-/// Build a `verify_scanner` request.
-#[must_use]
-pub fn verify_scanner(scanner_id: &EntityId) -> impl Request {
-    XmlCommand::new("verify_scanner").attribute("scanner_id", scanner_id.as_str())
+fn verify_scanner_command(request: &VerifyScannerRequest) -> XmlCommand {
+    XmlCommand::new("verify_scanner").attribute("scanner_id", request.scanner_id.as_str())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
-    #[test]
-    fn scanner_commands_build_xml() {
-        let rendered = xml(create_scanner(
+    fn request_xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(request.encode(GmpVersion(22, 8)).expect("valid request"))
+            .expect("valid UTF-8")
+    }
+
+    fn create_request() -> CreateScannerRequest {
+        CreateScannerRequest::new(
             "scanner",
-            ScannerOpts {
-                host: Some("127.0.0.1".into()),
-                port: Some(9390),
-                scanner_type: Some(ScannerType::OpenVasScanner),
-                ca_pub: Some("CA certificate".into()),
-                credential_id: Some(id("cred1")),
-                ..Default::default()
-            },
+            "scanner.example",
+            9390,
+            ScannerType::OpenVasScanner,
+        )
+    }
+
+    #[test]
+    fn requests_have_independent_exact_wire_shapes() {
+        assert_eq!(
+            request_xml(&GetScannersRequest {
+                filter_string: Some("name=scanner".into()),
+                filter_id: Some(id("filter-1")),
+                trash: Some(false),
+                details: Some(true),
+            }),
+            "<get_scanners details=\"1\" filt_id=\"filter-1\" filter=\"name=scanner\" trash=\"0\"/>"
+        );
+        assert_eq!(
+            request_xml(&GetScannerRequest::new(id("scanner-1"))),
+            "<get_scanners details=\"1\" scanner_id=\"scanner-1\"/>"
+        );
+
+        let mut create = create_request();
+        create.comment = Some("comment".into());
+        create.ca_pub = Some("CA certificate".into());
+        create.credential_id = Some(id("credential-1"));
+        create.relay_host = Some("relay.example".into());
+        create.relay_port = Some(9391);
+        assert_eq!(
+            request_xml(&create),
+            "<create_scanner><name>scanner</name><comment>comment</comment><host>scanner.example</host><port>9390</port><type>2</type><ca_pub>CA certificate</ca_pub><credential id=\"credential-1\"/><relay_host>relay.example</relay_host><relay_port>9391</relay_port></create_scanner>"
+        );
+
+        let mut clone = CloneScannerRequest::new(id("scanner-1"));
+        clone.name = Some("copy".into());
+        clone.comment = Some(String::new());
+        assert_eq!(
+            request_xml(&clone),
+            "<create_scanner><name>copy</name><comment></comment><copy>scanner-1</copy></create_scanner>"
+        );
+
+        let mut modify = ModifyScannerRequest::new(id("scanner-1"));
+        modify.name = Some("renamed".into());
+        modify.comment = Some(String::new());
+        modify.host = Some("127.0.0.1".into());
+        modify.port = Some(9392);
+        modify.scanner_type = Some(ScannerType::GreenBoneSensorType);
+        modify.ca_pub = Some(String::new());
+        modify.credential_id = ScalarUpdate::Clear;
+        modify.relay_host = Some(String::new());
+        assert_eq!(
+            request_xml(&modify),
+            "<modify_scanner scanner_id=\"scanner-1\"><name>renamed</name><comment></comment><host>127.0.0.1</host><port>9392</port><type>5</type><ca_pub></ca_pub><credential id=\"0\"/><relay_host></relay_host></modify_scanner>"
+        );
+
+        assert_eq!(
+            request_xml(&DeleteScannerRequest::new(id("scanner-1"), true)),
+            "<delete_scanner scanner_id=\"scanner-1\" ultimate=\"1\"/>"
+        );
+        assert_eq!(
+            request_xml(&VerifyScannerRequest::new(id("scanner-1"))),
+            "<verify_scanner scanner_id=\"scanner-1\"/>"
+        );
+    }
+
+    #[test]
+    fn invalid_final_values_are_rejected() {
+        let mut create = create_request();
+        create.name.clear();
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField { field: "name", .. })
         ));
-        assert_eq!(
-            rendered,
-            "<create_scanner><name>scanner</name><host>127.0.0.1</host><port>9390</port><type>2</type><ca_pub>CA certificate</ca_pub><credential id=\"cred1\"/></create_scanner>"
-        );
-        assert_eq!(
-            xml(clone_scanner(&id("s1"))),
-            "<create_scanner><copy>s1</copy></create_scanner>"
-        );
-        assert_eq!(
-            xml(get_scanner(&id("s1"))),
-            "<get_scanners details=\"1\" scanner_id=\"s1\"/>"
-        );
-    }
 
-    #[test]
-    fn scanner_get_modify_delete_verify_build_xml() {
-        let rendered = xml(get_scanners(GetScannersOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        let rendered = xml(modify_scanner(
-            &id("s1"),
-            ScannerOpts {
-                name: Some("Renamed scanner".into()),
-                comment: Some("updated".into()),
-                host: Some("localhost".into()),
-                port: Some(9390),
-                scanner_type: Some(ScannerType::OpenVasScanner),
-                ca_pub: Some("Replacement CA".into()),
-                credential_id: Some(id("cred2")),
-            },
+        let mut create = create_request();
+        create.host = "/run/scanner.sock".into();
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField { field: "host", .. })
         ));
-        assert_eq!(
-            rendered,
-            "<modify_scanner scanner_id=\"s1\"><name>Renamed scanner</name><comment>updated</comment><host>localhost</host><port>9390</port><type>2</type><ca_pub>Replacement CA</ca_pub><credential id=\"cred2\"/></modify_scanner>"
-        );
-        assert_eq!(
-            xml(modify_scanner(&id("s1"), ScannerOpts::default())),
-            "<modify_scanner scanner_id=\"s1\"/>"
-        );
-        assert_eq!(
-            xml(delete_scanner(&id("s1"), true)),
-            "<delete_scanner scanner_id=\"s1\" ultimate=\"1\"/>"
-        );
-        assert_eq!(
-            xml(verify_scanner(&id("s1"))),
-            "<verify_scanner scanner_id=\"s1\"/>"
-        );
+
+        let mut create = create_request();
+        create.port = 0;
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField { field: "port", .. })
+        ));
+
+        let mut create = create_request();
+        create.relay_host = Some("relay.example".into());
+        assert!(matches!(
+            create.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "relay_port",
+                ..
+            })
+        ));
+
+        let mut modify = ModifyScannerRequest::new(id("scanner-1"));
+        modify.relay_host = Some(String::new());
+        modify.relay_port = Some(9391);
+        assert!(matches!(
+            modify.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "relay_port",
+                ..
+            })
+        ));
     }
 
     #[test]
-    fn semantic_scanner_requests_match_existing_builders() {
-        let scanner_id = id("s1");
-        let get_opts = GetScannersOpts {
-            filter_string: Some("name=scanner".into()),
-            filter_id: Some(id("filter-1")),
-            trash: Some(false),
-            details: Some(true),
-        };
-        let scanner_opts = ScannerOpts {
-            name: Some("renamed".into()),
-            comment: Some("updated".into()),
-            host: Some("scanner.example".into()),
-            port: Some(9390),
-            scanner_type: Some(ScannerType::OpenVasScanner),
-            ca_pub: Some("CA certificate".into()),
-            credential_id: Some(id("cred-1")),
-        };
-
-        assert_eq!(
-            GetScannersRequest::new(get_opts.clone()).to_bytes(),
-            get_scanners(get_opts).to_bytes()
-        );
-        assert_eq!(
-            GetScannerRequest::new(scanner_id.clone()).to_bytes(),
-            get_scanner(&scanner_id).to_bytes()
-        );
-        assert_eq!(
-            CreateScannerRequest::new("scanner", scanner_opts.clone()).to_bytes(),
-            create_scanner("scanner", scanner_opts.clone()).to_bytes()
-        );
-        assert_eq!(
-            CloneScannerRequest::new(scanner_id.clone()).to_bytes(),
-            clone_scanner(&scanner_id).to_bytes()
-        );
-        assert_eq!(
-            ModifyScannerRequest::new(scanner_id.clone(), scanner_opts.clone()).to_bytes(),
-            modify_scanner(&scanner_id, scanner_opts).to_bytes()
-        );
-        assert_eq!(
-            DeleteScannerRequest::new(scanner_id.clone(), true).to_bytes(),
-            delete_scanner(&scanner_id, true).to_bytes()
-        );
-        assert_eq!(
-            VerifyScannerRequest::new(scanner_id.clone()).to_bytes(),
-            verify_scanner(&scanner_id).to_bytes()
-        );
-    }
-
-    #[test]
-    fn semantic_scanner_requests_have_the_expected_response_associations() {
-        fn assert_response<R, T>(_: &R)
+    fn requests_keep_static_response_associations() {
+        fn associated<R, T>(_: &R)
         where
             R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
+            T: GmpResponse,
         {
         }
 
-        let scanner_id = id("scanner-1");
-        assert_response::<_, GetScannersResponse>(&GetScannersRequest::default());
-        assert_response::<_, GetScannersResponse>(&GetScannerRequest::new(scanner_id.clone()));
-        assert_response::<_, CreateScannerResponse>(&CreateScannerRequest::new(
-            "scanner",
-            ScannerOpts::default(),
-        ));
-        assert_response::<_, CreateScannerResponse>(&CloneScannerRequest::new(scanner_id.clone()));
-        assert_response::<_, ModifyScannerResponse>(&ModifyScannerRequest::new(
-            scanner_id.clone(),
-            ScannerOpts::default(),
-        ));
-        assert_response::<_, DeleteScannerResponse>(&DeleteScannerRequest::new(
-            scanner_id.clone(),
-            false,
-        ));
-        assert_response::<_, VerifyScannerResponse>(&VerifyScannerRequest::new(scanner_id));
+        associated::<_, GetScannersResponse>(&GetScannersRequest::default());
+        associated::<_, GetScannersResponse>(&GetScannerRequest::new(id("scanner-1")));
+        associated::<_, CreateScannerResponse>(&create_request());
+        associated::<_, CreateScannerResponse>(&CloneScannerRequest::new(id("scanner-1")));
+        associated::<_, ModifyScannerResponse>(&ModifyScannerRequest::new(id("scanner-1")));
+        associated::<_, DeleteScannerResponse>(&DeleteScannerRequest::new(id("scanner-1"), false));
+        associated::<_, VerifyScannerResponse>(&VerifyScannerRequest::new(id("scanner-1")));
+    }
+
+    #[test]
+    fn semantic_aliases_keep_wire_and_capability_names() {
+        let detail = GetScannerRequest::new(id("scanner-1"));
+        let detail_command = detail.command().expect("typed command");
+        assert_eq!(detail_command.wire_name(), "get_scanners");
+        assert_eq!(detail_command.semantic_name(), Some("get_scanner"));
+
+        let clone = CloneScannerRequest::new(id("scanner-1"));
+        let clone_command = clone.command().expect("typed command");
+        assert_eq!(clone_command.wire_name(), "create_scanner");
+        assert_eq!(clone_command.semantic_name(), Some("clone_scanner"));
     }
 }

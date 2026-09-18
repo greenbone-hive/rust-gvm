@@ -70,7 +70,7 @@ use gvm_gmp::commands::roles::{GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::GetScanConfigsOpts;
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
-    GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
+    GetScannersRequest, ModifyScannerRequest, VerifyScannerRequest,
 };
 use gvm_gmp::commands::schedules::{
     CloneScheduleRequest, CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest,
@@ -114,7 +114,8 @@ use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, EntityType, FeedType, GmpRequest, PortRangeType,
-    ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp, ScheduleTimezone,
+    ScannerType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
+    ScheduleTimezone,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
@@ -2306,7 +2307,12 @@ async fn scanner_requests_execute_on_the_oldest_supported_version() {
     assert_eq!(detailed.status, 200);
 
     let created = client
-        .execute(CreateScannerRequest::new("scanner", ScannerOpts::default()))
+        .execute(CreateScannerRequest::new(
+            "scanner",
+            "scanner.example",
+            9390,
+            ScannerType::OpenVasScanner,
+        ))
         .await
         .expect("scanner creation should be supported");
     assert_eq!(created.status, 201);
@@ -2317,10 +2323,7 @@ async fn scanner_requests_execute_on_the_oldest_supported_version() {
     assert_eq!(cloned.status, 201);
 
     let modified = client
-        .execute(ModifyScannerRequest::new(
-            scanner_id.clone(),
-            ScannerOpts::default(),
-        ))
+        .execute(ModifyScannerRequest::new(scanner_id.clone()))
         .await
         .expect("scanner modification should be supported");
     assert_eq!(modified.status, 200);
@@ -2765,7 +2768,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
         client.get_web_application_targets(GetWebApplicationTargetsRequest::default())
     );
     assert_typed_success!(client.get_scan_configs(GetScanConfigsOpts::default()));
-    assert_typed_success!(client.get_scanners(GetScannersOpts::default()));
+    assert_typed_success!(client.get_scanners(GetScannersRequest::default()));
     assert_typed_success!(client.get_port_lists(GetPortListsRequest::default()));
     assert_typed_success!(client.get_tasks(GetTasksOpts::default()));
     assert_typed_success!(client.get_task(&id("11111111-1111-1111-1111-111111111111")));
