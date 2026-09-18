@@ -32,12 +32,20 @@ use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
+use gvm_gmp::commands::notes::{
+    CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesRequest,
+    ModifyNoteRequest,
+};
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
+use gvm_gmp::commands::overrides::{
+    CloneOverrideRequest, CreateOverrideRequest, DeleteOverrideRequest, GetOverrideRequest,
+    GetOverridesRequest, ModifyOverrideRequest,
+};
 use gvm_gmp::commands::permissions::{modify_permission, GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
@@ -5808,6 +5816,162 @@ async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
 
     typed_scan_config_lifecycle(&mut client).await;
     typed_scanner_lifecycle(&mut client).await;
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_note_helpers_cover_full_lifecycle() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+
+    let mut create_note = CreateNoteRequest::new("1.3.6.1.4.1.25623.1.0.12345", "Initial note");
+    create_note.hosts = vec!["192.0.2.10".into()];
+    create_note.port = Some("443/tcp".into());
+    create_note.severity = Some(7.5);
+    create_note.task_id = Some(EntityId::new("task-1").expect("valid task id"));
+    create_note.result_id = Some(EntityId::new("result-1").expect("valid result id"));
+    create_note.days_active = Some(-1);
+    let note_id = client
+        .create_note(create_note)
+        .await
+        .expect("create_note should succeed")
+        .id;
+
+    let notes = client
+        .get_notes(GetNotesRequest::default())
+        .await
+        .expect("get_notes should succeed");
+    assert!(notes.items.iter().any(|note| note.meta.id == note_id));
+    let note = client
+        .get_note(GetNoteRequest::new(note_id.clone()))
+        .await
+        .expect("get_note should succeed")
+        .items
+        .pop()
+        .expect("created note should be returned");
+    assert_eq!(note.text.as_deref(), Some("Initial note"));
+    assert_eq!(note.nvt_oid.as_deref(), Some("1.3.6.1.4.1.25623.1.0.12345"));
+    assert_eq!(note.hosts, ["192.0.2.10"]);
+    assert_eq!(note.port.as_deref(), Some("443/tcp"));
+    assert_eq!(note.severity.as_deref(), Some("7.5"));
+    assert!(note.active);
+
+    client
+        .modify_note(ModifyNoteRequest::new(note_id.clone(), "Updated note"))
+        .await
+        .expect("modify_note should succeed");
+    let modified_note = client
+        .get_note(GetNoteRequest::new(note_id.clone()))
+        .await
+        .expect("get modified note should succeed")
+        .items
+        .pop()
+        .expect("modified note should be returned");
+    assert_eq!(modified_note.text.as_deref(), Some("Updated note"));
+    assert_eq!(modified_note.nvt_oid, note.nvt_oid);
+    assert!(modified_note.hosts.is_empty());
+    assert_eq!(modified_note.port, None);
+    assert_eq!(modified_note.severity, None);
+    assert_eq!(modified_note.task, None);
+    assert_eq!(modified_note.result, None);
+    assert!(modified_note.active);
+
+    let cloned_note_id = client
+        .clone_note(CloneNoteRequest::new(note_id.clone()))
+        .await
+        .expect("clone_note should succeed")
+        .id;
+    client
+        .delete_note(DeleteNoteRequest::new(cloned_note_id, true))
+        .await
+        .expect("delete cloned note should succeed");
+
+    client
+        .delete_note(DeleteNoteRequest::new(note_id, true))
+        .await
+        .expect("delete original note should succeed");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_override_helpers_cover_full_lifecycle() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+
+    let mut create =
+        CreateOverrideRequest::new("1.3.6.1.4.1.25623.1.0.54321", "Initial override", 5.0);
+    create.hosts = vec!["198.51.100.20".into()];
+    create.port = Some("general/tcp".into());
+    create.severity = Some(-1.0);
+    create.days_active = Some(30);
+    let override_id = client
+        .create_override(create)
+        .await
+        .expect("create_override should succeed")
+        .id;
+
+    let overrides = client
+        .get_overrides(GetOverridesRequest::default())
+        .await
+        .expect("get_overrides should succeed");
+    assert!(overrides
+        .items
+        .iter()
+        .any(|override_| override_.meta.id == override_id));
+    let override_ = client
+        .get_override(GetOverrideRequest::new(override_id.clone()))
+        .await
+        .expect("get_override should succeed")
+        .items
+        .pop()
+        .expect("created override should be returned");
+    assert_eq!(override_.text.as_deref(), Some("Initial override"));
+    assert_eq!(override_.new_severity.as_deref(), Some("5"));
+    assert_eq!(override_.hosts, ["198.51.100.20"]);
+    assert!(override_.active);
+
+    client
+        .modify_override(ModifyOverrideRequest::new(
+            override_id.clone(),
+            "Updated override",
+            -3.0,
+        ))
+        .await
+        .expect("modify_override should succeed");
+    let modified = client
+        .get_override(GetOverrideRequest::new(override_id.clone()))
+        .await
+        .expect("get modified override should succeed")
+        .items
+        .pop()
+        .expect("modified override should be returned");
+    assert_eq!(modified.text.as_deref(), Some("Updated override"));
+    assert_eq!(modified.nvt_oid, override_.nvt_oid);
+    assert_eq!(modified.new_severity.as_deref(), Some("-3"));
+    assert!(modified.hosts.is_empty());
+    assert_eq!(modified.port, None);
+    assert_eq!(modified.severity, None);
+    assert!(modified.active);
+
+    let cloned_id = client
+        .clone_override(CloneOverrideRequest::new(override_id.clone()))
+        .await
+        .expect("clone_override should succeed")
+        .id;
+    client
+        .delete_override(DeleteOverrideRequest::new(cloned_id, true))
+        .await
+        .expect("delete cloned override should succeed");
+    client
+        .delete_override(DeleteOverrideRequest::new(override_id, true))
+        .await
+        .expect("delete original override should succeed");
 
     server.shutdown().await;
 }

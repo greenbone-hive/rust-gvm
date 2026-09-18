@@ -87,7 +87,7 @@ async fn matrix_notes_create_list() {
 
     let note_id = create_and_get_id(
         &mut stream,
-        b"<create_note><name>Matrix Note</name><comment>note</comment></create_note>",
+        b"<create_note><nvt oid=\"1.3.6.1.4.1.25623.1.0.12345\"/><text>Matrix Note</text></create_note>",
         "create_note",
     )
     .await;
@@ -111,7 +111,7 @@ async fn matrix_overrides_create_list() {
 
     let override_id = create_and_get_id(
         &mut stream,
-        b"<create_override><name>Matrix Override</name><comment>override</comment></create_override>",
+        b"<create_override><nvt oid=\"1.3.6.1.4.1.25623.1.0.54321\"/><text>Matrix Override</text><new_severity>5.0</new_severity></create_override>",
         "create_override",
     )
     .await;
@@ -121,6 +121,26 @@ async fn matrix_overrides_create_list() {
     let list_text = list_resp.as_str().expect("valid utf8");
     assert!(list_text.contains(&override_id));
     assert!(list_text.contains("Matrix Override"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn notes_and_overrides_reject_invalid_raw_values() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    for request in [
+        b"<create_note><text>Missing NVT</text></create_note>".as_slice(),
+        b"<create_note><nvt oid=\"1.3.6.1\"/><text>Bad port</text><port>/tcp</port></create_note>",
+        b"<create_override><nvt oid=\"1.3.6.1\"/><text>Missing severity</text></create_override>",
+    ] {
+        let response = send_recv(&mut stream, request).await;
+        assert_eq!(response.status_code(), Some(400));
+    }
 
     server.shutdown().await;
 }

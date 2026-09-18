@@ -861,6 +861,44 @@ impl SessionHandler {
         if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
         }
+        if matches!(resource_type, "note" | "override") {
+            if name.trim().is_empty() {
+                return error_response(&cmd.name, 400, "Missing required element: text");
+            }
+            if cmd
+                .child_attr("nvt", "oid")
+                .is_none_or(|oid| oid.trim().is_empty())
+            {
+                return error_response(&cmd.name, 400, "Missing required element: nvt");
+            }
+            if let Some(port) = parse_element_text(raw_xml, "port") {
+                if !valid_note_override_port(&port) {
+                    return error_response(&cmd.name, 400, "Invalid port");
+                }
+            }
+            if let Some(severity) = parse_element_text(raw_xml, "severity") {
+                if !valid_note_override_severity(&severity, false) {
+                    return error_response(&cmd.name, 400, "Invalid severity");
+                }
+            }
+            if let Some(active) = parse_element_text(raw_xml, "active") {
+                if !valid_note_override_active(&active) {
+                    return error_response(&cmd.name, 400, "Invalid active value");
+                }
+            }
+            if resource_type == "override" {
+                let Some(new_severity) = parse_element_text(raw_xml, "new_severity") else {
+                    return error_response(
+                        &cmd.name,
+                        400,
+                        "Missing required element: new_severity",
+                    );
+                };
+                if !valid_note_override_severity(&new_severity, true) {
+                    return error_response(&cmd.name, 400, "Invalid new_severity");
+                }
+            }
+        }
         if resource_type == "scanner" {
             let Some(host) =
                 parse_element_text(raw_xml, "host").filter(|value| !value.trim().is_empty())
@@ -1945,6 +1983,51 @@ impl SessionHandler {
             (None, None, None, None, None)
         };
 
+        if matches!(resource_type, "note" | "override") {
+            if new_text
+                .as_deref()
+                .is_none_or(|text| text.trim().is_empty())
+            {
+                return error_response(&cmd.name, 400, "Missing required element: text");
+            }
+            if new_nvt_oid
+                .as_deref()
+                .is_some_and(|oid| oid.trim().is_empty())
+            {
+                return error_response(&cmd.name, 400, "Invalid nvt");
+            }
+            if new_port
+                .as_deref()
+                .is_some_and(|port| !valid_note_override_port(port))
+            {
+                return error_response(&cmd.name, 400, "Invalid port");
+            }
+            if new_severity
+                .as_deref()
+                .is_some_and(|severity| !valid_note_override_severity(severity, false))
+            {
+                return error_response(&cmd.name, 400, "Invalid severity");
+            }
+            if new_active
+                .as_deref()
+                .is_some_and(|active| !valid_note_override_active(active))
+            {
+                return error_response(&cmd.name, 400, "Invalid active value");
+            }
+            if resource_type == "override" {
+                let Some(new_severity) = new_new_severity.as_deref() else {
+                    return error_response(
+                        &cmd.name,
+                        400,
+                        "Missing required element: new_severity",
+                    );
+                };
+                if !valid_note_override_severity(new_severity, true) {
+                    return error_response(&cmd.name, 400, "Invalid new_severity");
+                }
+            }
+        }
+
         if resource_type == "integration_config" {
             for (value, field) in [
                 (&new_service_url, "service <url>"),
@@ -1990,8 +2073,23 @@ impl SessionHandler {
 
         let update_resource = |r: &mut Resource| {
             if matches!(resource_type, "note" | "override") {
-                if let Some(ref text) = new_text {
-                    r.name.clone_from(text);
+                r.name.clone_from(
+                    new_text
+                        .as_ref()
+                        .expect("note and override text was validated"),
+                );
+                for (attribute, value) in [
+                    ("hosts", new_hosts.as_ref()),
+                    ("port", new_port.as_ref()),
+                    ("severity", new_severity.as_ref()),
+                    ("task_id", new_task_id.as_ref()),
+                    ("result_id", new_result_id.as_ref()),
+                ] {
+                    if let Some(value) = value {
+                        r.set_attr(attribute, value);
+                    } else {
+                        r.remove_attr(attribute);
+                    }
                 }
             } else if resource_type == "port_list" {
                 r.name = new_name.clone().unwrap_or_default();
@@ -4810,6 +4908,36 @@ fn element_text_including_empty(cmd: &ParsedCommand, raw_xml: &[u8], name: &str)
             .any(|child| child.name == name)
             .then(String::new)
     })
+}
+
+fn valid_note_override_port(port: &str) -> bool {
+    let Some((service, protocol)) = port.split_once('/') else {
+        return port
+            .strip_prefix("cpe:")
+            .is_some_and(|value| !value.is_empty() && !value.chars().any(char::is_whitespace));
+    };
+    !protocol.is_empty()
+        && protocol
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
+        && (service == "general"
+            || (!service.is_empty()
+                && service.len() <= 5
+                && !service.starts_with('0')
+                && service.chars().all(|character| character.is_ascii_digit())))
+}
+
+fn valid_note_override_severity(severity: &str, replacement: bool) -> bool {
+    severity.parse::<f64>().is_ok_and(|severity| {
+        severity.is_finite()
+            && ((0.0..=10.0).contains(&severity)
+                || severity == -1.0
+                || (replacement && severity == -3.0))
+    })
+}
+
+fn valid_note_override_active(active: &str) -> bool {
+    active.parse::<i32>().is_ok_and(|days| days >= -1)
 }
 
 fn task_observer_group_ids(cmd: &ParsedCommand) -> Vec<String> {

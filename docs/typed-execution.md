@@ -330,12 +330,13 @@ separate Rust types even where they share a wire command and response model,
 so call-site intent remains explicit while the established builders remain the
 single XML encoders.
 
-Notes and overrides follow the same lifecycle pattern. Their semantic request
-values delegate to the existing builders, preserving NVT associations, optional
-task/result fields, omit/replace/clear host updates, severity fields, and
-ultimate deletion. Retained facade helpers—including the newly completed
-detail, clone, modify, and delete methods—execute through the same generic
-client path without changing raw compatibility.
+Notes and overrides use twelve complete canonical request values. Their six
+option bags and twelve forwarding builders are removed, while the named facade
+helpers accept each request unchanged and delegate to `execute`. Create owns
+gvmd's required NVT/text values; override create and modify additionally own the
+required replacement severity. Modify clears omitted host, port, original
+severity, task, and result restrictions while preserving omitted NVT and
+activation. The unsupported note `orphan` child is no longer emitted.
 
 Trashcan operations follow the same rule. `EmptyTrashcanRequest` selects the
 existing empty-trashcan response, while `RestoreRequest` and

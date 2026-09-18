@@ -507,6 +507,51 @@ the schema renders the modify child as optional; canonical validation follows
 the handler and fails before support checks or transport. Clone retains its
 distinct semantic identity and supports gvmd's name/comment overrides.
 
+## Note and override families
+
+The note and override slices remove six option bags and twelve free builders.
+List, detail, create, clone, modify, and delete inputs now live on twelve
+complete canonical request values, and all twelve named client methods accept
+those values unchanged:
+
+```rust
+use gvm_gmp::commands::notes::{CreateNoteRequest, ModifyNoteRequest};
+use gvm_gmp::commands::overrides::{
+    CreateOverrideRequest, ModifyOverrideRequest,
+};
+
+let mut note = CreateNoteRequest::new("1.3.6.1", "initial note");
+note.hosts.push("192.0.2.10".into());
+let note = client.create_note(note).await?;
+
+// Omitted restrictions clear; omitted NVT and activation preserve.
+client
+    .modify_note(ModifyNoteRequest::new(note.id, "updated note"))
+    .await?;
+
+let override_ = client
+    .create_override(CreateOverrideRequest::new(
+        "1.3.6.1",
+        "accepted risk",
+        5.0,
+    ))
+    .await?;
+client
+    .modify_override(ModifyOverrideRequest::new(
+        override_.id,
+        "false positive",
+        -3.0,
+    ))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Final-value validation covers required text/NVT fields, result-port syntax,
+host entries, original severity, replacement severity, and activation days.
+The canonical note surface removes the parser-ignored `orphan` child. Detail
+and clone keep distinct semantic identities over the shared list/create wire
+commands.
+
 ## Tag family
 
 The tag slice removes `TagOpts`, `GetTagsOpts`, and all six free builders.

@@ -661,6 +661,31 @@ impl Resource {
                 xml.push_str(&format!("<active>{}</active>", xml_escape(active)));
             }
         }
+        if matches!(self.resource_type.as_str(), "note" | "override") {
+            if let Some(nvt_oid) = self.attr("nvt_oid") {
+                xml.push_str(&format!(
+                    "<nvt oid=\"{}\"><name></name></nvt>",
+                    xml_escape_attr(nvt_oid),
+                ));
+            }
+            for attribute in ["hosts", "port", "severity", "new_severity"] {
+                if let Some(value) = self.attr(attribute) {
+                    xml.push_str(&format!("<{attribute}>{}</{attribute}>", xml_escape(value),));
+                }
+            }
+            for (attribute, element) in [("task_id", "task"), ("result_id", "result")] {
+                if let Some(id) = self.attr(attribute) {
+                    xml.push_str(&format!(
+                        "<{element} id=\"{}\"><name></name></{element}>",
+                        xml_escape_attr(id),
+                    ));
+                }
+            }
+            if let Some(active) = self.attr("active") {
+                let active = if active == "0" { "0" } else { "1" };
+                xml.push_str(&format!("<active>{active}</active>"));
+            }
+        }
         for (k, v) in &self.attrs {
             if self.resource_type == "scanner" && k == "credential_id" {
                 xml.push_str(&format!(
@@ -689,6 +714,21 @@ impl Resource {
                         | "tag_resource_type"
                         | "tag_resource_ids"
                         | "tag_resources_filter"
+                        | "active"
+                )
+            {
+                continue;
+            }
+            if matches!(self.resource_type.as_str(), "note" | "override")
+                && matches!(
+                    k.as_str(),
+                    "nvt_oid"
+                        | "hosts"
+                        | "port"
+                        | "severity"
+                        | "new_severity"
+                        | "task_id"
+                        | "result_id"
                         | "active"
                 )
             {

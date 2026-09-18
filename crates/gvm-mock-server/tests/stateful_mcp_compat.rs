@@ -175,7 +175,7 @@ async fn create_and_modify_note_uses_text_payload() {
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains("Updated note"));
     assert!(text.contains("<hosts>192.168.1.2</hosts>"));
-    assert!(text.contains("<nvt_oid>1.3.6.1.4.1.25623.1.0.12345</nvt_oid>"));
+    assert!(text.contains("<nvt oid=\"1.3.6.1.4.1.25623.1.0.12345\"><name></name></nvt>"));
 
     server.shutdown().await;
 }

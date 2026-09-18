@@ -146,6 +146,18 @@ or transport. Independent
 [scanner gvmd evidence](scanner-request-gvmd-evidence.md) records those
 contracts.
 
+Issue #633 converts all twelve note and override operations to complete
+canonical requests. Six redundant options types and twelve free builders are
+removed; the twelve named facade methods accept request values unchanged.
+Create now owns required NVT/text values, and override create/modify own gvmd's
+required replacement severity. Modify models the server's replacement boundary:
+omitted host, port, original severity, task, and result restrictions clear,
+while omitted NVT and activation preserve. Final values fail validation before
+support checks or transport, and the parser-ignored legacy note `orphan` child
+is removed. Independent
+[note/override gvmd evidence](note-override-request-gvmd-evidence.md) records
+those contracts.
+
 The sections below retain the bounded delivery history for each migrated
 family.
 
