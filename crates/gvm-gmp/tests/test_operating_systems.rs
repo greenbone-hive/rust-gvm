@@ -5,45 +5,39 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::operating_systems::*;
+use gvm_gmp::{GmpRequestCodec, GmpVersion};
 
-#[test]
-fn test_get_operating_systems_with_options() {
-    assert_eq!(
-        xml(get_operating_systems(GetOperatingSystemsOpts {
-            filter_string: Some("name=Debian".into()),
-            filter_id: Some(id("f1")),
-            details: Some(true),
-        })),
-        "<get_assets details=\"1\" filt_id=\"f1\" filter=\"name=Debian\" type=\"os\"/>"
-    );
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap()
 }
 
 #[test]
-fn test_get_operating_system() {
+fn exact_operating_system_asset_xml() {
+    let list = GetOperatingSystemAssetsRequest {
+        filter_string: Some("name=Debian".into()),
+        filter_id: Some(id("f1")),
+        ignore_pagination: Some(true),
+        details: Some(true),
+    };
     assert_eq!(
-        xml(get_operating_system(&id("os1"), None)),
-        "<get_assets asset_id=\"os1\" type=\"os\"/>"
+        xml(&list),
+        "<get_assets details=\"1\" filt_id=\"f1\" filter=\"name=Debian\" ignore_pagination=\"1\" type=\"os\"/>"
     );
+
+    let detail = GetOperatingSystemAssetRequest::new(id("os1"));
+    assert_eq!(xml(&detail), "<get_assets asset_id=\"os1\" type=\"os\"/>");
+    let detail = GetOperatingSystemAssetRequest {
+        operating_system_id: id("os1"),
+        details: Some(false),
+    };
     assert_eq!(
-        xml(get_operating_system(&id("os1"), Some(false))),
+        xml(&detail),
         "<get_assets asset_id=\"os1\" details=\"0\" type=\"os\"/>"
     );
-}
-
-#[test]
-fn test_modify_and_delete_operating_system() {
     assert_eq!(
-        xml(modify_operating_system(&id("os1"), Some("updated"))),
-        "<modify_asset asset_id=\"os1\"><comment>updated</comment></modify_asset>"
-    );
-    assert_eq!(
-        xml(modify_operating_system(&id("os1"), None)),
-        "<modify_asset asset_id=\"os1\"><comment></comment></modify_asset>"
-    );
-    assert_eq!(
-        xml(delete_operating_system(&id("os1"))),
+        xml(&DeleteOperatingSystemAssetRequest::new(id("os1"))),
         "<delete_asset asset_id=\"os1\"/>"
     );
 }

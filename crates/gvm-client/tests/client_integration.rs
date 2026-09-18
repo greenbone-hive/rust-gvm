@@ -15,7 +15,8 @@ use gvm_gmp::commands::alerts::{
     AlertData, CreateAlertRequest, GetAlertsRequest, ModifyAlertRequest, TriggerAlertRequest,
 };
 use gvm_gmp::commands::assets::{
-    AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
+    AssetType, CreateAssetRequest, DeleteAssetRequest, GetAssetRequest, GetAssetsRequest,
+    ModifyAssetRequest,
 };
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::configs::{
@@ -45,7 +46,9 @@ use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, ModifyOciImageTargetRequest,
 };
-use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
+use gvm_gmp::commands::operating_systems::{
+    GetOperatingSystemAssetRequest, GetOperatingSystemAssetsRequest,
+};
 use gvm_gmp::commands::overrides::{
     CloneOverrideRequest, CreateOverrideRequest, DeleteOverrideRequest, GetOverrideRequest,
     GetOverridesRequest, ModifyOverrideRequest,
@@ -1405,15 +1408,16 @@ async fn operating_system_helpers_send_asset_commands() {
         .expect("authenticate should succeed");
 
     let response = client
-        .call(get_operating_systems(GetOperatingSystemsOpts {
+        .execute(GetOperatingSystemAssetsRequest {
             filter_string: Some("name=Debian".into()),
             filter_id: Some(EntityId::new("0").expect("valid id")),
+            ignore_pagination: None,
             details: Some(true),
-        }))
+        })
         .await
         .expect("get_operating_systems should send get_assets command");
 
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
 
     let history = server.command_history();
     let command = history.last().expect("operating system command recorded");
@@ -1603,10 +1607,10 @@ async fn typed_generic_config_get_modify_and_delete_round_trip() {
 }
 
 async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
-    let mut create_opts = CreateAssetOpts::host("192.0.2.10");
-    create_opts.comment = Some("created through typed client".into());
+    let mut create_request = CreateAssetRequest::new("192.0.2.10");
+    create_request.comment = Some("created through typed client".into());
     let created = client
-        .create_asset(create_opts)
+        .create_asset(create_request)
         .await
         .expect("create_asset should succeed");
     let asset_id = created
@@ -1614,7 +1618,7 @@ async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>
         .expect("direct host creation should return an id");
 
     let fetched = client
-        .get_asset(&asset_id, AssetType::Host)
+        .get_asset(GetAssetRequest::new(asset_id.clone(), AssetType::Host))
         .await
         .expect("get_asset should return the created host");
     assert_eq!(fetched.items.len(), 1);
@@ -1632,22 +1636,17 @@ async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>
     );
 
     client
-        .modify_asset(
-            &asset_id,
-            ModifyAssetOpts {
-                comment: Some("updated through typed client".into()),
-                ..Default::default()
-            },
-        )
+        .modify_asset(ModifyAssetRequest::new(
+            asset_id.clone(),
+            "updated through typed client",
+        ))
         .await
         .expect("modify_asset should succeed");
 
+    let mut get_request = GetAssetsRequest::new(AssetType::Host);
+    get_request.asset_id = Some(asset_id.clone());
     let updated = client
-        .get_assets(GetAssetsOpts {
-            asset_id: Some(asset_id.clone()),
-            type_: Some(AssetType::Host),
-            ..Default::default()
-        })
+        .get_assets(get_request)
         .await
         .expect("get_assets should return the updated host");
     let Asset::Host(host) = &updated.items[0] else {
@@ -1659,15 +1658,13 @@ async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>
     );
 
     client
-        .modify_asset(&asset_id, ModifyAssetOpts::default())
+        .modify_asset(ModifyAssetRequest::new(asset_id.clone(), ""))
         .await
         .expect("modify_asset without a comment should clear it");
+    let mut get_request = GetAssetsRequest::new(AssetType::Host);
+    get_request.asset_id = Some(asset_id.clone());
     let cleared = client
-        .get_assets(GetAssetsOpts {
-            asset_id: Some(asset_id.clone()),
-            type_: Some(AssetType::Host),
-            ..Default::default()
-        })
+        .get_assets(get_request)
         .await
         .expect("get_assets should return the host with a cleared comment");
     let Asset::Host(host) = &cleared.items[0] else {
@@ -1676,14 +1673,11 @@ async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>
     assert_eq!(host.meta.comment, None);
 
     client
-        .delete_asset(&asset_id, DeleteAssetOpts::default())
+        .delete_asset(DeleteAssetRequest::new(asset_id.clone()))
         .await
         .expect("delete_asset should succeed");
     let remaining = client
-        .get_assets(GetAssetsOpts {
-            type_: Some(AssetType::Host),
-            ..Default::default()
-        })
+        .get_assets(GetAssetsRequest::new(AssetType::Host))
         .await
         .expect("get_assets should succeed after deletion");
     assert!(remaining.items.is_empty());
@@ -1694,7 +1688,7 @@ async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>
 
 async fn typed_operating_system_get(client: &mut GmpClient<UnixSocketConnection>) {
     let operating_systems = client
-        .get_operating_system_assets(GetOperatingSystemsOpts::default())
+        .get_operating_system_assets(GetOperatingSystemAssetsRequest::default())
         .await
         .expect("typed operating-system assets should parse");
     assert_eq!(operating_systems.items.len(), 1);
@@ -1706,8 +1700,10 @@ async fn typed_operating_system_get(client: &mut GmpClient<UnixSocketConnection>
     assert!(operating_system.hosts.is_empty());
     assert_eq!(operating_system.latest_severity.as_deref(), Some("6.1"));
 
+    let mut request = GetOperatingSystemAssetRequest::new(operating_system.meta.id.clone());
+    request.details = Some(true);
     let single = client
-        .get_operating_system_asset(&operating_system.meta.id, Some(true))
+        .get_operating_system_asset(request)
         .await
         .expect("single operating-system asset should parse");
     assert_eq!(single.items.len(), 1);

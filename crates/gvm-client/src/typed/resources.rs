@@ -4,8 +4,7 @@
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::assets::{
-    AssetType, CreateAssetOpts, CreateAssetRequest, DeleteAssetOpts, DeleteAssetRequest,
-    GetAssetRequest, GetAssetsOpts, GetAssetsRequest, ModifyAssetOpts, ModifyAssetRequest,
+    CreateAssetRequest, DeleteAssetRequest, GetAssetRequest, GetAssetsRequest, ModifyAssetRequest,
 };
 use gvm_gmp::commands::configs::{
     CloneConfigOpts, CloneConfigRequest, CreateConfigOpts, CreateConfigRequest, DeleteConfigOpts,
@@ -13,12 +12,11 @@ use gvm_gmp::commands::configs::{
     ModifyConfigOpts, ModifyConfigRequest,
 };
 use gvm_gmp::commands::hosts::{
-    CreateHostRequest, DeleteHostRequest, GetHostRequest, GetHostsOpts, GetHostsRequest, HostOpts,
-    ModifyHostRequest,
+    CreateHostRequest, DeleteHostRequest, GetHostRequest, GetHostsRequest, ModifyHostRequest,
 };
 use gvm_gmp::commands::operating_systems::{
     DeleteOperatingSystemAssetRequest, GetOperatingSystemAssetRequest,
-    GetOperatingSystemAssetsRequest, GetOperatingSystemsOpts, ModifyOperatingSystemAssetRequest,
+    GetOperatingSystemAssetsRequest,
 };
 use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
@@ -134,24 +132,33 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_hosts(&mut self, opts: GetHostsOpts) -> Result<GetHostsResponse, GvmError> {
-        self.execute(GetHostsRequest::new(opts)).await
+    pub async fn get_hosts(
+        &mut self,
+        request: GetHostsRequest,
+    ) -> Result<GetHostsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a single-host `get_assets` request and return a typed response.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_host(&mut self, host_id: &EntityId) -> Result<GetHostsResponse, GvmError> {
-        self.execute(GetHostRequest::new(host_id.clone())).await
+    pub async fn get_host(
+        &mut self,
+        request: GetHostRequest,
+    ) -> Result<GetHostsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `create_host` request and return a typed [`CreateHostResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn create_host(&mut self, opts: HostOpts) -> Result<CreateHostResponse, GvmError> {
-        self.execute(CreateHostRequest::new(opts)).await
+    pub async fn create_host(
+        &mut self,
+        request: CreateHostRequest,
+    ) -> Result<CreateHostResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `modify_asset` request for a host and return a typed response.
@@ -160,27 +167,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_host(
         &mut self,
-        host_id: &EntityId,
-        opts: HostOpts,
+        request: ModifyHostRequest,
     ) -> Result<ModifyHostResponse, GvmError> {
-        self.execute(ModifyHostRequest::new(host_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_asset` request for a host and return a typed response.
-    ///
-    /// The `ultimate` value is retained for compatibility and remains ignored
-    /// by the host builder because gvmd applies asset-specific deletion.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_host(
         &mut self,
-        host_id: &EntityId,
-        ultimate: bool,
+        request: DeleteHostRequest,
     ) -> Result<DeleteHostResponse, GvmError> {
-        self.execute(DeleteHostRequest::new(host_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     // ── Assets ──────────────────────────────────────────────────────────────────
@@ -189,8 +189,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_assets(&mut self, opts: GetAssetsOpts) -> Result<GetAssetsResponse, GvmError> {
-        self.execute(GetAssetsRequest::new(opts)).await
+    pub async fn get_assets(
+        &mut self,
+        request: GetAssetsRequest,
+    ) -> Result<GetAssetsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a single-asset `get_assets` request and return a typed response.
@@ -199,11 +202,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_asset(
         &mut self,
-        asset_id: &EntityId,
-        asset_type: AssetType,
+        request: GetAssetRequest,
     ) -> Result<GetAssetsResponse, GvmError> {
-        self.execute(GetAssetRequest::new(asset_id.clone(), asset_type))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_asset` request and return a typed [`CreateAssetResponse`].
@@ -212,9 +213,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_asset(
         &mut self,
-        opts: CreateAssetOpts,
+        request: CreateAssetRequest,
     ) -> Result<CreateAssetResponse, GvmError> {
-        self.execute(CreateAssetRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `modify_asset` request and return a typed [`ModifyAssetResponse`].
@@ -223,11 +224,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_asset(
         &mut self,
-        asset_id: &EntityId,
-        opts: ModifyAssetOpts,
+        request: ModifyAssetRequest,
     ) -> Result<ModifyAssetResponse, GvmError> {
-        self.execute(ModifyAssetRequest::new(asset_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `delete_asset` request and return a typed [`DeleteAssetResponse`].
@@ -236,11 +235,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_asset(
         &mut self,
-        asset_id: &EntityId,
-        opts: DeleteAssetOpts,
+        request: DeleteAssetRequest,
     ) -> Result<DeleteAssetResponse, GvmError> {
-        self.execute(DeleteAssetRequest::new(asset_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_assets type="os"` request and return typed operating-system assets.
@@ -249,10 +246,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_operating_system_assets(
         &mut self,
-        opts: GetOperatingSystemsOpts,
+        request: GetOperatingSystemAssetsRequest,
     ) -> Result<GetOperatingSystemAssetsResponse, GvmError> {
-        self.execute(GetOperatingSystemAssetsRequest::new(opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a single operating-system asset request and return a typed response.
@@ -261,30 +257,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_operating_system_asset(
         &mut self,
-        operating_system_id: &EntityId,
-        details: Option<bool>,
+        request: GetOperatingSystemAssetRequest,
     ) -> Result<GetOperatingSystemAssetsResponse, GvmError> {
-        self.execute(GetOperatingSystemAssetRequest::new(
-            operating_system_id.clone(),
-            details,
-        ))
-        .await
-    }
-
-    /// Send a `modify_asset` request for an operating-system asset.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn modify_operating_system_asset(
-        &mut self,
-        operating_system_id: &EntityId,
-        comment: Option<String>,
-    ) -> Result<ModifyAssetResponse, GvmError> {
-        self.execute(ModifyOperatingSystemAssetRequest::new(
-            operating_system_id.clone(),
-            comment,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `delete_asset` request for an operating-system asset.
@@ -293,12 +268,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_operating_system_asset(
         &mut self,
-        operating_system_id: &EntityId,
+        request: DeleteOperatingSystemAssetRequest,
     ) -> Result<DeleteAssetResponse, GvmError> {
-        self.execute(DeleteOperatingSystemAssetRequest::new(
-            operating_system_id.clone(),
-        ))
-        .await
+        self.execute(request).await
     }
 
     // ── Generic Configs ──────────────────────────────────────────────────────

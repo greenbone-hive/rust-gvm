@@ -791,6 +791,56 @@ Custom typed decoders must reject non-2xx statuses as
 Secret-bearing request diagnostics and observed wire bytes remain
 redacted before trace observers run.
 
+## Asset, host, and operating-system-asset families
+
+The thirteen supported operations now accept one complete request value. The
+seven asset-family option bags and thirteen public free builders are removed.
+Named client helpers take the same request unchanged and delegate to
+`execute`.
+
+```rust
+use gvm_gmp::commands::assets::{
+    AssetType, CreateAssetRequest, GetAssetsRequest, ModifyAssetRequest,
+};
+
+let mut list = GetAssetsRequest::new(AssetType::Host);
+list.filter_string = Some("severity>5.0".into());
+list.ignore_pagination = Some(true);
+let hosts = client.get_assets(list).await?;
+
+let mut create = CreateAssetRequest::new("2001:0db8:0:0:0:0:0:1");
+create.comment = Some("edge host".into());
+let created = client.create_asset(create).await?;
+let id = created.id.expect("direct host creation returns an ID");
+
+client
+    .modify_asset(ModifyAssetRequest::new(id, ""))
+    .await?; // empty final comment clears it
+# let _ = hosts;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Migration rules:
+
+- `GetAssetsRequest::new(asset_type)` replaces optional `asset_type`/`type_`;
+  host and OS list requests implement `Default` with a fixed type.
+- Move `filter_string`, `filter_id`, `details`, and `ignore_pagination` onto the
+  list request. Remove typed asset `trash`.
+- `CreateAssetRequest::new(name)` and `CreateHostRequest::new(name)` require one
+  IPv4 or IPv6 address. Remove create `asset_type` and `value`.
+- Modify constructors take the final comment. Empty clears; remove `value`.
+- Delete constructors take only the ID. Both old `ultimate` values map to the
+  same permanent deletion request.
+- Remove `ModifyOperatingSystemAssetRequest`, `modify_operating_system`, and
+  `modify_operating_system_asset`. Pinned gvmd only modifies host comments, so
+  there is no supported OS-modification replacement.
+
+After free-builder removal, low-level callers can pass raw XML to `send` or
+`call`, or implement `GmpRequestCodec` for custom typed execution. Raw XML is
+not a workaround for unsupported OS modification. Asset OS continues to use
+`get_assets type="os"` and its rich response; it is separate from SecInfo OS.
+See [pinned gvmd evidence](asset-request-gvmd-evidence.md).
+
 ## Compatibility boundary
 
 The promoted #523 baseline was additive, but it has not been published as the
@@ -804,7 +854,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 267 current public async methods: 263 delegate
+The facade inventory locks all 266 current public async methods: 262 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path, and the deprecated `sync_scan_config` alias delegates
 indirectly through `sync_config`.

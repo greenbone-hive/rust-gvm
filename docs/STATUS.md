@@ -283,17 +283,17 @@ requests retain their specialized response codecs. Existing facade methods now
 delegate to `execute`; explicit SecInfo operating-system and vulnerability
 helper names avoid changing the distinct asset and legacy `get_vulns` APIs.
 
-The asset-and-result Phase 2 batch, tracked by
-[`#566`](https://github.com/greenbone-hive/rust-gvm/issues/566), migrates the
-complete generic asset, host alias, operating-system asset alias, and result
-query surfaces to semantic typed execution. Generic list/detail/create/modify/
-delete requests and their resource-specific aliases remain distinct Rust types
-while delegating to the existing `get_assets`, `create_asset`, `modify_asset`,
-and `delete_asset` builders. This preserves type selection, filters, detail
-flags, ignored compatibility fields, asset deletion semantics, and exact XML
-bytes. Result list/detail requests likewise retain their existing `get_results`
-encodings. All corresponding facade helpers use `execute`, while raw builders,
-`send`, and `call` remain supported.
+The asset family is canonicalized under
+[`#642`](https://github.com/greenbone-hive/rust-gvm/issues/642): thirteen
+generic asset, host, and operating-system-asset requests own complete inputs,
+validation, semantic metadata, direct encoding, and response associations.
+Reads require a type and expose filters, details, and pagination control without
+asset trash. Direct creation requires one IPv4 or IPv6 host name; modification
+replaces or clears the host comment; deletion is permanent without an
+`ultimate` mode. The unsupported OS-modification request, builder, and facade
+are removed. Asset OS remains distinct from deferred SecInfo OS. Result
+list/detail requests remain transitional for the next ordered child. See the
+[pinned evidence](asset-request-gvmd-evidence.md).
 
 The additive alternate-target Phase 2 batch, tracked by
 [`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), originally

@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Generic GMP asset command builders.
+//! Canonical requests for generic asset operations.
 
-use gvm_protocol::{Request, XmlCommand};
+use std::net::IpAddr;
+
+use gvm_protocol::{Request as _, XmlCommand};
 
 use crate::common::{add_filter_attrs, set_optional_bool_attr};
 use crate::responses::{
     CreateAssetResponse, DeleteAssetResponse, GetAssetsResponse, ModifyAssetResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
 /// Typed GMP asset type values.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -19,10 +21,10 @@ pub enum AssetType {
     Host,
     /// Operating-system assets.
     OperatingSystem,
-    /// Forward-compatible custom asset type.
+    /// Forward-compatible custom asset type for reads.
     ///
-    /// Current gvmd accepts only `host` for direct creation and `host` or
-    /// `os` for retrieval, so custom values may be rejected by the server.
+    /// Current gvmd accepts only `host` and `os`; a nonempty unknown value is
+    /// retained so a newer server can remain authoritative.
     Custom(String),
 }
 
@@ -42,101 +44,71 @@ impl AssetType {
             Self::Custom(value) => value.as_str(),
         }
     }
-}
 
-/// Optional fields for `create_asset` requests.
-#[derive(Debug, Clone)]
-pub struct CreateAssetOpts {
-    /// Asset type to create. Current gvmd accepts only [`AssetType::Host`]
-    /// for direct asset creation.
-    pub asset_type: AssetType,
-    /// Comment text included in the request.
-    ///
-    /// Current gvmd requires this element for `modify_asset`, so `None` is
-    /// serialized as an empty comment and clears any existing value.
-    pub comment: Option<String>,
-    /// Host name accepted by gvmd, which must be an IPv4 or IPv6 address.
-    ///
-    /// The field name is retained for source compatibility with the original
-    /// generic asset API. It is serialized as the nested GMP `asset/name`
-    /// element, not as a `value` element.
-    pub value: Option<String>,
-}
-
-impl CreateAssetOpts {
-    /// Create options for a host asset with the given IP address.
-    #[must_use]
-    pub fn host(name: impl Into<String>) -> Self {
-        Self {
-            asset_type: AssetType::Host,
-            comment: None,
-            value: Some(name.into()),
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if matches!(self, Self::Custom(value) if value.is_empty()) {
+            Err(GmpRequestError::invalid_field(
+                "asset_type",
+                "custom asset type must not be empty",
+            ))
+        } else {
+            Ok(())
         }
     }
 }
 
-/// Options for `get_assets` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetAssetsOpts {
-    /// Optional asset identifier.
+/// Request for listing generic assets of one required type.
+#[derive(Debug, Clone)]
+pub struct GetAssetsRequest {
+    /// Required asset type. Current gvmd supports host and operating-system reads.
+    pub asset_type: AssetType,
+    /// Optional asset identifier selector.
     pub asset_id: Option<EntityId>,
-    /// Compatibility alias for the canonical GMP `type` attribute.
-    ///
-    /// When both this field and [`Self::type_`] are set, `type_` takes
-    /// precedence. The non-standard `asset_type` attribute is never emitted.
-    pub asset_type: Option<AssetType>,
-    /// Optional `type` attribute.
-    pub type_: Option<AssetType>,
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
+    /// Optional saved-filter identifier.
     pub filter_id: Option<EntityId>,
-    /// Whether to query trashcan resources.
-    pub trash: Option<bool>,
+    /// Whether gvmd should ignore pagination terms from the selected filter.
+    pub ignore_pagination: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
 }
 
-/// Optional fields for `modify_asset` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyAssetOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Compatibility field retained from the original generic API.
-    ///
-    /// Current gvmd does not support modifying an asset value, so this field
-    /// is deliberately not serialized.
-    pub value: Option<String>,
-}
-
-/// Optional fields for `delete_asset` requests.
-#[derive(Debug, Clone, Default)]
-pub struct DeleteAssetOpts {
-    /// Compatibility field retained from the original generic API.
-    ///
-    /// Current gvmd does not accept an `ultimate` attribute for assets and
-    /// always applies its asset-specific deletion semantics, so this field is
-    /// deliberately not serialized.
-    pub ultimate: Option<bool>,
-}
-
-/// Semantic request for listing generic assets.
-#[derive(Debug, Clone)]
-pub struct GetAssetsRequest {
-    opts: GetAssetsOpts,
-}
-
 impl GetAssetsRequest {
-    /// Create a generic asset-list request.
+    /// Create a generic asset-list request for the required asset type.
     #[must_use]
-    pub fn new(opts: GetAssetsOpts) -> Self {
-        Self { opts }
+    pub fn new(asset_type: AssetType) -> Self {
+        Self {
+            asset_type,
+            asset_id: None,
+            filter_string: None,
+            filter_id: None,
+            ignore_pagination: None,
+            details: None,
+        }
     }
 }
 
-impl Request for GetAssetsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_assets(self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetAssetsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        self.asset_type.validate()
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_assets"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_assets_command(
+            &self.asset_type,
+            self.asset_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.ignore_pagination,
+            self.details,
+        )
+        .to_bytes())
     }
 }
 
@@ -144,15 +116,17 @@ impl GmpRequest for GetAssetsRequest {
     type Response = GetAssetsResponse;
 }
 
-/// Semantic request for retrieving one generic asset.
+/// Request for retrieving one detailed generic asset.
 #[derive(Debug, Clone)]
 pub struct GetAssetRequest {
-    asset_id: EntityId,
-    asset_type: AssetType,
+    /// Asset identifier to retrieve.
+    pub asset_id: EntityId,
+    /// Required asset type.
+    pub asset_type: AssetType,
 }
 
 impl GetAssetRequest {
-    /// Create a single-asset request.
+    /// Create a detailed single-asset request.
     #[must_use]
     pub fn new(asset_id: EntityId, asset_type: AssetType) -> Self {
         Self {
@@ -162,15 +136,26 @@ impl GetAssetRequest {
     }
 }
 
-impl Request for GetAssetRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_assets(GetAssetsOpts {
-            asset_id: Some(self.asset_id.clone()),
-            type_: Some(self.asset_type.clone()),
-            details: Some(true),
-            ..Default::default()
-        })
-        .to_bytes()
+impl GmpRequestCodec for GetAssetRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        self.asset_type.validate()
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_assets", "get_asset"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_assets_command(
+            &self.asset_type,
+            Some(&self.asset_id),
+            None,
+            None,
+            None,
+            Some(true),
+        )
+        .to_bytes())
     }
 }
 
@@ -178,23 +163,38 @@ impl GmpRequest for GetAssetRequest {
     type Response = GetAssetsResponse;
 }
 
-/// Semantic request for creating a generic asset.
+/// Request for directly creating a host asset from one IP address.
 #[derive(Debug, Clone)]
 pub struct CreateAssetRequest {
-    opts: CreateAssetOpts,
+    /// Required IPv4 or IPv6 address, preserved exactly when encoded.
+    pub name: String,
+    /// Optional comment. Empty text is omitted on creation.
+    pub comment: Option<String>,
 }
 
 impl CreateAssetRequest {
-    /// Create a generic asset-creation request.
+    /// Create a direct host-asset request for one IP address.
     #[must_use]
-    pub fn new(opts: CreateAssetOpts) -> Self {
-        Self { opts }
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            comment: None,
+        }
     }
 }
 
-impl Request for CreateAssetRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_asset(self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateAssetRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_ip_name(&self.name)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_asset"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(create_host_asset_command(&self.name, self.comment.as_deref()).to_bytes())
     }
 }
 
@@ -202,24 +202,33 @@ impl GmpRequest for CreateAssetRequest {
     type Response = CreateAssetResponse;
 }
 
-/// Semantic request for modifying a generic asset.
+/// Request for replacing a host asset's comment.
 #[derive(Debug, Clone)]
 pub struct ModifyAssetRequest {
-    asset_id: EntityId,
-    opts: ModifyAssetOpts,
+    /// Asset identifier. gvmd authoritatively requires this to identify a host.
+    pub asset_id: EntityId,
+    /// Final comment. An empty string clears the comment.
+    pub comment: String,
 }
 
 impl ModifyAssetRequest {
-    /// Create a generic asset-modification request.
+    /// Create a complete asset-comment replacement request.
     #[must_use]
-    pub fn new(asset_id: EntityId, opts: ModifyAssetOpts) -> Self {
-        Self { asset_id, opts }
+    pub fn new(asset_id: EntityId, comment: impl Into<String>) -> Self {
+        Self {
+            asset_id,
+            comment: comment.into(),
+        }
     }
 }
 
-impl Request for ModifyAssetRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_asset(&self.asset_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for ModifyAssetRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_asset"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(modify_asset_command(&self.asset_id, &self.comment).to_bytes())
     }
 }
 
@@ -227,24 +236,28 @@ impl GmpRequest for ModifyAssetRequest {
     type Response = ModifyAssetResponse;
 }
 
-/// Semantic request for deleting a generic asset.
+/// Request for permanently deleting an asset by identifier.
 #[derive(Debug, Clone)]
 pub struct DeleteAssetRequest {
-    asset_id: EntityId,
-    opts: DeleteAssetOpts,
+    /// Asset identifier to delete.
+    pub asset_id: EntityId,
 }
 
 impl DeleteAssetRequest {
-    /// Create a generic asset-deletion request.
+    /// Create an asset-deletion request.
     #[must_use]
-    pub fn new(asset_id: EntityId, opts: DeleteAssetOpts) -> Self {
-        Self { asset_id, opts }
+    pub fn new(asset_id: EntityId) -> Self {
+        Self { asset_id }
     }
 }
 
-impl Request for DeleteAssetRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_asset(&self.asset_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for DeleteAssetRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_asset"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_asset_command(&self.asset_id).to_bytes())
     }
 }
 
@@ -252,201 +265,157 @@ impl GmpRequest for DeleteAssetRequest {
     type Response = DeleteAssetResponse;
 }
 
-/// Build a generic `create_asset` request.
-#[must_use]
-pub fn create_asset(opts: CreateAssetOpts) -> impl Request {
+pub(crate) fn validate_ip_name(name: &str) -> Result<(), GmpRequestError> {
+    if name.parse::<IpAddr>().is_err() {
+        Err(GmpRequestError::invalid_field(
+            "name",
+            "must be one IPv4 or IPv6 address",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn get_assets_command(
+    asset_type: &AssetType,
+    asset_id: Option<&EntityId>,
+    filter_string: Option<&str>,
+    filter_id: Option<&EntityId>,
+    ignore_pagination: Option<bool>,
+    details: Option<bool>,
+) -> XmlCommand {
+    let mut cmd = XmlCommand::new("get_assets");
+    if let Some(asset_id) = asset_id {
+        cmd.set_attribute("asset_id", asset_id.as_str());
+    }
+    cmd.set_attribute("type", asset_type.as_gmp_str());
+    add_filter_attrs(&mut cmd, filter_string, filter_id);
+    set_optional_bool_attr(&mut cmd, "ignore_pagination", ignore_pagination);
+    set_optional_bool_attr(&mut cmd, "details", details);
+    cmd
+}
+
+pub(crate) fn create_host_asset_command(name: &str, comment: Option<&str>) -> XmlCommand {
     let mut cmd = XmlCommand::new("create_asset");
     let asset = cmd.add_element("asset");
-    asset.add_child_with_text("type", opts.asset_type.as_gmp_str());
-    asset.add_child_with_text("name", opts.value.as_deref().unwrap_or_default());
-    if let Some(comment) = opts.comment.as_deref().filter(|value| !value.is_empty()) {
+    asset.add_child_with_text("type", "host");
+    asset.add_child_with_text("name", name);
+    if let Some(comment) = comment.filter(|value| !value.is_empty()) {
         asset.add_child_with_text("comment", comment);
     }
     cmd
 }
 
-/// Build a generic `get_assets` request.
-#[must_use]
-pub fn get_assets(opts: GetAssetsOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_assets");
-    if let Some(asset_id) = opts.asset_id.as_ref() {
-        cmd.set_attribute("asset_id", asset_id.as_str());
-    }
-    if let Some(type_) = opts.type_.as_ref().or(opts.asset_type.as_ref()) {
-        cmd.set_attribute("type", type_.as_gmp_str());
-    }
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    cmd
-}
-
-/// Build a generic `modify_asset` request.
-#[must_use]
-pub fn modify_asset(asset_id: &EntityId, opts: ModifyAssetOpts) -> impl Request {
+pub(crate) fn modify_asset_command(asset_id: &EntityId, comment: &str) -> XmlCommand {
     let mut cmd = XmlCommand::new("modify_asset").attribute("asset_id", asset_id.as_str());
-    cmd.add_element_with_text("comment", opts.comment.as_deref().unwrap_or_default());
+    cmd.add_element_with_text("comment", comment);
     cmd
 }
 
-/// Build a generic `delete_asset` request.
-#[must_use]
-pub fn delete_asset(asset_id: &EntityId, _opts: DeleteAssetOpts) -> impl Request {
+pub(crate) fn delete_asset_command(asset_id: &EntityId) -> XmlCommand {
     XmlCommand::new("delete_asset").attribute("asset_id", asset_id.as_str())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
-    #[test]
-    fn asset_type_maps_to_wire_values() {
-        assert_eq!(AssetType::Host.as_gmp_str(), "host");
-        assert_eq!(AssetType::OperatingSystem.as_gmp_str(), "os");
-        assert_eq!(AssetType::custom("firmware").as_gmp_str(), "firmware");
+    fn xml(request: &impl GmpRequestCodec) -> String {
+        String::from_utf8(request.encode(GmpVersion(22, 4)).expect("valid request"))
+            .expect("valid UTF-8")
     }
 
     #[test]
-    fn create_asset_builds_xml() {
-        assert_eq!(
-            xml(create_asset(CreateAssetOpts {
-                asset_type: AssetType::Host,
-                comment: Some("c".into()),
-                value: Some("1.1.1.1".into()),
-            })),
-            "<create_asset><asset><type>host</type><name>1.1.1.1</name><comment>c</comment></asset></create_asset>"
-        );
-    }
+    fn all_asset_requests_encode_exact_xml_and_associate_responses() {
+        fn response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
 
-    #[test]
-    fn create_asset_skips_empty_optional_text() {
+        let mut list = GetAssetsRequest::new(AssetType::custom("firmware"));
+        list.asset_id = Some(id("a1"));
+        list.filter_string = Some("name=foo & bar".into());
+        list.filter_id = Some(id("f1"));
+        list.ignore_pagination = Some(true);
+        list.details = Some(false);
         assert_eq!(
-            xml(create_asset(CreateAssetOpts {
-                asset_type: AssetType::Host,
-                comment: Some(String::new()),
-                value: Some(String::new()),
-            })),
-            "<create_asset><asset><type>host</type><name></name></asset></create_asset>"
+            xml(&list),
+            "<get_assets asset_id=\"a1\" details=\"0\" filt_id=\"f1\" filter=\"name=foo &amp; bar\" ignore_pagination=\"1\" type=\"firmware\"/>"
         );
-    }
+        response::<_, GetAssetsResponse>(&list);
 
-    #[test]
-    fn get_assets_builds_xml() {
+        let detail = GetAssetRequest::new(id("a1"), AssetType::OperatingSystem);
         assert_eq!(
-            xml(get_assets(GetAssetsOpts {
-                asset_id: Some(id("a1")),
-                asset_type: Some(AssetType::Host),
-                type_: Some(AssetType::custom("firmware")),
-                filter_string: Some("name=foo".into()),
-                filter_id: Some(id("f1")),
-                trash: Some(true),
-                details: Some(false),
-            })),
-            "<get_assets asset_id=\"a1\" details=\"0\" filt_id=\"f1\" filter=\"name=foo\" trash=\"1\" type=\"firmware\"/>"
+            xml(&detail),
+            "<get_assets asset_id=\"a1\" details=\"1\" type=\"os\"/>"
         );
-    }
+        response::<_, GetAssetsResponse>(&detail);
 
-    #[test]
-    fn modify_delete_asset_build_xml() {
+        let mut create = CreateAssetRequest::new("2001:0db8:0:0:0:0:0:1");
+        create.comment = Some("a < b".into());
         assert_eq!(
-            xml(modify_asset(
-                &id("a1"),
-                ModifyAssetOpts {
-                    comment: Some("updated".into()),
-                    value: Some("v".into()),
-                },
-            )),
-            "<modify_asset asset_id=\"a1\"><comment>updated</comment></modify_asset>"
+            xml(&create),
+            "<create_asset><asset><type>host</type><name>2001:0db8:0:0:0:0:0:1</name><comment>a &lt; b</comment></asset></create_asset>"
         );
+        response::<_, CreateAssetResponse>(&create);
+
+        create.comment = Some(String::new());
         assert_eq!(
-            xml(modify_asset(
-                &id("a1"),
-                ModifyAssetOpts {
-                    comment: Some(String::new()),
-                    value: Some(String::new()),
-                },
-            )),
+            xml(&create),
+            "<create_asset><asset><type>host</type><name>2001:0db8:0:0:0:0:0:1</name></asset></create_asset>"
+        );
+
+        let modify = ModifyAssetRequest::new(id("a1"), "");
+        assert_eq!(
+            xml(&modify),
             "<modify_asset asset_id=\"a1\"><comment></comment></modify_asset>"
         );
-        assert_eq!(
-            xml(delete_asset(
-                &id("a1"),
-                DeleteAssetOpts {
-                    ultimate: Some(true),
-                },
-            )),
-            "<delete_asset asset_id=\"a1\"/>"
-        );
-        assert_eq!(
-            xml(delete_asset(&id("a1"), DeleteAssetOpts::default())),
-            "<delete_asset asset_id=\"a1\"/>"
-        );
+        response::<_, ModifyAssetResponse>(&modify);
+
+        let delete = DeleteAssetRequest::new(id("a1"));
+        assert_eq!(xml(&delete), "<delete_asset asset_id=\"a1\"/>");
+        response::<_, DeleteAssetResponse>(&delete);
     }
 
     #[test]
-    fn semantic_asset_requests_match_builder_bytes_and_responses() {
-        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+    fn final_values_are_validated() {
+        let mut create = CreateAssetRequest::new("192.0.2.1");
+        for invalid in ["", "example.test", "192.0.2.1/24", "192.0.2.1-2"] {
+            create.name = invalid.into();
+            assert!(matches!(
+                create.validate(),
+                Err(GmpRequestError::InvalidField { field: "name", .. })
+            ));
+            assert!(create.encode(GmpVersion(22, 4)).is_err());
+        }
 
-        let get_opts = GetAssetsOpts {
-            type_: Some(AssetType::custom("firmware")),
-            filter_string: Some("name=example".into()),
-            details: Some(true),
-            ..Default::default()
-        };
-        let request = GetAssetsRequest::new(get_opts.clone());
-        assert_eq!(request.to_bytes(), get_assets(get_opts).to_bytes());
-        assert_response::<_, GetAssetsResponse>(&request);
-
-        let request = GetAssetRequest::new(id("asset-1"), AssetType::OperatingSystem);
-        assert_eq!(
-            request.to_bytes(),
-            get_assets(GetAssetsOpts {
-                asset_id: Some(id("asset-1")),
-                type_: Some(AssetType::OperatingSystem),
-                details: Some(true),
-                ..Default::default()
+        let mut list = GetAssetsRequest::new(AssetType::Host);
+        list.asset_type = AssetType::custom("");
+        assert!(matches!(
+            list.validate(),
+            Err(GmpRequestError::InvalidField {
+                field: "asset_type",
+                ..
             })
-            .to_bytes()
-        );
-        assert_response::<_, GetAssetsResponse>(&request);
+        ));
+    }
 
-        let create_opts = CreateAssetOpts {
-            asset_type: AssetType::Host,
-            comment: Some("created".into()),
-            value: Some("192.0.2.10".into()),
-        };
-        let request = CreateAssetRequest::new(create_opts.clone());
-        assert_eq!(request.to_bytes(), create_asset(create_opts).to_bytes());
-        assert_response::<_, CreateAssetResponse>(&request);
-
-        let modify_opts = ModifyAssetOpts {
-            comment: Some("updated".into()),
-            value: Some("ignored".into()),
-        };
-        let request = ModifyAssetRequest::new(id("asset-1"), modify_opts.clone());
+    #[test]
+    fn metadata_is_available_without_encoding() {
         assert_eq!(
-            request.to_bytes(),
-            modify_asset(&id("asset-1"), modify_opts).to_bytes()
+            GetAssetRequest::new(id("a1"), AssetType::Host)
+                .command()
+                .expect("metadata")
+                .semantic_name(),
+            Some("get_asset")
         );
-        assert_response::<_, ModifyAssetResponse>(&request);
-
-        let delete_opts = DeleteAssetOpts {
-            ultimate: Some(true),
-        };
-        let request = DeleteAssetRequest::new(id("asset-1"), delete_opts.clone());
         assert_eq!(
-            request.to_bytes(),
-            delete_asset(&id("asset-1"), delete_opts).to_bytes()
+            CreateAssetRequest::new("invalid")
+                .command()
+                .expect("metadata")
+                .wire_name(),
+            "create_asset"
         );
-        assert_response::<_, DeleteAssetResponse>(&request);
     }
 }

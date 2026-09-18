@@ -22,7 +22,8 @@ use gvm_gmp::commands::alerts::{
     ModifyAlertRequest, TestAlertRequest, TriggerAlertRequest,
 };
 use gvm_gmp::commands::assets::{
-    AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
+    AssetType, CreateAssetRequest, DeleteAssetRequest, GetAssetRequest, GetAssetsRequest,
+    ModifyAssetRequest,
 };
 use gvm_gmp::commands::configs::{
     CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
@@ -41,7 +42,9 @@ use gvm_gmp::commands::groups::{
     ModifyGroupRequest,
 };
 use gvm_gmp::commands::help::HelpMode;
-use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
+use gvm_gmp::commands::hosts::{
+    CreateHostRequest, DeleteHostRequest, GetHostRequest, GetHostsRequest, ModifyHostRequest,
+};
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -54,7 +57,10 @@ use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
-use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
+use gvm_gmp::commands::operating_systems::{
+    DeleteOperatingSystemAssetRequest, GetOperatingSystemAssetRequest,
+    GetOperatingSystemAssetsRequest,
+};
 use gvm_gmp::commands::overrides::{
     CloneOverrideRequest, CreateOverrideRequest, DeleteOverrideRequest, GetOverrideRequest,
     GetOverridesRequest, ModifyOverrideRequest,
@@ -1188,50 +1194,35 @@ async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade
     let asset_id = id(CREATED_ID);
     server.clear_history();
 
-    assert_typed_success!(client.get_assets(GetAssetsOpts::default()));
-    assert_typed_success!(client.get_asset(&asset_id, AssetType::custom("firmware")));
+    assert_typed_success!(client.get_assets(GetAssetsRequest::new(AssetType::Host)));
+    assert_typed_success!(client.get_asset(GetAssetRequest::new(asset_id.clone(), AssetType::Host)));
+    let mut create_request = CreateAssetRequest::new("192.0.2.10");
+    create_request.comment = Some("created".into());
     let created = client
-        .create_asset(CreateAssetOpts {
-            asset_type: AssetType::Host,
-            comment: Some("created".into()),
-            value: Some("192.0.2.10".into()),
-        })
+        .create_asset(create_request)
         .await
         .expect("generic asset create should parse");
     assert_eq!(created.status, 201);
     assert_eq!(created.id.as_ref(), Some(&asset_id));
-    assert_typed_success!(client.modify_asset(
-        &asset_id,
-        ModifyAssetOpts {
-            comment: Some("updated".into()),
-            value: Some("ignored".into()),
-        }
-    ));
-    assert_typed_success!(client.delete_asset(
-        &asset_id,
-        DeleteAssetOpts {
-            ultimate: Some(true),
-        }
-    ));
+    assert_typed_success!(client.modify_asset(ModifyAssetRequest::new(asset_id.clone(), "updated")));
+    assert_typed_success!(client.delete_asset(DeleteAssetRequest::new(asset_id.clone())));
 
-    assert_typed_success!(client.get_hosts(GetHostsOpts::default()));
-    assert_typed_success!(client.get_host(&asset_id));
-    assert_create_success!(client.create_host(HostOpts::named("192.0.2.20")));
-    assert_typed_success!(client.modify_host(
-        &asset_id,
-        HostOpts {
-            comment: Some("updated host".into()),
-            value: Some("ignored".into()),
-        }
-    ));
-    assert_typed_success!(client.delete_host(&asset_id, true));
-
-    assert_typed_success!(client.get_operating_system_assets(GetOperatingSystemsOpts::default()));
-    assert_typed_success!(client.get_operating_system_asset(&asset_id, Some(true)));
+    assert_typed_success!(client.get_hosts(GetHostsRequest::default()));
+    assert_typed_success!(client.get_host(GetHostRequest::new(asset_id.clone())));
+    assert_create_success!(client.create_host(CreateHostRequest::new("192.0.2.20")));
     assert_typed_success!(
-        client.modify_operating_system_asset(&asset_id, Some("updated OS".into()))
+        client.modify_host(ModifyHostRequest::new(asset_id.clone(), "updated host"))
     );
-    assert_typed_success!(client.delete_operating_system_asset(&asset_id));
+    assert_typed_success!(client.delete_host(DeleteHostRequest::new(asset_id.clone())));
+
+    assert_typed_success!(
+        client.get_operating_system_assets(GetOperatingSystemAssetsRequest::default())
+    );
+    let mut os_detail = GetOperatingSystemAssetRequest::new(asset_id.clone());
+    os_detail.details = Some(true);
+    assert_typed_success!(client.get_operating_system_asset(os_detail));
+    assert_typed_success!(client
+        .delete_operating_system_asset(DeleteOperatingSystemAssetRequest::new(asset_id.clone())));
 
     assert_typed_success!(client.get_results(GetResultsOpts::default()));
     assert_typed_success!(client.get_result(&asset_id));
@@ -1240,7 +1231,7 @@ async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade
     for (command, expected_count) in [
         ("get_assets", 6),
         ("create_asset", 2),
-        ("modify_asset", 3),
+        ("modify_asset", 2),
         ("delete_asset", 3),
         ("get_results", 2),
     ] {
@@ -1254,6 +1245,85 @@ async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade
         );
     }
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn all_asset_requests_execute_directly_with_their_associated_responses() {
+    let Some(server) = fixture_server(MockVersion::V22_8, ASSET_HOST_RESULT_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let asset_id = id(CREATED_ID);
+    server.clear_history();
+
+    assert_typed_success!(client.execute(GetAssetsRequest::new(AssetType::Host)));
+    assert_typed_success!(client.execute(GetAssetRequest::new(asset_id.clone(), AssetType::Host)));
+    let created = client
+        .execute(CreateAssetRequest::new("192.0.2.10"))
+        .await
+        .expect("generic asset response association should parse");
+    assert_eq!(created.status, 201);
+    assert_typed_success!(client.execute(ModifyAssetRequest::new(asset_id.clone(), "updated")));
+    assert_typed_success!(client.execute(DeleteAssetRequest::new(asset_id.clone())));
+
+    assert_typed_success!(client.execute(GetHostsRequest::default()));
+    assert_typed_success!(client.execute(GetHostRequest::new(asset_id.clone())));
+    assert_create_success!(client.execute(CreateHostRequest::new("192.0.2.20")));
+    assert_typed_success!(client.execute(ModifyHostRequest::new(asset_id.clone(), "updated host")));
+    assert_typed_success!(client.execute(DeleteHostRequest::new(asset_id.clone())));
+
+    assert_typed_success!(client.execute(GetOperatingSystemAssetsRequest::default()));
+    assert_typed_success!(client.execute(GetOperatingSystemAssetRequest::new(asset_id.clone())));
+    assert_typed_success!(client.execute(DeleteOperatingSystemAssetRequest::new(asset_id)));
+
+    let history = server.command_history();
+    for (command, expected_count) in [
+        ("get_assets", 6),
+        ("create_asset", 2),
+        ("modify_asset", 2),
+        ("delete_asset", 3),
+    ] {
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.command_name() == command)
+                .count(),
+            expected_count,
+            "unexpected direct-execution inventory for {command}"
+        );
+    }
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn generic_and_host_create_keep_distinct_id_requirements() {
+    let response = r#"<create_asset_response status="201" status_text="OK"/>"#;
+    let Some(server) = fixture_server(MockVersion::V22_8, &[("create_asset", response)]).await
+    else {
+        return;
+    };
+    let mut generic_client = client(&server).await;
+    let generic = generic_client
+        .execute(CreateAssetRequest::new("192.0.2.10"))
+        .await
+        .expect("generic create keeps report-import-compatible optional ID");
+    assert_eq!(generic.id, None);
+    server.shutdown().await;
+
+    let Some(server) = fixture_server(MockVersion::V22_8, &[("create_asset", response)]).await
+    else {
+        return;
+    };
+    let mut host_client = client(&server).await;
+    let error = host_client
+        .execute(CreateHostRequest::new("192.0.2.10"))
+        .await
+        .expect_err("direct host creation requires a response ID");
+    assert!(matches!(
+        error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
     server.shutdown().await;
 }
 
@@ -1388,7 +1458,11 @@ async fn asset_and_result_facades_preserve_status_and_parse_context() {
         return;
     };
     let mut status_client = client(&server).await;
-    assert_server_error!(status_client.get_host(&id("host-1")), 409, "asset conflict");
+    assert_server_error!(
+        status_client.get_host(GetHostRequest::new(id("host-1"))),
+        409,
+        "asset conflict"
+    );
     server.shutdown().await;
 
     let Some(server) = fixture_server(
@@ -2830,7 +2904,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_groups(GetGroupsRequest::default()));
     assert_typed_success!(client.get_roles(GetRolesRequest::default()));
     assert_typed_success!(client.get_permissions(GetPermissionsRequest::default()));
-    assert_typed_success!(client.get_hosts(GetHostsOpts::default()));
+    assert_typed_success!(client.get_hosts(GetHostsRequest::default()));
     assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
     assert_typed_success!(client.get_report_formats(GetReportFormatsOpts::default()));
     assert_typed_success!(client.get_report_configs_parsed(GetReportConfigsOpts::default()));
@@ -2934,7 +3008,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     assert_create_success!(client.create_group(CreateGroupRequest::new("group")));
     assert_create_success!(client.create_role(CreateRoleRequest::new("role")));
     assert_create_success!(client.create_permission(permission_create_request()));
-    assert_create_success!(client.create_host(HostOpts::named("192.0.2.10")));
+    assert_create_success!(client.create_host(CreateHostRequest::new("192.0.2.10")));
     assert_create_success!(
         client.create_tls_certificate("certificate", TlsCertificateOpts::default())
     );

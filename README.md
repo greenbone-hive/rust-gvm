@@ -291,8 +291,8 @@ lifecycles, scan-config, policy, and credential-store operations, alerts and
 schedules, filters, tags, notes, overrides, trashcan recovery, user, group,
 role, and permission lifecycles, plus irregular report retrieval, drill-down,
 export, create, import, and delete operations and the complete NVT/SecInfo query
-surface. Generic assets, host and operating-system asset lifecycles, result
-list/detail queries, and the GMP 22.8 agent, agent-group, and
+surface. Canonical generic asset, host, and operating-system asset lifecycles,
+transitional result list/detail queries, and the GMP 22.8 agent, agent-group, and
 integration-configuration families use the same execution contract, including
 binary/base64 support bundles. Generic configuration and port-list/port-range
 lifecycles are also fully migrated, and report-configuration, report-format,
@@ -311,6 +311,14 @@ let targets = client
     .execute(GetTargetsRequest::default())
     .await?;
 ```
+
+Asset operations now take complete request values. Generic reads require an
+`AssetType`; direct creation requires one IPv4 or IPv6 host name; modification
+replaces or clears the host comment; and deletion is permanent without an
+`ultimate` mode. The redundant asset/host/OS option bags and free builders are
+removed, as is the unsupported OS-modification helper. Asset OS remains
+distinct from SecInfo OS. See the [migration guide](docs/v0.7.0-migration.md#assets-hosts-and-operating-system-assets)
+and [pinned gvmd evidence](docs/asset-request-gvmd-evidence.md).
 
 The standard target family is the canonical reference slice: its requests own
 their complete input and encoding, and its redundant options types and free

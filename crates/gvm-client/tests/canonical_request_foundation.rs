@@ -20,6 +20,7 @@ use gvm_gmp::commands::agents::{
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::alerts::CreateAlertRequest;
+use gvm_gmp::commands::assets::{AssetType, CreateAssetRequest, GetAssetsRequest};
 use gvm_gmp::commands::credentials::CreateCredentialStoreCredentialRequest;
 use gvm_gmp::commands::filters::CreateFilterRequest;
 use gvm_gmp::commands::integration_configs::{
@@ -419,6 +420,49 @@ async fn invalid_port_range_fails_before_transport() {
         error,
         GvmError::Request(GmpRequestError::InvalidCombination {
             fields: &["start", "end"],
+            ..
+        })
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_asset_final_values_fail_before_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_4).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    let mut create = CreateAssetRequest::new("192.0.2.1");
+    create.name = "host.example".into();
+    assert_eq!(
+        create.command().expect("metadata").wire_name(),
+        "create_asset"
+    );
+    let error = client
+        .execute(create)
+        .await
+        .expect_err("mutated DNS name should fail before transport");
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+
+    let request = GetAssetsRequest::new(AssetType::custom(""));
+    assert_eq!(
+        request.command().expect("metadata").wire_name(),
+        "get_assets"
+    );
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("empty custom asset type should fail before transport");
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField {
+            field: "asset_type",
             ..
         })
     ));
