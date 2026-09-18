@@ -683,12 +683,21 @@ impl SessionHandler {
             );
         }
 
-        if cmd
-            .attr("filt_id")
-            .is_some_and(|filter_id| filter_id != "0")
-        {
-            return error_response(&cmd.name, 404, "Saved filter not found");
-        }
+        // A concrete saved filter takes precedence over inline filter text,
+        // matching gvmd's common get initialization. `0` retains the mock's
+        // explicit approximation: no user-setting fallback is modeled.
+        let filter = match cmd.attr("filt_id") {
+            Some("0") | None => cmd.attr("filter").map(str::to_string),
+            Some(filter_id) => {
+                let Ok(filter_id) = Uuid::parse_str(filter_id) else {
+                    return error_response(&cmd.name, 400, "Invalid filter UUID");
+                };
+                let Some(saved_filter) = store.get_typed(&filter_id, "filter") else {
+                    return error_response(&cmd.name, 404, "Saved filter not found");
+                };
+                Some(saved_filter.attr("term").unwrap_or_default().to_string())
+            }
+        };
 
         let trash = matches!(cmd.attr("trash"), Some("1" | "true"));
         let mut resources: Vec<Resource> = if trash {
@@ -718,7 +727,7 @@ impl SessionHandler {
         }
 
         let paginate = !matches!(cmd.attr("ignore_pagination"), Some("1" | "true"));
-        let filtered_assets = match filter_assets(resources, cmd.attr("filter"), paginate) {
+        let filtered_assets = match filter_assets(resources, filter.as_deref(), paginate) {
             Ok(filtered_assets) => filtered_assets,
             Err(message) => return error_response(&cmd.name, 400, &message),
         };

@@ -237,6 +237,13 @@ async fn asset_filters_pagination_and_counts_are_applied_after_type_selection() 
             host.set_attr("severity", severity);
             store.seed(host);
         }
+        let mut saved_filter = Resource::with_id(
+            "filter",
+            "High severity assets",
+            Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+        );
+        saved_filter.set_attr("term", "severity=7.0 rows=1");
+        store.seed(saved_filter);
     })
     .await;
     let mut stream = connect_and_auth(&server).await;
@@ -268,10 +275,21 @@ async fn asset_filters_pagination_and_counts_are_applied_after_type_selection() 
     .await;
     assert!(response_text(&no_match).contains("<asset_count>3<filtered>0</filtered><page>0</page>"));
 
+    let saved = send_recv(
+        &mut stream,
+        b"<get_assets type=\"host\" filt_id=\"00000000-0000-0000-0000-000000000001\" filter=\"severity=4.0\"/>",
+    )
+    .await;
+    let text = response_text(&saved);
+    assert_eq!(saved.status_code(), Some(200));
+    assert!(text.contains("<name>192.0.2.10</name>"));
+    assert!(!text.contains("<name>192.0.2.20</name>"));
+    assert!(text.contains("<asset_count>3<filtered>2</filtered><page>1</page>"));
+
     assert_eq!(
         send_recv(
             &mut stream,
-            b"<get_assets type=\"host\" filt_id=\"00000000-0000-0000-0000-000000000001\"/>",
+            b"<get_assets type=\"host\" filt_id=\"00000000-0000-0000-0000-000000000002\"/>",
         )
         .await
         .status_code(),
@@ -406,27 +424,47 @@ async fn seeded_os_assets_render_the_canonical_nested_shape() {
 
 #[tokio::test]
 async fn referenced_operating_system_assets_cannot_be_deleted() {
-    let os_id = Uuid::new_v4();
+    let best_match_id = Uuid::new_v4();
+    let non_best_match_id = Uuid::new_v4();
     let server = strict_server(move |store| {
-        let mut os = Resource::with_id("asset", "cpe:/o:example:referenced", os_id);
-        os.set_attr("type", "os");
-        os.set_attr("installs", "1");
-        store.seed(os);
+        let mut best = Resource::with_id("asset", "cpe:/o:example:best-reference", best_match_id);
+        best.set_attr("type", "os");
+        best.set_attr("installs", "1");
+        best.set_attr("all_installs", "1");
+        store.seed(best);
+
+        let mut non_best = Resource::with_id(
+            "asset",
+            "cpe:/o:example:non-best-reference",
+            non_best_match_id,
+        );
+        non_best.set_attr("type", "os");
+        non_best.set_attr("installs", "0");
+        non_best.set_attr("all_installs", "1");
+        store.seed(non_best);
     })
     .await;
     let mut stream = connect_and_auth(&server).await;
 
     let get = send_recv(&mut stream, b"<get_assets type=\"os\"/>").await;
     assert_eq!(get.status_code(), Some(200));
-    assert!(response_text(&get).contains("<in_use>1</in_use>"));
+    let text = response_text(&get);
+    assert_eq!(text.matches("<in_use>1</in_use>").count(), 2);
 
-    let delete = send_recv(
-        &mut stream,
-        format!("<delete_asset asset_id=\"{os_id}\"/>").as_bytes(),
-    )
-    .await;
-    assert_eq!(delete.status_code(), Some(400));
-    assert!(response_text(&delete).contains("Asset is in use"));
+    for os_id in [best_match_id, non_best_match_id] {
+        let delete = send_recv(
+            &mut stream,
+            format!("<delete_asset asset_id=\"{os_id}\"/>").as_bytes(),
+        )
+        .await;
+        assert_eq!(delete.status_code(), Some(400));
+        assert!(response_text(&delete).contains("Asset is in use"));
+    }
+
+    let preserved = send_recv(&mut stream, b"<get_assets type=\"os\"/>").await;
+    let text = response_text(&preserved);
+    assert!(text.contains(&best_match_id.to_string()));
+    assert!(text.contains(&non_best_match_id.to_string()));
 
     server.shutdown().await;
 }

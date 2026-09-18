@@ -389,25 +389,37 @@ builders and `send`/`call` remain available for callers that need complete XML.
 
 ## Assets, hosts, operating-system assets, and results
 
-Generic asset list/detail/create/modify/delete operations have semantic request
-values associated with their existing asset response models. Host and
-operating-system asset operations keep separate semantic request types even
-though they reuse the generic asset wire roots. This makes resource intent
-explicit without duplicating the established encoders or conflating asset
-operating systems with the distinct SecInfo `get_info` surface.
+The thirteen supported generic asset, host, and operating-system-asset
+operations are canonical complete requests. They own public inputs, final
+validation, semantic command metadata, direct fallible encoding, and response
+association. Their named facade methods accept the same request unchanged and
+delegate to `execute`; the parallel option bags and public free builders are
+removed.
 
-The aliases preserve their current behavior: host and operating-system queries
-set the same asset `type` values and detail flags; host and generic asset
-modification continue to ignore their compatibility `value` fields; and asset
-deletion continues to omit the unsupported `ultimate` attribute. Existing
-generic and resource-specific facade methods, including detail/modify/delete
-completion for the alias families, delegate to `execute`.
+Generic reads require one `AssetType`; host and OS aliases fix `host` and `os`.
+List requests expose opaque inline/saved filters, optional details, and
+`ignore_pagination`, but no asset trash mode. Direct create requires one IPv4
+or IPv6 `name`, fixes the type to host, preserves accepted address spelling,
+and rejects DNS names, ranges, CIDRs, lists, and malformed text before
+transport. Modify requires the final comment and always replaces it; an empty
+string clears. Delete takes only an ID and is permanent, with OS references
+remaining server-authoritative. No `value`, `ultimate`, `trash`, or duplicate
+type-alias field is encoded.
 
-Result list and detail requests are likewise distinct semantic values over the
-same `get_results` builder family and share `GetResultsResponse`. Filters,
-saved-filter identifiers, detail selection, response status mapping, and parse
-context remain unchanged. Raw builders and custom execution stay available for
-all four families.
+The old operating-system modification request/helper is removed: pinned gvmd
+only modifies host comments and returns a find error for an OS asset ID. There
+is no supported typed replacement. Raw XML remains an escape hatch for
+unmodeled commands, not an OS-modification workaround. Asset OS remains a rich
+`get_assets type="os"` family and is not interchangeable with the deferred
+SecInfo OS or report projection surfaces. See the
+[pinned evidence](asset-request-gvmd-evidence.md).
+
+Result list and detail requests remain distinct transitional semantic values
+over the same `get_results` builder family and share `GetResultsResponse`.
+Their filters, saved-filter identifiers, detail selection, response status
+mapping, and parse context remain unchanged. Result builders remain public
+until the separately ordered result migration; raw/custom execution remains
+available.
 
 ## Alternate target lifecycles
 

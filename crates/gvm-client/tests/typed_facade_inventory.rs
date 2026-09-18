@@ -234,7 +234,6 @@ const INTEGRATION_COVERED: &[&str] = &[
     "delete_asset",
     "get_operating_system_assets",
     "get_operating_system_asset",
-    "modify_operating_system_asset",
     "delete_operating_system_asset",
     "get_configs",
     "get_config",
@@ -389,7 +388,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 263);
+    assert_eq!(direct_execute_count, 262);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

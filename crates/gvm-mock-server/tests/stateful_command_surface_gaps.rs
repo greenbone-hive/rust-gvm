@@ -22,7 +22,7 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreCredentialRequest, ModifyCredentialStoreRequest,
     VerifyCredentialStoreRequest,
 };
-use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
+use gvm_gmp::commands::hosts::{CreateHostRequest, GetHostRequest, GetHostsRequest};
 use gvm_gmp::commands::system::{
     modify_auth, modify_license, modify_license_with_opts, run_wizard_with_opts, ModifyLicenseOpts,
     RunWizardOpts,
@@ -440,33 +440,26 @@ async fn stateful_credential_store_modify_credential_uses_gvmd_builder_shape() {
 }
 
 #[tokio::test]
-async fn stateful_host_asset_uses_gmp_builder_shape() {
+async fn stateful_host_asset_uses_canonical_request_shape() {
     let Some(server) = stateful_server().await else {
         return;
     };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let create = send_request(
-        &mut stream,
-        create_host(HostOpts {
-            value: Some("1.1.1.1".into()),
-            ..Default::default()
-        }),
-    )
-    .await;
+    let create = send_typed_request(&mut stream, CreateHostRequest::new("1.1.1.1")).await;
     assert_eq!(create.status_code(), Some(201));
     let host_id = extract_id(&create);
     let host_entity_id = EntityId::new(host_id.clone()).expect("valid host id");
 
-    let hosts = send_request(&mut stream, get_hosts(Default::default())).await;
+    let hosts = send_typed_request(&mut stream, GetHostsRequest::default()).await;
     let hosts_text = hosts.as_str().expect("utf8");
     assert!(hosts_text.contains(&host_id));
     assert!(hosts_text.contains("<type>host</type>"));
     assert!(hosts_text.contains("<name>ip</name><value>1.1.1.1</value>"));
     assert!(hosts_text.contains("<host><severity>"));
 
-    let host = send_request(&mut stream, get_host(&host_entity_id)).await;
+    let host = send_typed_request(&mut stream, GetHostRequest::new(host_entity_id)).await;
     let host_text = host.as_str().expect("utf8");
     assert!(host_text.contains(&host_id));
     assert!(host_text.contains("<type>host</type>"));

@@ -14,6 +14,10 @@ directory, extracts every `pub async fn`, rejects duplicate and unknown entries,
 and fails when a new helper is not classified.
 It additionally requires every integration-covered name to appear as a direct
 method call in the client/mock integration suite.
+The enforced surface currently contains 266 names: 262 direct `execute`
+delegates, three frozen ticket raw paths, and one indirect deprecated sync
+alias. The unsupported operating-system asset modification helper is not part
+of the inventory.
 
 Coverage is organized by behavior family:
 

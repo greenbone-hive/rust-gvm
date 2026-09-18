@@ -23,6 +23,7 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/user-group-request-gvmd-evidence.md`: pinned gvmd evidence for canonical user/group lifecycles, selectors, membership, host access, authentication sources, replacement, clearing, and the unsupported delete-user `ultimate` input.
 - `docs/v0.7.0-migration.md#users-and-groups`: user/group release migration, including delete-user selector/inheritor mapping and explicit `ultimate` removal.
 - `docs/role-permission-request-gvmd-evidence.md`: pinned gvmd evidence for canonical role/permission lifecycles, partial references, replacement, clearing, and clone semantics.
+- `docs/asset-request-gvmd-evidence.md`: pinned gvmd evidence for canonical generic asset/host requests, operating-system asset reads/deletion, and the unsupported OS-modification boundary.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow

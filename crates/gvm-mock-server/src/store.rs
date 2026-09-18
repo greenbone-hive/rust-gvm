@@ -335,12 +335,7 @@ impl Resource {
     pub(crate) fn to_asset_xml(&self) -> String {
         let asset_type = self.asset_type().unwrap_or_default();
         let writable = if asset_type == "os" { "0" } else { "1" };
-        let in_use = if asset_type == "os"
-            && self
-                .attr("installs")
-                .and_then(|value| value.parse::<u32>().ok())
-                .is_some_and(|count| count > 0)
-        {
+        let in_use = if asset_type == "os" && self.operating_system_asset_is_referenced() {
             "1"
         } else {
             "0"
@@ -415,6 +410,16 @@ impl Resource {
             }
             _ => format!("{common}<type>{}</type></asset>", xml_escape(asset_type)),
         }
+    }
+
+    /// Approximate gvmd's `host_oss` reference guard from seeded aggregate
+    /// counts. `all_installs` includes non-best matches; older seeds that omit
+    /// it fall back to the best-match `installs` count.
+    fn operating_system_asset_is_referenced(&self) -> bool {
+        self.attr("all_installs")
+            .or_else(|| self.attr("installs"))
+            .and_then(|value| value.parse::<u32>().ok())
+            .is_some_and(|count| count > 0)
     }
 
     /// Generate XML representation for get responses.
@@ -1600,12 +1605,7 @@ impl ResourceStore {
         if resource.resource_type != "asset" || resource.trashed {
             return DeleteAssetResult::NotFound;
         }
-        if resource.asset_type() == Some("os")
-            && resource
-                .attr("installs")
-                .and_then(|value| value.parse::<u32>().ok())
-                .is_some_and(|count| count > 0)
-        {
+        if resource.asset_type() == Some("os") && resource.operating_system_asset_is_referenced() {
             return DeleteAssetResult::InUse;
         }
         remove_resource(&mut inner, id);
