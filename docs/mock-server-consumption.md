@@ -86,3 +86,9 @@ The same pattern works in GitLab CI, Buildkite, CircleCI, or local developer wor
 - Prefer TCP in CI. Unix socket mounting is possible, but it is more runner-specific.
 - The image entrypoint is `gvm-mock-server`, so pass normal CLI flags after the image name.
 - Release tags are the compatibility boundary. Upgrade by changing the image tag in your CI config.
+- Stateful TLS-certificate commands use a bounded set of registered PEM/DER
+  fixtures. They model ownership, fingerprints, lifecycle operations, query
+  expansions, and permanent deletion, but are not a general X.509 parser,
+  cryptographic verifier, ACL/filter engine, or live-gvmd conformance suite.
+  Unregistered certificate payloads are deliberately rejected; see the
+  [TLS evidence and limitations](tls-certificate-request-gvmd-evidence.md).

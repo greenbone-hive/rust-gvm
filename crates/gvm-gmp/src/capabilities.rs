@@ -140,7 +140,7 @@ command_capabilities! {
     ("delete_target", Stateful, None, PinnedSchema),
     ("delete_task", Stateful, None, PinnedSchema),
     ("delete_ticket", Stateful, None, PinnedSchema),
-    ("delete_tls_certificate", Stateful, None, LegacyCompatibility),
+    ("delete_tls_certificate", Stateful, None, PublicSourceOnly),
     ("delete_user", Stateful, None, PinnedSchema),
     ("delete_web_application_target", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("describe_auth", EchoOnly, None, PinnedSchema),
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(
             exceptions,
             [
-                ("delete_tls_certificate", GvmdEvidence::LegacyCompatibility),
+                ("delete_tls_certificate", GvmdEvidence::PublicSourceOnly),
                 ("modify_credential_store", GvmdEvidence::PublicSourceOnly),
                 ("verify_credential_store", GvmdEvidence::PublicSourceOnly),
             ]

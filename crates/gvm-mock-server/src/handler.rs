@@ -475,6 +475,34 @@ impl SessionHandler {
             "modify_report_format" => crate::stateful_report_formats::handle_modify(cmd, store),
             "delete_report_format" => crate::stateful_report_formats::handle_delete(cmd, store),
             "verify_report_format" => crate::stateful_report_formats::handle_verify(cmd, store),
+            "create_tls_certificate" => crate::stateful_tls_certificates::handle_create(
+                cmd,
+                store,
+                &store
+                    .authenticated_principal(self.session_id)
+                    .expect("authenticated session has a principal"),
+            ),
+            "get_tls_certificates" => crate::stateful_tls_certificates::handle_get(
+                cmd,
+                store,
+                &store
+                    .authenticated_principal(self.session_id)
+                    .expect("authenticated session has a principal"),
+            ),
+            "modify_tls_certificate" => crate::stateful_tls_certificates::handle_modify(
+                cmd,
+                store,
+                &store
+                    .authenticated_principal(self.session_id)
+                    .expect("authenticated session has a principal"),
+            ),
+            "delete_tls_certificate" => crate::stateful_tls_certificates::handle_delete(
+                cmd,
+                store,
+                &store
+                    .authenticated_principal(self.session_id)
+                    .expect("authenticated session has a principal"),
+            ),
             // Create commands
             name if name.starts_with("create_") => self.handle_create(cmd, raw_xml, store),
             // Get commands

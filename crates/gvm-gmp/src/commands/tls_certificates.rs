@@ -1,140 +1,73 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! TLS certificate command builders.
+//! Canonical TLS-certificate lifecycle requests.
 
 use std::fmt;
 
-use gvm_protocol::{Request, XmlCommand};
+use base64::Engine as _;
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::common::{add_filter_attrs, set_optional_bool_attr};
 use crate::responses::{
     CreateTlsCertificateResponse, DeleteTlsCertificateResponse, GetTlsCertificatesResponse,
     ModifyTlsCertificateResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for TLS-certificate create and modify requests.
-#[derive(Clone, Default)]
-pub struct TlsCertificateOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional certificate data.
-    pub certificate: Option<String>,
-    /// Optional private key material.
-    pub private_key: Option<String>,
-}
-
-impl fmt::Debug for TlsCertificateOpts {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TlsCertificateOpts")
-            .field("comment", &self.comment)
-            .field(
-                "certificate",
-                &self.certificate.as_ref().map(|_| "<present>"),
-            )
-            .field(
-                "private_key",
-                &self.private_key.as_ref().map(|_| "<redacted>"),
-            )
-            .finish()
-    }
-}
-
-/// Options for `get_tls_certificates` requests.
+/// Request for listing TLS certificates, optionally selecting one by ID.
 #[derive(Debug, Clone, Default)]
-pub struct GetTlsCertificatesOpts {
-    /// Optional inline filter expression.
+pub struct GetTlsCertificatesRequest {
+    /// Optional TLS-certificate identifier selector.
+    pub tls_certificate_id: Option<EntityId>,
+    /// Optional inline GMP filter expression, preserved verbatim.
     pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
+    /// Optional saved-filter identifier. The `0` and `-2` sentinels are valid.
     pub filter_id: Option<EntityId>,
-    /// Whether to query trashcan resources.
-    pub trash: Option<bool>,
-    /// Whether to request detailed output.
+    /// Request detailed output, including observation sources.
     pub details: Option<bool>,
+    /// Request certificate data independently of source details.
+    pub include_certificate_data: Option<bool>,
 }
-
-/// Semantic request for creating a TLS certificate.
-#[derive(Debug, Clone)]
-pub struct CreateTlsCertificateRequest {
-    name: String,
-    opts: TlsCertificateOpts,
-}
-
-impl CreateTlsCertificateRequest {
-    /// Create a TLS-certificate creation request.
-    #[must_use]
-    pub fn new(name: impl Into<String>, opts: TlsCertificateOpts) -> Self {
-        Self {
-            name: name.into(),
-            opts,
-        }
-    }
-}
-
-impl Request for CreateTlsCertificateRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_tls_certificate(&self.name, self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for CreateTlsCertificateRequest {
-    type Response = CreateTlsCertificateResponse;
-}
-
-macro_rules! tls_certificate_id_request {
-    ($name:ident, $response:ty, $builder:ident) => {
-        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
-        #[derive(Debug, Clone)]
-        pub struct $name(EntityId);
-
-        impl $name {
-            /// Create the semantic request.
-            #[must_use]
-            pub fn new(tls_certificate_id: EntityId) -> Self {
-                Self(tls_certificate_id)
-            }
-        }
-
-        impl Request for $name {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.0).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $name {
-            type Response = $response;
-        }
-    };
-}
-
-tls_certificate_id_request!(
-    CloneTlsCertificateRequest,
-    CreateTlsCertificateResponse,
-    clone_tls_certificate
-);
-tls_certificate_id_request!(
-    GetTlsCertificateRequest,
-    GetTlsCertificatesResponse,
-    get_tls_certificate
-);
-
-/// Semantic request for listing TLS certificates.
-#[derive(Debug, Clone, Default)]
-pub struct GetTlsCertificatesRequest(GetTlsCertificatesOpts);
 
 impl GetTlsCertificatesRequest {
-    /// Create a TLS-certificate list request.
+    /// Create an unfiltered TLS-certificate list request.
     #[must_use]
-    pub fn new(opts: GetTlsCertificatesOpts) -> Self {
-        Self(opts)
+    pub const fn new() -> Self {
+        Self {
+            tls_certificate_id: None,
+            filter_string: None,
+            filter_id: None,
+            details: None,
+            include_certificate_data: None,
+        }
     }
 }
 
-impl Request for GetTlsCertificatesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_tls_certificates(self.0.clone()).to_bytes()
+impl GmpRequestCodec for GetTlsCertificatesRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_query(
+            self.tls_certificate_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_tls_certificates"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_tls_certificates_command(
+            self.tls_certificate_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.details,
+            self.include_certificate_data,
+        )
+        .to_bytes())
     }
 }
 
@@ -142,27 +75,251 @@ impl GmpRequest for GetTlsCertificatesRequest {
     type Response = GetTlsCertificatesResponse;
 }
 
-/// Semantic request for modifying a TLS certificate.
+/// Request for retrieving one TLS certificate through the shared list root.
 #[derive(Debug, Clone)]
-pub struct ModifyTlsCertificateRequest {
-    tls_certificate_id: EntityId,
-    opts: TlsCertificateOpts,
+pub struct GetTlsCertificateRequest {
+    /// Required TLS-certificate identifier selector.
+    pub tls_certificate_id: EntityId,
+    /// Optional inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// Optional saved-filter identifier. The `0` and `-2` sentinels are valid.
+    pub filter_id: Option<EntityId>,
+    /// Request detailed output, including observation sources.
+    pub details: Option<bool>,
+    /// Request certificate data independently of source details.
+    pub include_certificate_data: Option<bool>,
 }
 
-impl ModifyTlsCertificateRequest {
-    /// Create a TLS-certificate modification request.
+impl GetTlsCertificateRequest {
+    /// Create an ID-selected request with details enabled by default.
     #[must_use]
-    pub fn new(tls_certificate_id: EntityId, opts: TlsCertificateOpts) -> Self {
+    pub fn new(tls_certificate_id: EntityId) -> Self {
         Self {
             tls_certificate_id,
-            opts,
+            filter_string: None,
+            filter_id: None,
+            details: Some(true),
+            include_certificate_data: None,
         }
     }
 }
 
-impl Request for ModifyTlsCertificateRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_tls_certificate(&self.tls_certificate_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetTlsCertificateRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_query(
+            Some(&self.tls_certificate_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_tls_certificates",
+            "get_tls_certificate",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_tls_certificates_command(
+            Some(&self.tls_certificate_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.details,
+            self.include_certificate_data,
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for GetTlsCertificateRequest {
+    type Response = GetTlsCertificatesResponse;
+}
+
+/// Request for creating a TLS certificate from original PEM or DER bytes.
+#[derive(Clone)]
+pub struct CreateTlsCertificateRequest {
+    /// Original certificate-file bytes. The codec applies standard base64 once.
+    pub certificate: Vec<u8>,
+    /// Optional name. gvmd defaults an omitted or empty name to the SHA-256 fingerprint.
+    pub name: Option<String>,
+    /// Optional comment. An explicit empty value is emitted as a paired element.
+    pub comment: Option<String>,
+    /// Optional stored trust flag, independent of certificate time validity.
+    pub trust: Option<bool>,
+}
+
+impl CreateTlsCertificateRequest {
+    /// Own original certificate-file bytes for encoding during execution.
+    #[must_use]
+    pub fn new(certificate: impl Into<Vec<u8>>) -> Self {
+        Self {
+            certificate: certificate.into(),
+            name: None,
+            comment: None,
+            trust: None,
+        }
+    }
+}
+
+impl fmt::Debug for CreateTlsCertificateRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateTlsCertificateRequest")
+            .field("certificate", &"<redacted>")
+            .field("name", &self.name)
+            .field("comment", &self.comment)
+            .field("trust", &self.trust)
+            .finish()
+    }
+}
+
+impl GmpRequestCodec for CreateTlsCertificateRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.certificate.is_empty() {
+            return Err(GmpRequestError::invalid_field(
+                "certificate",
+                "must not be empty",
+            ));
+        }
+        validate_optional_xml_text(self.name.as_deref(), "name")?;
+        validate_optional_xml_text(self.comment.as_deref(), "comment")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("create_tls_certificate"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("create_tls_certificate");
+        if let Some(name) = &self.name {
+            command.add_element_with_text("name", name);
+        }
+        if let Some(comment) = &self.comment {
+            command.add_element_with_text("comment", comment);
+        }
+        command.add_element_with_text(
+            "certificate",
+            &base64::engine::general_purpose::STANDARD.encode(&self.certificate),
+        );
+        if let Some(trust) = self.trust {
+            command.add_element_with_text("trust", if trust { "1" } else { "0" });
+        }
+        Ok(command.to_bytes())
+    }
+}
+
+impl GmpRequest for CreateTlsCertificateRequest {
+    type Response = CreateTlsCertificateResponse;
+}
+
+/// Request for cloning a TLS certificate through `create_tls_certificate`.
+#[derive(Debug, Clone)]
+pub struct CloneTlsCertificateRequest {
+    /// Existing TLS certificate to copy.
+    pub tls_certificate_id: EntityId,
+    /// Optional name override. Omission or an empty value copies the source name.
+    pub name: Option<String>,
+    /// Optional comment override. Omission or an empty value copies the source comment.
+    pub comment: Option<String>,
+}
+
+impl CloneTlsCertificateRequest {
+    /// Create a TLS-certificate clone request without overrides.
+    #[must_use]
+    pub fn new(tls_certificate_id: EntityId) -> Self {
+        Self {
+            tls_certificate_id,
+            name: None,
+            comment: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for CloneTlsCertificateRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_id(&self.tls_certificate_id, "tls_certificate_id")?;
+        validate_optional_xml_text(self.name.as_deref(), "name")?;
+        validate_optional_xml_text(self.comment.as_deref(), "comment")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_tls_certificate",
+            "clone_tls_certificate",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("create_tls_certificate");
+        command.add_element_with_text("copy", self.tls_certificate_id.as_str());
+        if let Some(name) = &self.name {
+            command.add_element_with_text("name", name);
+        }
+        if let Some(comment) = &self.comment {
+            command.add_element_with_text("comment", comment);
+        }
+        Ok(command.to_bytes())
+    }
+}
+
+impl GmpRequest for CloneTlsCertificateRequest {
+    type Response = CreateTlsCertificateResponse;
+}
+
+/// Request for modifying TLS-certificate metadata or trust.
+#[derive(Debug, Clone)]
+pub struct ModifyTlsCertificateRequest {
+    /// TLS certificate to modify.
+    pub tls_certificate_id: EntityId,
+    /// Optional exact replacement name. An empty value clears the name.
+    pub name: Option<String>,
+    /// Optional exact replacement comment. An empty value clears the comment.
+    pub comment: Option<String>,
+    /// Optional stored trust replacement.
+    pub trust: Option<bool>,
+}
+
+impl ModifyTlsCertificateRequest {
+    /// Create a selector-only TLS-certificate modification request.
+    #[must_use]
+    pub fn new(tls_certificate_id: EntityId) -> Self {
+        Self {
+            tls_certificate_id,
+            name: None,
+            comment: None,
+            trust: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for ModifyTlsCertificateRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_id(&self.tls_certificate_id, "tls_certificate_id")?;
+        validate_optional_xml_text(self.name.as_deref(), "name")?;
+        validate_optional_xml_text(self.comment.as_deref(), "comment")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_tls_certificate"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("modify_tls_certificate");
+        command.set_attribute("tls_certificate_id", self.tls_certificate_id.as_str());
+        if let Some(name) = &self.name {
+            command.add_element_with_text("name", name);
+        }
+        if let Some(comment) = &self.comment {
+            command.add_element_with_text("comment", comment);
+        }
+        if let Some(trust) = self.trust {
+            command.add_element_with_text("trust", if trust { "1" } else { "0" });
+        }
+        Ok(command.to_bytes())
     }
 }
 
@@ -170,27 +327,35 @@ impl GmpRequest for ModifyTlsCertificateRequest {
     type Response = ModifyTlsCertificateResponse;
 }
 
-/// Semantic request for deleting a TLS certificate.
+/// Request for permanently deleting a TLS certificate.
 #[derive(Debug, Clone)]
 pub struct DeleteTlsCertificateRequest {
-    tls_certificate_id: EntityId,
-    ultimate: bool,
+    /// TLS certificate to delete permanently.
+    pub tls_certificate_id: EntityId,
 }
 
 impl DeleteTlsCertificateRequest {
     /// Create a TLS-certificate deletion request.
     #[must_use]
-    pub fn new(tls_certificate_id: EntityId, ultimate: bool) -> Self {
-        Self {
-            tls_certificate_id,
-            ultimate,
-        }
+    pub fn new(tls_certificate_id: EntityId) -> Self {
+        Self { tls_certificate_id }
     }
 }
 
-impl Request for DeleteTlsCertificateRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_tls_certificate(&self.tls_certificate_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteTlsCertificateRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_id(&self.tls_certificate_id, "tls_certificate_id")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_tls_certificate"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("delete_tls_certificate");
+        command.set_attribute("tls_certificate_id", self.tls_certificate_id.as_str());
+        Ok(command.to_bytes())
     }
 }
 
@@ -198,194 +363,71 @@ impl GmpRequest for DeleteTlsCertificateRequest {
     type Response = DeleteTlsCertificateResponse;
 }
 
-/// Build a `create_tls_certificate` request.
-#[must_use]
-pub fn create_tls_certificate(name: &str, opts: TlsCertificateOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_tls_certificate");
-    cmd.add_element_with_text("name", name);
-    add_tls_body(&mut cmd, &opts);
-    cmd
-}
-
-/// Build a `clone_tls_certificate` request.
-#[must_use]
-pub fn clone_tls_certificate(tls_certificate_id: &EntityId) -> impl Request {
-    let mut cmd = XmlCommand::new("create_tls_certificate");
-    cmd.add_element_with_text("copy", tls_certificate_id.as_str());
-    cmd
-}
-
-/// Build a `get_tls_certificates` request.
-#[must_use]
-pub fn get_tls_certificates(opts: GetTlsCertificatesOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_tls_certificates");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+fn get_tls_certificates_command(
+    tls_certificate_id: Option<&EntityId>,
+    filter_string: Option<&str>,
+    filter_id: Option<&EntityId>,
+    details: Option<bool>,
+    include_certificate_data: Option<bool>,
+) -> XmlCommand {
+    let mut command = XmlCommand::new("get_tls_certificates");
+    if let Some(tls_certificate_id) = tls_certificate_id {
+        command.set_attribute("tls_certificate_id", tls_certificate_id.as_str());
+    }
+    add_filter_attrs(&mut command, filter_string, filter_id);
+    set_optional_bool_attr(&mut command, "details", details);
+    set_optional_bool_attr(
+        &mut command,
+        "include_certificate_data",
+        include_certificate_data,
     );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    cmd
+    command
 }
 
-/// Build a `get_tls_certificate` request.
-#[must_use]
-pub fn get_tls_certificate(tls_certificate_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_tls_certificates")
-        .attribute("tls_certificate_id", tls_certificate_id.as_str())
-        .attribute("details", "1")
+fn validate_query(
+    tls_certificate_id: Option<&EntityId>,
+    filter_string: Option<&str>,
+    filter_id: Option<&EntityId>,
+) -> Result<(), GmpRequestError> {
+    validate_optional_id(tls_certificate_id, "tls_certificate_id")?;
+    validate_optional_id(filter_id, "filter_id")?;
+    validate_optional_xml_text(filter_string, "filter_string")
 }
 
-/// Build a `modify_tls_certificate` request.
-#[must_use]
-pub fn modify_tls_certificate(
-    tls_certificate_id: &EntityId,
-    opts: TlsCertificateOpts,
-) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_tls_certificate")
-        .attribute("tls_certificate_id", tls_certificate_id.as_str());
-    add_tls_body(&mut cmd, &opts);
-    cmd
+fn validate_optional_xml_text(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    value.map_or(Ok(()), |value| validate_xml_text(value, field))
 }
 
-/// Build a `delete_tls_certificate` request.
-#[must_use]
-pub fn delete_tls_certificate(tls_certificate_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_tls_certificate")
-        .attribute("tls_certificate_id", tls_certificate_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+fn validate_xml_text(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.chars().all(is_xml_1_0_character) {
+        Ok(())
+    } else {
+        Err(GmpRequestError::invalid_field(
+            field,
+            "must contain only XML 1.0 characters",
+        ))
+    }
 }
 
-fn add_tls_body(cmd: &mut XmlCommand, opts: &TlsCertificateOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    add_text_element(cmd, "certificate", opts.certificate.as_deref());
-    add_text_element(cmd, "private", opts.private_key.as_deref());
+fn validate_optional_id(id: Option<&EntityId>, field: &'static str) -> Result<(), GmpRequestError> {
+    id.map_or(Ok(()), |id| validate_id(id, field))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::common::xml;
-
-    fn id(value: &str) -> EntityId {
-        EntityId::new(value).expect("valid id")
+fn validate_id(id: &EntityId, field: &'static str) -> Result<(), GmpRequestError> {
+    if EntityId::new(id.as_str()).is_ok() {
+        Ok(())
+    } else {
+        Err(GmpRequestError::invalid_field(
+            field,
+            "must be a valid entity identifier",
+        ))
     }
+}
 
-    #[test]
-    fn tls_commands_build_xml() {
-        let rendered = xml(create_tls_certificate(
-            "tls",
-            TlsCertificateOpts {
-                certificate: Some("cert".into()),
-                ..Default::default()
-            },
-        ));
-        assert!(rendered.contains("<certificate>cert</certificate>"));
-        assert_eq!(
-            xml(clone_tls_certificate(&id("tls1"))),
-            "<create_tls_certificate><copy>tls1</copy></create_tls_certificate>"
-        );
-        assert_eq!(
-            xml(get_tls_certificate(&id("tls1"))),
-            "<get_tls_certificates details=\"1\" tls_certificate_id=\"tls1\"/>"
-        );
-    }
-
-    #[test]
-    fn tls_get_modify_delete_build_xml() {
-        let rendered = xml(get_tls_certificates(GetTlsCertificatesOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
-        let rendered = xml(modify_tls_certificate(
-            &id("tls1"),
-            TlsCertificateOpts {
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
-        ));
-        assert_eq!(rendered, "<modify_tls_certificate tls_certificate_id=\"tls1\"><comment>updated</comment></modify_tls_certificate>");
-        assert_eq!(
-            xml(delete_tls_certificate(&id("tls1"), true)),
-            "<delete_tls_certificate tls_certificate_id=\"tls1\" ultimate=\"1\"/>"
-        );
-    }
-
-    #[test]
-    fn semantic_requests_match_all_builder_bytes_and_responses() {
-        fn associated<R, T>(_: &R)
-        where
-            R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
-        {
-        }
-
-        let tls_certificate_id = id("tls-1");
-        let opts = TlsCertificateOpts {
-            comment: Some("comment".into()),
-            certificate: Some("certificate".into()),
-            private_key: Some("private".into()),
-        };
-        let get_opts = GetTlsCertificatesOpts {
-            details: Some(true),
-            ..Default::default()
-        };
-
-        let create = CreateTlsCertificateRequest::new("certificate", opts.clone());
-        assert_eq!(
-            create.to_bytes(),
-            create_tls_certificate("certificate", opts.clone()).to_bytes()
-        );
-        associated::<_, CreateTlsCertificateResponse>(&create);
-
-        let clone = CloneTlsCertificateRequest::new(tls_certificate_id.clone());
-        assert_eq!(
-            clone.to_bytes(),
-            clone_tls_certificate(&tls_certificate_id).to_bytes()
-        );
-        associated::<_, CreateTlsCertificateResponse>(&clone);
-
-        let list = GetTlsCertificatesRequest::new(get_opts.clone());
-        assert_eq!(list.to_bytes(), get_tls_certificates(get_opts).to_bytes());
-        associated::<_, GetTlsCertificatesResponse>(&list);
-
-        let get = GetTlsCertificateRequest::new(tls_certificate_id.clone());
-        assert_eq!(
-            get.to_bytes(),
-            get_tls_certificate(&tls_certificate_id).to_bytes()
-        );
-        associated::<_, GetTlsCertificatesResponse>(&get);
-
-        let modify = ModifyTlsCertificateRequest::new(tls_certificate_id.clone(), opts.clone());
-        assert_eq!(
-            modify.to_bytes(),
-            modify_tls_certificate(&tls_certificate_id, opts).to_bytes()
-        );
-        associated::<_, ModifyTlsCertificateResponse>(&modify);
-
-        let delete = DeleteTlsCertificateRequest::new(tls_certificate_id.clone(), true);
-        assert_eq!(
-            delete.to_bytes(),
-            delete_tls_certificate(&tls_certificate_id, true).to_bytes()
-        );
-        associated::<_, DeleteTlsCertificateResponse>(&delete);
-    }
-
-    #[test]
-    fn tls_certificate_option_debug_output_redacts_key_material() {
-        let opts = TlsCertificateOpts {
-            comment: Some("comment".into()),
-            certificate: Some("certificate-material".into()),
-            private_key: Some("private-key-material".into()),
-        };
-
-        let rendered = format!("{opts:?}");
-        assert!(rendered.contains("comment"));
-        assert!(rendered.contains("<present>"));
-        assert!(rendered.contains("<redacted>"));
-        assert!(!rendered.contains("certificate-material"));
-        assert!(!rendered.contains("private-key-material"));
-    }
+const fn is_xml_1_0_character(character: char) -> bool {
+    matches!(character, '\u{9}' | '\u{A}' | '\u{D}')
+        || matches!(character as u32, 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF)
 }
