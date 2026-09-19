@@ -3,6 +3,8 @@
 
 //! Scan-config response models.
 
+use std::fmt;
+
 use gvm_protocol::Response;
 
 use crate::responses::common::{
@@ -53,11 +55,11 @@ pub struct ScanConfigPreferenceNvt {
 }
 
 /// A default or configured NVT/scanner preference.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScanConfigPreference {
-    /// NVT metadata, present for configuration-scoped preference responses.
+    /// NVT metadata when the preference belongs to an NVT.
     pub nvt: Option<ScanConfigPreferenceNvt>,
     /// Preference name.
     pub name: String,
@@ -71,6 +73,24 @@ pub struct ScanConfigPreference {
     pub alternatives: Vec<String>,
     /// Optional default value.
     pub default: Option<String>,
+}
+
+impl fmt::Debug for ScanConfigPreference {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ScanConfigPreference")
+            .field("nvt", &self.nvt)
+            .field("name", &self.name)
+            .field("id", &self.id)
+            .field("type_", &self.type_)
+            .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .field(
+                "alternatives",
+                &(!self.alternatives.is_empty()).then_some("<redacted>"),
+            )
+            .field("default", &self.default.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 /// Typed response for `get_preferences` requests owned by scan configs.
@@ -148,17 +168,9 @@ impl ScanConfigPreference {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         let nvt = node
             .child("nvt")
-            .map(|nvt| {
-                let oid = nvt
-                    .attr("oid")
-                    .filter(|oid| !oid.is_empty())
-                    .ok_or_else(|| ParseError::MissingElement("preference.nvt.oid".to_string()))?;
-                Ok::<_, ParseError>(ScanConfigPreferenceNvt {
-                    oid: oid.to_string(),
-                    name: nvt.optional_child_text("name"),
-                })
-            })
-            .transpose()?;
+            .map(parse_preference_nvt)
+            .transpose()?
+            .flatten();
         Ok(Self {
             nvt,
             name: node
@@ -174,6 +186,28 @@ impl ScanConfigPreference {
             default: node.child("default").map(|default| default.text.clone()),
         })
     }
+}
+
+fn parse_preference_nvt(
+    nvt: &crate::responses::common::XmlNode,
+) -> Result<Option<ScanConfigPreferenceNvt>, ParseError> {
+    let oid = nvt
+        .attr("oid")
+        .ok_or_else(|| ParseError::MissingElement("preference.nvt.oid".to_string()))?;
+    let name = nvt.child("name").map(|name| name.text.clone());
+    if oid.is_empty() {
+        if name.as_deref().is_none_or(str::is_empty) {
+            return Ok(None);
+        }
+        return Err(ParseError::InvalidValue {
+            field: "preference.nvt.oid".to_string(),
+            value: oid.to_string(),
+        });
+    }
+    Ok(Some(ScanConfigPreferenceNvt {
+        oid: oid.to_string(),
+        name: name.and_then(|name| (!name.is_empty()).then_some(name)),
+    }))
 }
 
 impl GetScanConfigPreferencesResponse {
@@ -324,6 +358,45 @@ mod tests {
         assert!(
             matches!(error, ParseError::MissingElement(field) if field == "preference.nvt.oid")
         );
+    }
+
+    #[test]
+    fn treats_an_empty_nvt_marker_as_a_scanner_preference() {
+        let response = Response::from(
+            r#"<get_preferences_response status="200" status_text="OK">
+                <preference><nvt oid=""><name></name></nvt><name>Scanner secret</name><value>secret</value></preference>
+            </get_preferences_response>"#,
+        );
+
+        let parsed =
+            GetScanConfigPreferencesResponse::from_response(&response).expect("preference parses");
+
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].nvt, None);
+    }
+
+    #[test]
+    fn preference_debug_redacts_all_value_bearing_fields() {
+        let preference = ScanConfigPreference {
+            nvt: Some(ScanConfigPreferenceNvt {
+                oid: "1.3.6.1".to_string(),
+                name: Some("Services".to_string()),
+            }),
+            name: "Password".to_string(),
+            id: Some("1".to_string()),
+            type_: Some("password".to_string()),
+            value: Some("configured-secret".to_string()),
+            alternatives: vec!["alternate-secret".to_string()],
+            default: Some("default-secret".to_string()),
+        };
+
+        let debug = format!("{preference:?}");
+        assert!(debug.contains("1.3.6.1"));
+        assert!(debug.contains("Password"));
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("configured-secret"));
+        assert!(!debug.contains("alternate-secret"));
+        assert!(!debug.contains("default-secret"));
     }
 
     #[test]

@@ -53,6 +53,7 @@ pub mod scenario;
 pub mod server;
 #[cfg(feature = "ssh")]
 pub mod ssh_listener;
+mod stateful_nvt_secinfo;
 mod stateful_report_configs;
 mod stateful_report_formats;
 mod stateful_results;
@@ -69,7 +70,10 @@ pub use history::CommandRecord;
 pub use response_gen::LargeReportConfig;
 pub use scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 pub use server::MockGmpServer;
-pub use store::{AssetInputProfile, Resource, ResourceStore};
+pub use store::{
+    AssetInputProfile, DiscoveryNvt, DiscoveryPreference, DiscoverySecInfo, DiscoveryVulnerability,
+    Resource, ResourceStore,
+};
 pub use version::GmpVersion;
 
 /// Server operating mode.

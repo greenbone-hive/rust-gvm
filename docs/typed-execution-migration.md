@@ -1160,6 +1160,53 @@ they do not make unsupported private-key or certificate mutation meaningful.
 See the [pinned source evidence](tls-certificate-request-gvmd-evidence.md) for
 schema discrepancies and bounded mock limitations.
 
+## NVT and SecInfo discovery
+
+NVT/SecInfo calls now take one of 19 complete canonical requests. Former
+`GetNvtsOpts`, `GetNvtPreferencesOpts`, `GetInfoListOpts`, `GetSecInfoOpts`,
+`GetInfoOpts`, their free builders, and duplicate system wrappers are removed.
+Move every supported option onto the request before passing it to either
+`execute` or the identically named facade:
+
+```rust
+use gvm_gmp::commands::nvts::{GetNvtRequest, GetScanConfigNvtsRequest};
+use gvm_gmp::commands::secinfo::{GenericInfoType, GetCvesRequest, GetInfoRequest};
+use gvm_gmp::commands::system::GetVulnerabilityRequest;
+
+let nvt = client.get_nvt(GetNvtRequest::new("1.3.6.1.4.1.25623.1")).await?;
+let mut members = GetScanConfigNvtsRequest::new(config_id, "General");
+members.details = Some(true);
+members.preferences = Some(true);
+let members = client.get_scan_config_nvts(members).await?;
+let cves = client.get_cves(GetCvesRequest::default()).await?;
+let cve = client
+    .get_info(GetInfoRequest::new("CVE-2026-1000", GenericInfoType::Cve))
+    .await?;
+let observed = client
+    .get_vulnerability(GetVulnerabilityRequest::new("vuln-1"))
+    .await?;
+# let _ = (nvt, members, cves, cve, observed);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Config membership and preference-value contexts are not interchangeable.
+Detail selectors bypass membership; list selectors do not. The dedicated NVT
+handler ignores generic filters, so those fields are absent. Detail-dependent
+flags and timeout context are validated against the final request before I/O.
+
+`GenericInfoType` now contains only pinned `get_info` dispatches:
+`CERT_BUND_ADV`, `CPE`, `CVE`, `DFN_CERT_ADV`, and `NVT`. There is no OVAL,
+operating-system, or vulnerability alias. Use asset OS requests for OS assets
+and `GetVulnsRequest`/`GetVulnerabilityRequest` for observed vulnerabilities.
+The historical `InfoType` is vocabulary only and no longer converts into the
+canonical enum.
+
+SecInfo typed responses follow authoritative `<info id>` wrappers. Direct typed
+children remain a labeled compatibility fallback. Preference `Debug` and wire
+traces redact configured/default/alternate values, but raw response and serde
+access remain data-bearing. See the
+[pinned evidence](nvt-secinfo-request-gvmd-evidence.md).
+
 ## Compatibility boundary
 
 The promoted #523 baseline was additive, but it has not been published as the
@@ -1173,7 +1220,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 263 current public async methods: 259 delegate
+The facade inventory locks all 261 current public async methods: 257 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path, and the deprecated `sync_scan_config` alias delegates
 indirectly through `sync_config`.

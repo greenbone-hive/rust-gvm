@@ -78,13 +78,13 @@ builder	crates/gvm-gmp/src/commands/notes.rs	delete_note	removed	Removed by #633
 builder	crates/gvm-gmp/src/commands/notes.rs	get_note	removed	Removed by #633; GetNoteRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/notes.rs	get_notes	removed	Removed by #633; GetNotesRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/notes.rs	modify_note	removed	Removed by #633; ModifyNoteRequest owns canonical validation and encoding.
-builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt_families	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt_preference	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt_preferences	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/nvts.rs	get_scan_config_nvt	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/nvts.rs	get_scan_config_nvts	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt_families	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt_preference	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvt_preferences	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/nvts.rs	get_nvts	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/nvts.rs	get_scan_config_nvt	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/nvts.rs	get_scan_config_nvts	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
 builder	crates/gvm-gmp/src/commands/oci_image_targets.rs	clone_oci_image_target	removed	Removed by #609; CloneOciImageTargetRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/oci_image_targets.rs	create_oci_image_target	removed	Removed by #609; CreateOciImageTargetRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/oci_image_targets.rs	delete_oci_image_target	removed	Removed by #609; DeleteOciImageTargetRequest owns canonical encoding.
@@ -207,31 +207,31 @@ builder	crates/gvm-gmp/src/commands/schedules.rs	get_schedule	removed	Removed by
 builder	crates/gvm-gmp/src/commands/schedules.rs	get_schedules	removed	Removed by #629; GetSchedulesRequest is the canonical encoder.
 builder	crates/gvm-gmp/src/commands/schedules.rs	modify_schedule	removed	Removed by #629; ModifyScheduleRequest is the canonical encoder.
 builder	crates/gvm-gmp/src/commands/schedules.rs	modify_typed_schedule	removed	Removed by #629; ModifyScheduleRequest::from_input preserves typed construction without a parallel encoder.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cert_bund_advisories	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cert_bund_advisory	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cpe	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cpes	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cve	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cves	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_dfn_cert_advisories	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_dfn_cert_advisory	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_info	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_info_list	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_operating_systems	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/secinfo.rs	get_vulnerabilities	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cert_bund_advisories	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cert_bund_advisory	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cpe	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cpes	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cve	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_cves	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_dfn_cert_advisories	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_dfn_cert_advisory	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_info	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_info_list	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_operating_systems	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/secinfo.rs	get_vulnerabilities	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
 builder	crates/gvm-gmp/src/commands/system.rs	describe_auth	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	get_aggregates	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	get_feeds	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	get_info	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/system.rs	get_info	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
 builder	crates/gvm-gmp/src/commands/system.rs	get_license	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	get_preferences	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/system.rs	get_preferences	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
 builder	crates/gvm-gmp/src/commands/system.rs	get_resource_name	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	get_resource_names	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	get_settings	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	get_timezones	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	get_vuln	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	get_vulnerability	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	get_vulns	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/system.rs	get_vuln	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/system.rs	get_vulnerability	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
+builder	crates/gvm-gmp/src/commands/system.rs	get_vulns	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
 builder	crates/gvm-gmp/src/commands/system.rs	help	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	modify_auth	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/system.rs	modify_license	transitional	Pending bounded family migration under #602.
@@ -520,34 +520,34 @@ facade	crates/gvm-client/src/typed/scan.rs	verify_scanner	retained-construction	
 facade	crates/gvm-client/src/typed/security.rs	create_credential	retained-construction	Retained for discoverability; accepts the canonical CreateCredentialRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	create_credential_store_credential	retained-construction	Retained for discoverability; accepts the canonical CreateCredentialStoreCredentialRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	delete_credential	retained-construction	Retained for discoverability; accepts the canonical DeleteCredentialRequest unchanged.
-facade	crates/gvm-client/src/typed/security.rs	get_cert_bund_advisories	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_cert_bund_advisory	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_cpe	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_cpes	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/security.rs	get_cert_bund_advisories	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_cert_bund_advisory	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_cpe	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_cpes	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
 facade	crates/gvm-client/src/typed/security.rs	get_credential_store	retained-construction	Retained for discoverability; accepts the canonical GetCredentialStoreRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	get_credential_stores	retained-construction	Retained for discoverability; accepts the canonical GetCredentialStoresRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	get_credential_stores_with_opts	retained-construction	Retained for compatibility; accepts the canonical GetCredentialStoresRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	get_credentials	retained-construction	Retained for discoverability; accepts the canonical GetCredentialsRequest unchanged.
-facade	crates/gvm-client/src/typed/security.rs	get_cve	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_cves	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_dfn_cert_advisories	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_dfn_cert_advisory	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/security.rs	get_cve	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_cves	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_dfn_cert_advisories	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_dfn_cert_advisory	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
 facade	crates/gvm-client/src/typed/security.rs	get_feed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/security.rs	get_feeds	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_info	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_info_list	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_nvt	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_nvt_families	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_nvt_preference	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_nvt_preferences	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_nvts	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_scan_config_nvt	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_scan_config_nvts	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_secinfo_operating_systems	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_secinfo_vulnerabilities	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/security.rs	get_info	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_info_list	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_nvt	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_nvt_families	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_nvt_preference	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_nvt_preferences	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_nvts	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_scan_config_nvt	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_scan_config_nvts	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_secinfo_operating_systems	removed	Removed by #648 because pinned gvmd has no corresponding get_info dispatch; use the owning OS or get_vulns path.
+facade	crates/gvm-client/src/typed/security.rs	get_secinfo_vulnerabilities	removed	Removed by #648 because pinned gvmd has no corresponding get_info dispatch; use the owning OS or get_vulns path.
 facade	crates/gvm-client/src/typed/security.rs	get_timezones	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_vulnerabilities	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/security.rs	get_vulnerability	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/security.rs	get_vulnerabilities	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
+facade	crates/gvm-client/src/typed/security.rs	get_vulnerability	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
 facade	crates/gvm-client/src/typed/security.rs	modify_credential	retained-construction	Retained for discoverability; accepts the canonical ModifyCredentialRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	modify_credential_store_credential	retained-construction	Retained for discoverability; accepts the canonical ModifyCredentialStoreCredentialRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	verify_credential_store	retained-construction	Retained for discoverability; accepts the canonical VerifyCredentialStoreRequest unchanged.
@@ -633,8 +633,8 @@ options	crates/gvm-gmp/src/commands/integration_configs.rs	ModifyIntegrationConf
 options	crates/gvm-gmp/src/commands/notes.rs	GetNotesOpts	removed	Removed by #633; fields now belong to GetNotesRequest.
 options	crates/gvm-gmp/src/commands/notes.rs	ModifyNoteOpts	removed	Removed by #633; fields now belong to ModifyNoteRequest.
 options	crates/gvm-gmp/src/commands/notes.rs	NoteOpts	removed	Removed by #633; create fields now belong to CreateNoteRequest.
-options	crates/gvm-gmp/src/commands/nvts.rs	GetNvtPreferencesOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/nvts.rs	GetNvtsOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/nvts.rs	GetNvtPreferencesOpts	removed	Removed by #648; supported fields now live directly on the canonical request value.
+options	crates/gvm-gmp/src/commands/nvts.rs	GetNvtsOpts	removed	Removed by #648; supported fields now live directly on the canonical request value.
 options	crates/gvm-gmp/src/commands/oci_image_targets.rs	CreateOciImageTargetOpts	removed	Removed by #609; fields now belong to CreateOciImageTargetRequest.
 options	crates/gvm-gmp/src/commands/oci_image_targets.rs	GetOciImageTargetsOpts	removed	Removed by #609; fields now belong to GetOciImageTargetsRequest.
 options	crates/gvm-gmp/src/commands/oci_image_targets.rs	ModifyOciImageTargetOpts	removed	Removed by #609; fields now belong to ModifyOciImageTargetRequest.
@@ -673,12 +673,12 @@ options	crates/gvm-gmp/src/commands/scanners.rs	GetScannersOpts	removed	Removed 
 options	crates/gvm-gmp/src/commands/scanners.rs	ScannerOpts	removed	Removed by #631; create and modify requests own operation-specific fields.
 options	crates/gvm-gmp/src/commands/schedules.rs	GetSchedulesOpts	removed	Removed by #629; fields now belong to GetSchedulesRequest.
 options	crates/gvm-gmp/src/commands/schedules.rs	ScheduleOpts	removed	Removed by #629; create and modify requests own operation-specific fields.
-options	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoListOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/secinfo.rs	GetSecInfoOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoListOpts	removed	Removed by #648; supported fields now live directly on the canonical request value.
+options	crates/gvm-gmp/src/commands/secinfo.rs	GetSecInfoOpts	removed	Removed by #648; supported fields now live directly on the canonical request value.
 options	crates/gvm-gmp/src/commands/system.rs	FilteredGetOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/system.rs	GetAggregatesOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/system.rs	GetFeedsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/system.rs	GetInfoOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/system.rs	GetInfoOpts	removed	Removed by #648; supported fields now live directly on the canonical request value.
 options	crates/gvm-gmp/src/commands/system.rs	GetResourceNamesOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/system.rs	RunWizardOpts	transitional	Pending bounded family migration under #602.
@@ -786,13 +786,13 @@ request	crates/gvm-gmp/src/commands/notes.rs	DeleteNoteRequest	canonical-request
 request	crates/gvm-gmp/src/commands/notes.rs	GetNoteRequest	canonical-request	Complete detail input; direct encoder with semantic detail identity and response association.
 request	crates/gvm-gmp/src/commands/notes.rs	GetNotesRequest	canonical-request	Complete list input; direct encoder and response association.
 request	crates/gvm-gmp/src/commands/notes.rs	ModifyNoteRequest	canonical-request	Complete modify input; direct encoder with gvmd clear and preserve semantics.
-request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtFamiliesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtPreferenceRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtPreferencesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/nvts.rs	GetScanConfigNvtRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/nvts.rs	GetScanConfigNvtsRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtFamiliesRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtPreferenceRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtPreferencesRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/nvts.rs	GetNvtsRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/nvts.rs	GetScanConfigNvtRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/nvts.rs	GetScanConfigNvtsRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
 request	crates/gvm-gmp/src/commands/oci_image_targets.rs	CloneOciImageTargetRequest	canonical-request	Complete clone input with semantic alias metadata, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/oci_image_targets.rs	CreateOciImageTargetRequest	canonical-request	Complete create input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/oci_image_targets.rs	DeleteOciImageTargetRequest	canonical-request	Complete delete input with direct metadata/encoding and typed response.
@@ -892,8 +892,18 @@ request	crates/gvm-gmp/src/commands/schedules.rs	GetScheduleRequest	canonical-re
 request	crates/gvm-gmp/src/commands/schedules.rs	GetSchedulesRequest	canonical-request	Complete list input; direct encoder and response association.
 request	crates/gvm-gmp/src/commands/schedules.rs	ModifyScheduleRequest	canonical-request	Complete modify input; direct encoder with raw and typed recurrence construction.
 request	crates/gvm-gmp/src/commands/schedules.rs	ModifyTypedScheduleRequest	removed	Removed by #629; ModifyScheduleRequest::from_input represents typed recurrence construction.
-request	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoListRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetCertBundAdvisoriesRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetCertBundAdvisoryRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetCpeRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetCpesRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetCveRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetCvesRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetDfnCertAdvisoriesRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetDfnCertAdvisoryRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoListRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetInfoRequest	canonical-request	Complete #648 discovery request with public fields, final-value validation, explicit metadata/encoding, and typed response association.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetOperatingSystemsRequest	removed	Removed by #648 because pinned gvmd has no get_info OS dispatch; the historical raw response remains deliberately unassociated.
+request	crates/gvm-gmp/src/commands/secinfo.rs	GetVulnerabilitiesRequest	removed	Removed by #648 because pinned gvmd has no get_info vulnerability dispatch; observed vulnerabilities use canonical get_vulns requests.
 request	crates/gvm-gmp/src/commands/system.rs	DescribeAuthRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	GetLicenseRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	GetResourceNameRequest	transitional	Pending bounded family migration under #602.
@@ -901,12 +911,12 @@ request	crates/gvm-gmp/src/commands/system.rs	GetResourceNamesRequest	transition
 request	crates/gvm-gmp/src/commands/system.rs	GetSettingsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	GetSystemAggregatesRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	GetSystemFeedsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	GetSystemInfoRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	GetSystemPreferencesRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/system.rs	GetSystemInfoRequest	removed	Removed by #648 as duplicate or unsupported discovery construction; use the canonical NVT/SecInfo request owner.
+request	crates/gvm-gmp/src/commands/system.rs	GetSystemPreferencesRequest	removed	Removed by #648 as duplicate or unsupported discovery construction; use the canonical NVT/SecInfo request owner.
 request	crates/gvm-gmp/src/commands/system.rs	GetTimezonesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	GetVulnRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	GetVulnerabilityRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	GetVulnsRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/system.rs	GetVulnRequest	removed	Removed by #648 as duplicate or unsupported discovery construction; use the canonical NVT/SecInfo request owner.
+request	crates/gvm-gmp/src/commands/system.rs	GetVulnerabilityRequest	canonical-request	Complete #648 observed-vulnerability request with direct get_vulns encoding, final-value validation, semantic metadata, and typed response.
+request	crates/gvm-gmp/src/commands/system.rs	GetVulnsRequest	canonical-request	Complete #648 observed-vulnerability request with direct get_vulns encoding, final-value validation, semantic metadata, and typed response.
 request	crates/gvm-gmp/src/commands/system.rs	ModifyAuthRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseWithOptsRequest	transitional	Pending bounded family migration under #602.

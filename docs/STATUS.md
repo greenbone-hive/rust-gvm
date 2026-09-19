@@ -185,10 +185,9 @@ records those contracts. Issue #639 documents why the legacy delete-user
 `ultimate` input is intentionally absent and provides the
 [v0.7 user/group migration mapping](v0.7.0-migration.md#users-and-groups).
 
-The report-configuration, report-format, and TLS-certificate children are
-complete. The next ordered #602 child is bounded NVT/SecInfo discovery. Report
-retrieval, exports, and report-specific lean/delta behavior remain separately
-ordered families.
+The report-configuration, report-format, TLS-certificate, and bounded
+NVT/SecInfo children are complete. Report retrieval, exports, and
+report-specific lean/delta behavior remain separately ordered families.
 
 The sections below retain the bounded delivery history for each migrated
 family.
@@ -267,16 +266,17 @@ user authentication, role, host-access, and relationship-update shapes while
 the facade methods delegate to generic typed execution. Existing raw builders,
 response models, and compatibility APIs remain supported.
 
-The NVT-and-SecInfo Phase 2 batch, tracked by
-[`#563`](https://github.com/greenbone-hive/rust-gvm/issues/563), migrates all 19
-public query builders to semantic typed execution. Global and scan-config NVT
-list/detail requests, NVT preferences, and family discovery preserve their
-distinct intent while delegating to the established builders. Generic
-`get_info` list/detail requests use a generic response model for all supported
-resource kinds, while CPE, CVE, advisory, operating-system, and vulnerability
-requests retain their specialized response codecs. Existing facade methods now
-delegate to `execute`; explicit SecInfo operating-system and vulnerability
-helper names avoid changing the distinct asset and legacy `get_vulns` APIs.
+Issue [#648](https://github.com/greenbone-hive/rust-gvm/issues/648)
+supersedes the additive NVT-and-SecInfo wrappers from #563. Nineteen complete
+canonical requests now own their public fields, validation, semantic metadata,
+direct encoding, and response association; their facades take those requests
+unchanged. Redundant options, builders, wrappers, and unsupported SecInfo OS
+and vulnerability facades are removed. Pinned `get_info` dispatch supports
+only CERT-Bund, CPE, CVE, DFN-CERT, and NVT; operating-system assets remain in
+the asset family and observed vulnerabilities use `get_vulns`. Source-shaped
+`<info>` parsing, NVT family/solution parsing, scanner-preference boundaries,
+preference diagnostics/trace redaction, and a bounded stateful mock are covered
+by the [NVT/SecInfo evidence](nvt-secinfo-request-gvmd-evidence.md).
 
 The asset family is canonicalized under
 [`#642`](https://github.com/greenbone-hive/rust-gvm/issues/642): thirteen
@@ -389,10 +389,12 @@ public read-only builders across the aggregates, features, feed, help,
 system-report, and system compatibility modules. Current and legacy aggregate
 shapes, both feed and help representations, generic information and preference
 queries, resource-name list/detail requests, and both vulnerability aliases
-remain byte-identical delegations to their established builders. All 12 existing
+were initially byte-identical delegations. #648 removes the duplicate system
+`get_info`/`get_preferences` wrappers and the `get_vuln` wrapper; the two
+observed-vulnerability requests now own `get_vulns` directly. Remaining
 typed-returning facade helpers delegate through `execute`; `get_features`
 retains its GMP 22.6 gate and `get_timezones` its GMP 22.8 gate before
-transmission. Existing raw builders and compatibility APIs remain supported.
+transmission.
 
 The system-administration Phase 3 batch, tracked by
 [`#575`](https://github.com/greenbone-hive/rust-gvm/issues/575), migrates all
