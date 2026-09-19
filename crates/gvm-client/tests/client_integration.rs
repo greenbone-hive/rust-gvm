@@ -58,6 +58,7 @@ use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
     GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
 };
+use gvm_gmp::commands::report_formats::{CloneReportFormatRequest, ImportReportFormatRequest};
 use gvm_gmp::commands::reports::{
     get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
 };
@@ -4469,14 +4470,14 @@ async fn typed_report_format_import_and_clone_use_mock_server_create_command() {
 
     let report_format_id = EntityId::new("rf1").expect("valid id");
     let cloned = client
-        .clone_report_format(&report_format_id)
+        .clone_report_format(CloneReportFormatRequest::new(report_format_id))
         .await
         .expect("report format clone should succeed");
     assert_eq!(cloned.status, 201);
 
     let report_format_xml = r#"<get_report_formats_response status="200" status_text="OK"><report_format id="rf1"><name>Imported</name></report_format></get_report_formats_response>"#;
     let imported = client
-        .import_report_format(report_format_xml)
+        .import_report_format(ImportReportFormatRequest::new(report_format_xml))
         .await
         .expect("report format import should succeed");
     assert_eq!(imported.status, 201);

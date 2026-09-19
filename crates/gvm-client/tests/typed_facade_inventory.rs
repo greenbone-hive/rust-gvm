@@ -249,7 +249,6 @@ const INTEGRATION_COVERED: &[&str] = &[
     "delete_tls_certificate",
     "get_report_formats",
     "get_report_format",
-    "create_report_format",
     "clone_report_format",
     "import_report_format",
     "modify_report_format",
@@ -331,6 +330,7 @@ fn normalized_integration_sources() -> String {
         include_str!("audit_integration.rs"),
         include_str!("client_integration.rs"),
         include_str!("report_config_integration.rs"),
+        include_str!("report_format_canonical_integration.rs"),
         include_str!("structured_audit_report_integration.rs"),
         include_str!("tls_certificate_integration.rs"),
         include_str!("typed_facade_coverage.rs"),
@@ -386,7 +386,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 260);
+    assert_eq!(direct_execute_count, 259);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

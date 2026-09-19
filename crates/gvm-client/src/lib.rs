@@ -181,8 +181,9 @@ pub struct WireTraceEvent {
 ///
 /// Events are structurally parsed and redacted before this callback is invoked.
 /// Known GMP secret fields, the `modify_license/file` payload, generic `value`,
-/// `default_value`, `param`, and nested alert-data payloads, sensitive attributes, comments, and
-/// processing instructions are removed. Malformed or non-UTF-8 payloads are
+/// `default_value`, `param`, report-format file bodies, and nested alert-data
+/// payloads, sensitive attributes, comments, and processing instructions are removed.
+/// Malformed or non-UTF-8 payloads are
 /// replaced entirely with a fixed marker.
 ///
 /// This policy is not a general secret detector for arbitrary custom XML field

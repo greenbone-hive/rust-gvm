@@ -30,6 +30,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/report-config-request-gvmd-evidence.md`: pinned gvmd evidence for the
   canonical report-configuration lifecycle, ordered parameter updates, query
   controls, trash behavior, parser boundary, and bounded mock approximations.
+- `docs/report-format-request-gvmd-evidence.md`: pinned gvmd evidence for the
+  canonical report-format lifecycle, opaque import envelope, clone and
+  parameter quirks, trash/verification behavior, typed response boundary, and
+  bounded mock approximations.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -109,6 +113,9 @@ Changing mock server behavior:
 - `crates/gvm-mock-server/src/stateful_report_configs.rs`: bounded
   report-configuration create/clone/modify/query rendering and filtering;
   atomic storage operations remain in `store.rs`.
+- `crates/gvm-mock-server/src/stateful_report_formats.rs`: bounded
+  report-format import/clone/modify/query/delete/verify behavior; files remain
+  inert and signed verification outcomes are injected rather than computed.
 - `crates/gvm-mock-server/src/fixtures.rs`: fixture-mode responses.
 - `crates/gvm-mock-server/src/fault.rs` and `scenario.rs`: failure injection and scripted playback.
 - Tests live under `crates/gvm-mock-server/tests/`.
