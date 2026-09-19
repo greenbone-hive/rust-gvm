@@ -100,3 +100,11 @@ The same pattern works in GitLab CI, Buildkite, CircleCI, or local developer wor
   real-gvmd conformance suite. Fixture mode shares supported-type validation
   and authoritative response shapes. See the
   [NVT/SecInfo evidence and limitations](nvt-secinfo-request-gvmd-evidence.md).
+- Stateful configuration lifecycle behavior uses shared seeded generic,
+  scan-config, and policy resources. It models required copy/import creation,
+  bounded selectors/preferences, literal filters/counts, metadata rollback,
+  task-sensitive trash deletion, and explicit `sync_config` rejection. It does
+  not model rich trash expansion, a complete filter/ACL/feed engine, internal
+  SQL cleanup, or the deferred configured-preference/NVT/family mutation
+  family. See the
+  [configuration evidence and limitations](scan-config-policy-request-gvmd-evidence.md).

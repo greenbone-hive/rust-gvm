@@ -20,8 +20,8 @@ use gvm_gmp::commands::assets::{
 };
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::configs::{
-    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
-    GetConfigsOpts, ModifyConfigOpts,
+    CloneConfigRequest, ConfigUsageType, CreateConfigRequest, DeleteConfigRequest,
+    GetConfigRequest, GetConfigsRequest, ModifyConfigRequest,
 };
 use gvm_gmp::commands::credentials::{
     CreateCredentialRequest, CreateCredentialStoreCredentialRequest, CredentialStorePreference,
@@ -67,8 +67,11 @@ use gvm_gmp::commands::reports::{
 };
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::{
-    create_policy, get_policies, ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts,
-    GetScanConfigsOpts,
+    CloneScanConfigRequest, CreatePolicyRequest, CreateScanConfigRequest, DeleteScanConfigRequest,
+    GetPoliciesRequest, GetPolicyRequest, GetScanConfigPreferencesOpts, GetScanConfigRequest,
+    GetScanConfigsRequest, ImportPolicyRequest, ImportScanConfigRequest,
+    ModifyPolicySetCommentRequest, ModifyPolicySetNameRequest, ModifyScanConfigRequest,
+    ModifyScanConfigSetCommentRequest, ModifyScanConfigSetNameRequest,
 };
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
@@ -108,8 +111,8 @@ use gvm_gmp::commands::web_application_targets::{
 };
 use gvm_gmp::responses::task::TaskObservers;
 use gvm_gmp::responses::{
-    Asset, ConfigUsageKind, CreateScanConfigResponse, CredentialKind, GetConfigsResponse,
-    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, Permission, Target,
+    Asset, ConfigUsageKind, CredentialKind, GetConfigsResponse, GetPermissionsResponse,
+    GetScanReportResponse, Permission, Target,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
@@ -1453,45 +1456,28 @@ async fn typed_generic_configs_round_trip_through_mock_server() {
         .await
         .expect("authenticate should succeed");
 
+    let base_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
+    let mut create = CreateConfigRequest::new("Generic policy", base_id.clone());
+    create.comment = Some("generic config".into());
+    create.usage_type = Some(ConfigUsageType::Policy);
     let config = client
-        .create_config(CreateConfigOpts {
-            name: "Generic policy".into(),
-            base_id: None,
-            comment: Some("generic config".into()),
-            usage_type: Some(ConfigUsageType::Policy),
-        })
+        .create_config(create)
         .await
         .expect("generic config create should parse");
-    let custom_config = client
-        .create_config(CreateConfigOpts {
-            name: "Future config".into(),
-            base_id: None,
-            comment: None,
-            usage_type: Some(ConfigUsageType::custom("future")),
-        })
-        .await
-        .expect("custom config create should parse");
 
     let configs = client
-        .get_configs(GetConfigsOpts::default())
+        .get_configs(GetConfigsRequest::default())
         .await
         .expect("generic configs should parse");
     assert!(configs
         .items
         .iter()
         .any(|item| item.meta.id == config.id && item.usage_type == Some(ConfigUsageKind::Policy)));
-    assert!(configs.items.iter().any(|item| {
-        item.meta.id == custom_config.id
-            && item.usage_type == Some(ConfigUsageKind::Custom("future".into()))
-    }));
 
+    let mut clone = CloneConfigRequest::new(config.id.clone());
+    clone.name = Some("Generic policy copy".into());
     let cloned = client
-        .clone_config(
-            &config.id,
-            CloneConfigOpts {
-                name: Some("Generic policy copy".into()),
-            },
-        )
+        .clone_config(clone)
         .await
         .expect("generic config clone should parse");
     assert_ne!(cloned.id, config.id);
@@ -1528,18 +1514,17 @@ async fn typed_generic_config_get_modify_and_delete_round_trip() {
         .await
         .expect("authenticate should succeed");
 
+    let base_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
+    let mut create = CreateConfigRequest::new("Mutable policy", base_id);
+    create.comment = Some("before modification".into());
+    create.usage_type = Some(ConfigUsageType::Policy);
     let config = client
-        .create_config(CreateConfigOpts {
-            name: "Mutable policy".into(),
-            base_id: None,
-            comment: Some("before modification".into()),
-            usage_type: Some(ConfigUsageType::Policy),
-        })
+        .create_config(create)
         .await
         .expect("generic config create should parse");
 
     let fetched = client
-        .get_config(&config.id, GetConfigOpts::default())
+        .get_config(GetConfigRequest::new(config.id.clone()))
         .await
         .expect("single generic config should parse");
     assert_single_generic_config(
@@ -1550,26 +1535,16 @@ async fn typed_generic_config_get_modify_and_delete_round_trip() {
         ConfigUsageKind::Policy,
     );
 
+    let mut modify = ModifyConfigRequest::new(config.id.clone());
+    modify.name = Some("Updated policy".into());
+    modify.comment = Some("after modification".into());
     client
-        .modify_config(
-            &config.id,
-            ModifyConfigOpts {
-                name: Some("Updated policy".into()),
-                comment: Some("after modification".into()),
-                usage_type: Some(ConfigUsageType::Audit),
-            },
-        )
+        .modify_config(modify)
         .await
         .expect("generic config modify should parse");
 
     let updated = client
-        .get_config(
-            &config.id,
-            GetConfigOpts {
-                usage_type: Some(ConfigUsageType::Audit),
-                ..Default::default()
-            },
-        )
+        .get_config(GetConfigRequest::new(config.id.clone()))
         .await
         .expect("modified generic config should parse");
     assert_single_generic_config(
@@ -1577,15 +1552,15 @@ async fn typed_generic_config_get_modify_and_delete_round_trip() {
         &config.id,
         "Updated policy",
         "after modification",
-        ConfigUsageKind::Audit,
+        ConfigUsageKind::Policy,
     );
 
     client
-        .delete_config(&config.id, DeleteConfigOpts::default())
+        .delete_config(DeleteConfigRequest::new(config.id.clone()))
         .await
         .expect("generic config trash should parse");
     let trashed = client
-        .get_configs(GetConfigsOpts {
+        .get_configs(GetConfigsRequest {
             trash: Some(true),
             ..Default::default()
         })
@@ -1593,17 +1568,14 @@ async fn typed_generic_config_get_modify_and_delete_round_trip() {
         .expect("trashed generic configs should parse");
     assert!(trashed.items.iter().any(|item| item.meta.id == config.id));
 
+    let mut delete = DeleteConfigRequest::new(config.id.clone());
+    delete.ultimate = Some(true);
     client
-        .delete_config(
-            &config.id,
-            DeleteConfigOpts {
-                ultimate: Some(true),
-            },
-        )
+        .delete_config(delete)
         .await
         .expect("ultimate generic config deletion should parse");
     let remaining = client
-        .get_configs(GetConfigsOpts {
+        .get_configs(GetConfigsRequest {
             trash: Some(true),
             ..Default::default()
         })
@@ -2992,20 +2964,17 @@ async fn typed_scan_config_field_helpers_modify_stateful_mock_resource() {
         .await
         .expect("authenticate should succeed");
 
+    let base_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
+    let mut create = CreateScanConfigRequest::new("Original config", base_id.clone());
+    create.comment = Some("initial comment".into());
+    create.usage_type = Some(ConfigUsageType::Scan);
     let created = client
-        .create_scan_config(
-            "Original config",
-            None,
-            ConfigOpts {
-                comment: Some("initial comment".into()),
-                usage_type: Some("scan".into()),
-            },
-        )
+        .create_scan_config(create)
         .await
         .expect("scan config should be created");
 
     let fetched = client
-        .get_scan_config(&created.id)
+        .get_scan_config(GetScanConfigRequest::new(created.id.clone()))
         .await
         .expect("created scan config should be fetched");
     assert_eq!(fetched.items.len(), 1);
@@ -3016,55 +2985,66 @@ async fn typed_scan_config_field_helpers_modify_stateful_mock_resource() {
     );
 
     client
-        .modify_scan_config_set_name(&created.id, "Renamed config")
+        .modify_scan_config_set_name(ModifyScanConfigSetNameRequest::new(
+            created.id.clone(),
+            "Renamed config",
+        ))
         .await
         .expect("scan config name should be modified");
     client
-        .modify_scan_config_set_comment(&created.id, None)
+        .modify_scan_config_set_comment(ModifyScanConfigSetCommentRequest::new(
+            created.id.clone(),
+            None,
+        ))
         .await
         .expect("scan config comment should be cleared");
 
     let fetched = client
-        .get_scan_config(&created.id)
+        .get_scan_config(GetScanConfigRequest::new(created.id.clone()))
         .await
         .expect("scan config should be fetched");
     assert_eq!(fetched.items.len(), 1);
     assert_eq!(fetched.items[0].meta.name, "Renamed config");
-    assert_eq!(fetched.items[0].meta.comment, None);
+    assert_eq!(
+        fetched.items[0].meta.comment.as_deref(),
+        Some("initial comment"),
+        "omitted comments preserve existing metadata"
+    );
 
-    let response = client
-        .send(create_policy(
-            "Original policy",
-            ConfigOpts {
-                comment: Some("initial policy comment".into()),
-                ..Default::default()
-            },
-        ))
+    let mut create_policy = CreatePolicyRequest::new("Original policy", base_id);
+    create_policy.comment = Some("initial policy comment".into());
+    let policy = client
+        .execute(create_policy)
         .await
         .expect("policy create request should succeed");
-    let policy = CreateScanConfigResponse::from_response(&response).expect("policy create parses");
 
     client
-        .modify_policy_set_name(&policy.id, "Renamed policy")
+        .modify_policy_set_name(ModifyPolicySetNameRequest::new(
+            policy.id.clone(),
+            "Renamed policy",
+        ))
         .await
         .expect("policy name should be modified");
     client
-        .modify_policy_set_comment(&policy.id, None)
+        .modify_policy_set_comment(ModifyPolicySetCommentRequest::new(policy.id.clone(), None))
         .await
         .expect("policy comment should be cleared");
 
-    let response = client
-        .send(get_policies(GetScanConfigsOpts::default()))
+    let policies = client
+        .get_policies(GetPoliciesRequest::default())
         .await
         .expect("policies should be fetched");
-    let policies = GetScanConfigsResponse::from_response(&response).expect("policies parse");
     let policy = policies
         .items
         .iter()
         .find(|item| item.meta.id == policy.id)
         .expect("modified policy should be returned");
     assert_eq!(policy.meta.name, "Renamed policy");
-    assert_eq!(policy.meta.comment, None);
+    assert_eq!(
+        policy.meta.comment.as_deref(),
+        Some("initial policy comment"),
+        "omitted comments preserve existing metadata"
+    );
 
     server.shutdown().await;
 }
@@ -3233,34 +3213,26 @@ async fn typed_config_getters_filter_stateful_mock_resources() {
         .await
         .expect("authenticate should succeed");
 
+    let base_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
     let scan_config = client
-        .create_scan_config(
+        .create_scan_config(CreateScanConfigRequest::new(
             "Scan Config One",
-            None,
-            ConfigOpts {
-                usage_type: Some("scan".into()),
-                ..Default::default()
-            },
-        )
+            base_id.clone(),
+        ))
         .await
         .expect("scan config should be created");
 
-    let response = client
-        .send(create_policy(
-            "Policy One",
-            ConfigOpts {
-                comment: Some("policy comment".into()),
-                ..Default::default()
-            },
-        ))
+    let mut create_policy = CreatePolicyRequest::new("Policy One", base_id);
+    create_policy.comment = Some("policy comment".into());
+    let policy = client
+        .execute(create_policy)
         .await
         .expect("policy create request should succeed");
-    let policy = CreateScanConfigResponse::from_response(&response).expect("policy create parses");
 
     server.clear_history();
 
     let scan_configs = client
-        .get_scan_configs(GetScanConfigsOpts::default())
+        .get_scan_configs(GetScanConfigsRequest::default())
         .await
         .expect("scan configs should be fetched");
     assert!(scan_configs
@@ -3277,16 +3249,24 @@ async fn typed_config_getters_filter_stateful_mock_resources() {
         .any(|item| item.meta.id == policy.id));
 
     let policies = client
-        .get_policies(GetScanConfigsOpts::default())
+        .get_policies(GetPoliciesRequest::default())
         .await
         .expect("policies should be fetched");
-    assert_eq!(policies.items.len(), 1);
-    assert_eq!(policies.items[0].meta.id, policy.id);
-    assert_eq!(policies.items[0].meta.name, "Policy One");
-    assert_eq!(policies.items[0].usage_type.as_deref(), Some("policy"));
+    assert!(policies.items.len() >= 3);
+    let created_policy = policies
+        .items
+        .iter()
+        .find(|item| item.meta.id == policy.id)
+        .expect("created policy should be listed");
+    assert_eq!(created_policy.meta.name, "Policy One");
+    assert_eq!(created_policy.usage_type.as_deref(), Some("policy"));
 
     let fetched = client
-        .get_policy(&policy.id, GetPolicyOpts { audits: Some(true) })
+        .get_policy({
+            let mut request = GetPolicyRequest::new(policy.id.clone());
+            request.audits = Some(true);
+            request
+        })
         .await
         .expect("policy should be fetched");
     assert_eq!(fetched.items.len(), 1);
@@ -4329,11 +4309,13 @@ async fn typed_policy_import_uses_stateful_mock_server_create_command() {
         "<name>Imported policy</name>",
         "<comment>Imported policy comment</comment>",
         "<usage_type>policy</usage_type>",
+        "<nvt_selectors/>",
+        "<preferences/>",
         "</config>",
         "</get_configs_response>"
     );
     let policy = client
-        .import_policy(policy_xml)
+        .import_policy(ImportPolicyRequest::new(policy_xml))
         .await
         .expect("policy import should succeed");
 
@@ -4342,11 +4324,15 @@ async fn typed_policy_import_uses_stateful_mock_server_create_command() {
     assert_eq!(history[0].command_name(), "create_config");
     assert_eq!(
         String::from_utf8(history[0].raw_xml().to_vec()).expect("xml is utf-8"),
-        format!("<create_config>{policy_xml}</create_config>")
+        format!("<create_config>{policy_xml}<usage_type>policy</usage_type></create_config>")
     );
 
     let fetched = client
-        .get_policy(&policy.id, GetPolicyOpts { audits: Some(true) })
+        .get_policy({
+            let mut request = GetPolicyRequest::new(policy.id.clone());
+            request.audits = Some(true);
+            request
+        })
         .await
         .expect("imported policy should be fetched");
     assert_eq!(fetched.items.len(), 1);
@@ -4363,15 +4349,22 @@ async fn typed_policy_import_uses_stateful_mock_server_create_command() {
         r#"<config id="c4aa21e4-23e6-4064-ae49-c0d425738a98">"#,
         "<name>First policy</name>",
         "<usage_type>policy</usage_type>",
+        "<nvt_selectors/>",
+        "<preferences/>",
         "</config>",
         r#"<config id="d5aa21e4-23e6-4064-ae49-c0d425738a99">"#,
         "<name>Second policy</name>",
         "<usage_type>policy</usage_type>",
+        "<nvt_selectors/>",
+        "<preferences/>",
         "</config>",
         "</get_configs_response>"
     );
     assert!(
-        client.import_policy(multi_policy_xml).await.is_err(),
+        client
+            .import_policy(ImportPolicyRequest::new(multi_policy_xml))
+            .await
+            .is_err(),
         "stateful mock should reject multi-config policy imports instead of truncating"
     );
 
@@ -4401,11 +4394,13 @@ async fn typed_scan_config_import_uses_stateful_mock_server_create_command() {
         "<name>Imported scan config</name>",
         "<comment>Imported comment</comment>",
         "<usage_type>scan</usage_type>",
+        "<nvt_selectors/>",
+        "<preferences/>",
         "</config>",
         "</get_configs_response>"
     );
     let imported = client
-        .import_scan_config(scan_config_xml)
+        .import_scan_config(ImportScanConfigRequest::new(scan_config_xml))
         .await
         .expect("scan config import should succeed");
     assert_eq!(imported.status, 201);
@@ -4419,7 +4414,7 @@ async fn typed_scan_config_import_uses_stateful_mock_server_create_command() {
     );
 
     let fetched = client
-        .get_scan_config(&imported.id)
+        .get_scan_config(GetScanConfigRequest::new(imported.id.clone()))
         .await
         .expect("imported scan config should be fetchable");
     assert_eq!(fetched.items.len(), 1);
@@ -5487,40 +5482,33 @@ async fn typed_web_application_target_lifecycle_succeeds() {
 }
 
 async fn typed_scan_config_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
+    let base_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
+    let mut create = CreateScanConfigRequest::new("Typed Config", base_id);
+    create.comment = Some("created".into());
+    create.usage_type = Some(ConfigUsageType::Scan);
     let created_config = client
-        .create_scan_config(
-            "Typed Config",
-            None,
-            ConfigOpts {
-                comment: Some("created".into()),
-                usage_type: Some("scan".into()),
-            },
-        )
+        .create_scan_config(create)
         .await
         .expect("create_scan_config should succeed");
     let config_id = created_config.id;
 
     let fetched_config = client
-        .get_scan_config(&config_id)
+        .get_scan_config(GetScanConfigRequest::new(config_id.clone()))
         .await
         .expect("get_scan_config should succeed");
     assert_eq!(fetched_config.items.len(), 1);
     assert_eq!(fetched_config.items[0].meta.id, config_id);
     assert_eq!(fetched_config.items[0].meta.name, "Typed Config");
 
+    let mut modify = ModifyScanConfigRequest::new(config_id.clone());
+    modify.comment = Some("updated".into());
     client
-        .modify_scan_config(
-            &config_id,
-            ConfigOpts {
-                comment: Some("updated".into()),
-                usage_type: Some("scan".into()),
-            },
-        )
+        .modify_scan_config(modify)
         .await
         .expect("modify_scan_config should succeed");
 
     let updated_config = client
-        .get_scan_config(&config_id)
+        .get_scan_config(GetScanConfigRequest::new(config_id.clone()))
         .await
         .expect("get_scan_config after modify should succeed");
     assert_eq!(
@@ -5528,33 +5516,30 @@ async fn typed_scan_config_lifecycle(client: &mut GmpClient<UnixSocketConnection
         Some("updated")
     );
 
-    client
-        .sync_config()
-        .await
-        .expect("sync_config should succeed");
-    #[allow(deprecated)]
-    client
-        .sync_scan_config(&config_id)
-        .await
-        .expect("deprecated sync_scan_config compatibility shim should succeed");
-
     let cloned_config = client
-        .clone_scan_config(&config_id)
+        .clone_scan_config(CloneScanConfigRequest::new(config_id.clone()))
         .await
         .expect("clone_scan_config should succeed");
     let cloned_config_id = cloned_config.id;
     let cloned_config_response = client
-        .get_scan_config(&cloned_config_id)
+        .get_scan_config(GetScanConfigRequest::new(cloned_config_id.clone()))
         .await
         .expect("get cloned config should succeed");
-    assert_eq!(cloned_config_response.items[0].meta.name, "Typed Config");
+    assert_eq!(
+        cloned_config_response.items[0].meta.name,
+        "Typed Config Clone 1"
+    );
 
+    let mut delete_clone = DeleteScanConfigRequest::new(cloned_config_id);
+    delete_clone.ultimate = Some(true);
     client
-        .delete_scan_config(&cloned_config_id, true)
+        .delete_scan_config(delete_clone)
         .await
         .expect("delete cloned config should succeed");
+    let mut delete_original = DeleteScanConfigRequest::new(config_id);
+    delete_original.ultimate = Some(true);
     client
-        .delete_scan_config(&config_id, true)
+        .delete_scan_config(delete_original)
         .await
         .expect("delete original config should succeed");
 }

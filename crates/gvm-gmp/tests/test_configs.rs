@@ -5,274 +5,156 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::configs::*;
-use gvm_gmp::commands::scan_configs::{
-    clone_policy, clone_scan_config, create_policy, create_scan_config, delete_policy,
-    delete_scan_config, get_policies, get_policy, get_scan_config, get_scan_configs, modify_policy,
-    modify_scan_config, ConfigOpts, GetPolicyOpts, GetScanConfigsOpts,
+use gvm_gmp::responses::{
+    CreateConfigResponse, DeleteConfigResponse, GetConfigsResponse, ModifyConfigResponse,
 };
-use gvm_gmp::commands::usage_type::UsageType;
+use gvm_gmp::{GmpRequest, GmpRequestCodec, GmpResponse, GmpVersion};
+
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap()
+}
+
+fn assert_response<R, T>(_: &R)
+where
+    R: GmpRequest<Response = T>,
+    T: GmpResponse,
+{
+}
 
 #[test]
-fn test_generic_configs_usage_type_xml() {
-    assert_eq!(ConfigUsageType::Scan.as_gmp_str(), "scan");
-    assert_eq!(ConfigUsageType::Audit.as_gmp_str(), "audit");
-    assert_eq!(ConfigUsageType::Policy.as_gmp_str(), "policy");
-    assert_eq!(ConfigUsageType::custom("custom").as_gmp_str(), "custom");
+fn generic_query_requests_encode_every_field_and_boolean_state() {
+    assert_eq!(xml(&GetConfigsRequest::new()), "<get_configs/>");
+
+    let request = GetConfigsRequest {
+        config_id: Some(id("config-1")),
+        filter_string: Some(String::new()),
+        filter_id: Some(id("-2")),
+        trash: Some(false),
+        details: Some(true),
+        families: Some(false),
+        preferences: Some(true),
+        tasks: Some(false),
+        usage_type: Some(ConfigUsageType::Policy),
+    };
     assert_eq!(
-        ConfigUsageType::from(UsageType::Audit).as_gmp_str(),
-        "audit"
+        xml(&request),
+        "<get_configs config_id=\"config-1\" details=\"1\" families=\"0\" filt_id=\"-2\" filter=\"\" preferences=\"1\" tasks=\"0\" trash=\"0\" usage_type=\"policy\"/>"
+    );
+
+    let mut detail = GetConfigRequest::new(id("config-1"));
+    detail.usage_type = Some(ConfigUsageType::Scan);
+    detail.tasks = Some(true);
+    assert_eq!(
+        xml(&detail),
+        "<get_configs config_id=\"config-1\" details=\"1\" tasks=\"1\" usage_type=\"scan\"/>"
+    );
+    detail.details = None;
+    assert_eq!(
+        xml(&detail),
+        "<get_configs config_id=\"config-1\" tasks=\"1\" usage_type=\"scan\"/>"
     );
 }
 
 #[test]
-fn test_generic_configs_clone_create_xml() {
+fn generic_copy_requests_have_source_backed_deterministic_bytes() {
+    let mut create = CreateConfigRequest::new("Baseline & audit", id("base-1"));
+    create.comment = Some("Copied".into());
+    create.usage_type = Some(ConfigUsageType::Policy);
     assert_eq!(
-        xml(clone_config(&id("c1"), CloneConfigOpts::default())),
-        "<create_config><copy>c1</copy></create_config>"
+        xml(&create),
+        "<create_config><copy>base-1</copy><name>Baseline &amp; audit</name><comment>Copied</comment><usage_type>policy</usage_type></create_config>"
     );
+
+    let mut clone = CloneConfigRequest::new(id("base-1"));
     assert_eq!(
-        xml(clone_config(
-            &id("c1"),
-            CloneConfigOpts {
-                name: Some("copy".into()),
-            },
-        )),
-        "<create_config><copy>c1</copy><name>copy</name></create_config>"
+        xml(&clone),
+        "<create_config><copy>base-1</copy></create_config>"
     );
+    clone.name = Some(String::new());
+    clone.comment = Some(String::new());
+    clone.usage_type = Some(ConfigUsageType::Scan);
     assert_eq!(
-        xml(create_config(CreateConfigOpts {
-            name: "cfg".into(),
-            base_id: Some(id("base1")),
-            comment: Some("c".into()),
-            usage_type: Some(ConfigUsageType::Scan),
-        })),
-        "<create_config><name>cfg</name><copy>base1</copy><comment>c</comment><usage_type>scan</usage_type></create_config>"
+        xml(&clone),
+        "<create_config><copy>base-1</copy><name></name><comment></comment><usage_type>scan</usage_type></create_config>"
     );
 }
 
 #[test]
-fn test_generic_configs_get_xml() {
+fn generic_metadata_and_delete_requests_preserve_explicit_empty_values() {
+    let mut modify = ModifyConfigRequest::new(id("config-1"));
+    assert_eq!(xml(&modify), "<modify_config config_id=\"config-1\"/>");
+    modify.name = Some(String::new());
+    modify.comment = Some(String::new());
     assert_eq!(
-        xml(get_configs(GetConfigsOpts {
-            filter_string: Some("name=foo".into()),
-            filter_id: Some(id("f1")),
-            trash: Some(false),
-            details: Some(true),
-            families: Some(true),
-            preferences: Some(false),
-            tasks: Some(true),
-            usage_type: Some(ConfigUsageType::custom("policy")),
-            ..Default::default()
-        })),
-        "<get_configs details=\"1\" families=\"1\" filt_id=\"f1\" filter=\"name=foo\" preferences=\"0\" tasks=\"1\" trash=\"0\" usage_type=\"policy\"/>"
+        xml(&modify),
+        "<modify_config config_id=\"config-1\"><name></name><comment></comment></modify_config>"
     );
+    modify.name = Some("Renamed".into());
+    modify.comment = Some("Updated & reviewed".into());
     assert_eq!(
-        xml(get_config(
-            &id("c1"),
-            GetConfigOpts {
-                usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-                tasks: Some(true),
-                ..Default::default()
-            },
-        )),
-        "<get_configs config_id=\"c1\" details=\"1\" tasks=\"1\" usage_type=\"policy\"/>"
+        xml(&modify),
+        "<modify_config config_id=\"config-1\"><name>Renamed</name><comment>Updated &amp; reviewed</comment></modify_config>"
     );
+
+    let mut delete = DeleteConfigRequest::new(id("config-1"));
+    assert_eq!(xml(&delete), "<delete_config config_id=\"config-1\"/>");
+    delete.ultimate = Some(false);
     assert_eq!(
-        xml(get_configs(GetConfigsOpts {
-            usage_type: Some(ConfigUsageType::custom("")),
-            ..Default::default()
-        })),
-        "<get_configs/>"
+        xml(&delete),
+        "<delete_config config_id=\"config-1\" ultimate=\"0\"/>"
+    );
+    delete.ultimate = Some(true);
+    assert_eq!(
+        xml(&delete),
+        "<delete_config config_id=\"config-1\" ultimate=\"1\"/>"
     );
 }
 
 #[test]
-fn test_generic_configs_modify_delete_xml() {
+fn generic_requests_validate_final_mutable_values_without_leaking_them() {
+    let mut create = CreateConfigRequest::new("valid", id("base-1"));
+    create.name.clear();
+    let error = create.validate().unwrap_err();
     assert_eq!(
-        xml(modify_config(
-            &id("c1"),
-            ModifyConfigOpts {
-                name: Some("renamed".into()),
-                comment: Some("updated".into()),
-                usage_type: Some(ConfigUsageType::Policy),
-            },
-        )),
-        "<modify_config config_id=\"c1\"><name>renamed</name><comment>updated</comment><usage_type>policy</usage_type></modify_config>"
+        error.to_string(),
+        "invalid request field 'name': must not be empty"
     );
-    assert_eq!(
-        xml(modify_config(
-            &id("c1"),
-            ModifyConfigOpts {
-                name: Some(String::new()),
-                comment: Some(String::new()),
-                ..Default::default()
-            },
-        )),
-        "<modify_config config_id=\"c1\"><name></name><comment></comment></modify_config>"
-    );
-    assert_eq!(
-        xml(delete_config(
-            &id("c1"),
-            DeleteConfigOpts {
-                ultimate: Some(true),
-            },
-        )),
-        "<delete_config config_id=\"c1\" ultimate=\"1\"/>"
-    );
+    assert_eq!(create.encode(GmpVersion(22, 4)), Err(error));
+
+    create.name = "secret\u{0}name".into();
+    let display = create.validate().unwrap_err().to_string();
+    assert!(!display.contains("secret"));
+
+    let mut query = GetConfigsRequest::new();
+    query.filter_string = Some("hidden\u{1}filter".into());
+    let display = query.validate().unwrap_err().to_string();
+    assert!(!display.contains("hidden"));
 }
 
 #[test]
-fn test_scan_configs_wrappers_match_generic_xml() {
-    assert_eq!(
-        xml(clone_scan_config(&id("c1"))),
-        xml(clone_config(&id("c1"), CloneConfigOpts::default()))
-    );
-    assert_eq!(
-        xml(create_scan_config(
-            "cfg",
-            Some(&id("base1")),
-            ConfigOpts {
-                comment: Some("c".into()),
-                usage_type: Some("scan".into()),
-            },
-        )),
-        xml(create_config(CreateConfigOpts {
-            name: "cfg".into(),
-            base_id: Some(id("base1")),
-            comment: Some("c".into()),
-            usage_type: Some(ConfigUsageType::Scan),
-        }))
-    );
-    assert_eq!(
-        xml(get_scan_configs(GetScanConfigsOpts::default())),
-        "<get_configs usage_type=\"scan\"/>"
-    );
-    assert_eq!(
-        xml(get_scan_configs(GetScanConfigsOpts {
-            filter_string: Some("name=foo".into()),
-            filter_id: Some(id("f1")),
-            trash: Some(false),
-            details: Some(true),
-        })),
-        "<get_configs details=\"1\" filt_id=\"f1\" filter=\"name=foo\" trash=\"0\" usage_type=\"scan\"/>"
-    );
-    assert_eq!(
-        xml(get_scan_config(&id("c1"))),
-        "<get_configs config_id=\"c1\" details=\"1\" usage_type=\"scan\"/>"
-    );
-    assert_eq!(
-        xml(modify_scan_config(
-            &id("c1"),
-            ConfigOpts {
-                comment: Some("updated".into()),
-                usage_type: Some("scan".into()),
-            },
-        )),
-        xml(modify_config(
-            &id("c1"),
-            ModifyConfigOpts {
-                comment: Some("updated".into()),
-                usage_type: Some(ConfigUsageType::Scan),
-                ..Default::default()
-            },
-        ))
-    );
-    assert_eq!(
-        xml(modify_scan_config(
-            &id("c1"),
-            ConfigOpts {
-                comment: Some(String::new()),
-                ..Default::default()
-            },
-        )),
-        "<modify_config config_id=\"c1\"/>"
-    );
-    assert_eq!(
-        xml(delete_scan_config(&id("c1"), true)),
-        xml(delete_config(
-            &id("c1"),
-            DeleteConfigOpts {
-                ultimate: Some(true),
-            },
-        ))
-    );
-}
+fn generic_requests_expose_static_metadata_and_responses() {
+    let list = GetConfigsRequest::new();
+    let detail = GetConfigRequest::new(id("config-1"));
+    let create = CreateConfigRequest::new("name", id("base-1"));
+    let clone = CloneConfigRequest::new(id("config-1"));
+    let modify = ModifyConfigRequest::new(id("config-1"));
+    let delete = DeleteConfigRequest::new(id("config-1"));
 
-#[test]
-fn test_policies_wrappers_match_generic_xml() {
+    assert_eq!(list.command().unwrap().wire_name(), "get_configs");
     assert_eq!(
-        xml(clone_policy(&id("p1"))),
-        xml(clone_config(&id("p1"), CloneConfigOpts::default()))
+        detail.command().unwrap().semantic_name(),
+        Some("get_config")
     );
     assert_eq!(
-        xml(create_policy(
-            "policy",
-            ConfigOpts {
-                comment: Some("audit baseline".into()),
-                ..Default::default()
-            },
-        )),
-        xml(create_config(CreateConfigOpts {
-            name: "policy".into(),
-            base_id: None,
-            comment: Some("audit baseline".into()),
-            usage_type: Some(ConfigUsageType::Policy),
-        }))
+        clone.command().unwrap().semantic_name(),
+        Some("clone_config")
     );
-    assert_eq!(
-        xml(get_policies(GetScanConfigsOpts::default())),
-        xml(get_configs(GetConfigsOpts {
-            usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-            ..Default::default()
-        }))
-    );
-    assert_eq!(
-        xml(get_policy(&id("p1"), GetPolicyOpts { audits: Some(true) })),
-        xml(get_config(
-            &id("p1"),
-            GetConfigOpts {
-                usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-                tasks: Some(true),
-                ..Default::default()
-            },
-        ))
-    );
-    assert_eq!(
-        xml(modify_policy(
-            &id("p1"),
-            ConfigOpts {
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
-        )),
-        xml(modify_config(
-            &id("p1"),
-            ModifyConfigOpts {
-                comment: Some("updated".into()),
-                usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-                ..Default::default()
-            },
-        ))
-    );
-    assert_eq!(
-        xml(modify_policy(
-            &id("p1"),
-            ConfigOpts {
-                comment: Some(String::new()),
-                ..Default::default()
-            },
-        )),
-        "<modify_config config_id=\"p1\"><usage_type>policy</usage_type></modify_config>"
-    );
-    assert_eq!(
-        xml(delete_policy(&id("p1"))),
-        xml(delete_config(
-            &id("p1"),
-            DeleteConfigOpts {
-                ultimate: Some(false),
-            },
-        ))
-    );
+    assert_response::<_, GetConfigsResponse>(&list);
+    assert_response::<_, GetConfigsResponse>(&detail);
+    assert_response::<_, CreateConfigResponse>(&create);
+    assert_response::<_, CreateConfigResponse>(&clone);
+    assert_response::<_, ModifyConfigResponse>(&modify);
+    assert_response::<_, DeleteConfigResponse>(&delete);
 }

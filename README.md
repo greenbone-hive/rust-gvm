@@ -301,6 +301,14 @@ request values and request-by-value facades; pinned `get_info` supports only
 CERT-Bund, CPE, CVE, DFN-CERT, and NVT, while observed vulnerabilities use
 `get_vulns`. See the
 [pinned NVT/SecInfo evidence](docs/nvt-secinfo-request-gvmd-evidence.md).
+Configuration lifecycle calls likewise use complete request values. Named
+creation requires an explicit base; import validates and embeds one exported
+configuration; metadata modification cannot change usage or clear fields with
+empty text. Canonical configuration usage is `scan` or `policy`, while raw XML
+remains available for server-defined custom queries. The schema-only
+`sync_config` API is not exposed because pinned and current gvmd have no GMP
+dispatcher for it. See the
+[scan-config/policy evidence](docs/scan-config-policy-request-gvmd-evidence.md).
 TLS creation accepts original PEM or DER
 bytes and encodes the GMP carrier exactly once; the lifecycle has no
 private-key, certificate-replacement, trash, or restore controls. See the

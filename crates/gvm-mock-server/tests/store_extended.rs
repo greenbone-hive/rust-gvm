@@ -39,12 +39,12 @@ fn crud_configs() {
     assert_eq!(config.name, "Base Config");
 
     let configs = store.list("config");
-    assert_eq!(configs.len(), 2);
+    assert_eq!(configs.len(), 6);
     assert!(configs.iter().any(|config| config.id == id));
 
     assert!(store.delete(&id, true));
     assert!(store.get(&id).is_none());
-    assert_eq!(store.list("config").len(), 1);
+    assert_eq!(store.list("config").len(), 5);
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn crud_mixed_types() {
 
     assert_eq!(tasks.len(), 1);
     assert_eq!(targets.len(), 1);
-    assert_eq!(configs.len(), 2);
+    assert_eq!(configs.len(), 6);
     assert_eq!(tasks[0].id, task_id);
     assert_eq!(targets[0].id, target_id);
     assert!(configs.iter().any(|config| config.id == config_id));

@@ -91,6 +91,11 @@ Existing issues:
 - [#648](https://github.com/greenbone-hive/rust-gvm/issues/648) completes the
   bounded canonical NVT/SecInfo discovery slice, including pinned dispatch
   discrepancies and stateful mock qualification.
+- [#649](https://github.com/greenbone-hive/rust-gvm/issues/649) completes the
+  generic configuration, scan-configuration, and policy lifecycle slice:
+  required copy/import creation, metadata-only modification, bounded stateful
+  behavior, and removal of unsupported GMP synchronization. Configured
+  preference and NVT/family mutation remains the next strictly ordered child.
 
 Follow-up issues or milestones should cover:
 

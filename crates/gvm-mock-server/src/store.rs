@@ -37,6 +37,13 @@ pub(crate) enum DeleteAssetResult {
 
 pub(crate) const DEFAULT_CONFIG_ID: Uuid =
     Uuid::from_u128(0xdaba_56c8_73ec_11df_a475_0022_6476_4cea);
+pub(crate) const SECOND_SCAN_CONFIG_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0300);
+pub(crate) const FIRST_POLICY_ID: Uuid = Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0301);
+pub(crate) const SECOND_POLICY_ID: Uuid = Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0302);
+pub(crate) const PREDEFINED_CONFIG_ID: Uuid = Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0303);
+pub(crate) const CONFIG_SAVED_FILTER_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0304);
 pub(crate) const DEFAULT_SCANNER_ID: Uuid =
     Uuid::from_u128(0x08b6_9003_5fc2_4037_a479_93b4_4021_1c73);
 pub(crate) const CONFIGURABLE_REPORT_FORMAT_ID: Uuid =
@@ -184,25 +191,51 @@ fn default_discovery() -> DiscoverySnapshot {
         .into_iter()
         .map(|nvt| (nvt.oid.clone(), nvt))
         .collect();
-    let config_nvts = [(
-        DEFAULT_CONFIG_ID.to_string(),
-        BTreeSet::from(["1.3.6.1.4.1.25623.1".to_string()]),
-    )]
+    let config_nvts = [
+        (
+            DEFAULT_CONFIG_ID.to_string(),
+            BTreeSet::from(["1.3.6.1.4.1.25623.1".to_string()]),
+        ),
+        (
+            SECOND_SCAN_CONFIG_ID.to_string(),
+            BTreeSet::from(["1.3.6.1.4.1.25623.2".to_string()]),
+        ),
+        (
+            FIRST_POLICY_ID.to_string(),
+            BTreeSet::from([
+                "1.3.6.1.4.1.25623.1".to_string(),
+                "1.3.6.1.4.1.25623.2".to_string(),
+            ]),
+        ),
+        (SECOND_POLICY_ID.to_string(), BTreeSet::new()),
+    ]
     .into_iter()
     .collect();
-    let config_preferences = [(
-        DEFAULT_CONFIG_ID.to_string(),
-        BTreeMap::from([
-            (
-                "1.3.6.1.4.1.25623.1:0:entry:timeout".to_string(),
-                "120".to_string(),
-            ),
-            (
-                "1.3.6.1.4.1.25623.1:2:radio:Mode".to_string(),
-                "fast".to_string(),
-            ),
-        ]),
-    )]
+    let config_preferences = [
+        (
+            DEFAULT_CONFIG_ID.to_string(),
+            BTreeMap::from([
+                (
+                    "1.3.6.1.4.1.25623.1:0:entry:timeout".to_string(),
+                    "120".to_string(),
+                ),
+                (
+                    "1.3.6.1.4.1.25623.1:2:radio:Mode".to_string(),
+                    "fast".to_string(),
+                ),
+                (
+                    "1.3.6.1.4.1.25623.1:1:password:Password".to_string(),
+                    "configuration-secret".to_string(),
+                ),
+            ]),
+        ),
+        (SECOND_SCAN_CONFIG_ID.to_string(), BTreeMap::new()),
+        (
+            FIRST_POLICY_ID.to_string(),
+            BTreeMap::from([(":0:entry:table_driven_lsc".to_string(), "1".to_string())]),
+        ),
+        (SECOND_POLICY_ID.to_string(), BTreeMap::new()),
+    ]
     .into_iter()
     .collect();
     let secinfo = [
@@ -1224,6 +1257,38 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     config.comment = "Mock default scan config".to_string();
     config.set_attr("usage_type", "scan");
     resources.insert(config.id, config);
+
+    let mut scan_config = Resource::with_id("config", "Discovery scan", SECOND_SCAN_CONFIG_ID);
+    scan_config.comment = "Second seeded scan configuration".to_string();
+    scan_config.set_attr("usage_type", "scan");
+    scan_config.set_attr("predefined", "0");
+    resources.insert(scan_config.id, scan_config);
+
+    let mut first_policy = Resource::with_id("config", "Baseline policy", FIRST_POLICY_ID);
+    first_policy.comment = "Seeded policy with selectors".to_string();
+    first_policy.set_attr("usage_type", "policy");
+    first_policy.set_attr("predefined", "0");
+    resources.insert(first_policy.id, first_policy);
+
+    let mut second_policy = Resource::with_id("config", "Empty policy", SECOND_POLICY_ID);
+    second_policy.comment = "Seeded empty policy".to_string();
+    second_policy.set_attr("usage_type", "policy");
+    second_policy.set_attr("predefined", "0");
+    resources.insert(second_policy.id, second_policy);
+
+    let mut predefined = Resource::with_id("config", "Predefined scan", PREDEFINED_CONFIG_ID);
+    predefined.comment = "Read-only seeded configuration".to_string();
+    predefined.set_attr("usage_type", "scan");
+    predefined.set_attr("predefined", "1");
+    resources.insert(predefined.id, predefined);
+
+    let mut config_filter = Resource::with_id(
+        "filter",
+        "Mock configuration filter",
+        CONFIG_SAVED_FILTER_ID,
+    );
+    config_filter.set_attr("term", "usage_type=policy sort=name rows=1");
+    resources.insert(config_filter.id, config_filter);
 
     let mut scanner = Resource::with_id("scanner", "OpenVAS Default", DEFAULT_SCANNER_ID);
     scanner.comment = "Mock default scanner".to_string();
@@ -2384,6 +2449,242 @@ impl ResourceStore {
             .filter(|resource| resource.resource_type == resource_type)
     }
 
+    pub(crate) fn copy_config(
+        &self,
+        source_id: &Uuid,
+        requested_name: Option<&str>,
+        requested_comment: Option<&str>,
+        usage_override: Option<&str>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let source = inner
+            .resources
+            .get(source_id)
+            .filter(|resource| {
+                resource.resource_type == "config"
+                    && !resource.trashed
+                    && resource.attr("accessible") != Some("0")
+            })
+            .cloned()
+            .ok_or_else(|| StoreError::NotFound("config".to_string()))?;
+
+        let name = requested_name.filter(|name| !name.is_empty()).map_or_else(
+            || unique_clone_name(&inner, "config", &source.name),
+            str::to_string,
+        );
+        if active_name_exists(&inner, "config", &name, None) {
+            return Err(StoreError::InvalidArgument(
+                "Configuration name exists already",
+            ));
+        }
+
+        let mut copy = source.clone();
+        copy.id = Uuid::new_v4();
+        copy.name = name;
+        if let Some(comment) = requested_comment.filter(|comment| !comment.is_empty()) {
+            copy.comment = comment.to_string();
+        }
+        if let Some(usage) = usage_override.filter(|usage| !usage.is_empty()) {
+            copy.set_attr(
+                "usage_type",
+                if usage.eq_ignore_ascii_case("policy") {
+                    "policy"
+                } else {
+                    "scan"
+                },
+            );
+        }
+        copy.set_attr("predefined", "0");
+        let now = now_iso();
+        copy.creation_time = now.clone();
+        copy.modification_time = now;
+        let copy_id = copy.id;
+        let source_key = source_id.to_string();
+        let copy_key = copy_id.to_string();
+        if let Some(nvts) = inner.discovery.config_nvts.get(&source_key).cloned() {
+            inner.discovery.config_nvts.insert(copy_key.clone(), nvts);
+        }
+        let mut preferences = inner
+            .discovery
+            .config_preferences
+            .get(&source_key)
+            .cloned()
+            .unwrap_or_default();
+        if copy.attr("usage_type") == Some("policy") {
+            preferences
+                .entry(":0:entry:table_driven_lsc".to_string())
+                .or_insert_with(|| "0".to_string());
+        }
+        inner
+            .discovery
+            .config_preferences
+            .insert(copy_key, preferences);
+        insert_resource(&mut inner, copy);
+        Ok(copy_id)
+    }
+
+    pub(crate) fn import_config(
+        &self,
+        requested_name: &str,
+        comment: &str,
+        usage: &str,
+        nvts: BTreeSet<String>,
+        mut preferences: BTreeMap<String, String>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let mut name = requested_name.to_string();
+        let mut suffix = 1_u64;
+        while active_name_exists(&inner, "config", &name, None) {
+            name = format!("{requested_name} {suffix}");
+            suffix += 1;
+        }
+        let usage = if usage.eq_ignore_ascii_case("policy") {
+            "policy"
+        } else {
+            "scan"
+        };
+        if usage == "policy" {
+            preferences
+                .entry(":0:entry:table_driven_lsc".to_string())
+                .or_insert_with(|| "0".to_string());
+        }
+        let mut config = Resource::new("config", &name);
+        config.comment = comment.to_string();
+        config.set_attr("usage_type", usage);
+        config.set_attr("predefined", "0");
+        let id = config.id;
+        let key = id.to_string();
+        inner.discovery.config_nvts.insert(key.clone(), nvts);
+        inner.discovery.config_preferences.insert(key, preferences);
+        insert_resource(&mut inner, config);
+        Ok(id)
+    }
+
+    pub(crate) fn modify_config_metadata(
+        &self,
+        id: &Uuid,
+        name: Option<&str>,
+        comment: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let config = inner
+            .resources
+            .get(id)
+            .filter(|resource| resource.resource_type == "config" && !resource.trashed)
+            .cloned()
+            .ok_or_else(|| StoreError::NotFound("config".to_string()))?;
+        if config.attr("predefined") == Some("1") {
+            return Err(StoreError::InvalidState(
+                "Predefined configuration cannot be modified",
+            ));
+        }
+        if let Some(name) = name.filter(|name| !name.is_empty()) {
+            if active_name_exists(&inner, "config", name, Some(id)) {
+                return Err(StoreError::InvalidArgument(
+                    "Configuration name exists already",
+                ));
+            }
+        }
+        let config = inner
+            .resources
+            .get_mut(id)
+            .expect("configuration remained present while locked");
+        if let Some(name) = name.filter(|name| !name.is_empty()) {
+            config.name = name.to_string();
+        }
+        if let Some(comment) = comment.filter(|comment| !comment.is_empty()) {
+            config.comment = comment.to_string();
+        }
+        config.modification_time = now_iso();
+        Ok(())
+    }
+
+    pub(crate) fn config_observation(
+        &self,
+        id: &Uuid,
+    ) -> (BTreeSet<String>, BTreeMap<String, String>) {
+        let inner = self.inner.read().expect("store lock poisoned");
+        let key = id.to_string();
+        (
+            inner
+                .discovery
+                .config_nvts
+                .get(&key)
+                .cloned()
+                .unwrap_or_default(),
+            inner
+                .discovery
+                .config_preferences
+                .get(&key)
+                .cloned()
+                .unwrap_or_default(),
+        )
+    }
+
+    pub(crate) fn config_tasks(&self, id: &Uuid, trash_location: bool) -> Vec<Resource> {
+        let inner = self.inner.read().expect("store lock poisoned");
+        let id = id.to_string();
+        let expected_location = if trash_location { "trash" } else { "active" };
+        inner
+            .resources
+            .values()
+            .filter(|resource| {
+                resource.resource_type == "task"
+                    && resource.attr("config_id") == Some(id.as_str())
+                    && resource.attr("config_location").unwrap_or("active") == expected_location
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn delete_config_lifecycle(
+        &self,
+        id: &Uuid,
+        ultimate: bool,
+    ) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let config = inner
+            .resources
+            .get(id)
+            .filter(|resource| resource.resource_type == "config")
+            .cloned()
+            .ok_or_else(|| StoreError::NotFound("config".to_string()))?;
+        if config.trashed && !ultimate {
+            return Ok(());
+        }
+        let id_text = id.to_string();
+        let location = if config.trashed { "trash" } else { "active" };
+        let referenced = inner.resources.values().any(|task| {
+            task.resource_type == "task"
+                && task.attr("config_id") == Some(id_text.as_str())
+                && task.attr("config_location").unwrap_or("active") == location
+                && (ultimate || (!task.trashed && task.attr("visible") != Some("0")))
+        });
+        if referenced {
+            return Err(StoreError::InUse("config"));
+        }
+        if ultimate {
+            remove_resource(&mut inner, id);
+            inner.discovery.config_nvts.remove(&id_text);
+            inner.discovery.config_preferences.remove(&id_text);
+        } else {
+            if let Some(config) = inner.resources.get_mut(id) {
+                config.trashed = true;
+                config.modification_time = now_iso();
+            }
+            for task in inner.resources.values_mut().filter(|task| {
+                task.resource_type == "task"
+                    && !task.trashed
+                    && task.attr("config_id") == Some(id_text.as_str())
+                    && task.attr("visible") == Some("0")
+                    && task.attr("config_location").unwrap_or("active") == "active"
+            }) {
+                task.set_attr("config_location", "trash");
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn render_resource_xml(&self, resource: &Resource) -> String {
         if resource.resource_type != "task" {
             return resource.to_xml();
@@ -3184,7 +3485,7 @@ mod tests {
 
         assert_eq!(store.list("task").len(), 2);
         assert_eq!(store.list("target").len(), 1);
-        assert_eq!(store.list("config").len(), 1);
+        assert_eq!(store.list("config").len(), 5);
     }
 
     #[test]
