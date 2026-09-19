@@ -4,10 +4,13 @@
 #![cfg(feature = "unix-socket-tests")]
 #![allow(missing_docs)]
 
-use gvm_client::{Gmp226Commands, GmpVersioned};
+use gvm_client::GmpVersioned;
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::authentication::authenticate;
-use gvm_gmp::responses::{CreateReportConfigResponse, GetReportConfigsResponse};
+use gvm_gmp::commands::report_configs::{
+    CloneReportConfigRequest, CreateReportConfigRequest, GetReportConfigsRequest,
+};
+use gvm_gmp::EntityId;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 async fn stateful_server() -> Option<MockGmpServer> {
@@ -45,38 +48,34 @@ async fn clone_report_config_round_trips_through_stateful_mock() {
         .expect("authenticate should succeed");
     assert_eq!(auth_response.status_code(), Some(200));
 
-    let mut client = match client {
-        GmpVersioned::V226(client) => client,
-        other => panic!("expected V226 client, got {other:?}"),
-    };
-
     let create_response = client
-        .create_report_config("Stateful Report Config", "report-format-1")
+        .execute(CreateReportConfigRequest::new(
+            "Stateful Report Config",
+            EntityId::new("00000000-0000-0000-0000-000000000200")
+                .expect("fixture report format ID is valid"),
+        ))
         .await
         .expect("create_report_config should succeed");
-    let created = CreateReportConfigResponse::from_response(&create_response)
-        .expect("create_report_config response should parse");
+    let created = create_response;
 
     let clone_response = client
-        .clone_report_config(created.id.as_str())
+        .execute(CloneReportConfigRequest::new(created.id.clone()))
         .await
         .expect("clone_report_config should clone existing report config");
-    let cloned = CreateReportConfigResponse::from_response(&clone_response)
-        .expect("clone_report_config response should parse");
+    let cloned = clone_response;
     assert_ne!(cloned.id, created.id);
 
     let get_response = client
-        .get_report_configs()
+        .execute(GetReportConfigsRequest::default())
         .await
         .expect("report configs should be fetchable");
-    let fetched = GetReportConfigsResponse::from_response(&get_response)
-        .expect("get_report_configs response should parse");
+    let fetched = get_response;
     let cloned_config = fetched
         .items
         .iter()
         .find(|config| config.meta.id == cloned.id)
         .expect("cloned report config should be listed");
-    assert_eq!(cloned_config.meta.name, "Stateful Report Config");
+    assert_eq!(cloned_config.meta.name, "Stateful Report Config Clone 1");
 
     let history = server.command_history();
     let command = history

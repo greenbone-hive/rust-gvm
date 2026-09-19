@@ -185,9 +185,9 @@ records those contracts. Issue #639 documents why the legacy delete-user
 `ultimate` input is intentionally absent and provides the
 [v0.7 user/group migration mapping](v0.7.0-migration.md#users-and-groups).
 
-The next ordered #602 group is report definitions, beginning with a bounded
-report-configuration lifecycle child. Report formats and TLS certificates
-follow as separate reviewable slices before NVT/SecInfo discovery. Report
+The report-configuration child is complete. The next ordered #602 groups are
+the bounded report-format lifecycle and TLS-certificate slices, followed by
+NVT/SecInfo discovery. Report
 retrieval, exports, and report-specific lean/delta behavior remain separately
 ordered families.
 
@@ -302,6 +302,21 @@ source-shaped response parser. Nested expansion payloads remain outside the
 typed `ScanResult` projection. See the
 [pinned result evidence](result-request-gvmd-evidence.md).
 
+Issue #645 completes the report-configuration lifecycle child. Six explicit
+canonical requests own list/detail/create/clone/modify/delete input, final-value
+validation, semantic metadata, exact encoding, and response association. The
+nine public free builders, four option bags, three option-bearing wrappers,
+three redundant facades, and five raw `Gmp226Commands` methods are removed.
+Direct create now emits `<report_format id="..."/>`; query pagination/sorting
+uses filter text; and ordered parameter updates distinguish omission, explicit
+empty values, and per-name reset. The parser accepts orphaned ID-only format
+references while retaining its bounded metadata/association projection. The
+stateful mock adds seeded format dependencies, transactional lifecycle
+semantics, clone naming, query controls/counts, and the pinned orphan-modify
+regression. Source/schema findings, mock validation, and the absence of
+live-gvmd validation are separated in the
+[pinned evidence](report-config-request-gvmd-evidence.md).
+
 The additive alternate-target Phase 2 batch, tracked by
 [`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), originally
 introduced semantic wrappers for OCI-image and web-application targets. The
@@ -343,11 +358,11 @@ Existing builders remain the single encoders, all established typed helpers
 delegate to `execute`, and additive detail, clone, delete, and port-range
 helpers expose protocol operations that were already available as builders.
 
-The report-configuration, report-format, and TLS-certificate Phase 3 batch,
+The earlier report-configuration, report-format, and TLS-certificate Phase 3 batch,
 tracked by [`#573`](https://github.com/greenbone-hive/rust-gvm/issues/573),
-migrates all 23 existing builders to semantic typed execution. Default and
-option-bearing report-configuration builders retain byte-identical, distinct
-representations; report-format import preserves local XML validation; and TLS
+migrated 23 builders to additive semantic typed execution. Issue #645 now
+supersedes the report-configuration wrappers with complete canonical requests;
+report-format import preserves local XML validation, and TLS
 certificate inputs retain their existing content and private-key encoding.
 Existing typed helpers delegate to `execute`, with additive detail and mutation
 helpers exposing only operations already supported by public builders.
@@ -867,7 +882,7 @@ its explicit raw-send compatibility path.
 | host | ✅ | ✅ | |
 | tls_certificate | ✅ | ✅ | |
 | report_format | ✅ | ✅ | |
-| report_config | ✅ | — | `get_report_configs_parsed()` |
+| report_config | ✅ | ✅ | Six canonical lifecycle facades; list is `get_report_configs(request)` |
 | system | ✅ | — | `get_settings()`, `get_help()`, `describe_auth()`, `get_timezones()` |
 
 ### Features

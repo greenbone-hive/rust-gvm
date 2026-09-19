@@ -436,6 +436,32 @@ overrides, tickets, detections, tags, delta data, and original severity remain
 outside `ScanResult`; raw `send`/`call` preserves access to the complete
 XML. See the [pinned result evidence](result-request-gvmd-evidence.md).
 
+## Report configurations
+
+Report-configuration list, detail, direct create, clone, modify, and delete use
+six explicit complete requests with GMP 22.6 metadata. Detail and clone retain
+semantic aliases over `get_report_configs` and `create_report_config`; they do
+not create new wire commands. The six same-named `GmpClient` facades accept the
+request by value and call `execute` directly. Versioned clients use their
+existing generic `execute(request)` wrapper. The five old raw
+`Gmp226Commands` lifecycle methods are removed; `get_features` remains.
+
+Queries expose ID, inline and saved filters, trash, details, and
+`ignore_pagination`. Pagination and sorting stay in filter text. Direct create
+requires a name and `EntityId` format reference and emits
+`<report_format id="..."/>`. Create and modify accept ordered
+`ReportConfigParam` values; omission, `Value("")`, and `UseDefault` are
+distinct. Modify cannot replace the format. Clone supports only an optional
+name override, where omission and explicit empty request automatic naming.
+
+The typed `ReportConfig` response intentionally retains metadata and an
+optional format association only. It accepts ID-only orphan references but
+does not expose parameter values/defaults/options/bounds, `using_default`,
+orphan state, or full permission/tag expansions. Use raw `send`/`call` when
+those complete subtrees are required. There is no report-configuration import,
+preference wrapper, usage type, or policy surface. See the
+[pinned evidence](report-config-request-gvmd-evidence.md).
+
 ## Alternate target lifecycles
 
 The target command boundary includes a semantic `CloneTargetRequest` for the
@@ -467,11 +493,10 @@ owns its optional comment and uses gvmd's child-element payload; ports outside
 The three redundant options types and eight free builders are removed; raw
 `send`/`call` remains supported.
 
-## Report configurations, report formats, and TLS certificates
+## Report formats and TLS certificates
 
-Report configurations retain distinct semantic values for default and
-option-bearing create, list, and delete builders alongside clone, detail, and
-modify operations. Report-format create, clone, import, list, detail, modify,
+The earlier additive report-configuration wrappers are superseded by the
+canonical lifecycle described above. Report-format create, clone, import, list, detail, modify,
 delete, and verify requests preserve import validation and existing response
 shapes. TLS certificates expose the same complete lifecycle without changing
 certificate or private-key payload encoding. All semantic requests delegate to

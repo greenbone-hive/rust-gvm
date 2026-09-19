@@ -115,15 +115,15 @@ builder	crates/gvm-gmp/src/commands/port_lists.rs	delete_port_range	removed	Remo
 builder	crates/gvm-gmp/src/commands/port_lists.rs	get_port_list	removed	Removed by #617; GetPortListRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/port_lists.rs	get_port_lists	removed	Removed by #617; GetPortListsRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/port_lists.rs	modify_port_list	removed	Removed by #617; ModifyPortListRequest owns canonical encoding.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	clone_report_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	create_report_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	create_report_config_opts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	delete_report_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	delete_report_config_opts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	get_report_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	get_report_configs	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	get_report_configs_opts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/report_configs.rs	modify_report_config	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	clone_report_config	removed	Canonical CloneReportConfigRequest now owns clone input, validation, metadata, and encoding.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	create_report_config	removed	Canonical CreateReportConfigRequest now owns direct-create input, validation, metadata, and encoding.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	create_report_config_opts	removed	Comment and parameters now live on canonical CreateReportConfigRequest.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	delete_report_config	removed	Canonical DeleteReportConfigRequest now owns deletion input and encoding.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	delete_report_config_opts	removed	Ultimate deletion now lives on canonical DeleteReportConfigRequest.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	get_report_config	removed	Canonical GetReportConfigRequest now owns detail selection and query controls.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	get_report_configs	removed	Canonical GetReportConfigsRequest now owns list input and encoding.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	get_report_configs_opts	removed	Supported common GET controls now live on canonical requests.
+builder	crates/gvm-gmp/src/commands/report_configs.rs	modify_report_config	removed	Canonical ModifyReportConfigRequest now owns mutation input, validation, and encoding.
 builder	crates/gvm-gmp/src/commands/report_formats.rs	clone_report_format	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/report_formats.rs	create_report_format	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/report_formats.rs	delete_report_format	transitional	Pending bounded family migration under #602.
@@ -386,15 +386,15 @@ facade	crates/gvm-client/src/typed/identity.rs	modify_group	retained-constructio
 facade	crates/gvm-client/src/typed/identity.rs	modify_permission	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	modify_role	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	modify_user	retained-construction	Retained for discoverability; accepts the canonical ModifyUserRequest unchanged.
-facade	crates/gvm-client/src/typed/reports.rs	clone_report_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	clone_report_config	canonical-request	Accepts CloneReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	clone_report_format	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	clone_tls_certificate	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	create_report_config	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	create_report_config_with_opts	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	create_report_config	canonical-request	Accepts CreateReportConfigRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/reports.rs	create_report_config_with_opts	removed	Canonical create facade accepts the complete request without an options variant.
 facade	crates/gvm-client/src/typed/reports.rs	create_report_format	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	create_tls_certificate	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	delete_report_config	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	delete_report_config_with_opts	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	delete_report_config	canonical-request	Accepts DeleteReportConfigRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/reports.rs	delete_report_config_with_opts	removed	Canonical delete facade accepts the complete request without an options variant.
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_format	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	delete_tls_certificate	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	export_scan_report	transitional	Pending bounded family migration under #602.
@@ -402,8 +402,9 @@ facade	crates/gvm-client/src/typed/reports.rs	get_audit_report	transitional	Pend
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_report_hosts	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_applications_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_closed_cves	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_config	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_configs_parsed	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_config	canonical-request	Accepts GetReportConfigRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_configs	canonical-request	Canonical list facade replaces the transitional parsed suffix.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_configs_parsed	removed	Replaced by get_report_configs accepting GetReportConfigsRequest.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_cves_parsed	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_errors	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_export	transitional	Pending bounded family migration under #602.
@@ -423,7 +424,7 @@ facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificate	transitional	P
 facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificates	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	import_report	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	import_report_format	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	modify_report_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	modify_report_config	canonical-request	Accepts ModifyReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	modify_report_format	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	modify_tls_certificate	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	verify_report_format	transitional	Pending bounded family migration under #602.
@@ -646,10 +647,10 @@ options	crates/gvm-gmp/src/commands/permissions.rs	PermissionOpts	removed	Remove
 options	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListsOpts	removed	Removed by #617; fields now belong to GetPortListsRequest.
 options	crates/gvm-gmp/src/commands/port_lists.rs	ModifyPortListOpts	removed	Removed by #617; fields now belong to ModifyPortListRequest.
 options	crates/gvm-gmp/src/commands/port_lists.rs	PortListOpts	removed	Removed by #617; fields now belong to CreatePortListRequest.
-options	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/report_configs.rs	DeleteReportConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/report_configs.rs	ModifyReportConfigOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigOpts	removed	Comment and parameters moved onto CreateReportConfigRequest.
+options	crates/gvm-gmp/src/commands/report_configs.rs	DeleteReportConfigOpts	removed	Ultimate moved onto DeleteReportConfigRequest.
+options	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigsOpts	removed	Supported common GET controls moved onto the canonical query requests.
+options	crates/gvm-gmp/src/commands/report_configs.rs	ModifyReportConfigOpts	removed	Metadata and parameter updates moved onto ModifyReportConfigRequest.
 options	crates/gvm-gmp/src/commands/report_formats.rs	GetReportFormatsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/report_formats.rs	ReportFormatOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/reports.rs	CreateReportOpts	transitional	Pending bounded family migration under #602.
@@ -822,12 +823,15 @@ request	crates/gvm-gmp/src/commands/port_lists.rs	DeletePortRangeRequest	canonic
 request	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/port_lists.rs	GetPortListsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/port_lists.rs	ModifyPortListRequest	canonical-request	Complete replacement input with direct metadata/encoding and typed response.
-request	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigWithOptsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/report_configs.rs	DeleteReportConfigWithOptsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigsWithOptsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/report_configs.rs	ModifyReportConfigRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/report_configs.rs	CloneReportConfigRequest	canonical-request	Explicit canonical clone request owns selector, name override, semantic alias, and response association.
+request	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigRequest	canonical-request	Complete direct-create request owns required format, comment, ordered parameters, validation, and encoding.
+request	crates/gvm-gmp/src/commands/report_configs.rs	CreateReportConfigWithOptsRequest	removed	Merged into the complete CreateReportConfigRequest.
+request	crates/gvm-gmp/src/commands/report_configs.rs	DeleteReportConfigRequest	canonical-request	Explicit canonical delete request owns selector, ultimate state, validation, and encoding.
+request	crates/gvm-gmp/src/commands/report_configs.rs	DeleteReportConfigWithOptsRequest	removed	Merged into the complete DeleteReportConfigRequest.
+request	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigRequest	canonical-request	Explicit canonical detail request owns selector and supported common GET controls.
+request	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigsRequest	canonical-request	Complete canonical list request owns supported common GET controls, validation, and encoding.
+request	crates/gvm-gmp/src/commands/report_configs.rs	GetReportConfigsWithOptsRequest	removed	Merged into the complete GetReportConfigsRequest.
+request	crates/gvm-gmp/src/commands/report_configs.rs	ModifyReportConfigRequest	canonical-request	Complete modification request owns metadata and ordered parameter updates, validation, and encoding.
 request	crates/gvm-gmp/src/commands/report_formats.rs	CreateReportFormatRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/report_formats.rs	DeleteReportFormatRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/report_formats.rs	GetReportFormatsRequest	transitional	Pending bounded family migration under #602.

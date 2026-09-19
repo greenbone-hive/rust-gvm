@@ -256,14 +256,12 @@ const INTEGRATION_COVERED: &[&str] = &[
     "delete_report_format",
     "verify_report_format",
     "import_report",
-    "get_report_configs_parsed",
+    "get_report_configs",
     "get_report_config",
     "create_report_config",
-    "create_report_config_with_opts",
     "clone_report_config",
     "modify_report_config",
     "delete_report_config",
-    "delete_report_config_with_opts",
     "get_aggregates",
     "get_features_parsed",
     "get_settings",
@@ -388,7 +386,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 262);
+    assert_eq!(direct_execute_count, 260);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

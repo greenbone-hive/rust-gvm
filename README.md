@@ -295,8 +295,9 @@ surface. Canonical generic asset, host, operating-system asset, and result
 list/detail queries, plus the GMP 22.8 agent, agent-group, and
 integration-configuration families use the same execution contract, including
 binary/base64 support bundles. Generic configuration and port-list/port-range
-lifecycles are also fully migrated, and report-configuration, report-format,
-and TLS-certificate lifecycles are fully covered. Read-only system discovery is
+lifecycles and the report-configuration lifecycle are also fully migrated;
+report-format and TLS-certificate lifecycles remain typed but transitional.
+Read-only system discovery is
 covered as well, including aggregates, features, feeds, settings, timezones,
 help, system reports, generic information, preferences, resource names,
 vulnerabilities, license status, and authentication description. System
@@ -349,6 +350,39 @@ Counts may be absent. Nested expansion payloads remain available through raw
 `send`/`call`, outside the current `ScanResult` projection. See the
 [result migration](docs/v0.7.0-migration.md#results) and
 [pinned gvmd evidence](docs/result-request-gvmd-evidence.md).
+
+Report configurations use six complete lifecycle requests. Direct creation
+uses the gvmd-supported format reference, and parameter assignments distinguish
+explicit empty values from omission and reset:
+
+```rust
+use gvm_gmp::commands::report_configs::{
+    CreateReportConfigRequest, ReportConfigParam, ReportConfigParamValue,
+};
+use gvm_gmp::EntityId;
+
+let mut request = CreateReportConfigRequest::new(
+    "PDF settings",
+    EntityId::new("report-format-1")?,
+);
+request.comment = Some(String::new()); // explicit empty comment
+request.params.push(ReportConfigParam {
+    name: "Graph Type".into(),
+    value: ReportConfigParamValue::UseDefault,
+});
+let created = client.create_report_config(request).await?;
+# let _ = created;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Queries expose ID, inline/saved filters, trash, details, and pagination bypass;
+`first`, `rows` (including `rows=-1`), and sorting stay in caller-authored
+filter text. Clone accepts only a name override. There is no report-config
+import, preference/usage-type wrapper, or modify-format replacement. The typed
+response intentionally omits parameter observations; use raw `send`/`call`
+when the complete response XML is required. See the
+[migration guide](docs/v0.7.0-migration.md#report-configurations) and
+[pinned gvmd evidence](docs/report-config-request-gvmd-evidence.md).
 
 The standard target family is the canonical reference slice: its requests own
 their complete input and encoding, and its redundant options types and free

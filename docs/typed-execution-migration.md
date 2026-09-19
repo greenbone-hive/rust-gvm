@@ -903,6 +903,85 @@ tag, delta, original-severity, and other rich expansion payloads. Use raw
 execution when those complete subtrees are required. See
 [pinned gvmd evidence](result-request-gvmd-evidence.md).
 
+## Report-configuration lifecycle
+
+The nine report-configuration free builders, four `*Opts` bags, and three
+`*WithOptsRequest` wrappers are removed. Construct one of the six complete
+requests and pass it to the same-named facade or `execute`:
+
+```rust
+use gvm_gmp::commands::report_configs::{
+    CreateReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
+    ReportConfigParam, ReportConfigParamValue,
+};
+use gvm_gmp::EntityId;
+
+let format_id = EntityId::new("report-format-1")?;
+let mut create = CreateReportConfigRequest::new("configuration", format_id);
+create.comment = Some("initial".into());
+create.params.push(ReportConfigParam {
+    name: "Label".into(),
+    value: ReportConfigParamValue::Value("custom".into()),
+});
+let created = client.create_report_config(create).await?;
+
+let mut modify = ModifyReportConfigRequest::new(created.id);
+modify.comment = Some(String::new()); // clear comment
+modify.params.push(ReportConfigParam {
+    name: "Label".into(),
+    value: ReportConfigParamValue::UseDefault, // remove this override
+});
+client.modify_report_config(modify).await?;
+
+let mut list = GetReportConfigsRequest::default();
+list.filter_string = Some("first=1 rows=-1 sort=name".into());
+let observed = client.get_report_configs(list).await?;
+# let _ = observed;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Direct signature migrations:
+
+- `get_report_configs_parsed(opts)` becomes
+  `get_report_configs(GetReportConfigsRequest { ... })`;
+- `get_report_config(&id)` becomes
+  `get_report_config(GetReportConfigRequest::new(id))`;
+- `create_report_config(name, format)` and
+  `create_report_config_with_opts(name, format, opts)` become
+  `create_report_config(CreateReportConfigRequest::new(name, format_id))`, with
+  comment/parameters placed on that request;
+- `clone_report_config(&id)` becomes
+  `clone_report_config(CloneReportConfigRequest::new(id))`;
+- `modify_report_config(&id, opts)` becomes a complete
+  `ModifyReportConfigRequest::new(id)`;
+- `delete_report_config(&id)` and `delete_report_config_with_opts(&id, opts)`
+  become `delete_report_config(DeleteReportConfigRequest::new(id))`, with
+  `ultimate` on the request.
+
+The five raw report-configuration methods are removed from
+`Gmp226Commands`. Use the canonical typed facade or generic `execute`; both
+return the associated typed response rather than raw `gvm_protocol::Response`.
+`GmpVersioned` retains generic `execute(request)`. Raw callers may deliberately
+use `send`/`call`, `gvm_protocol::Request`, `XmlCommand`, or a downstream custom
+codec.
+
+Selectors are `EntityId`, whose accepted lexical policy is not UUID-only.
+Root `first` and `rows` are removed because gvmd reads them from filter text;
+`rows=-1` remains caller-authored filter syntax. Direct create now emits
+`<report_format id="..."/>`, not `<report_format_id>`. Omitted comment and
+parameters preserve on modify; empty comment clears; empty parameter values
+are assignments; `UseDefault` resets one named override. Clone supports only a
+name override; comment, format, and parameter clone overrides are unsupported.
+There is no import, preference, usage-type, policy, or modify-format
+replacement request.
+
+The typed response remains a bounded metadata/format projection. Parameter
+lifecycle observations require raw response XML. The pinned orphan-modify and
+trash-rendering quirks and the mock's bounded validation/filter subsets are
+documented separately in the
+[source evidence](report-config-request-gvmd-evidence.md); they are not
+live-gvmd compatibility claims.
+
 ## Compatibility boundary
 
 The promoted #523 baseline was additive, but it has not been published as the
@@ -916,7 +995,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 266 current public async methods: 262 delegate
+The facade inventory locks all 264 current public async methods: 260 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path, and the deprecated `sync_scan_config` alias delegates
 indirectly through `sync_config`.

@@ -6,7 +6,7 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, parse_entity_id, parse_entity_meta, parse_named_entity,
+    count_info, parse_document, parse_entity_id, parse_entity_meta, parse_entity_ref,
     status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
@@ -42,7 +42,7 @@ impl ReportConfig {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            report_format: parse_named_entity(node, "report_format")?,
+            report_format: parse_entity_ref(node, "report_format")?,
         })
     }
 }
@@ -121,6 +121,7 @@ mod tests {
                     <writable>0</writable>
                     <in_use>1</in_use>
                 </report_config>
+                <report_configs start="1" max="2"/>
                 <report_config_count>2<filtered>2</filtered><page>1</page></report_config_count>
             </get_report_configs_response>"#,
         );
@@ -206,5 +207,55 @@ mod tests {
 
         assert_eq!(rc.meta.comment, None);
         assert_eq!(rc.report_format, None);
+        assert_eq!(parsed.counts, CountInfo::default());
+    }
+
+    #[test]
+    fn accepts_id_only_orphan_format_and_ignores_rich_parameter_subtrees() {
+        let response = Response::from(
+            r#"<get_report_configs_response status="200" status_text="OK">
+                <report_config id="rc-orphan">
+                    <name>Orphan</name>
+                    <report_format id="rf-missing"/>
+                    <param><name>Label</name><value using_default="0">secret</value>
+                      <default>fallback</default><type>string</type><options><option>ignored</option></options>
+                    </param>
+                    <permissions><permission><name>Everything</name></permission></permissions>
+                    <user_tags><tag id="tag-1"><name>ignored</name></tag></user_tags>
+                </report_config>
+                <report_configs start="1" max="100"/>
+                <report_config_count>9<filtered>1</filtered><page>1</page></report_config_count>
+            </get_report_configs_response>"#,
+        );
+
+        let parsed = GetReportConfigsResponse::from_response(&response).expect("source shape");
+        let format = parsed.items[0].report_format.as_ref().expect("format ref");
+        assert_eq!(format.id.as_str(), "rf-missing");
+        assert!(format.name.is_empty());
+        assert_eq!(parsed.counts.total, Some(9));
+        assert_eq!(parsed.counts.filtered, Some(1));
+        assert_eq!(parsed.counts.page, Some(1));
+    }
+
+    #[test]
+    fn rejects_missing_item_ids_and_malformed_counts() {
+        let missing_id = Response::from(
+            r#"<get_report_configs_response status="200" status_text="OK"><report_config><name>Missing ID</name></report_config></get_report_configs_response>"#,
+        );
+        assert!(matches!(
+            GetReportConfigsResponse::from_response(&missing_id),
+            Err(ParseError::MissingElement(field)) if field == "report_config.id"
+        ));
+
+        for xml in [
+            r#"<get_report_configs_response status="200" status_text="OK"><report_config_count>bad</report_config_count></get_report_configs_response>"#,
+            r#"<get_report_configs_response status="200" status_text="OK"><report_config_count>1<filtered>bad</filtered></report_config_count></get_report_configs_response>"#,
+            r#"<get_report_configs_response status="200" status_text="OK"><report_config_count>1<page>bad</page></report_config_count></get_report_configs_response>"#,
+        ] {
+            assert!(matches!(
+                GetReportConfigsResponse::from_response(&Response::from(xml)),
+                Err(ParseError::InvalidValue { .. })
+            ));
+        }
     }
 }

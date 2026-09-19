@@ -45,10 +45,6 @@ use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
-use gvm_gmp::commands::report_configs::{
-    clone_report_config, create_report_config, delete_report_config, get_report_configs,
-    modify_report_config,
-};
 use gvm_gmp::commands::reports::{
     export_scan_report, get_report_applications, get_report_closed_cves, get_report_cves,
     get_report_errors, get_report_hosts, get_report_operating_systems, get_report_ports,
@@ -89,7 +85,6 @@ pub use gvm_gmp::commands::aggregates::{
     AggregateMode, AggregateSort, AggregateSortStatistic, GetAggregatesRequestOpts,
 };
 pub use gvm_gmp::commands::help::HelpMode;
-pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{
     ExportScanReportOpts, GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts,
     GetReportExportOpts, GetScanReportOpts, ImportReportOpts,
@@ -682,29 +677,6 @@ pub struct GmpNext<C: GvmConnection>(GmpClient<C>);
 pub trait Gmp226Commands {
     /// Send a `get_features` request.
     async fn get_features(&mut self) -> Result<Response, GvmError>;
-
-    /// Send a `create_report_config` request.
-    async fn create_report_config(
-        &mut self,
-        name: &str,
-        report_format_id: &str,
-    ) -> Result<Response, GvmError>;
-
-    /// Send a `clone_report_config` request.
-    async fn clone_report_config(&mut self, id: &str) -> Result<Response, GvmError>;
-
-    /// Send a `get_report_configs` request.
-    async fn get_report_configs(&mut self) -> Result<Response, GvmError>;
-
-    /// Send a `modify_report_config` request.
-    async fn modify_report_config(
-        &mut self,
-        id: &str,
-        opts: ModifyReportConfigOpts,
-    ) -> Result<Response, GvmError>;
-
-    /// Send a `delete_report_config` request.
-    async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError>;
 }
 
 /// Structured audit-report commands available in GMP 22.7 and later.
@@ -1071,36 +1043,6 @@ macro_rules! impl_gmp226_commands {
         impl<C: GvmConnection + Send> Gmp226Commands for $client<C> {
             async fn get_features(&mut self) -> Result<Response, GvmError> {
                 self.0.call(get_features()).await
-            }
-
-            async fn create_report_config(
-                &mut self,
-                name: &str,
-                report_format_id: &str,
-            ) -> Result<Response, GvmError> {
-                self.0
-                    .call(create_report_config(name, report_format_id))
-                    .await
-            }
-
-            async fn clone_report_config(&mut self, id: &str) -> Result<Response, GvmError> {
-                self.0.call(clone_report_config(id)).await
-            }
-
-            async fn get_report_configs(&mut self) -> Result<Response, GvmError> {
-                self.0.call(get_report_configs()).await
-            }
-
-            async fn modify_report_config(
-                &mut self,
-                id: &str,
-                opts: ModifyReportConfigOpts,
-            ) -> Result<Response, GvmError> {
-                self.0.call(modify_report_config(id, opts)).await
-            }
-
-            async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError> {
-                self.0.call(delete_report_config(id)).await
             }
         }
     };
