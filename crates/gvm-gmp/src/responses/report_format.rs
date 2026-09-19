@@ -136,7 +136,7 @@ mod tests {
                     <content_type>text/html</content_type>
                     <extension>html</extension>
                     <summary>HTML Report</summary>
-                    <trust>yes</trust>
+                    <trust>yes<time>2026-01-02T01:02:03Z</time></trust>
                     <active>1</active>
                     <predefined>1</predefined>
                 </report_format>
@@ -147,6 +147,7 @@ mod tests {
                     <active>0</active>
                     <predefined>0</predefined>
                 </report_format>
+                <report_formats start="2" max="1"/>
                 <report_format_count>2<filtered>2</filtered><page>1</page></report_format_count>
             </get_report_formats_response>"#,
         );
@@ -231,5 +232,60 @@ mod tests {
         assert_eq!(rf.trust, None);
         assert!(!rf.active);
         assert!(!rf.predefined);
+    }
+
+    #[test]
+    fn parses_rich_expansions_as_ignored_subtrees_and_distinct_counts() {
+        let response = Response::from(
+            r#"<get_report_formats_response status="200" status_text="OK">
+                <report_format id="rf-1">
+                    <name>Rich</name>
+                    <param><name>Label</name><type>string</type><value>red</value></param>
+                    <file name="data.txt">aGVsbG8=</file>
+                    <signature>opaque</signature>
+                    <alerts><alert id="alert-1"><name>Alert</name></alert></alerts>
+                    <report_configs><report_config id="config-1"><name>Config</name></report_config></report_configs>
+                    <active>true</active><predefined>false</predefined>
+                </report_format>
+                <report_formats start="3" max="1"/>
+                <report_format_count>9<filtered>4</filtered><page>1</page></report_format_count>
+            </get_report_formats_response>"#,
+        );
+
+        let parsed = GetReportFormatsResponse::from_response(&response).expect("rich list parses");
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].meta.name, "Rich");
+        assert!(parsed.items[0].active);
+        assert!(!parsed.items[0].predefined);
+        assert_eq!(parsed.counts.total, Some(9));
+        assert_eq!(parsed.counts.filtered, Some(4));
+        assert_eq!(parsed.counts.page, Some(1));
+    }
+
+    #[test]
+    fn permits_missing_counts_and_rejects_malformed_counts_and_booleans() {
+        let no_counts = Response::from(
+            r#"<get_report_formats_response status="200" status_text="OK"><report_formats start="1" max="0"/></get_report_formats_response>"#,
+        );
+        let parsed = GetReportFormatsResponse::from_response(&no_counts).expect("counts optional");
+        assert_eq!(parsed.counts, CountInfo::default());
+
+        for xml in [
+            r#"<get_report_formats_response status="200" status_text="OK"><report_format_count>many</report_format_count></get_report_formats_response>"#,
+            r#"<get_report_formats_response status="200" status_text="OK"><report_format id="rf-1"><name>Format</name><active>maybe</active></report_format></get_report_formats_response>"#,
+            r#"<get_report_formats_response status="200" status_text="OK"><report_format id="rf-1"><name>Format</name><predefined>2</predefined></report_format></get_report_formats_response>"#,
+        ] {
+            assert!(GetReportFormatsResponse::from_response(&Response::from(xml)).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_missing_required_report_format_identity_or_name() {
+        for xml in [
+            r#"<get_report_formats_response status="200" status_text="OK"><report_format><name>Format</name></report_format></get_report_formats_response>"#,
+            r#"<get_report_formats_response status="200" status_text="OK"><report_format id="rf-1"/></get_report_formats_response>"#,
+        ] {
+            assert!(GetReportFormatsResponse::from_response(&Response::from(xml)).is_err());
+        }
     }
 }

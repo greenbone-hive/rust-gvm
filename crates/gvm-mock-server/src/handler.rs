@@ -470,6 +470,11 @@ impl SessionHandler {
             "get_report_configs" => crate::stateful_report_configs::handle_get(cmd, store),
             "modify_report_config" => crate::stateful_report_configs::handle_modify(cmd, store),
             "delete_report_config" => self.handle_delete(cmd, store),
+            "create_report_format" => crate::stateful_report_formats::handle_create(cmd, store),
+            "get_report_formats" => crate::stateful_report_formats::handle_get(cmd, store),
+            "modify_report_format" => crate::stateful_report_formats::handle_modify(cmd, store),
+            "delete_report_format" => crate::stateful_report_formats::handle_delete(cmd, store),
+            "verify_report_format" => crate::stateful_report_formats::handle_verify(cmd, store),
             // Create commands
             name if name.starts_with("create_") => self.handle_create(cmd, raw_xml, store),
             // Get commands

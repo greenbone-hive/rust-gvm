@@ -182,10 +182,25 @@ fn is_sensitive_element(stack: &[String], element_name: &str) -> bool {
         || matches!(element_name, "value" | "param" | "default_value")
         || is_alert_data(stack, element_name)
         || (element_name == "file" && stack.first().is_some_and(|root| root == "modify_license"))
+        || is_report_format_file(stack, element_name)
         || (matches!(element_name, "host" | "path")
             && stack
                 .first()
                 .is_some_and(|root| root.contains("credential_store")))
+}
+
+fn is_report_format_file(stack: &[String], element_name: &str) -> bool {
+    element_name == "file"
+        && stack.iter().any(|name| name == "report_format")
+        && stack
+            .iter()
+            .any(|name| name == "get_report_formats_response")
+        && stack.first().is_some_and(|root| {
+            matches!(
+                root.as_str(),
+                "create_report_format" | "get_report_formats_response"
+            )
+        })
 }
 
 fn is_alert_data(stack: &[String], element_name: &str) -> bool {
@@ -338,5 +353,23 @@ mod tests {
             "<create_alert><name>visible</name><method>Email<data><redacted/></data></method></create_alert>"
         );
         assert!(!redacted.contains("do-not-log"));
+    }
+
+    #[test]
+    fn redacts_report_format_file_payloads_only_in_imports_and_exports() {
+        for xml in [
+            br#"<create_report_format><get_report_formats_response><report_format id="rf"><name>visible</name><file name="script.sh">do-not-log</file></report_format></get_report_formats_response></create_report_format>"#.as_slice(),
+            br#"<get_report_formats_response><report_format id="rf"><name>visible</name><file name="script.sh">do-not-log</file></report_format></get_report_formats_response>"#.as_slice(),
+        ] {
+            let redacted = String::from_utf8(redact_wire_bytes(xml)).expect("valid UTF-8");
+            assert!(redacted.contains("<name>visible</name>"));
+            assert!(redacted.contains("<file name=\"script.sh\"><redacted/></file>"));
+            assert!(!redacted.contains("do-not-log"));
+        }
+
+        assert_eq!(
+            redact_wire_bytes(b"<root><file name=\"visible.txt\">visible</file></root>"),
+            b"<root><file name=\"visible.txt\">visible</file></root>"
+        );
     }
 }
