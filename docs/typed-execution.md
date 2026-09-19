@@ -493,14 +493,45 @@ owns its optional comment and uses gvmd's child-element payload; ports outside
 The three redundant options types and eight free builders are removed; raw
 `send`/`call` remains supported.
 
-## Report formats and TLS certificates
+## Report formats
 
-The earlier additive report-configuration wrappers are superseded by the
-canonical lifecycle described above. Report-format create, clone, import, list, detail, modify,
-delete, and verify requests preserve import validation and existing response
-shapes. TLS certificates expose the same complete lifecycle without changing
-certificate or private-key payload encoding. All semantic requests delegate to
-the established builders, and raw compatibility APIs remain available.
+Report-format list, detail, import, clone, modify, delete, and verify use seven
+explicit complete requests. Detail, import, and clone retain semantic aliases
+over shared wire roots. The seven same-named `GmpClient` facades accept request
+values and call `execute` directly; `GmpVersioned` uses generic
+`execute(request)`. Unsupported name-only creation and all eight free builders
+and two option bags are removed.
+
+Import accepts one complete exported `get_report_formats_response` envelope.
+The codec validates its framing and required identity/name without caching or
+rebuilding it, then embeds the original bytes. Server-assigned replacement IDs
+and collision-suffixed names are authoritative. Clone accepts only an optional
+name and deliberately inherits upstream's omission of parameter-option rows.
+
+Modify supports optional name, summary, active state, and one
+`ReportFormatParamUpdate`. Paired empty name/summary elements preserve the
+source's empty-text distinction. Parameter text is standard-base64 encoded
+once; omission preserves, while missing/empty value clears and never means
+reset-to-default. Upstream commits metadata before parameter validation, so a
+compound failure can leave metadata changed.
+
+Queries expose inline/saved filters, trash, details, params, alerts,
+report-config associations, and pagination bypass. Params-only and details
+expansions differ; alert/config expansions are independent. The typed response
+keeps metadata/content/trust/active/predefined only. Delete may change the ID
+when moving a non-predefined format to trash. Successful verify means the
+check completed; read the format afterward to observe trust. See the
+[pinned evidence](report-format-request-gvmd-evidence.md).
+
+`ReportFormatType` remains standalone compatibility vocabulary. Its labels are
+not format IDs, parameter types, or `scan`/`audit`/`all` report-type values and
+are not used by lifecycle requests.
+
+## TLS certificates
+
+TLS certificates retain their transitional typed lifecycle without changing
+certificate or private-key payload encoding. Their canonicalization is the
+next ordered #602 child. Raw compatibility APIs remain available.
 
 ## Read-only system discovery
 

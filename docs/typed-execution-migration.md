@@ -982,6 +982,94 @@ documented separately in the
 [source evidence](report-config-request-gvmd-evidence.md); they are not
 live-gvmd compatibility claims.
 
+## Report-format lifecycle
+
+The eight report-format free builders and two option bags are removed. The
+unsupported direct-create request/facade is also removed: gvmd creates a
+report format only by importing an exported response envelope or cloning an
+existing format. Construct one of the seven complete requests and pass it to
+the same-named facade or `execute`:
+
+```rust
+use gvm_gmp::commands::report_formats::{
+    GetReportFormatsRequest, ImportReportFormatRequest,
+    ModifyReportFormatRequest, ReportFormatParamUpdate,
+};
+use gvm_gmp::EntityId;
+
+let exported = r#"<get_report_formats_response><report_format id="11111111-1111-1111-1111-111111111111"><name>Imported</name></report_format></get_report_formats_response>"#;
+let created = client
+    .import_report_format(ImportReportFormatRequest::new(exported))
+    .await?;
+
+let mut modify = ModifyReportFormatRequest::new(created.id);
+modify.summary = Some(String::new()); // emits <summary></summary>
+modify.param = Some(ReportFormatParamUpdate {
+    name: "Label".into(),
+    value: Some("red".into()), // encoded as standard base64 exactly once
+});
+client.modify_report_format(modify).await?;
+
+let mut list = GetReportFormatsRequest::new();
+list.params = Some(true);
+let formats = client.get_report_formats(list).await?;
+# let _ = formats;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Direct signature migrations:
+
+- `get_report_formats(opts)` becomes
+  `get_report_formats(GetReportFormatsRequest { ... })`;
+- `get_report_format(&id, opts)` becomes
+  `get_report_format(GetReportFormatRequest::new(id))`, with query controls on
+  that request;
+- `create_report_format(name, opts)` and `CreateReportFormatRequest` have no
+  direct replacement; select import or clone explicitly;
+- `import_report_format(xml)` becomes
+  `import_report_format(ImportReportFormatRequest::new(exported_envelope))`;
+- `clone_report_format(&id)` becomes
+  `clone_report_format(CloneReportFormatRequest::new(id))`;
+- `modify_report_format(&id, opts)` becomes a complete
+  `ModifyReportFormatRequest::new(id)`;
+- `delete_report_format(&id, ultimate)` becomes
+  `delete_report_format(DeleteReportFormatRequest::new(id))`, with optional
+  `ultimate` on the request; and
+- `verify_report_format(&id)` becomes
+  `verify_report_format(VerifyReportFormatRequest::new(id))`.
+
+Import now takes a complete `get_report_formats_response` envelope containing
+exactly one direct format with nonempty ID/name. The infallible constructor
+owns the original spelling; final validation is a `GmpRequestError` during
+typed execution, not a response `ParseError`. Valid bytes are embedded without
+normalization. UUID acceptance, complete definition validation, and collision
+allocation remain server-side; always use the returned created ID. Raw
+`Request`, `XmlCommand`, `send`/`call`, and custom codecs remain available for
+deliberate raw multi-format/unsupported XML.
+
+Modification no longer exposes comment, content type, or format type; these
+have no supported mutation replacement. Omitted summary preserves it, while
+`Some("")` clears it with paired tags. One parameter may be changed. Omitted
+parameter preserves all; `value: None` and `value: Some("")` both clear one
+value; neither restores its default. Unlike report-configuration parameters,
+report-format parameter text is base64-carried. Compound metadata and
+parameter modification is not atomic upstream: a later parameter error may
+leave metadata committed.
+
+Clone supports only an optional exact name. Omitted/empty name asks gvmd to
+generate one. Its upstream implementation does not copy parameter-option rows.
+Nonultimate deletion can assign a new trash ID, and active alert use can block
+deletion; report-configuration references do not block or cascade. Successful
+verification is completion, not a trusted boolean—read the format afterward
+to observe trust.
+
+Queries add independent params, details, alerts, and report-config expansion
+flags. The typed response remains metadata/content/trust/active/predefined,
+not a full export. `ReportFormatType` is retained but is not lifecycle input.
+See the [source evidence](report-format-request-gvmd-evidence.md) for schema
+differences, source quirks, response limits, and declared mock approximations;
+no live-gvmd validation is claimed.
+
 ## Compatibility boundary
 
 The promoted #523 baseline was additive, but it has not been published as the
@@ -995,7 +1083,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 264 current public async methods: 260 delegate
+The facade inventory locks all 263 current public async methods: 259 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path, and the deprecated `sync_scan_config` alias delegates
 indirectly through `sync_config`.

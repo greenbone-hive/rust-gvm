@@ -295,8 +295,8 @@ surface. Canonical generic asset, host, operating-system asset, and result
 list/detail queries, plus the GMP 22.8 agent, agent-group, and
 integration-configuration families use the same execution contract, including
 binary/base64 support bundles. Generic configuration and port-list/port-range
-lifecycles and the report-configuration lifecycle are also fully migrated;
-report-format and TLS-certificate lifecycles remain typed but transitional.
+lifecycles and the report-configuration and report-format lifecycles are also
+fully migrated; the TLS-certificate lifecycle remains typed but transitional.
 Read-only system discovery is
 covered as well, including aggregates, features, feeds, settings, timezones,
 help, system reports, generic information, preferences, resource names,
@@ -383,6 +383,39 @@ response intentionally omits parameter observations; use raw `send`/`call`
 when the complete response XML is required. See the
 [migration guide](docs/v0.7.0-migration.md#report-configurations) and
 [pinned gvmd evidence](docs/report-config-request-gvmd-evidence.md).
+
+Report formats use seven explicit request values for list, detail, import,
+clone, modify, delete, and verify. Direct name-only creation is removed because
+gvmd supports creation only by importing an exported response envelope or
+cloning an existing format. Imports preserve the validated envelope bytes and
+return an authoritative created ID; modification supports metadata plus one
+decoded parameter value, which is base64-encoded exactly once:
+
+```rust
+use gvm_gmp::commands::report_formats::{
+    ModifyReportFormatRequest, ReportFormatParamUpdate,
+};
+use gvm_gmp::EntityId;
+
+let mut request = ModifyReportFormatRequest::new(EntityId::new("format-1")?);
+request.summary = Some(String::new()); // paired empty element clears summary
+request.param = Some(ReportFormatParamUpdate {
+    name: "Label".into(),
+    value: Some("custom".into()),
+});
+client.modify_report_format(request).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Omitting a parameter preserves all parameters; a missing or empty value clears
+one parameter and does not reset it to a default. Compound metadata/parameter
+updates can partially commit upstream if parameter validation later fails.
+Clone naming, changed trash IDs, alert-use deletion guards, and verification
+completion versus observed trust are documented in the
+[migration guide](docs/v0.7.0-migration.md#report-formats) and
+[pinned gvmd evidence](docs/report-format-request-gvmd-evidence.md). The typed
+response is intentionally smaller than a complete export; raw `send`/`call`
+remains available.
 
 The standard target family is the canonical reference slice: its requests own
 their complete input and encoding, and its redundant options types and free
@@ -634,6 +667,10 @@ The mock server is the most developed component. It's designed to be a drop-in t
   note/override expansions, and effective seeded override filtering, counts,
   and rendering. Unsupported or malformed filter terms fail explicitly; this
   is not a full gvmd filter, permission, CVSS, or override engine.
+- **bounded stateful report-format conformance** — opaque import and inert
+  files, cloning, one-parameter mutation, list/detail expansions, trash/delete,
+  and deterministic injected verification outcomes. It is not a GPG,
+  filesystem, complete ACL/filter, or live-gvmd implementation.
 
 ### Validated Against
 
