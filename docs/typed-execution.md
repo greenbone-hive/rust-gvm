@@ -529,9 +529,28 @@ are not used by lifecycle requests.
 
 ## TLS certificates
 
-TLS certificates retain their transitional typed lifecycle without changing
-certificate or private-key payload encoding. Their canonicalization is the
-next ordered #602 child. Raw compatibility APIs remain available.
+TLS certificates use six complete requests for list, detail, create, clone,
+modify, and delete. The six named client methods accept those requests by
+value and delegate directly to `execute`. Creation owns original PEM or DER
+bytes, requires them to be nonempty, and standard-base64 encodes them exactly
+once. Name is optional; omitted or empty name asks gvmd to use the SHA-256
+fingerprint.
+
+The lifecycle has no private-key input or certificate replacement. Clone may
+copy a permitted foreign resource into the caller's collection, subject to
+owner-scoped SHA-256/MD5 identity. Empty clone name/comment copies the source;
+empty modify name/comment clears. Trust is an independent optional stored
+boolean, not validity or chain verification. Deletion is permanent and
+ID-only: TLS has no trash/restore lifecycle and `ultimate` is ineffective.
+
+Certificate data is returned when details or `include_certificate_data` is
+true, while observation sources require details. The typed response retains
+wire base64 text and a bounded metadata projection; use raw execution for
+format, serial, trust, time status, tags, permissions, or source graphs.
+Request and response `Debug` output plus wire traces redact certificate data,
+but raw responses and serde remain data-bearing. See the
+[migration guide](typed-execution-migration.md#tls-certificate-lifecycle) and
+[pinned evidence](tls-certificate-request-gvmd-evidence.md).
 
 ## Read-only system discovery
 

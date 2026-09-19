@@ -24,8 +24,7 @@ use gvm_gmp::commands::reports::{
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::tls_certificates::{
     CloneTlsCertificateRequest, CreateTlsCertificateRequest, DeleteTlsCertificateRequest,
-    GetTlsCertificateRequest, GetTlsCertificatesOpts, GetTlsCertificatesRequest,
-    ModifyTlsCertificateRequest, TlsCertificateOpts,
+    GetTlsCertificateRequest, GetTlsCertificatesRequest, ModifyTlsCertificateRequest,
 };
 use gvm_gmp::responses::{
     CreateReportConfigResponse, CreateReportFormatResponse, CreateReportResponse,
@@ -319,9 +318,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_tls_certificates(
         &mut self,
-        opts: GetTlsCertificatesOpts,
+        request: GetTlsCertificatesRequest,
     ) -> Result<GetTlsCertificatesResponse, GvmError> {
-        self.execute(GetTlsCertificatesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a detailed `get_tls_certificates` request for one certificate.
@@ -330,10 +329,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_tls_certificate(
         &mut self,
-        tls_certificate_id: &EntityId,
+        request: GetTlsCertificateRequest,
     ) -> Result<GetTlsCertificatesResponse, GvmError> {
-        self.execute(GetTlsCertificateRequest::new(tls_certificate_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_tls_certificate` request and return a typed
@@ -343,11 +341,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_tls_certificate(
         &mut self,
-        name: &str,
-        opts: TlsCertificateOpts,
+        request: CreateTlsCertificateRequest,
     ) -> Result<CreateTlsCertificateResponse, GvmError> {
-        self.execute(CreateTlsCertificateRequest::new(name, opts))
-            .await
+        self.execute(request).await
     }
 
     /// Clone a TLS certificate through `create_tls_certificate`.
@@ -356,10 +352,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_tls_certificate(
         &mut self,
-        tls_certificate_id: &EntityId,
+        request: CloneTlsCertificateRequest,
     ) -> Result<CreateTlsCertificateResponse, GvmError> {
-        self.execute(CloneTlsCertificateRequest::new(tls_certificate_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Modify a TLS certificate.
@@ -368,14 +363,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_tls_certificate(
         &mut self,
-        tls_certificate_id: &EntityId,
-        opts: TlsCertificateOpts,
+        request: ModifyTlsCertificateRequest,
     ) -> Result<ModifyTlsCertificateResponse, GvmError> {
-        self.execute(ModifyTlsCertificateRequest::new(
-            tls_certificate_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Delete a TLS certificate.
@@ -384,14 +374,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_tls_certificate(
         &mut self,
-        tls_certificate_id: &EntityId,
-        ultimate: bool,
+        request: DeleteTlsCertificateRequest,
     ) -> Result<DeleteTlsCertificateResponse, GvmError> {
-        self.execute(DeleteTlsCertificateRequest::new(
-            tls_certificate_id.clone(),
-            ultimate,
-        ))
-        .await
+        self.execute(request).await
     }
 
     // ── Report Formats ────────────────────────────────────────────────────────

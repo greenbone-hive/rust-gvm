@@ -283,12 +283,12 @@ builder	crates/gvm-gmp/src/commands/tickets.rs	delete_ticket	frozen-ticket	Ticke
 builder	crates/gvm-gmp/src/commands/tickets.rs	get_ticket	frozen-ticket	Ticket surface is frozen by product scope.
 builder	crates/gvm-gmp/src/commands/tickets.rs	get_tickets	frozen-ticket	Ticket surface is frozen by product scope.
 builder	crates/gvm-gmp/src/commands/tickets.rs	modify_ticket	frozen-ticket	Ticket surface is frozen by product scope.
-builder	crates/gvm-gmp/src/commands/tls_certificates.rs	clone_tls_certificate	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tls_certificates.rs	create_tls_certificate	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tls_certificates.rs	delete_tls_certificate	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tls_certificates.rs	get_tls_certificate	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tls_certificates.rs	get_tls_certificates	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tls_certificates.rs	modify_tls_certificate	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tls_certificates.rs	clone_tls_certificate	removed	Removed redundant builder; CloneTlsCertificateRequest owns supported copy and override encoding.
+builder	crates/gvm-gmp/src/commands/tls_certificates.rs	create_tls_certificate	removed	Removed misleading builder that inserted caller certificate text without the required base64 encoding.
+builder	crates/gvm-gmp/src/commands/tls_certificates.rs	delete_tls_certificate	removed	Removed builder exposed ineffective ultimate input; deletion is permanently ID-only.
+builder	crates/gvm-gmp/src/commands/tls_certificates.rs	get_tls_certificate	removed	Removed redundant singular builder; GetTlsCertificateRequest owns the shared list-root encoding.
+builder	crates/gvm-gmp/src/commands/tls_certificates.rs	get_tls_certificates	removed	Removed redundant builder; supported query controls belong to the complete request.
+builder	crates/gvm-gmp/src/commands/tls_certificates.rs	modify_tls_certificate	removed	Removed builder that emitted unsupported certificate and private-key mutation children.
 builder	crates/gvm-gmp/src/commands/trashcan.rs	empty_trashcan	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/trashcan.rs	restore	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/trashcan.rs	restore_from_trashcan	transitional	Pending bounded family migration under #602.
@@ -388,15 +388,15 @@ facade	crates/gvm-client/src/typed/identity.rs	modify_role	canonical-request	Com
 facade	crates/gvm-client/src/typed/identity.rs	modify_user	retained-construction	Retained for discoverability; accepts the canonical ModifyUserRequest unchanged.
 facade	crates/gvm-client/src/typed/reports.rs	clone_report_config	canonical-request	Accepts CloneReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	clone_report_format	canonical-request	Accepts CloneReportFormatRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/reports.rs	clone_tls_certificate	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	clone_tls_certificate	canonical-request	Accepts CloneTlsCertificateRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	create_report_config	canonical-request	Accepts CreateReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	create_report_config_with_opts	removed	Canonical create facade accepts the complete request without an options variant.
 facade	crates/gvm-client/src/typed/reports.rs	create_report_format	removed	Unsupported name-only creation facade was removed; import and clone are explicit operations.
-facade	crates/gvm-client/src/typed/reports.rs	create_tls_certificate	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	create_tls_certificate	canonical-request	Accepts CreateTlsCertificateRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_config	canonical-request	Accepts DeleteReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_config_with_opts	removed	Canonical delete facade accepts the complete request without an options variant.
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_format	canonical-request	Accepts DeleteReportFormatRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/reports.rs	delete_tls_certificate	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	delete_tls_certificate	canonical-request	Accepts permanent DeleteTlsCertificateRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	export_scan_report	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_report	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_report_hosts	transitional	Pending bounded family migration under #602.
@@ -420,13 +420,13 @@ facade	crates/gvm-client/src/typed/reports.rs	get_report_vulns	transitional	Pend
 facade	crates/gvm-client/src/typed/reports.rs	get_reports	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_result	canonical-request	Accepts the complete canonical GetResultRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_results	canonical-request	Accepts the complete canonical GetResultsRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificate	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificates	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificate	canonical-request	Accepts GetTlsCertificateRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificates	canonical-request	Accepts GetTlsCertificatesRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	import_report	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	import_report_format	canonical-request	Accepts ImportReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	modify_report_config	canonical-request	Accepts ModifyReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	modify_report_format	canonical-request	Accepts ModifyReportFormatRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/reports.rs	modify_tls_certificate	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	modify_tls_certificate	canonical-request	Accepts ModifyTlsCertificateRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	verify_report_format	canonical-request	Accepts VerifyReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/resources.rs	clone_config	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/resources.rs	clone_port_list	retained-construction	Retained for discoverability; accepts the canonical ClonePortListRequest unchanged.
@@ -697,8 +697,8 @@ options	crates/gvm-gmp/src/commands/tasks.rs	ModifyTaskOpts	transitional	Pending
 options	crates/gvm-gmp/src/commands/tickets.rs	CreateTicketOpts	frozen-ticket	Ticket surface is frozen by product scope.
 options	crates/gvm-gmp/src/commands/tickets.rs	GetTicketsOpts	frozen-ticket	Ticket surface is frozen by product scope.
 options	crates/gvm-gmp/src/commands/tickets.rs	ModifyTicketOpts	frozen-ticket	Ticket surface is frozen by product scope.
-options	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificatesOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/tls_certificates.rs	TlsCertificateOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificatesOpts	removed	Removed options bag with unsupported trash control; complete list and detail requests own supported query inputs.
+options	crates/gvm-gmp/src/commands/tls_certificates.rs	TlsCertificateOpts	removed	Removed shared options that exposed unsupported private-key and certificate-replacement fields.
 options	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/user_settings.rs	ModifyUserSettingOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/users.rs	GetUsersOpts	removed	Removed by #636; fields now belong to GetUsersRequest.
@@ -943,10 +943,12 @@ request	crates/gvm-gmp/src/commands/tasks.rs	GetTasksRequest	transitional	Pendin
 request	crates/gvm-gmp/src/commands/tasks.rs	ModifyAuditRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	ModifyTaskRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	MoveTaskRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tls_certificates.rs	CreateTlsCertificateRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tls_certificates.rs	DeleteTlsCertificateRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificatesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tls_certificates.rs	ModifyTlsCertificateRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tls_certificates.rs	CloneTlsCertificateRequest	canonical-request	Complete clone input with source-shaped empty override semantics, semantic alias metadata, validation, and direct encoding.
+request	crates/gvm-gmp/src/commands/tls_certificates.rs	CreateTlsCertificateRequest	canonical-request	Complete create input owns original certificate bytes, confidential diagnostics, final validation, base64 encoding, and typed response.
+request	crates/gvm-gmp/src/commands/tls_certificates.rs	DeleteTlsCertificateRequest	canonical-request	Complete ID-only permanent deletion input with final validation and direct encoding.
+request	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificateRequest	canonical-request	Complete detail input owns selector and query expansions with semantic alias metadata and direct encoding.
+request	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificatesRequest	canonical-request	Complete list input owns selector, filter, detail, and certificate-data controls with final validation.
+request	crates/gvm-gmp/src/commands/tls_certificates.rs	ModifyTlsCertificateRequest	canonical-request	Complete supported metadata/trust mutation input with clear/preserve semantics and direct encoding.
 request	crates/gvm-gmp/src/commands/trashcan.rs	EmptyTrashcanRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingsRequest	transitional	Pending bounded family migration under #602.
