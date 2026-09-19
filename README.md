@@ -296,7 +296,12 @@ list/detail queries, plus the GMP 22.8 agent, agent-group, and
 integration-configuration families use the same execution contract, including
 binary/base64 support bundles. Generic configuration and port-list/port-range
 lifecycles and the report-configuration, report-format, and TLS-certificate
-lifecycles are also fully migrated. TLS creation accepts original PEM or DER
+lifecycles are also fully migrated. NVT/SecInfo discovery uses 19 complete
+request values and request-by-value facades; pinned `get_info` supports only
+CERT-Bund, CPE, CVE, DFN-CERT, and NVT, while observed vulnerabilities use
+`get_vulns`. See the
+[pinned NVT/SecInfo evidence](docs/nvt-secinfo-request-gvmd-evidence.md).
+TLS creation accepts original PEM or DER
 bytes and encodes the GMP carrier exactly once; the lifecycle has no
 private-key, certificate-replacement, trash, or restore controls. See the
 [pinned gvmd evidence](docs/tls-certificate-request-gvmd-evidence.md).
@@ -314,6 +319,22 @@ use gvm_gmp::commands::targets::GetTargetsRequest;
 let targets = client
     .execute(GetTargetsRequest::default())
     .await?;
+```
+
+NVT and SecInfo discovery follows the same request-by-value rule:
+
+```rust
+use gvm_gmp::commands::nvts::GetNvtRequest;
+use gvm_gmp::commands::secinfo::{GenericInfoType, GetInfoRequest};
+
+let nvt = client
+    .get_nvt(GetNvtRequest::new("1.3.6.1.4.1.25623.1"))
+    .await?;
+let cve = client
+    .get_info(GetInfoRequest::new("CVE-2026-1000", GenericInfoType::Cve))
+    .await?;
+# let _ = (nvt, cve);
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 Asset operations now take complete request values. Generic reads require an

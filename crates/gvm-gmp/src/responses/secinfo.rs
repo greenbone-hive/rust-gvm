@@ -1,182 +1,169 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Security-info response models.
+//! Security-information and observed-vulnerability response models.
 
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, status_from_response, CountInfo, ParseError,
+    count_info, parse_document, status_from_response, CountInfo, ParseError, XmlNode,
 };
 use crate::{GmpResponse, GmpVersion};
 
-const GENERIC_INFO_ELEMENTS: &[(&str, &str)] = &[
+const SUPPORTED_INFO_ELEMENTS: &[(&str, &str)] = &[
     ("cert_bund_adv", "CERT_BUND_ADV"),
     ("cpe", "CPE"),
     ("cve", "CVE"),
     ("dfn_cert_adv", "DFN_CERT_ADV"),
     ("nvt", "NVT"),
-    ("ovaldef", "OVALDEF"),
-    ("os", "os"),
-    ("vuln", "vuln"),
 ];
 
-/// A resource returned by the generic `get_info` compatibility command.
+/// A bounded resource projection from gvmd's enclosing `<info>` wrapper.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GenericInfo {
-    /// GMP `type` value corresponding to the resource element.
+    /// Canonical GMP type spelling identified by the direct payload child.
     pub info_type: String,
-    /// Resource identifier. NVT `oid` attributes are normalized into this field.
+    /// Identifier from the enclosing `<info id="...">` wrapper.
     pub id: String,
-    /// Resource name.
+    /// Name from the enclosing wrapper.
     pub name: String,
 }
 
-/// Typed response for generic `get_info` list and detail requests.
+/// Typed response for generic supported `get_info` requests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GetInfoResponse {
-    /// GMP response status.
     pub status: u16,
-    /// GMP response status text.
     pub status_text: String,
-    /// Returned resources in wire order.
     pub items: Vec<GenericInfo>,
-    /// Generic resource counts when supplied by gvmd.
     pub counts: CountInfo,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Cve {
-    pub id: String,
-    pub name: String,
+macro_rules! info_item {
+    ($name:ident) => {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        pub struct $name {
+            pub id: String,
+            pub name: String,
+        }
+    };
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Cpe {
-    pub id: String,
-    pub name: String,
+info_item!(Cve);
+info_item!(Cpe);
+info_item!(CertBundAdvisory);
+info_item!(DfnCertAdvisory);
+
+macro_rules! info_response {
+    ($name:ident, $item:ty) => {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        pub struct $name {
+            pub status: u16,
+            pub status_text: String,
+            pub items: Vec<$item>,
+            pub counts: CountInfo,
+        }
+    };
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct CertBundAdvisory {
-    pub id: String,
-    pub name: String,
-}
+info_response!(GetCvesResponse, Cve);
+info_response!(GetCpesResponse, Cpe);
+info_response!(GetCertBundAdvisoriesResponse, CertBundAdvisory);
+info_response!(GetDfnCertAdvisoriesResponse, DfnCertAdvisory);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct DfnCertAdvisory {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GetCvesResponse {
-    pub status: u16,
-    pub status_text: String,
-    pub items: Vec<Cve>,
-    pub counts: CountInfo,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GetCpesResponse {
-    pub status: u16,
-    pub status_text: String,
-    pub items: Vec<Cpe>,
-    pub counts: CountInfo,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GetCertBundAdvisoriesResponse {
-    pub status: u16,
-    pub status_text: String,
-    pub items: Vec<CertBundAdvisory>,
-    pub counts: CountInfo,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GetDfnCertAdvisoriesResponse {
-    pub status: u16,
-    pub status_text: String,
-    pub items: Vec<DfnCertAdvisory>,
-    pub counts: CountInfo,
-}
-
-fn parse_secinfo_item(
-    node: &crate::responses::common::XmlNode,
-    element_name: &str,
-) -> Result<(String, String), ParseError> {
-    let id = node
-        .attr("id")
-        .ok_or_else(|| ParseError::MissingElement(format!("{element_name}.id")))?
-        .to_string();
-    let name = node.required_child_text("name")?;
-    Ok((id, name))
-}
-
-impl GenericInfo {
-    fn from_node(
-        node: &crate::responses::common::XmlNode,
-        info_type: &str,
-    ) -> Result<Self, ParseError> {
-        let id = node
-            .attr("id")
-            .or_else(|| node.attr("oid"))
-            .filter(|id| !id.is_empty())
-            .ok_or_else(|| ParseError::MissingElement(format!("{}.id", node.name)))?;
-        Ok(Self {
-            info_type: info_type.to_string(),
-            id: id.to_string(),
-            name: node.required_child_text("name")?,
-        })
+fn canonical_info_items(root: &XmlNode) -> Result<Option<Vec<GenericInfo>>, ParseError> {
+    let wrappers: Vec<_> = root.children_named("info").collect();
+    if wrappers.is_empty() {
+        return Ok(None);
     }
+    let mut items = Vec::new();
+    for wrapper in wrappers {
+        let recognized: Vec<_> = SUPPORTED_INFO_ELEMENTS
+            .iter()
+            .filter(|(element, _)| wrapper.child(element).is_some())
+            .collect();
+        if recognized.len() > 1 {
+            return Err(ParseError::InvalidValue {
+                field: "info.payload".into(),
+                value: "multiple supported payloads".into(),
+            });
+        }
+        let Some((_, info_type)) = recognized.first() else {
+            continue;
+        };
+        let id = wrapper
+            .attr("id")
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| ParseError::MissingElement("info.id".into()))?;
+        let name = wrapper.required_child_text("name")?;
+        if name.is_empty() {
+            return Err(ParseError::MissingElement("info.name".into()));
+        }
+        items.push(GenericInfo {
+            info_type: (*info_type).to_string(),
+            id: id.to_string(),
+            name,
+        });
+    }
+    Ok(Some(items))
 }
 
-impl GetInfoResponse {
-    /// Parse any public generic `get_info` resource shape.
-    ///
-    /// # Errors
-    /// Returns an error for a non-success status or malformed known resource.
-    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
-        let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
-        let items = root
-            .children
-            .iter()
-            .filter_map(|node| {
-                GENERIC_INFO_ELEMENTS
-                    .iter()
-                    .find(|(element, _)| *element == node.name)
-                    .map(|(_, info_type)| GenericInfo::from_node(node, info_type))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+fn legacy_info_items(root: &XmlNode) -> Result<Vec<GenericInfo>, ParseError> {
+    root.children
+        .iter()
+        .filter_map(|node| {
+            SUPPORTED_INFO_ELEMENTS
+                .iter()
+                .find(|(element, _)| *element == node.name)
+                .map(|(_, info_type)| {
+                    let id = node
+                        .attr("id")
+                        .or_else(|| node.attr("oid"))
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| ParseError::MissingElement(format!("{}.id", node.name)))?;
+                    let name = node.required_child_text("name")?;
+                    Ok(GenericInfo {
+                        info_type: (*info_type).to_string(),
+                        id: id.to_string(),
+                        name,
+                    })
+                })
+        })
+        .collect()
+}
+
+fn parsed_info(
+    response: &Response,
+) -> Result<(u16, String, Vec<GenericInfo>, CountInfo, bool), ParseError> {
+    let (status, status_text) = status_from_response(response)?;
+    let root = parse_document(response.data())?;
+    if let Some(items) = canonical_info_items(&root)? {
+        let counts = count_info(&root, "info_count")?;
+        Ok((status, status_text, items, counts, true))
+    } else {
+        let items = legacy_info_items(&root)?;
         let mut counts = CountInfo::default();
-        for (element, _) in GENERIC_INFO_ELEMENTS {
+        for (element, _) in SUPPORTED_INFO_ELEMENTS {
             let candidate = count_info(&root, &format!("{element}_count"))?;
             if candidate != CountInfo::default() {
                 counts = candidate;
                 break;
             }
         }
+        Ok((status, status_text, items, counts, false))
+    }
+}
+
+impl GetInfoResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text, items, counts, _) = parsed_info(response)?;
         Ok(Self {
             status,
             status_text,
@@ -192,296 +179,49 @@ impl GmpResponse for GetInfoResponse {
     }
 }
 
-impl Cve {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
-        let (id, name) = parse_secinfo_item(node, "cve")?;
-        Ok(Self { id, name })
-    }
-}
-
-impl Cpe {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
-        let (id, name) = parse_secinfo_item(node, "cpe")?;
-        Ok(Self { id, name })
-    }
-}
-
-impl CertBundAdvisory {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
-        let (id, name) = parse_secinfo_item(node, "cert_bund_adv")?;
-        Ok(Self { id, name })
-    }
-}
-
-impl DfnCertAdvisory {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
-        let (id, name) = parse_secinfo_item(node, "dfn_cert_adv")?;
-        Ok(Self { id, name })
-    }
-}
-
-impl GetCvesResponse {
-    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
-        let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
-        let items = root
-            .children_named("cve")
-            .map(Cve::from_node)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self {
-            status,
-            status_text,
-            items,
-            counts: count_info(&root, "cve_count")?,
-        })
-    }
-}
-
-impl GetCpesResponse {
-    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
-        let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
-        let items = root
-            .children_named("cpe")
-            .map(Cpe::from_node)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self {
-            status,
-            status_text,
-            items,
-            counts: count_info(&root, "cpe_count")?,
-        })
-    }
-}
-
-impl GetCertBundAdvisoriesResponse {
-    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
-        let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
-        let items = root
-            .children_named("cert_bund_adv")
-            .map(CertBundAdvisory::from_node)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self {
-            status,
-            status_text,
-            items,
-            counts: count_info(&root, "cert_bund_adv_count")?,
-        })
-    }
-}
-
-impl GetDfnCertAdvisoriesResponse {
-    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
-        let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
-        let items = root
-            .children_named("dfn_cert_adv")
-            .map(DfnCertAdvisory::from_node)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self {
-            status,
-            status_text,
-            items,
-            counts: count_info(&root, "dfn_cert_adv_count")?,
-        })
-    }
-}
-
-macro_rules! impl_gmp_response {
-    ($($response:ty),+ $(,)?) => {
-        $(
-            impl GmpResponse for $response {
-                fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
-                    Self::from_response(response)
-                }
+macro_rules! impl_specialized_info_response {
+    ($response:ty, $item:ident, $kind:literal) => {
+        impl $response {
+            pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+                let (status, status_text, generic, counts, _) = parsed_info(response)?;
+                let items = generic
+                    .into_iter()
+                    .filter(|item| item.info_type == $kind)
+                    .map(|item| $item {
+                        id: item.id,
+                        name: item.name,
+                    })
+                    .collect();
+                Ok(Self {
+                    status,
+                    status_text,
+                    items,
+                    counts,
+                })
             }
-        )+
+        }
+        impl GmpResponse for $response {
+            fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+                Self::from_response(response)
+            }
+        }
     };
 }
 
-impl_gmp_response!(
-    GetCvesResponse,
-    GetCpesResponse,
+impl_specialized_info_response!(GetCvesResponse, Cve, "CVE");
+impl_specialized_info_response!(GetCpesResponse, Cpe, "CPE");
+impl_specialized_info_response!(
     GetCertBundAdvisoriesResponse,
+    CertBundAdvisory,
+    "CERT_BUND_ADV"
+);
+impl_specialized_info_response!(
     GetDfnCertAdvisoriesResponse,
+    DfnCertAdvisory,
+    "DFN_CERT_ADV"
 );
 
-#[cfg(test)]
-mod tests {
-    use gvm_protocol::Response;
-
-    use super::*;
-
-    #[test]
-    fn parses_multiple_cves() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <cve id="CVE-2026-0001"><name>Buffer Overflow in Demo Service</name></cve>
-                <cve id="CVE-2026-0002"><name>Authentication Bypass in Demo Service</name></cve>
-                <cve_count>2<filtered>2</filtered><page>1</page></cve_count>
-            </get_info_response>"#,
-        );
-
-        let parsed = GetCvesResponse::from_response(&response).expect("cves parse");
-
-        assert_eq!(parsed.items.len(), 2);
-        assert_eq!(parsed.items[0].id, "CVE-2026-0001");
-        assert_eq!(parsed.counts.total, Some(2));
-        assert_eq!(parsed.counts.page, Some(1));
-    }
-
-    #[test]
-    fn parses_empty_cves() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK"><cve_count>0<filtered>0</filtered></cve_count></get_info_response>"#,
-        );
-
-        let parsed = GetCvesResponse::from_response(&response).expect("cves parse");
-
-        assert!(parsed.items.is_empty());
-        assert_eq!(parsed.counts.total, Some(0));
-    }
-
-    #[test]
-    fn rejects_server_error_for_cves() {
-        let response =
-            Response::from(r#"<get_info_response status="404" status_text="Not Found"/>"#);
-
-        let error = GetCvesResponse::from_response(&response).expect_err("error expected");
-
-        assert!(matches!(
-            error,
-            ParseError::ServerError {
-                status: 404,
-                message
-            } if message == "Not Found"
-        ));
-    }
-
-    #[test]
-    fn rejects_missing_required_cve_fields() {
-        let missing_id = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <cve><name>Missing Id</name></cve>
-            </get_info_response>"#,
-        );
-        let missing_name = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <cve id="CVE-2026-9999"></cve>
-            </get_info_response>"#,
-        );
-
-        assert!(matches!(
-            GetCvesResponse::from_response(&missing_id),
-            Err(ParseError::MissingElement(field)) if field == "cve.id"
-        ));
-        assert!(matches!(
-            GetCvesResponse::from_response(&missing_name),
-            Err(ParseError::MissingElement(field)) if field == "name"
-        ));
-    }
-
-    #[test]
-    fn parses_multiple_cpes() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <cpe id="cpe:/a:vendor:product:1"><name>Vendor Product 1</name></cpe>
-                <cpe id="cpe:/a:vendor:product:2"><name>Vendor Product 2</name></cpe>
-                <cpe_count>2<filtered>2</filtered></cpe_count>
-            </get_info_response>"#,
-        );
-
-        let parsed = GetCpesResponse::from_response(&response).expect("cpes parse");
-
-        assert_eq!(parsed.items.len(), 2);
-        assert_eq!(parsed.items[1].name, "Vendor Product 2");
-        assert_eq!(parsed.counts.filtered, Some(2));
-    }
-
-    #[test]
-    fn parses_multiple_cert_bund_advisories() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <cert_bund_adv id="CB-K26-001"><name>CERT-Bund Advisory 1</name></cert_bund_adv>
-                <cert_bund_adv id="CB-K26-002"><name>CERT-Bund Advisory 2</name></cert_bund_adv>
-                <cert_bund_adv_count>2</cert_bund_adv_count>
-            </get_info_response>"#,
-        );
-
-        let parsed = GetCertBundAdvisoriesResponse::from_response(&response)
-            .expect("cert bund advisories parse");
-
-        assert_eq!(parsed.items.len(), 2);
-        assert_eq!(parsed.items[0].id, "CB-K26-001");
-        assert_eq!(parsed.counts.total, Some(2));
-    }
-
-    #[test]
-    fn parses_multiple_dfn_cert_advisories() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <dfn_cert_adv id="DFN-2026-001"><name>DFN-CERT Advisory 1</name></dfn_cert_adv>
-                <dfn_cert_adv id="DFN-2026-002"><name>DFN-CERT Advisory 2</name></dfn_cert_adv>
-                <dfn_cert_adv_count>2</dfn_cert_adv_count>
-            </get_info_response>"#,
-        );
-
-        let parsed =
-            GetDfnCertAdvisoriesResponse::from_response(&response).expect("dfn advisories parse");
-
-        assert_eq!(parsed.items.len(), 2);
-        assert_eq!(parsed.items[1].name, "DFN-CERT Advisory 2");
-        assert_eq!(parsed.counts.total, Some(2));
-    }
-
-    #[test]
-    fn counts_default_when_missing_count_element() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <cpe id="cpe:/a:vendor:product:1"><name>Vendor Product 1</name></cpe>
-            </get_info_response>"#,
-        );
-
-        let parsed = GetCpesResponse::from_response(&response).expect("cpes parse");
-
-        assert_eq!(parsed.counts, CountInfo::default());
-    }
-
-    #[test]
-    fn parses_generic_info_resources_and_counts() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK">
-                <nvt oid="1.3.6.1"><name>Example NVT</name></nvt>
-                <nvt_count>1<filtered>1</filtered></nvt_count>
-            </get_info_response>"#,
-        );
-
-        let parsed = GetInfoResponse::from_response(&response).expect("generic info parses");
-
-        assert_eq!(parsed.items.len(), 1);
-        assert_eq!(parsed.items[0].info_type, "NVT");
-        assert_eq!(parsed.items[0].id, "1.3.6.1");
-        assert_eq!(parsed.items[0].name, "Example NVT");
-        assert_eq!(parsed.counts.total, Some(1));
-        assert_eq!(parsed.counts.filtered, Some(1));
-    }
-
-    #[test]
-    fn generic_info_preserves_parse_context() {
-        let response = Response::from(
-            r#"<get_info_response status="200" status_text="OK"><ovaldef><name>Missing id</name></ovaldef></get_info_response>"#,
-        );
-
-        assert!(matches!(
-            GetInfoResponse::from_response(&response),
-            Err(ParseError::MissingElement(field)) if field == "ovaldef.id"
-        ));
-    }
-}
-
-// === Additional SecInfo Response Types ===
-
+/// Historical/raw operating-system response item. No canonical `get_info` request is associated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -490,6 +230,7 @@ pub struct OperatingSystem {
     pub name: String,
 }
 
+/// Compact observed-vulnerability projection returned by `get_vulns`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -498,6 +239,7 @@ pub struct Vulnerability {
     pub name: String,
 }
 
+/// Historical/raw operating-system response model without a canonical request association.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -508,6 +250,7 @@ pub struct GetOperatingSystemsResponse {
     pub counts: CountInfo,
 }
 
+/// Typed response for observed `get_vulns` summaries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -518,18 +261,12 @@ pub struct GetVulnerabilitiesResponse {
     pub counts: CountInfo,
 }
 
-impl OperatingSystem {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
-        let (id, name) = parse_secinfo_item(node, "os")?;
-        Ok(Self { id, name })
-    }
-}
-
-impl Vulnerability {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
-        let (id, name) = parse_secinfo_item(node, "vuln")?;
-        Ok(Self { id, name })
-    }
+fn direct_item(node: &XmlNode, element: &str) -> Result<(String, String), ParseError> {
+    let id = node
+        .attr("id")
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ParseError::MissingElement(format!("{element}.id")))?;
+    Ok((id.to_string(), node.required_child_text("name")?))
 }
 
 impl GetOperatingSystemsResponse {
@@ -538,8 +275,8 @@ impl GetOperatingSystemsResponse {
         let root = parse_document(response.data())?;
         let items = root
             .children_named("os")
-            .map(OperatingSystem::from_node)
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|node| direct_item(node, "os").map(|(id, name)| OperatingSystem { id, name }))
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             status,
             status_text,
@@ -549,14 +286,20 @@ impl GetOperatingSystemsResponse {
     }
 }
 
+impl GmpResponse for GetOperatingSystemsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl GetVulnerabilitiesResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
         let root = parse_document(response.data())?;
         let items = root
             .children_named("vuln")
-            .map(Vulnerability::from_node)
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|node| direct_item(node, "vuln").map(|(id, name)| Vulnerability { id, name }))
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             status,
             status_text,
@@ -566,29 +309,85 @@ impl GetVulnerabilitiesResponse {
     }
 }
 
-impl_gmp_response!(GetOperatingSystemsResponse, GetVulnerabilitiesResponse);
+impl GmpResponse for GetVulnerabilitiesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
 
 #[cfg(test)]
-mod additional_tests {
-    use gvm_protocol::Response;
-
+mod tests {
     use super::*;
 
     #[test]
-    fn parses_get_vulns_response() {
+    fn parses_authoritative_info_wrappers_and_generic_counts() {
         let response = Response::from(
-            r#"<get_vulns_response status="200" status_text="OK">
-                <vuln id="vuln-1"><name>Outdated package</name></vuln>
-                <vuln_count>1<filtered>1</filtered></vuln_count>
-            </get_vulns_response>"#,
+            r#"<get_info_response status="200" status_text="OK"><info id="CVE-2026-0001"><name>CVE-2026-0001</name><cve><severity>7.5</severity><references><cve id="nested"/></references></cve></info><info_count><filtered>1</filtered><page>1</page></info_count></get_info_response>"#,
         );
+        let parsed = GetCvesResponse::from_response(&response).expect("canonical CVE response");
+        assert_eq!(
+            parsed.items,
+            [Cve {
+                id: "CVE-2026-0001".into(),
+                name: "CVE-2026-0001".into()
+            }]
+        );
+        assert_eq!(parsed.counts.filtered, Some(1));
+        assert_eq!(parsed.counts.page, Some(1));
+        assert_eq!(parsed.counts.total, None);
+    }
 
-        let parsed = GetVulnerabilitiesResponse::from_response(&response).expect("vulns parse");
+    #[test]
+    fn outer_identity_wins_over_nested_nvt_oid() {
+        let response = Response::from(
+            r#"<get_info_response status="200" status_text="OK"><info id="outer-id"><name>Outer NVT</name><nvt oid="nested-oid"><name>Nested</name><refs><cve id="nested-cve"/></refs></nvt></info><info_count>1</info_count></get_info_response>"#,
+        );
+        let parsed = GetInfoResponse::from_response(&response).expect("canonical info response");
+        assert_eq!(parsed.items[0].id, "outer-id");
+        assert_eq!(parsed.items[0].name, "Outer NVT");
+        assert_eq!(parsed.items[0].info_type, "NVT");
+    }
 
-        assert_eq!(parsed.status, 200);
+    #[test]
+    fn canonical_wrappers_precede_legacy_fallback_without_double_counting() {
+        let response = Response::from(
+            r#"<get_info_response status="200" status_text="OK"><info id="canonical"><name>Canonical</name><cve/></info><cve id="legacy"><name>Legacy</name></cve><info_count>1</info_count><cve_count>2</cve_count></get_info_response>"#,
+        );
+        let parsed = GetCvesResponse::from_response(&response).expect("canonical CVE response");
         assert_eq!(parsed.items.len(), 1);
-        assert_eq!(parsed.items[0].id, "vuln-1");
-        assert_eq!(parsed.items[0].name, "Outdated package");
+        assert_eq!(parsed.items[0].id, "canonical");
         assert_eq!(parsed.counts.total, Some(1));
+    }
+
+    #[test]
+    fn labeled_legacy_direct_children_remain_parseable() {
+        let response = Response::from(
+            r#"<get_info_response status="200" status_text="OK"><cpe id="cpe:/a:x"><name>Legacy</name></cpe><cpe_count>1</cpe_count></get_info_response>"#,
+        );
+        let parsed = GetCpesResponse::from_response(&response).expect("legacy CPE response");
+        assert_eq!(parsed.items[0].name, "Legacy");
+        assert_eq!(parsed.counts.total, Some(1));
+    }
+
+    #[test]
+    fn malformed_recognized_wrappers_fail() {
+        for xml in [
+            r#"<get_info_response status="200" status_text="OK"><info><name>x</name><cve/></info></get_info_response>"#,
+            r#"<get_info_response status="200" status_text="OK"><info id="x"><cve/></info></get_info_response>"#,
+            r#"<get_info_response status="200" status_text="OK"><info id="x"><name>x</name><cve/><cpe/></info></get_info_response>"#,
+        ] {
+            assert!(GetInfoResponse::from_response(&Response::from(xml)).is_err());
+        }
+    }
+
+    #[test]
+    fn richer_observed_vulnerability_fields_are_tolerated() {
+        let response = Response::from(
+            r#"<get_vulns_response status="200" status_text="OK"><vuln id="1.3.6.1"><name>Example</name><severity>7.5</severity><qod>80</qod><results><count>2</count></results><hosts><count>1</count></hosts></vuln><vuln_count><filtered>1</filtered><page>1</page></vuln_count></get_vulns_response>"#,
+        );
+        let parsed = GetVulnerabilitiesResponse::from_response(&response)
+            .expect("canonical vulnerability response");
+        assert_eq!(parsed.items[0].id, "1.3.6.1");
+        assert_eq!(parsed.counts.filtered, Some(1));
     }
 }

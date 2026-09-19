@@ -54,8 +54,8 @@ The registry contains 158 wire command names:
 
 | Qualification | Count | Meaning |
 |---|---:|---|
-| Stateful mock behavior | 143 | Bespoke behavior or deterministic generic CRUD |
-| Fixture mock behavior | 10 | Deterministic built-in fixture response |
+| Stateful mock behavior | 145 | Bespoke behavior or deterministic generic CRUD |
+| Fixture mock behavior | 8 | Deterministic built-in fixture response |
 | Echo-only mock behavior | 5 | Intentionally limited to a generic success response |
 | Current pinned `GMP.xml.in` | 155 | Present in the public schema snapshot |
 | Public gvmd source only | 3 | Implemented publicly but omitted from that schema |
@@ -71,6 +71,13 @@ Report-format verification is stateful rather than echo-only. Signed cases use
 injected deterministic yes/no/unknown outcomes; the mock does not run GPG.
 Imported files remain inert in memory, and the handler does not claim complete
 ACL/filter, filesystem, database-row-order, or trash-detail conformance.
+
+The five NVT/SecInfo discovery roots use bounded stateful behavior. NVT OIDs,
+configuration membership and preference overlays, SecInfo records, saved
+filters, database availability, permissions, and observed vulnerabilities are
+explicitly seeded state. This covers the query and negative paths documented in
+the [NVT/SecInfo evidence](nvt-secinfo-request-gvmd-evidence.md), but it is not a
+feed parser, SQL emulator, complete ACL engine, or general GMP filter language.
 
 The three commands outside the pinned schema are explicitly qualified:
 

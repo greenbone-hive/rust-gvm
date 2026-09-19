@@ -7,15 +7,15 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::commands::user_settings::{modify_user_setting, ModifyUserSettingOpts};
 use crate::common::add_filter_attrs;
-use crate::enums::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
+use crate::enums::{AggregateStatistic, FeedType, HelpFormat, ResourceType, SortOrder};
 use crate::responses::{
-    ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeedsResponse, GetInfoResponse,
-    GetResourceNamesResponse, GetScanConfigPreferencesResponse, GetSettingsResponse,
-    GetTimezonesResponse, GetVulnerabilitiesResponse, HelpResponse, ModifyAuthResponse,
-    ModifyLicenseResponse, RunWizardResponse,
+    ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeedsResponse,
+    GetResourceNamesResponse, GetSettingsResponse, GetTimezonesResponse,
+    GetVulnerabilitiesResponse, HelpResponse, ModifyAuthResponse, ModifyLicenseResponse,
+    RunWizardResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
 pub use super::system_reports::{get_system_reports, GetSystemReportsOpts};
 
@@ -47,19 +47,6 @@ pub struct GetAggregatesOpts {
 pub struct GetFeedsOpts {
     /// Optional feed type.
     pub feed_type: Option<FeedType>,
-}
-
-/// Options for `get_info` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetInfoOpts {
-    /// Optional info type.
-    pub info_type: Option<InfoType>,
-    /// Optional info object identifier.
-    pub info_id: Option<EntityId>,
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
 }
 
 /// Options for `get_resource_names` requests.
@@ -441,50 +428,6 @@ impl GmpRequest for GetSystemAggregatesRequest {
     type Response = GetAggregatesResponse;
 }
 
-/// Semantic compatibility request for the system-module [`get_info`] builder.
-#[derive(Debug, Clone, Default)]
-pub struct GetSystemInfoRequest(GetInfoOpts);
-
-impl GetSystemInfoRequest {
-    /// Create a generic system information request.
-    #[must_use]
-    pub fn new(opts: GetInfoOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetSystemInfoRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_info(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetSystemInfoRequest {
-    type Response = GetInfoResponse;
-}
-
-/// Semantic compatibility request for the system-module preference builder.
-#[derive(Debug, Clone, Default)]
-pub struct GetSystemPreferencesRequest(FilteredGetOpts);
-
-impl GetSystemPreferencesRequest {
-    /// Create a filtered preference request.
-    #[must_use]
-    pub fn new(opts: FilteredGetOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetSystemPreferencesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_preferences(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetSystemPreferencesRequest {
-    type Response = GetScanConfigPreferencesResponse;
-}
-
 /// Semantic request for resource-name discovery.
 #[derive(Debug, Clone, Default)]
 pub struct GetResourceNamesRequest(GetResourceNamesOpts);
@@ -535,21 +478,33 @@ impl GmpRequest for GetResourceNameRequest {
     type Response = GetResourceNamesResponse;
 }
 
-/// Semantic request for vulnerability discovery.
+/// Canonical request for observed vulnerabilities occurring in reports.
 #[derive(Debug, Clone, Default)]
-pub struct GetVulnsRequest(FilteredGetOpts);
-
-impl GetVulnsRequest {
-    /// Create a vulnerability list request.
-    #[must_use]
-    pub fn new(opts: FilteredGetOpts) -> Self {
-        Self(opts)
-    }
+pub struct GetVulnsRequest {
+    /// Optional inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// Optional saved-filter identifier. Sentinels `0` and `-2` are valid.
+    pub filter_id: Option<EntityId>,
 }
 
-impl Request for GetVulnsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_vulns(self.0.clone()).to_bytes()
+impl GmpRequestCodec for GetVulnsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_vulnerability_query(None, self.filter_string.as_deref(), self.filter_id.as_ref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_vulns",
+            "get_vulnerabilities",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(
+            vulnerabilities_command(None, self.filter_string.as_deref(), self.filter_id.as_ref())
+                .to_bytes(),
+        )
     }
 }
 
@@ -557,48 +512,114 @@ impl GmpRequest for GetVulnsRequest {
     type Response = GetVulnerabilitiesResponse;
 }
 
-/// Semantic request for one vulnerability using [`get_vuln`].
+/// Canonical request for one observed vulnerability through `get_vulns`.
 #[derive(Debug, Clone)]
-pub struct GetVulnRequest(String);
-
-impl GetVulnRequest {
-    /// Create a single-vulnerability request.
-    #[must_use]
-    pub fn new(vuln_id: impl Into<String>) -> Self {
-        Self(vuln_id.into())
-    }
+pub struct GetVulnerabilityRequest {
+    /// Required opaque vulnerability identifier. NVT OIDs are valid identifiers here.
+    pub vulnerability_id: String,
+    /// Optional inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// Optional saved-filter identifier. Sentinels `0` and `-2` are valid.
+    pub filter_id: Option<EntityId>,
 }
-
-impl Request for GetVulnRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_vuln(&self.0).to_bytes()
-    }
-}
-
-impl GmpRequest for GetVulnRequest {
-    type Response = GetVulnerabilitiesResponse;
-}
-
-/// Semantic compatibility request for [`get_vulnerability`].
-#[derive(Debug, Clone)]
-pub struct GetVulnerabilityRequest(String);
 
 impl GetVulnerabilityRequest {
     /// Create a descriptive-alias vulnerability request.
     #[must_use]
     pub fn new(vulnerability_id: impl Into<String>) -> Self {
-        Self(vulnerability_id.into())
+        Self {
+            vulnerability_id: vulnerability_id.into(),
+            filter_string: None,
+            filter_id: None,
+        }
     }
 }
 
-impl Request for GetVulnerabilityRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_vulnerability(&self.0).to_bytes()
+impl GmpRequestCodec for GetVulnerabilityRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_vulnerability_query(
+            Some(&self.vulnerability_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_vulns",
+            "get_vulnerability",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(vulnerabilities_command(
+            Some(&self.vulnerability_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+        .to_bytes())
     }
 }
 
 impl GmpRequest for GetVulnerabilityRequest {
     type Response = GetVulnerabilitiesResponse;
+}
+
+fn vulnerabilities_command(
+    vulnerability_id: Option<&str>,
+    filter_string: Option<&str>,
+    filter_id: Option<&EntityId>,
+) -> XmlCommand {
+    let mut command = XmlCommand::new("get_vulns");
+    if let Some(vulnerability_id) = vulnerability_id {
+        command.set_attribute("vuln_id", vulnerability_id);
+    }
+    add_filter_attrs(&mut command, filter_string, filter_id);
+    command
+}
+
+fn validate_vulnerability_query(
+    vulnerability_id: Option<&str>,
+    filter_string: Option<&str>,
+    filter_id: Option<&EntityId>,
+) -> Result<(), GmpRequestError> {
+    if let Some(vulnerability_id) = vulnerability_id {
+        if vulnerability_id.trim().is_empty() {
+            return Err(GmpRequestError::invalid_field(
+                "vulnerability_id",
+                "must not be empty",
+            ));
+        }
+        validate_xml_text(vulnerability_id, "vulnerability_id")?;
+    }
+    if let Some(filter_string) = filter_string {
+        validate_xml_text(filter_string, "filter_string")?;
+    }
+    if filter_id.is_some_and(|value| EntityId::new(value.as_str()).is_err()) {
+        return Err(GmpRequestError::invalid_field(
+            "filter_id",
+            "must be a valid entity identifier",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_xml_text(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.chars().all(|character| {
+        matches!(character, '\u{9}' | '\u{A}' | '\u{D}')
+            || matches!(
+                character as u32,
+                0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF
+            )
+    }) {
+        Ok(())
+    } else {
+        Err(GmpRequestError::invalid_field(
+            field,
+            "must contain only XML 1.0 characters",
+        ))
+    }
 }
 
 /// Semantic request for license discovery.
@@ -715,36 +736,6 @@ pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
     cmd
 }
 
-/// Build a `get_info` request.
-#[must_use]
-pub fn get_info(opts: GetInfoOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_info");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    if let Some(info_type) = opts.info_type {
-        cmd.set_attribute("type", info_type.as_gmp_str());
-    }
-    if let Some(info_id) = opts.info_id.as_ref() {
-        cmd.set_attribute("info_id", info_id.as_str());
-    }
-    cmd
-}
-
-/// Build a `get_preferences` request.
-#[must_use]
-pub fn get_preferences(opts: FilteredGetOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_preferences");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    cmd
-}
-
 /// Build a `get_resource_names` request.
 #[must_use]
 pub fn get_resource_names(opts: GetResourceNamesOpts) -> impl Request {
@@ -770,30 +761,6 @@ pub fn get_resource_name(resource_id: &EntityId, resource_type: ResourceType) ->
     cmd.set_attribute("resource_id", resource_id.as_str());
     cmd.set_attribute("type", resource_type.as_gmp_str());
     cmd
-}
-
-/// Build a `get_vulns` request.
-#[must_use]
-pub fn get_vulns(opts: FilteredGetOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_vulns");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    cmd
-}
-
-/// Build a `get_vulns` request for a single vulnerability entry.
-#[must_use]
-pub fn get_vuln(vuln_id: &str) -> impl Request {
-    XmlCommand::new("get_vulns").attribute("vuln_id", vuln_id)
-}
-
-/// Build a `get_vulns` request using python-gvm's descriptive helper name.
-#[must_use]
-pub fn get_vulnerability(vulnerability_id: &str) -> impl Request {
-    get_vuln(vulnerability_id)
 }
 
 /// Build a `get_license` request.
@@ -927,30 +894,12 @@ mod tests {
             ..Default::default()
         }))
         .contains("name=\"load\""));
-        assert!(xml(get_info(GetInfoOpts {
-            info_type: Some(InfoType::Nvt),
-            info_id: Some(id("i1")),
-            ..Default::default()
-        }))
-        .contains("type=\"NVT\""));
         assert!(xml(get_resource_names(GetResourceNamesOpts {
             resource_type: Some(ResourceType::Task),
             resource_id: Some(id("t1")),
             ..Default::default()
         }))
         .contains("resource_id=\"t1\""));
-        assert_eq!(
-            xml(get_vulns(FilteredGetOpts {
-                filter_string: Some("severity>5".into()),
-                filter_id: Some(id("filter-1")),
-            })),
-            "<get_vulns filt_id=\"filter-1\" filter=\"severity&gt;5\"/>"
-        );
-        assert_eq!(xml(get_vuln("vuln-1")), "<get_vulns vuln_id=\"vuln-1\"/>");
-        assert_eq!(
-            xml(get_vulnerability("vuln-1")),
-            "<get_vulns vuln_id=\"vuln-1\"/>"
-        );
         assert_eq!(
             xml(modify_auth(
                 "method:ldap_connect",
@@ -993,6 +942,35 @@ mod tests {
             )),
             "<run_wizard read_only=\"1\"><mode>step</mode><name>quick</name><params/></run_wizard>"
         );
+    }
+
+    #[test]
+    fn observed_vulnerability_requests_encode_and_validate_final_values() {
+        let list = GetVulnsRequest {
+            filter_string: Some("min_qod=70 rows=10".into()),
+            filter_id: Some(id("0")),
+        };
+        assert_eq!(
+            String::from_utf8(list.encode(GmpVersion(22, 4)).expect("valid request"))
+                .expect("request is UTF-8"),
+            "<get_vulns filt_id=\"0\" filter=\"min_qod=70 rows=10\"/>"
+        );
+        let detail = GetVulnerabilityRequest::new("1.3.6.1");
+        assert_eq!(
+            String::from_utf8(detail.encode(GmpVersion(22, 4)).expect("valid request"))
+                .expect("request is UTF-8"),
+            "<get_vulns vuln_id=\"1.3.6.1\"/>"
+        );
+        assert_eq!(
+            list.command(),
+            Some(GmpCommand::with_semantic_name(
+                "get_vulns",
+                "get_vulnerabilities"
+            ))
+        );
+        let mut invalid = detail;
+        invalid.vulnerability_id = " \t".into();
+        assert!(invalid.encode(GmpVersion(22, 4)).is_err());
     }
 
     #[test]

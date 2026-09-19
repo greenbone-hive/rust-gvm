@@ -88,6 +88,9 @@ Existing issues:
 - [#251](https://github.com/greenbone-hive/rust-gvm/issues/251) tracks response model drift around user host access and similar XML shape mismatches.
 - [#311](https://github.com/greenbone-hive/rust-gvm/issues/311) tracks generic GMP asset commands alongside typed wrappers.
 - [#313](https://github.com/greenbone-hive/rust-gvm/issues/313) tracks generic GMP config commands alongside scan-config and policy wrappers.
+- [#648](https://github.com/greenbone-hive/rust-gvm/issues/648) completes the
+  bounded canonical NVT/SecInfo discovery slice, including pinned dispatch
+  discrepancies and stateful mock qualification.
 
 Follow-up issues or milestones should cover:
 

@@ -371,9 +371,25 @@ impl SessionHandler {
     }
 
     fn normal_response(&self, cmd: &ParsedCommand, xml: &[u8]) -> Vec<u8> {
+        if self.mode == ServerMode::Fixture {
+            if let Some(response) = self
+                .fixtures
+                .as_ref()
+                .and_then(|fixtures| fixtures.get_override(&cmd.name))
+            {
+                return response.into_bytes();
+            }
+        }
         match self.mode {
             ServerMode::Echo => echo_response(&cmd.name, self.version.as_str()),
-            ServerMode::Fixture if cmd.name == "get_info" => render_secinfo_response(cmd),
+            ServerMode::Fixture
+                if matches!(
+                    cmd.name.as_str(),
+                    "get_nvts" | "get_nvt_families" | "get_preferences" | "get_info" | "get_vulns"
+                ) =>
+            {
+                crate::stateful_nvt_secinfo::handle_fixture(cmd)
+            }
             ServerMode::Fixture => self.handle_fixture(&cmd.name),
             ServerMode::Stateful => self.handle_stateful(cmd, xml),
             ServerMode::Scenario => self.handle_scenario(cmd),
@@ -459,6 +475,9 @@ impl SessionHandler {
 
         // Route to specific handlers
         match cmd.name.as_str() {
+            "get_nvts" | "get_nvt_families" | "get_preferences" | "get_info" | "get_vulns" => {
+                crate::stateful_nvt_secinfo::handle(cmd, store)
+            }
             "get_features" => render_features_response(),
             "get_agent_installer_instruction" => render_agent_installer_instruction_response(cmd),
             "get_agent_support_bundle" => render_agent_support_bundle_response(cmd),
@@ -1615,8 +1634,6 @@ impl SessionHandler {
             "get_scan_report" => return self.render_scan_report_response(cmd, store),
             "get_results" => return crate::stateful_results::handle_get_results(cmd, store),
             "get_system_reports" => return render_system_reports_response(cmd, store),
-            "get_info" => return render_secinfo_response(cmd),
-            "get_vulns" => return render_vulnerabilities_response(cmd),
             "get_report_hosts"
             | "get_report_ports"
             | "get_report_applications"
@@ -4768,104 +4785,6 @@ fn render_system_reports_response(cmd: &ParsedCommand, store: &ResourceStore) ->
 
     format!(
         "<get_system_reports_response status=\"200\" status_text=\"OK\">{reports}</get_system_reports_response>"
-    )
-    .into_bytes()
-}
-
-fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
-    let info_type = cmd.attr("type").unwrap_or("cve");
-    let (element, entries) = match info_type {
-        "CPE" | "cpe" => (
-            "cpe",
-            vec![
-                ("cpe:/a:greenbone:gvm", "Greenbone GVM"),
-                ("cpe:/o:debian:debian_linux:12", "Debian 12"),
-            ],
-        ),
-        "CVE" | "cve" => (
-            "cve",
-            vec![
-                ("CVE-2026-1000", "Mock CVE one"),
-                ("CVE-2026-1001", "Mock CVE two"),
-            ],
-        ),
-        "CERT_BUND_ADV" | "cert_bund_adv" => (
-            "cert_bund_adv",
-            vec![
-                ("CB-K26/001", "CERT-Bund advisory one"),
-                ("CB-K26/002", "CERT-Bund advisory two"),
-            ],
-        ),
-        "DFN_CERT_ADV" | "dfn_cert_adv" => (
-            "dfn_cert_adv",
-            vec![
-                ("DFN-2026-001", "DFN-CERT advisory one"),
-                ("DFN-2026-002", "DFN-CERT advisory two"),
-            ],
-        ),
-        "NVT" | "nvt" => (
-            "nvt",
-            vec![
-                ("1.3.6.1.4.1.25623.1", "Mock NVT one"),
-                ("1.3.6.1.4.1.25623.2", "Mock NVT two"),
-            ],
-        ),
-        "OVALDEF" | "ovaldef" => (
-            "ovaldef",
-            vec![
-                ("oval:org.example:def:1", "Mock OVAL definition one"),
-                ("oval:org.example:def:2", "Mock OVAL definition two"),
-            ],
-        ),
-        "os" => (
-            "os",
-            vec![("os-1", "Debian GNU/Linux"), ("os-2", "Ubuntu Linux")],
-        ),
-        "vuln" => (
-            "vuln",
-            vec![
-                ("vuln-1", "Outdated package"),
-                ("vuln-2", "Weak configuration"),
-            ],
-        ),
-        _ => ("info", vec![("info-1", "Generic info entry")]),
-    };
-
-    let info_id = cmd.attr("info_id");
-    let name = cmd.attr("name");
-    let entries: Vec<_> = entries
-        .into_iter()
-        .filter(|(id, _)| info_id.is_none_or(|wanted| wanted == *id))
-        .filter(|(id, entry_name)| name.is_none_or(|wanted| wanted == *id || wanted == *entry_name))
-        .collect();
-    let count = entries.len();
-    let items: String = entries
-        .into_iter()
-        .map(|(id, name)| format!("<{element} id=\"{id}\"><name>{name}</name></{element}>"))
-        .collect();
-    format!(
-        "<get_info_response status=\"200\" status_text=\"OK\">{items}<{element}_count>{count}<filtered>{count}</filtered></{element}_count></get_info_response>"
-    )
-    .into_bytes()
-}
-
-fn render_vulnerabilities_response(cmd: &ParsedCommand) -> Vec<u8> {
-    let entries = [
-        ("vuln-1", "Outdated package"),
-        ("vuln-2", "Weak configuration"),
-    ];
-    let vuln_id = cmd.attr("vuln_id");
-    let entries: Vec<_> = entries
-        .into_iter()
-        .filter(|(id, _)| vuln_id.is_none_or(|wanted| wanted == *id))
-        .collect();
-    let count = entries.len();
-    let items: String = entries
-        .into_iter()
-        .map(|(id, name)| format!("<vuln id=\"{id}\"><name>{name}</name></vuln>"))
-        .collect();
-    format!(
-        "<get_vulns_response status=\"200\" status_text=\"OK\">{items}<vuln_count>{count}<filtered>{count}</filtered></vuln_count></get_vulns_response>"
     )
     .into_bytes()
 }
