@@ -24,6 +24,9 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/v0.7.0-migration.md#users-and-groups`: user/group release migration, including delete-user selector/inheritor mapping and explicit `ultimate` removal.
 - `docs/role-permission-request-gvmd-evidence.md`: pinned gvmd evidence for canonical role/permission lifecycles, partial references, replacement, clearing, and clone semantics.
 - `docs/asset-request-gvmd-evidence.md`: pinned gvmd evidence for canonical generic asset/host requests, operating-system asset reads/deletion, and the unsupported OS-modification boundary.
+- `docs/result-request-gvmd-evidence.md`: pinned gvmd evidence for canonical
+  result list/detail requests, task context, filtering, expansions, counts, and
+  the bounded typed response/mock boundary.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -57,7 +60,8 @@ Adding or changing a GMP command:
   implement `GmpRequestCodec` directly, and update
   `docs/canonical-request-disposition.tsv`. Standard targets are the reference;
   alternate targets, agent groups, agents, integration configurations, port
-  lists, credentials, filters, tags, alerts, schedules, scanners, notes, overrides, users, groups, roles, and permissions show the same contract across their
+  lists, credentials, filters, tags, alerts, schedules, scanners, notes,
+  overrides, users, groups, roles, permissions, assets, and results show the same contract across their
   applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.
@@ -97,6 +101,8 @@ Changing mock server behavior:
 - `crates/gvm-mock-server/src/command_parser.rs`: incoming XML command parsing.
 - `crates/gvm-mock-server/src/response_gen.rs`: generated GMP response XML.
 - `crates/gvm-mock-server/src/store.rs`: in-memory state and CRUD resources.
+- `crates/gvm-mock-server/src/stateful_results.rs`: bounded result-specific
+  filtering, pagination/counts, associations, and expansion rendering.
 - `crates/gvm-mock-server/src/fixtures.rs`: fixture-mode responses.
 - `crates/gvm-mock-server/src/fault.rs` and `scenario.rs`: failure injection and scripted playback.
 - Tests live under `crates/gvm-mock-server/tests/`.

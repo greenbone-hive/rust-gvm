@@ -24,7 +24,7 @@ use gvm_gmp::commands::reports::{
     GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsOpts, GetReportsRequest,
     ImportReportOpts, ImportReportRequest,
 };
-use gvm_gmp::commands::results::{GetResultRequest, GetResultsOpts, GetResultsRequest};
+use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::tls_certificates::{
     CloneTlsCertificateRequest, CreateTlsCertificateRequest, DeleteTlsCertificateRequest,
     GetTlsCertificateRequest, GetTlsCertificatesOpts, GetTlsCertificatesRequest,
@@ -297,9 +297,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_results(
         &mut self,
-        opts: GetResultsOpts,
+        request: GetResultsRequest,
     ) -> Result<GetResultsResponse, GvmError> {
-        self.execute(GetResultsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a single-result `get_results` request and return a typed response.
@@ -308,9 +308,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_result(
         &mut self,
-        result_id: &EntityId,
+        request: GetResultRequest,
     ) -> Result<GetResultsResponse, GvmError> {
-        self.execute(GetResultRequest::new(result_id.clone())).await
+        self.execute(request).await
     }
 
     // ── TLS Certificates ──────────────────────────────────────────────────────

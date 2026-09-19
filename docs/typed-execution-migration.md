@@ -841,6 +841,68 @@ not a workaround for unsupported OS modification. Asset OS continues to use
 `get_assets type="os"` and its rich response; it is separate from SecInfo OS.
 See [pinned gvmd evidence](asset-request-gvmd-evidence.md).
 
+## Result list and detail family
+
+`GetResultsOpts` and the public `get_results` / `get_result` free
+builders are removed. The two request names and two named client methods remain,
+but each request now owns the complete input and direct fallible encoding:
+
+```rust
+use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
+use gvm_gmp::EntityId;
+
+let mut request = GetResultsRequest::default();
+request.filter_string = Some("report_id=report-1 first=1 rows=25".into());
+request.notes_details = Some(true);
+request.get_counts = Some(false);
+let listed = client.get_results(request).await?;
+
+let result_id = EntityId::new("result-1")?;
+let detail = client
+    .get_result(GetResultRequest::new(result_id))
+    .await?;
+# let _ = (listed, detail);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Direct signature migrations:
+
+- `GetResultsRequest::new(GetResultsOpts { ... })` becomes
+  `GetResultsRequest { ..., ..Default::default() }`;
+- `client.get_results(opts)` becomes `client.get_results(request)`;
+- `client.get_result(&id)` becomes
+  `client.get_result(GetResultRequest::new(id))`;
+- free-builder callers move to `execute(request)`, or deliberately keep raw
+  XML/custom codecs through `send`, `call`, `gvm_protocol::Request`,
+  `XmlCommand`, and downstream `GmpRequestCodec` implementations.
+
+Both requests expose `task_id`, `filter_string`, `filter_id`,
+`details`, `notes_details`, `overrides_details`, and
+`get_counts`; the list request additionally has optional `result_id`.
+The detail constructor sets `details = Some(true)`, which remains publicly
+mutable.
+
+Root `task_id` supplies note/override context and does not select results.
+Use `task_id=...` or `report_id=...` inside the filter for selection.
+`notes_details` and `overrides_details` only control expansion richness;
+filter terms `notes` and `overrides` request inclusion, while
+`apply_overrides` independently changes severity application. Inline and
+saved filters may coexist. Empty inline filters and the `0`/`-2` saved
+filter sentinels are preserved for gvmd.
+
+`get_counts = Some(false)` can produce a response with items and pagination
+metadata but no count block. `CountInfo::default()` represents that absence;
+page, filtered, and total counts have distinct meanings.
+
+There is no canonical result field replacing trash, root report selection,
+lean/delta output, pagination bypass, root inclusion/application flags, or
+`filter_replace`. Pagination and sorting stay in filter text, and opaque
+delta-related text is not a promise of delta rendering. The current
+`ScanResult` intentionally omits nested note/override, ticket, detection,
+tag, delta, original-severity, and other rich expansion payloads. Use raw
+execution when those complete subtrees are required. See
+[pinned gvmd evidence](result-request-gvmd-evidence.md).
+
 ## Compatibility boundary
 
 The promoted #523 baseline was additive, but it has not been published as the

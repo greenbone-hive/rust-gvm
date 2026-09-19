@@ -414,12 +414,27 @@ unmodeled commands, not an OS-modification workaround. Asset OS remains a rich
 SecInfo OS or report projection surfaces. See the
 [pinned evidence](asset-request-gvmd-evidence.md).
 
-Result list and detail requests remain distinct transitional semantic values
-over the same `get_results` builder family and share `GetResultsResponse`.
-Their filters, saved-filter identifiers, detail selection, response status
-mapping, and parse context remain unchanged. Result builders remain public
-until the separately ordered result migration; raw/custom execution remains
-available.
+Result list and detail are complete canonical requests over the same
+`get_results` wire root and share `GetResultsResponse`.
+`GetResultsRequest::default()` omits all eight selectors/controls.
+`GetResultRequest::new(id)` requires the result ID and defaults `details`
+to true, but callers may set it to false or omit it. Both requests expose
+optional task context, inline and saved filters, details,
+`notes_details`, `overrides_details`, and `get_counts`; the plural
+request also exposes an optional result selector.
+
+Root task context does not restrict the list. Task/report selection,
+pagination, sorting, expansion inclusion, and override application stay in the
+opaque GMP filter. Expansion-detail flags change richness but do not request
+inclusion. The client preserves empty filters and saved-filter sentinels,
+rejects XML 1.0-forbidden filter characters before transport, and otherwise
+leaves filter interpretation to gvmd.
+
+The typed response accepts source-shaped top-level results, optional result
+names, ID-only report references, and absent count blocks. Nested notes,
+overrides, tickets, detections, tags, delta data, and original severity remain
+outside `ScanResult`; raw `send`/`call` preserves access to the complete
+XML. See the [pinned result evidence](result-request-gvmd-evidence.md).
 
 ## Alternate target lifecycles
 

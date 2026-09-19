@@ -94,6 +94,7 @@ async fn get_results_and_nvts_return_stateful_resources() {
     let result_id = Uuid::new_v4();
     let nvt_id = Uuid::new_v4();
     let report_id = Uuid::new_v4();
+    let task_id = Uuid::new_v4();
 
     let Some(server) = build_server(
         MockGmpServer::builder()
@@ -101,11 +102,18 @@ async fn get_results_and_nvts_return_stateful_resources() {
             .version(GmpVersion::V22_5)
             .credentials("admin", "admin")
             .seed(move |store| {
+                store.seed(Resource::with_id("task", "Result Task", task_id));
+
+                let mut report = Resource::with_id("report", "Result Report", report_id);
+                report.set_attr("task_id", &task_id.to_string());
+                store.seed(report);
+
                 let mut result = Resource::with_id("result", "Test Result", result_id);
                 result.set_attr("host", "192.168.1.1");
                 result.set_attr("port", "443/tcp");
                 result.set_attr("threat", "High");
                 result.set_attr("severity", "8.5");
+                result.set_attr("qod", "95");
                 result.set_attr("report_id", &report_id.to_string());
                 store.seed(result);
 
@@ -123,11 +131,20 @@ async fn get_results_and_nvts_return_stateful_resources() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let results_resp = send_recv(&mut stream, b"<get_results/>").await;
+    let results_resp = send_recv(
+        &mut stream,
+        b"<get_results details=\"1\" get_counts=\"1\"/>",
+    )
+    .await;
     assert_eq!(results_resp.status_code(), Some(200));
     let results_text = results_resp.as_str().expect("valid utf8");
     assert!(results_text.contains(&result_id.to_string()));
     assert!(results_text.contains("Test Result"));
+    assert!(results_text.contains(&format!("<task id=\"{task_id}\"><name>Result Task</name>")));
+    assert!(results_text.contains(&format!(
+        "<report id=\"{report_id}\"><name>Result Report</name>"
+    )));
+    assert!(results_text.contains("<results start=\"1\" max=\"100\"/>"));
     assert!(results_text.contains("<result_count>1"));
 
     let nvts_resp = send_recv(&mut stream, b"<get_nvts/>").await;

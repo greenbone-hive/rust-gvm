@@ -1576,6 +1576,7 @@ impl SessionHandler {
                 return self.render_audit_report_hosts_response(cmd, store);
             }
             "get_scan_report" => return self.render_scan_report_response(cmd, store),
+            "get_results" => return crate::stateful_results::handle_get_results(cmd, store),
             "get_system_reports" => return render_system_reports_response(cmd, store),
             "get_info" => return render_secinfo_response(cmd),
             "get_vulns" => return render_vulnerabilities_response(cmd),
