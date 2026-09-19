@@ -43,7 +43,8 @@ UPDATE_CANONICAL_REQUEST_DISPOSITION=1 \
 The update command deliberately preserves stale active rows so removal remains
 an explicit reviewed decision rather than a generated side effect.
 
-After the bounded NVT and SecInfo migration in #648, the ledger contains exactly
-977 rows: 314 `transitional`, 241 `canonical-request`, 299 `removed`, 111
+After the bounded configuration/scan-config/policy lifecycle migration in #649,
+the ledger contains exactly 981 rows: 237 `transitional`, 285
+`canonical-request`, 336 `removed`, 111
 `retained-construction`, and 12 `frozen-ticket`. The inventory test protects
 both these counts and the source-to-ledger correspondence.

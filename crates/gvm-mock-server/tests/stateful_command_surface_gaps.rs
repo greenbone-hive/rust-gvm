@@ -596,13 +596,13 @@ async fn stateful_policies_round_trip_with_usage_type_filtering() {
 
     let policy_resp = send_recv(
         &mut stream,
-        b"<create_config><name>Policy One</name><usage_type>policy</usage_type></create_config>",
+        b"<create_config><copy>00000000-0000-0000-0000-000000000301</copy><name>Policy One</name><usage_type>policy</usage_type></create_config>",
     )
     .await;
     let policy_id = extract_id(&policy_resp);
     send_recv(
         &mut stream,
-        b"<create_config><name>Scan Config One</name><usage_type>scan</usage_type></create_config>",
+        b"<create_config><copy>daba56c8-73ec-11df-a475-002264764cea</copy><name>Scan Config One</name><usage_type>scan</usage_type></create_config>",
     )
     .await;
 
@@ -635,7 +635,11 @@ async fn stateful_policies_round_trip_with_usage_type_filtering() {
         format!("<get_configs config_id=\"{policy_id}\" usage_type=\"scan\"/>").as_bytes(),
     )
     .await;
-    assert_eq!(wrong_usage_type.status_code(), Some(404));
+    assert_eq!(wrong_usage_type.status_code(), Some(200));
+    assert!(wrong_usage_type
+        .as_str()
+        .expect("utf8")
+        .contains("<usage_type>policy</usage_type>"));
 
     server.shutdown().await;
 }

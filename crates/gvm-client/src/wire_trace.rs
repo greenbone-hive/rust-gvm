@@ -159,6 +159,9 @@ fn redact_attributes(
 ) -> Option<BytesStart<'static>> {
     let mut redacted = start.clone().into_owned();
     redacted.clear_attributes();
+    if is_config_import_envelope(stack, element_name) {
+        return Some(redacted);
+    }
     let credential_store_preference = is_credential_store_preference(stack, element_name);
     let discovery_preference = is_discovery_preference(stack, element_name);
 
@@ -181,7 +184,8 @@ fn redact_attributes(
 }
 
 fn is_sensitive_element(stack: &[String], element_name: &str) -> bool {
-    is_sensitive_name(element_name)
+    is_config_import_envelope(stack, element_name)
+        || is_sensitive_name(element_name)
         || matches!(element_name, "value" | "param" | "default_value")
         || (matches!(element_name, "default" | "alt")
             && is_discovery_preference(stack, element_name))
@@ -198,12 +202,20 @@ fn is_discovery_preference(stack: &[String], element_name: &str) -> bool {
     let discovery_root = stack.first().is_some_and(|root| {
         matches!(
             root.as_str(),
-            "get_preferences_response" | "get_nvts_response" | "get_info_response"
+            "get_preferences_response"
+                | "get_nvts_response"
+                | "get_info_response"
+                | "get_configs_response"
         )
     });
     let in_preference =
         element_name == "preference" || stack.iter().any(|name| name == "preference");
     discovery_root && in_preference
+}
+
+fn is_config_import_envelope(stack: &[String], element_name: &str) -> bool {
+    element_name == "get_configs_response"
+        && stack.first().is_some_and(|root| root == "create_config")
 }
 
 fn is_report_format_file(stack: &[String], element_name: &str) -> bool {
@@ -396,6 +408,7 @@ mod tests {
             br#"<get_preferences_response><preference><alt value="attribute-alt">alternate-secret</alt><name>visible</name><default>default-secret</default><value>configured-secret</value></preference></get_preferences_response>"#.as_slice(),
             br#"<G:GET_NVTS_RESPONSE xmlns:G="urn:gmp"><G:NVT><G:PREFERENCES><G:PREFERENCE VALUE="attribute-secret"><G:DEFAULT VALUE="attribute-default">default-secret</G:DEFAULT><G:ALT>alternate-secret</G:ALT><G:NAME>visible</G:NAME></G:PREFERENCE></G:PREFERENCES></G:NVT></G:GET_NVTS_RESPONSE>"#.as_slice(),
             br#"<get_info_response><info><preference><default>default-secret</default><name>visible</name><alt>alternate-secret</alt></preference></info></get_info_response>"#.as_slice(),
+            br#"<G:GET_CONFIGS_RESPONSE xmlns:G="urn:gmp"><G:CONFIG><G:PREFERENCES><G:PREFERENCE VALUE="attribute-secret"><G:NAME>visible</G:NAME><G:ALT VALUE="attribute-alt">alternate-secret</G:ALT><G:DEFAULT>default-secret</G:DEFAULT><G:VALUE>configured-secret</G:VALUE></G:PREFERENCE></G:PREFERENCES></G:CONFIG></G:GET_CONFIGS_RESPONSE>"#.as_slice(),
         ] {
             let redacted = String::from_utf8(redact_wire_bytes(xml)).expect("valid UTF-8");
             assert!(redacted.contains("visible"));
@@ -410,6 +423,24 @@ mod tests {
             ] {
                 assert!(!redacted.contains(secret), "leaked {secret}: {redacted}");
             }
+        }
+    }
+
+    #[test]
+    fn suppresses_complete_config_import_envelope_including_attributes() {
+        let xml = br#"<create_config><copy>visible-source</copy><get_configs_response token="attribute-secret"><config><name>hidden-name</name><extension credential="hidden-extension">hidden-body</extension><preferences><preference><value>hidden-value</value></preference></preferences></config></get_configs_response><usage_type>policy</usage_type></create_config>"#;
+
+        let redacted = String::from_utf8(redact_wire_bytes(xml)).expect("valid UTF-8");
+
+        assert_eq!(redacted, "<create_config><copy>visible-source</copy><get_configs_response><redacted/></get_configs_response><usage_type>policy</usage_type></create_config>");
+        for secret in [
+            "attribute-secret",
+            "hidden-name",
+            "hidden-extension",
+            "hidden-body",
+            "hidden-value",
+        ] {
+            assert!(!redacted.contains(secret));
         }
     }
 

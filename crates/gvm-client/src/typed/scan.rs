@@ -4,12 +4,12 @@
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::scan_configs::{
-    CloneScanConfigRequest, ConfigOpts, CreateScanConfigRequest, DeleteScanConfigRequest,
-    GetPoliciesRequest, GetPolicyOpts, GetPolicyRequest, GetScanConfigPreferenceRequest,
-    GetScanConfigPreferencesOpts, GetScanConfigPreferencesRequest, GetScanConfigRequest,
-    GetScanConfigsOpts, GetScanConfigsRequest, ImportPolicyRequest, ImportScanConfigRequest,
-    ModifyPolicySetCommentRequest, ModifyPolicySetNameRequest, ModifyScanConfigRequest,
-    ModifyScanConfigSetCommentRequest, ModifyScanConfigSetNameRequest, SyncConfigRequest,
+    CloneScanConfigRequest, CreateScanConfigRequest, DeleteScanConfigRequest, GetPoliciesRequest,
+    GetPolicyRequest, GetScanConfigPreferenceRequest, GetScanConfigPreferencesOpts,
+    GetScanConfigPreferencesRequest, GetScanConfigRequest, GetScanConfigsRequest,
+    ImportPolicyRequest, ImportScanConfigRequest, ModifyPolicySetCommentRequest,
+    ModifyPolicySetNameRequest, ModifyScanConfigRequest, ModifyScanConfigSetCommentRequest,
+    ModifyScanConfigSetNameRequest,
 };
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
@@ -38,8 +38,7 @@ use gvm_gmp::responses::{
     EmptyTrashcanResponse, GetPreferencesResponse, GetScanConfigsResponse, GetScannersResponse,
     GetSchedulesResponse, GetTasksResponse, ModifyScanConfigResponse, ModifyScannerResponse,
     ModifyScheduleResponse, ModifyTaskResponse, MoveTaskResponse, RestoreResponse,
-    ResumeTaskResponse, StartTaskResponse, StopTaskResponse, SyncConfigResponse,
-    VerifyScannerResponse,
+    ResumeTaskResponse, StartTaskResponse, StopTaskResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -52,9 +51,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_scan_configs(
         &mut self,
-        opts: GetScanConfigsOpts,
+        request: GetScanConfigsRequest,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        self.execute(GetScanConfigsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `create_scan_config` request and return a typed [`CreateScanConfigResponse`].
@@ -63,12 +62,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_scan_config(
         &mut self,
-        name: &str,
-        base_id: Option<&EntityId>,
-        opts: ConfigOpts,
+        request: CreateScanConfigRequest,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        self.execute(CreateScanConfigRequest::new(name, base_id.cloned(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_config` request that imports scan-config XML and return a
@@ -79,10 +75,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// response parsing fails.
     pub async fn import_scan_config(
         &mut self,
-        scan_config_xml: &str,
+        request: ImportScanConfigRequest,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        self.execute(ImportScanConfigRequest::new(scan_config_xml)?)
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_scan_config` request and return a typed [`GetScanConfigsResponse`].
@@ -91,10 +86,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_scan_config(
         &mut self,
-        config_id: &EntityId,
+        request: GetScanConfigRequest,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        self.execute(GetScanConfigRequest::new(config_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a scan-config scoped `get_preferences` request and return a typed response.
@@ -129,9 +123,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_policies(
         &mut self,
-        opts: GetScanConfigsOpts,
+        request: GetPoliciesRequest,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        self.execute(GetPoliciesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_configs` request for a single policy and return a typed
@@ -141,11 +135,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_policy(
         &mut self,
-        policy_id: &EntityId,
-        opts: GetPolicyOpts,
+        request: GetPolicyRequest,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        self.execute(GetPolicyRequest::new(policy_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_config` request that imports policy XML and return a
@@ -156,9 +148,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// response parsing fails.
     pub async fn import_policy(
         &mut self,
-        policy_xml: &str,
+        request: ImportPolicyRequest,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        self.execute(ImportPolicyRequest::new(policy_xml)?).await
+        self.execute(request).await
     }
 
     /// Send a `modify_scan_config` request and return a typed [`ModifyScanConfigResponse`].
@@ -167,11 +159,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_scan_config(
         &mut self,
-        config_id: &EntityId,
-        opts: ConfigOpts,
+        request: ModifyScanConfigRequest,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        self.execute(ModifyScanConfigRequest::new(config_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_config` request to set a scan-config name and return a
@@ -181,11 +171,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_scan_config_set_name(
         &mut self,
-        config_id: &EntityId,
-        name: &str,
+        request: ModifyScanConfigSetNameRequest,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        self.execute(ModifyScanConfigSetNameRequest::new(config_id.clone(), name))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_config` request to set or clear a scan-config comment and
@@ -195,14 +183,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_scan_config_set_comment(
         &mut self,
-        config_id: &EntityId,
-        comment: Option<&str>,
+        request: ModifyScanConfigSetCommentRequest,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        self.execute(ModifyScanConfigSetCommentRequest::new(
-            config_id.clone(),
-            comment.map(str::to_string),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `modify_config` request to set a policy name and return a typed
@@ -212,11 +195,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_policy_set_name(
         &mut self,
-        policy_id: &EntityId,
-        name: &str,
+        request: ModifyPolicySetNameRequest,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        self.execute(ModifyPolicySetNameRequest::new(policy_id.clone(), name))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `modify_config` request to set or clear a policy comment and
@@ -226,14 +207,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_policy_set_comment(
         &mut self,
-        policy_id: &EntityId,
-        comment: Option<&str>,
+        request: ModifyPolicySetCommentRequest,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        self.execute(ModifyPolicySetCommentRequest::new(
-            policy_id.clone(),
-            comment.map(str::to_string),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `delete_scan_config` request and return a typed [`DeleteScanConfigResponse`].
@@ -242,11 +218,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_scan_config(
         &mut self,
-        config_id: &EntityId,
-        ultimate: bool,
+        request: DeleteScanConfigRequest,
     ) -> Result<DeleteScanConfigResponse, GvmError> {
-        self.execute(DeleteScanConfigRequest::new(config_id.clone(), ultimate))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `clone_scan_config` request and return a typed [`CreateScanConfigResponse`].
@@ -255,36 +229,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_scan_config(
         &mut self,
-        config_id: &EntityId,
+        request: CloneScanConfigRequest,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        self.execute(CloneScanConfigRequest::new(config_id.clone()))
-            .await
-    }
-
-    /// Send the global `sync_config` request and return a typed
-    /// [`SyncConfigResponse`].
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn sync_config(&mut self) -> Result<SyncConfigResponse, GvmError> {
-        self.execute(SyncConfigRequest::new()).await
-    }
-
-    /// Send the global `sync_config` request and return a typed
-    /// [`SyncConfigResponse`].
-    ///
-    /// The GMP command synchronizes all configs and does not accept a config
-    /// identifier. The argument is retained temporarily for source
-    /// compatibility and is ignored.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    #[deprecated(note = "use sync_config(), which has global semantics")]
-    pub async fn sync_scan_config(
-        &mut self,
-        _config_id: &EntityId,
-    ) -> Result<SyncConfigResponse, GvmError> {
-        self.sync_config().await
+        self.execute(request).await
     }
 
     // ── Scanners ──────────────────────────────────────────────────────────────

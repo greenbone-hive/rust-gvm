@@ -26,8 +26,8 @@ use gvm_gmp::commands::assets::{
     ModifyAssetRequest,
 };
 use gvm_gmp::commands::configs::{
-    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
-    GetConfigsOpts, ModifyConfigOpts,
+    CloneConfigRequest, ConfigUsageType, CreateConfigRequest, DeleteConfigRequest,
+    GetConfigRequest, GetConfigsRequest, ModifyConfigRequest,
 };
 use gvm_gmp::commands::credentials::{
     CloneCredentialRequest, CreateCredentialRequest, DeleteCredentialRequest, GetCredentialRequest,
@@ -89,7 +89,7 @@ use gvm_gmp::commands::reports::{
 };
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::roles::*;
-use gvm_gmp::commands::scan_configs::GetScanConfigsOpts;
+use gvm_gmp::commands::scan_configs::GetScanConfigsRequest;
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
     GetScannersRequest, ModifyScannerRequest, VerifyScannerRequest,
@@ -1351,17 +1351,15 @@ async fn generic_config_and_port_list_facades_cover_every_semantic_request() {
     let port_range_id = id("22222222-2222-2222-2222-222222222222");
     server.clear_history();
 
-    assert_typed_success!(client.get_configs(GetConfigsOpts::default()));
-    assert_typed_success!(client.get_config(&config_id, GetConfigOpts::default()));
-    assert_create_success!(client.create_config(CreateConfigOpts {
-        name: "baseline".into(),
-        base_id: None,
-        comment: Some("generic".into()),
-        usage_type: Some(ConfigUsageType::Scan),
-    }));
-    assert_create_success!(client.clone_config(&config_id, CloneConfigOpts::default()));
-    assert_typed_success!(client.modify_config(&config_id, ModifyConfigOpts::default()));
-    assert_typed_success!(client.delete_config(&config_id, DeleteConfigOpts::default()));
+    assert_typed_success!(client.get_configs(GetConfigsRequest::default()));
+    assert_typed_success!(client.get_config(GetConfigRequest::new(config_id.clone())));
+    let mut create_config = CreateConfigRequest::new("baseline", config_id.clone());
+    create_config.comment = Some("generic".into());
+    create_config.usage_type = Some(ConfigUsageType::Scan);
+    assert_create_success!(client.create_config(create_config));
+    assert_create_success!(client.clone_config(CloneConfigRequest::new(config_id.clone())));
+    assert_typed_success!(client.modify_config(ModifyConfigRequest::new(config_id.clone())));
+    assert_typed_success!(client.delete_config(DeleteConfigRequest::new(config_id.clone())));
 
     assert_typed_success!(client.get_port_lists(GetPortListsRequest::default()));
     assert_typed_success!(client.get_port_list(GetPortListRequest::new(port_list_id.clone())));
@@ -1704,7 +1702,7 @@ async fn generic_config_and_port_list_facades_preserve_status_and_parse_context(
     let mut client = client(&server).await;
 
     assert_server_error!(
-        client.get_config(&id("config-1"), GetConfigOpts::default()),
+        client.get_config(GetConfigRequest::new(id("config-1"))),
         409,
         "configuration conflict"
     );
@@ -2900,7 +2898,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(
         client.get_web_application_targets(GetWebApplicationTargetsRequest::default())
     );
-    assert_typed_success!(client.get_scan_configs(GetScanConfigsOpts::default()));
+    assert_typed_success!(client.get_scan_configs(GetScanConfigsRequest::default()));
     assert_typed_success!(client.get_scanners(GetScannersRequest::default()));
     assert_typed_success!(client.get_port_lists(GetPortListsRequest::default()));
     assert_typed_success!(client.get_tasks(GetTasksOpts::default()));

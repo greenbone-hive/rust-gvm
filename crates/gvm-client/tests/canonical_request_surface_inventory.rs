@@ -93,6 +93,27 @@ fn collect_command_surfaces(root: &Path, surfaces: &mut BTreeSet<Surface>) {
                 });
             }
         }
+
+        if relative.ends_with("/scan_configs.rs") {
+            let lines = contents.lines().collect::<Vec<_>>();
+            for (index, line) in lines.iter().enumerate() {
+                if matches!(
+                    line.trim(),
+                    "clone_request!("
+                        | "modify_request!("
+                        | "delete_request!("
+                        | "metadata_setter_request!("
+                        | "comment_setter_request!("
+                ) {
+                    let symbol = lines[index + 1].trim().trim_end_matches(',').to_string();
+                    surfaces.insert(Surface {
+                        kind: "request".to_string(),
+                        source: relative.clone(),
+                        symbol,
+                    });
+                }
+            }
+        }
     }
 }
 
@@ -283,10 +304,10 @@ fn every_public_request_surface_has_an_explicit_disposition() {
             *counts.entry(disposition.value.as_str()).or_insert(0_usize) += 1;
             counts
         });
-    assert_eq!(ledger.len(), 977, "#648 disposition ledger total drifted");
-    assert_eq!(counts.get("transitional"), Some(&314));
-    assert_eq!(counts.get("canonical-request"), Some(&241));
-    assert_eq!(counts.get("removed"), Some(&299));
+    assert_eq!(ledger.len(), 981, "#649 disposition ledger total drifted");
+    assert_eq!(counts.get("transitional"), Some(&237));
+    assert_eq!(counts.get("canonical-request"), Some(&285));
+    assert_eq!(counts.get("removed"), Some(&336));
     assert_eq!(counts.get("retained-construction"), Some(&111));
     assert_eq!(counts.get("frozen-ticket"), Some(&12));
 }

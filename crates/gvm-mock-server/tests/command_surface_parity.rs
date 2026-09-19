@@ -159,13 +159,7 @@ fn echo_only_commands_are_intentionally_listed() {
         .map(|entry| entry.name)
         .collect();
 
-    for expected in [
-        "describe_auth",
-        "move_task",
-        "sync_config",
-        "test_alert",
-        "verify_scanner",
-    ] {
+    for expected in ["describe_auth", "move_task", "test_alert", "verify_scanner"] {
         assert!(
             echo_only.contains(expected),
             "{expected} should be explicitly documented as echo-only"
@@ -192,4 +186,11 @@ fn echo_only_commands_are_intentionally_listed() {
             "{semantic} should not be classified as generic echo behavior"
         );
     }
+
+    let rejected: BTreeSet<_> = COMMAND_COVERAGE
+        .iter()
+        .filter(|entry| entry.support == CommandSupport::Rejected)
+        .map(|entry| entry.name)
+        .collect();
+    assert_eq!(rejected, BTreeSet::from(["sync_config"]));
 }

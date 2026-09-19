@@ -379,6 +379,9 @@ impl SessionHandler {
             {
                 return response.into_bytes();
             }
+            if cmd.name == "sync_config" {
+                return unsupported_sync_config_response();
+            }
         }
         match self.mode {
             ServerMode::Echo => echo_response(&cmd.name, self.version.as_str()),
@@ -462,6 +465,9 @@ impl SessionHandler {
                 ),
             );
         }
+        if cmd.name == "sync_config" {
+            return unsupported_sync_config_response();
+        }
         if cmd.name == "modify_credential"
             && has_credential_store_credential_modify_field(cmd)
             && self.version != GmpVersion::V22_8
@@ -485,6 +491,10 @@ impl SessionHandler {
             "get_assets" => self.handle_get_assets(cmd, store),
             "modify_asset" => self.handle_modify_asset(cmd, store),
             "delete_asset" => self.handle_delete_asset(cmd, store),
+            "create_config" => crate::stateful_scan_configs::handle_create(cmd, store),
+            "get_configs" => crate::stateful_scan_configs::handle_get(cmd, store),
+            "modify_config" => crate::stateful_scan_configs::handle_modify(cmd, store),
+            "delete_config" => crate::stateful_scan_configs::handle_delete(cmd, store),
             "create_report_config" => crate::stateful_report_configs::handle_create(cmd, store),
             "get_report_configs" => crate::stateful_report_configs::handle_get(cmd, store),
             "modify_report_config" => crate::stateful_report_configs::handle_modify(cmd, store),
@@ -3228,6 +3238,10 @@ impl SessionHandler {
         )
         .into_bytes()
     }
+}
+
+fn unsupported_sync_config_response() -> Vec<u8> {
+    b"<gmp_response status=\"400\" status_text=\"Bogus command name\"/>".to_vec()
 }
 
 fn render_features_response() -> Vec<u8> {

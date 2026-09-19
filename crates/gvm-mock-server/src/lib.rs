@@ -57,6 +57,7 @@ mod stateful_nvt_secinfo;
 mod stateful_report_configs;
 mod stateful_report_formats;
 mod stateful_results;
+mod stateful_scan_configs;
 mod stateful_tls_certificates;
 pub mod store;
 #[cfg(feature = "tls")]

@@ -28,12 +28,12 @@ builder	crates/gvm-gmp/src/commands/assets.rs	delete_asset	removed	Removed redun
 builder	crates/gvm-gmp/src/commands/assets.rs	get_assets	removed	Removed redundant input/encoding surface under #602; supported inputs belong to complete canonical requests.
 builder	crates/gvm-gmp/src/commands/assets.rs	modify_asset	removed	Removed redundant input/encoding surface under #602; supported inputs belong to complete canonical requests.
 builder	crates/gvm-gmp/src/commands/authentication.rs	authenticate	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/configs.rs	clone_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/configs.rs	create_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/configs.rs	delete_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/configs.rs	get_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/configs.rs	get_configs	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/configs.rs	modify_config	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/configs.rs	clone_config	removed	Removed by #649; CloneConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/configs.rs	create_config	removed	Removed by #649; CreateConfigRequest owns canonical encoding and requires a base.
+builder	crates/gvm-gmp/src/commands/configs.rs	delete_config	removed	Removed by #649; DeleteConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/configs.rs	get_config	removed	Removed by #649; GetConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/configs.rs	get_configs	removed	Removed by #649; GetConfigsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/configs.rs	modify_config	removed	Removed by #649; ModifyConfigRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/credentials.rs	clone_credential	removed	Removed by #620; CloneCredentialRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/credentials.rs	create_credential	removed	Removed by #620; CreateCredentialRequest owns canonical validation and encoding.
 builder	crates/gvm-gmp/src/commands/credentials.rs	create_credential_store_credential	removed	Removed by #620; CreateCredentialStoreCredentialRequest owns canonical validation, semantic metadata, and encoding.
@@ -163,35 +163,35 @@ builder	crates/gvm-gmp/src/commands/roles.rs	delete_role	removed	Removed transit
 builder	crates/gvm-gmp/src/commands/roles.rs	get_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 builder	crates/gvm-gmp/src/commands/roles.rs	get_roles	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 builder	crates/gvm-gmp/src/commands/roles.rs	modify_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	clone_policy	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	clone_scan_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	create_policy	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	create_scan_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	delete_policy	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	delete_scan_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_policies	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_policy	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	clone_policy	removed	Removed by #649; ClonePolicyRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	clone_scan_config	removed	Removed by #649; CloneScanConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	create_policy	removed	Removed by #649; CreatePolicyRequest owns canonical encoding and requires a base.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	create_scan_config	removed	Removed by #649; CreateScanConfigRequest owns canonical encoding and requires a base.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	delete_policy	removed	Removed by #649; DeletePolicyRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	delete_scan_config	removed	Removed by #649; DeleteScanConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_policies	removed	Removed by #649; GetPoliciesRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_policy	removed	Removed by #649; GetPolicyRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config	removed	Removed by #649; GetScanConfigRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config_preference	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config_preferences	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_configs	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	import_policy	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	import_scan_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_comment	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_configs	removed	Removed by #649; GetScanConfigsRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	import_policy	removed	Removed by #649; ImportPolicyRequest validates and preserves its XML carrier.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	import_scan_config	removed	Removed by #649; ImportScanConfigRequest validates and preserves its XML carrier.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy	removed	Removed by #649; ModifyPolicyRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_comment	removed	Removed by #649; ModifyPolicySetCommentRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_family_selection	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_name	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_name	removed	Removed by #649; ModifyPolicySetNameRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_nvt_preference	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_nvt_selection	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_scanner_preference	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_comment	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config	removed	Removed by #649; ModifyScanConfigRequest owns canonical encoding.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_comment	removed	Removed by #649; ModifyScanConfigSetCommentRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_family_selection	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_name	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_name	removed	Removed by #649; ModifyScanConfigSetNameRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_nvt_preference	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_nvt_selection	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_scanner_preference	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	sync_config	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	sync_config	removed	Removed by #649; pinned and current gvmd have no GMP dispatcher for this schema-only name.
 builder	crates/gvm-gmp/src/commands/scanners.rs	clone_scanner	removed	Removed by #631; CloneScannerRequest is the canonical encoder.
 builder	crates/gvm-gmp/src/commands/scanners.rs	create_scanner	removed	Removed by #631; CreateScannerRequest is the canonical encoder.
 builder	crates/gvm-gmp/src/commands/scanners.rs	delete_scanner	removed	Removed by #631; DeleteScannerRequest is the canonical encoder.
@@ -428,23 +428,23 @@ facade	crates/gvm-client/src/typed/reports.rs	modify_report_config	canonical-req
 facade	crates/gvm-client/src/typed/reports.rs	modify_report_format	canonical-request	Accepts ModifyReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	modify_tls_certificate	canonical-request	Accepts ModifyTlsCertificateRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	verify_report_format	canonical-request	Accepts VerifyReportFormatRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/resources.rs	clone_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	clone_config	canonical-request	Retained by #649; accepts CloneConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	clone_port_list	retained-construction	Retained for discoverability; accepts the canonical ClonePortListRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	create_asset	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/resources.rs	create_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	create_config	canonical-request	Retained by #649; accepts CreateConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	create_host	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	create_port_list	retained-construction	Retained for discoverability; accepts the canonical CreatePortListRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	create_port_range	retained-construction	Retained for discoverability; accepts the canonical CreatePortRangeRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	delete_asset	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/resources.rs	delete_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	delete_config	canonical-request	Retained by #649; accepts DeleteConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	delete_host	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	delete_operating_system_asset	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	delete_port_list	retained-construction	Retained for discoverability; accepts the canonical DeletePortListRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	delete_port_range	retained-construction	Retained for discoverability; accepts the canonical DeletePortRangeRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	get_asset	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	get_assets	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/resources.rs	get_config	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/resources.rs	get_configs	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	get_config	canonical-request	Retained by #649; accepts GetConfigRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/resources.rs	get_configs	canonical-request	Retained by #649; accepts GetConfigsRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	get_host	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	get_hosts	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	get_operating_system_asset	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
@@ -452,12 +452,12 @@ facade	crates/gvm-client/src/typed/resources.rs	get_operating_system_assets	reta
 facade	crates/gvm-client/src/typed/resources.rs	get_port_list	retained-construction	Retained for discoverability; accepts the canonical GetPortListRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	get_port_lists	retained-construction	Retained for discoverability; accepts the canonical GetPortListsRequest unchanged.
 facade	crates/gvm-client/src/typed/resources.rs	modify_asset	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/resources.rs	modify_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/resources.rs	modify_config	canonical-request	Retained by #649; accepts ModifyConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	modify_host	retained-construction	Retained for resource discoverability; accepts the complete canonical request unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/resources.rs	modify_operating_system_asset	removed	Removed misleading OS modification surface; pinned gvmd modify_asset only modifies host comments.
 facade	crates/gvm-client/src/typed/resources.rs	modify_port_list	retained-construction	Retained for discoverability; accepts the canonical ModifyPortListRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	clone_audit	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	clone_scan_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	clone_scan_config	canonical-request	Retained by #649; accepts CloneScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	clone_scanner	retained-construction	Retained for discoverability; accepts the canonical CloneScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	clone_schedule	retained-construction	Retained for discoverability; accepts the canonical CloneScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	clone_task	transitional	Pending bounded family migration under #602.
@@ -467,40 +467,40 @@ facade	crates/gvm-client/src/typed/scan.rs	create_container_image_task	transitio
 facade	crates/gvm-client/src/typed/scan.rs	create_container_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_import_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_oci_image_target_task	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	create_scan_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	create_scan_config	canonical-request	Retained by #649; accepts CreateScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	create_scanner	retained-construction	Retained for discoverability; accepts the canonical CreateScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	create_schedule	retained-construction	Retained for discoverability; accepts the canonical CreateScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	create_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_typed_schedule	removed	Removed by #629; typed input constructs CreateScheduleRequest and uses create_schedule.
 facade	crates/gvm-client/src/typed/scan.rs	create_web_application_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	delete_audit	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	delete_scan_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	delete_scan_config	canonical-request	Retained by #649; accepts DeleteScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	delete_scanner	retained-construction	Retained for discoverability; accepts the canonical DeleteScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	delete_schedule	retained-construction	Retained for discoverability; accepts the canonical DeleteScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	delete_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	empty_trashcan	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_audits	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_policies	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_policy	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_scan_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	get_policies	canonical-request	Retained by #649; accepts GetPoliciesRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/scan.rs	get_policy	canonical-request	Retained by #649; accepts GetPolicyRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/scan.rs	get_scan_config	canonical-request	Retained by #649; accepts GetScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_scan_config_preference	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_scan_config_preferences	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_scan_configs	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	get_scan_configs	canonical-request	Retained by #649; accepts GetScanConfigsRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_scanner	retained-construction	Retained for discoverability; accepts the canonical GetScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_scanners	retained-construction	Retained for discoverability; accepts the canonical GetScannersRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_schedule	retained-construction	Retained for discoverability; accepts the canonical GetScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_schedules	retained-construction	Retained for discoverability; accepts the canonical GetSchedulesRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_tasks	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	import_policy	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	import_scan_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	import_policy	canonical-request	Retained by #649; accepts ImportPolicyRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/scan.rs	import_scan_config	canonical-request	Retained by #649; accepts ImportScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	modify_audit	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	modify_policy_set_comment	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	modify_policy_set_name	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_comment	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_name	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	modify_policy_set_comment	canonical-request	Retained by #649; accepts ModifyPolicySetCommentRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/scan.rs	modify_policy_set_name	canonical-request	Retained by #649; accepts ModifyPolicySetNameRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config	canonical-request	Retained by #649; accepts ModifyScanConfigRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_comment	canonical-request	Retained by #649; accepts ModifyScanConfigSetCommentRequest unchanged and delegates to execute.
+facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_name	canonical-request	Retained by #649; accepts ModifyScanConfigSetNameRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	modify_scanner	retained-construction	Retained for discoverability; accepts the canonical ModifyScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	modify_schedule	retained-construction	Retained for discoverability; accepts the canonical ModifyScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	modify_task	transitional	Pending bounded family migration under #602.
@@ -514,8 +514,8 @@ facade	crates/gvm-client/src/typed/scan.rs	start_audit	transitional	Pending boun
 facade	crates/gvm-client/src/typed/scan.rs	start_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	stop_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	stop_task	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	sync_config	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	sync_scan_config	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	sync_config	removed	Removed by #649; gvmd has no executable GMP dispatcher for sync_config.
+facade	crates/gvm-client/src/typed/scan.rs	sync_scan_config	removed	Removed by #649; the deprecated per-config delegate falsely implied supported synchronization.
 facade	crates/gvm-client/src/typed/scan.rs	verify_scanner	retained-construction	Retained for discoverability; accepts the canonical VerifyScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	create_credential	retained-construction	Retained for discoverability; accepts the canonical CreateCredentialRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	create_credential_store_credential	retained-construction	Retained for discoverability; accepts the canonical CreateCredentialStoreCredentialRequest unchanged.
@@ -609,12 +609,12 @@ options	crates/gvm-gmp/src/commands/assets.rs	CreateAssetOpts	removed	Removed re
 options	crates/gvm-gmp/src/commands/assets.rs	DeleteAssetOpts	removed	Removed redundant input/encoding surface under #602; supported inputs belong to complete canonical requests.
 options	crates/gvm-gmp/src/commands/assets.rs	GetAssetsOpts	removed	Removed redundant input/encoding surface under #602; supported inputs belong to complete canonical requests.
 options	crates/gvm-gmp/src/commands/assets.rs	ModifyAssetOpts	removed	Removed redundant input/encoding surface under #602; supported inputs belong to complete canonical requests.
-options	crates/gvm-gmp/src/commands/configs.rs	CloneConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/configs.rs	CreateConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/configs.rs	DeleteConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/configs.rs	GetConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/configs.rs	GetConfigsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/configs.rs	ModifyConfigOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/configs.rs	CloneConfigOpts	removed	Removed by #649; fields moved onto CloneConfigRequest.
+options	crates/gvm-gmp/src/commands/configs.rs	CreateConfigOpts	removed	Removed by #649; fields moved onto CreateConfigRequest.
+options	crates/gvm-gmp/src/commands/configs.rs	DeleteConfigOpts	removed	Removed by #649; fields moved onto DeleteConfigRequest.
+options	crates/gvm-gmp/src/commands/configs.rs	GetConfigOpts	removed	Removed by #649; fields moved onto GetConfigRequest.
+options	crates/gvm-gmp/src/commands/configs.rs	GetConfigsOpts	removed	Removed by #649; fields moved onto GetConfigsRequest.
+options	crates/gvm-gmp/src/commands/configs.rs	ModifyConfigOpts	removed	Removed by #649; metadata fields moved onto ModifyConfigRequest and usage mutation was dropped.
 options	crates/gvm-gmp/src/commands/credentials.rs	CredentialOpts	removed	Removed by #620; fields now belong to CreateCredentialRequest.
 options	crates/gvm-gmp/src/commands/credentials.rs	CredentialStoreCredentialOpts	removed	Removed by #620; fields now belong to CreateCredentialStoreCredentialRequest.
 options	crates/gvm-gmp/src/commands/credentials.rs	GetCredentialStoresOpts	removed	Removed by #620; fields now belong to GetCredentialStoresRequest.
@@ -665,10 +665,10 @@ options	crates/gvm-gmp/src/commands/reports.rs	ImportReportOpts	transitional	Pen
 options	crates/gvm-gmp/src/commands/results.rs	GetResultsOpts	removed	Removed by #643; all query inputs are public fields on the two canonical result requests.
 options	crates/gvm-gmp/src/commands/roles.rs	GetRolesOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 options	crates/gvm-gmp/src/commands/roles.rs	RoleOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
-options	crates/gvm-gmp/src/commands/scan_configs.rs	ConfigOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/scan_configs.rs	GetPolicyOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/scan_configs.rs	ConfigOpts	removed	Removed by #649; lifecycle inputs moved onto complete requests.
+options	crates/gvm-gmp/src/commands/scan_configs.rs	GetPolicyOpts	removed	Removed by #649; query fields moved onto GetPolicyRequest.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigsOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigsOpts	removed	Removed by #649; query fields moved onto complete list/detail requests.
 options	crates/gvm-gmp/src/commands/scanners.rs	GetScannersOpts	removed	Removed by #631; fields now belong to GetScannersRequest.
 options	crates/gvm-gmp/src/commands/scanners.rs	ScannerOpts	removed	Removed by #631; create and modify requests own operation-specific fields.
 options	crates/gvm-gmp/src/commands/schedules.rs	GetSchedulesOpts	removed	Removed by #629; fields now belong to GetSchedulesRequest.
@@ -737,12 +737,12 @@ request	crates/gvm-gmp/src/commands/assets.rs	GetAssetRequest	canonical-request	
 request	crates/gvm-gmp/src/commands/assets.rs	GetAssetsRequest	canonical-request	Complete request owns final validation, semantic metadata, direct encoding, and its existing response association.
 request	crates/gvm-gmp/src/commands/assets.rs	ModifyAssetRequest	canonical-request	Complete request owns final validation, semantic metadata, direct encoding, and its existing response association.
 request	crates/gvm-gmp/src/commands/authentication.rs	AuthenticateRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/configs.rs	CloneConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/configs.rs	CreateConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/configs.rs	DeleteConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/configs.rs	GetConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/configs.rs	GetConfigsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/configs.rs	ModifyConfigRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/configs.rs	CloneConfigRequest	canonical-request	Canonical direct codec since #649; owns clone inputs and response association.
+request	crates/gvm-gmp/src/commands/configs.rs	CreateConfigRequest	canonical-request	Canonical direct codec since #649; requires a named base copy.
+request	crates/gvm-gmp/src/commands/configs.rs	DeleteConfigRequest	canonical-request	Canonical direct codec since #649; owns trash and ultimate deletion.
+request	crates/gvm-gmp/src/commands/configs.rs	GetConfigRequest	canonical-request	Canonical direct codec since #649; owns ID-selected generic detail inputs.
+request	crates/gvm-gmp/src/commands/configs.rs	GetConfigsRequest	canonical-request	Canonical direct codec since #649; owns generic configuration query inputs.
+request	crates/gvm-gmp/src/commands/configs.rs	ModifyConfigRequest	canonical-request	Canonical direct codec since #649; owns metadata-only modification.
 request	crates/gvm-gmp/src/commands/credentials.rs	CloneCredentialRequest	canonical-request	Complete clone input with semantic alias metadata, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/credentials.rs	CreateCredentialRequest	canonical-request	Complete secret-bearing create input with gvmd-derived final-value validation, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/credentials.rs	CreateCredentialStoreCredentialRequest	canonical-request	Complete store-backed create input with semantic alias metadata, gvmd-derived validation, secret redaction, and direct encoding.
@@ -860,23 +860,27 @@ request	crates/gvm-gmp/src/commands/roles.rs	DeleteRoleRequest	canonical-request
 request	crates/gvm-gmp/src/commands/roles.rs	GetRoleRequest	canonical-request	Complete semantic alias owns inputs, encoding and response association; formerly macro-generated.
 request	crates/gvm-gmp/src/commands/roles.rs	GetRolesRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 request	crates/gvm-gmp/src/commands/roles.rs	ModifyRoleRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	ClonePolicyRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	CloneScanConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	CreatePolicyRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	CreateScanConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	DeletePolicyRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	DeleteScanConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	GetPoliciesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	GetPolicyRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ClonePolicyRequest	canonical-request	Canonical direct codec since #649; preserves source usage unless overridden.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	CloneScanConfigRequest	canonical-request	Canonical direct codec since #649; preserves source usage unless overridden.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	CreatePolicyRequest	canonical-request	Canonical direct codec since #649; requires a base and forces policy usage.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	CreateScanConfigRequest	canonical-request	Canonical direct codec since #649; requires a base.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	DeletePolicyRequest	canonical-request	Canonical direct codec since #649; owns policy-alias deletion inputs.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	DeleteScanConfigRequest	canonical-request	Canonical direct codec since #649; owns scan-config deletion inputs.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	GetPoliciesRequest	canonical-request	Canonical direct codec since #649; owns policy query inputs.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	GetPolicyRequest	canonical-request	Canonical direct codec since #649; owns policy detail inputs.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferenceRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	ImportPolicyRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	ImportScanConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicyRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	SyncConfigRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigRequest	canonical-request	Canonical direct codec since #649; owns scan-config detail inputs.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigsRequest	canonical-request	Canonical direct codec since #649; owns scan-config query inputs.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ImportPolicyRequest	canonical-request	Canonical direct codec since #649; validates one export and adds an outer policy override.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ImportScanConfigRequest	canonical-request	Canonical direct codec since #649; validates and preserves one export carrier.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicyRequest	canonical-request	Canonical direct codec since #649; owns policy metadata-only modification.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigRequest	canonical-request	Canonical direct codec since #649; owns scan-config metadata-only modification.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	SyncConfigRequest	removed	Removed by #649; pinned and current gvmd reject the schema-only command.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetCommentRequest	canonical-request	Canonical direct codec since #649; explicit empty comment is a server no-op.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetNameRequest	canonical-request	Canonical direct codec since #649; explicit empty name is a server no-op.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetCommentRequest	canonical-request	Canonical direct codec since #649; explicit empty comment is a server no-op.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetNameRequest	canonical-request	Canonical direct codec since #649; explicit empty name is a server no-op.
 request	crates/gvm-gmp/src/commands/scanners.rs	CloneScannerRequest	canonical-request	Complete clone input; direct encoder with semantic clone identity and response association.
 request	crates/gvm-gmp/src/commands/scanners.rs	CreateScannerRequest	canonical-request	Complete create input; direct encoder with required connection data and relay fields.
 request	crates/gvm-gmp/src/commands/scanners.rs	DeleteScannerRequest	canonical-request	Complete delete input; direct encoder and response association.
