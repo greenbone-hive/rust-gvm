@@ -144,8 +144,6 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_cert_bund_advisory",
     "get_dfn_cert_advisories",
     "get_dfn_cert_advisory",
-    "get_secinfo_operating_systems",
-    "get_secinfo_vulnerabilities",
     "get_vulnerabilities",
     "get_vulnerability",
     "get_alerts",
@@ -387,7 +385,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 259);
+    assert_eq!(direct_execute_count, 257);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

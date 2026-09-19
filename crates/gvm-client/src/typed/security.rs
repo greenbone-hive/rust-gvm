@@ -10,25 +10,21 @@ use gvm_gmp::commands::credentials::{
 };
 use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
 use gvm_gmp::commands::nvts::{
-    GetNvtFamiliesRequest, GetNvtPreferenceRequest, GetNvtPreferencesOpts,
-    GetNvtPreferencesRequest, GetNvtRequest, GetNvtsOpts, GetNvtsRequest, GetScanConfigNvtRequest,
-    GetScanConfigNvtsRequest,
+    GetNvtFamiliesRequest, GetNvtPreferenceRequest, GetNvtPreferencesRequest, GetNvtRequest,
+    GetNvtsRequest, GetScanConfigNvtRequest, GetScanConfigNvtsRequest,
 };
 use gvm_gmp::commands::secinfo::{
-    GenericInfoType, GetCertBundAdvisoriesRequest, GetCertBundAdvisoryRequest, GetCpeRequest,
-    GetCpesRequest, GetCveRequest, GetCvesRequest, GetDfnCertAdvisoriesRequest,
-    GetDfnCertAdvisoryRequest, GetInfoListOpts, GetInfoListRequest, GetInfoRequest,
-    GetOperatingSystemsRequest, GetSecInfoOpts, GetVulnerabilitiesRequest,
+    GetCertBundAdvisoriesRequest, GetCertBundAdvisoryRequest, GetCpeRequest, GetCpesRequest,
+    GetCveRequest, GetCvesRequest, GetDfnCertAdvisoriesRequest, GetDfnCertAdvisoryRequest,
+    GetInfoListRequest, GetInfoRequest,
 };
-use gvm_gmp::commands::system::{
-    FilteredGetOpts, GetTimezonesRequest, GetVulnerabilityRequest, GetVulnsRequest,
-};
+use gvm_gmp::commands::system::{GetTimezonesRequest, GetVulnerabilityRequest, GetVulnsRequest};
 use gvm_gmp::responses::{
     CreateCredentialResponse, DeleteCredentialResponse, GetCertBundAdvisoriesResponse,
     GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
     GetDfnCertAdvisoriesResponse, GetFeedsResponse, GetInfoResponse, GetNvtFamiliesResponse,
-    GetNvtsResponse, GetOperatingSystemsResponse, GetPreferencesResponse, GetTimezonesResponse,
-    GetVulnerabilitiesResponse, ModifyCredentialResponse, VerifyCredentialStoreResponse,
+    GetNvtsResponse, GetPreferencesResponse, GetTimezonesResponse, GetVulnerabilitiesResponse,
+    ModifyCredentialResponse, VerifyCredentialStoreResponse,
 };
 use gvm_gmp::FeedType;
 
@@ -112,16 +108,16 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_nvts(&mut self, opts: GetNvtsOpts) -> Result<GetNvtsResponse, GvmError> {
-        self.execute(GetNvtsRequest::new(opts)).await
+    pub async fn get_nvts(&mut self, request: GetNvtsRequest) -> Result<GetNvtsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a detailed `get_nvts` request for one NVT.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_nvt(&mut self, nvt_oid: &str) -> Result<GetNvtsResponse, GvmError> {
-        self.execute(GetNvtRequest::new(nvt_oid)).await
+    pub async fn get_nvt(&mut self, request: GetNvtRequest) -> Result<GetNvtsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a scan-config scoped `get_nvts` request and return a typed [`GetNvtsResponse`].
@@ -130,9 +126,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_scan_config_nvts(
         &mut self,
-        opts: GetNvtsOpts,
+        request: GetScanConfigNvtsRequest,
     ) -> Result<GetNvtsResponse, GvmError> {
-        self.execute(GetScanConfigNvtsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a scan-config compatibility `get_nvts` request for a single NVT.
@@ -141,9 +137,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_scan_config_nvt(
         &mut self,
-        nvt_oid: &str,
+        request: GetScanConfigNvtRequest,
     ) -> Result<GetNvtsResponse, GvmError> {
-        self.execute(GetScanConfigNvtRequest::new(nvt_oid)).await
+        self.execute(request).await
     }
 
     /// Send a `get_preferences` request for NVT preferences.
@@ -152,9 +148,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_nvt_preferences(
         &mut self,
-        opts: GetNvtPreferencesOpts,
+        request: GetNvtPreferencesRequest,
     ) -> Result<GetPreferencesResponse, GvmError> {
-        self.execute(GetNvtPreferencesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_preferences` request for one NVT preference.
@@ -163,18 +159,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_nvt_preference(
         &mut self,
-        name: &str,
-        opts: GetNvtPreferencesOpts,
+        request: GetNvtPreferenceRequest,
     ) -> Result<GetPreferencesResponse, GvmError> {
-        self.execute(GetNvtPreferenceRequest::new(name, opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_nvt_families` request and return a typed [`GetNvtFamiliesResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_nvt_families(&mut self) -> Result<GetNvtFamiliesResponse, GvmError> {
-        self.execute(GetNvtFamiliesRequest::new()).await
+    pub async fn get_nvt_families(
+        &mut self,
+        request: GetNvtFamiliesRequest,
+    ) -> Result<GetNvtFamiliesResponse, GvmError> {
+        self.execute(request).await
     }
 
     // ── SecInfo ───────────────────────────────────────────────────────────────
@@ -183,8 +181,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_cves(&mut self, opts: GetSecInfoOpts) -> Result<GetCvesResponse, GvmError> {
-        self.execute(GetCvesRequest::new(opts)).await
+    pub async fn get_cves(&mut self, request: GetCvesRequest) -> Result<GetCvesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_info` request for a single CVE entry and return a typed
@@ -192,16 +190,16 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_cve(&mut self, cve_id: &str) -> Result<GetCvesResponse, GvmError> {
-        self.execute(GetCveRequest::new(cve_id)).await
+    pub async fn get_cve(&mut self, request: GetCveRequest) -> Result<GetCvesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_info` request for CPE entries and return a typed [`GetCpesResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_cpes(&mut self, opts: GetSecInfoOpts) -> Result<GetCpesResponse, GvmError> {
-        self.execute(GetCpesRequest::new(opts)).await
+    pub async fn get_cpes(&mut self, request: GetCpesRequest) -> Result<GetCpesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_info` request for a single CPE entry and return a typed
@@ -209,8 +207,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_cpe(&mut self, cpe_id: &str) -> Result<GetCpesResponse, GvmError> {
-        self.execute(GetCpeRequest::new(cpe_id)).await
+    pub async fn get_cpe(&mut self, request: GetCpeRequest) -> Result<GetCpesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_info` request for CERT-Bund advisories and return a typed
@@ -220,9 +218,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_cert_bund_advisories(
         &mut self,
-        opts: GetSecInfoOpts,
+        request: GetCertBundAdvisoriesRequest,
     ) -> Result<GetCertBundAdvisoriesResponse, GvmError> {
-        self.execute(GetCertBundAdvisoriesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_info` request for a single CERT-Bund advisory and return a
@@ -232,9 +230,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_cert_bund_advisory(
         &mut self,
-        cert_id: &str,
+        request: GetCertBundAdvisoryRequest,
     ) -> Result<GetCertBundAdvisoriesResponse, GvmError> {
-        self.execute(GetCertBundAdvisoryRequest::new(cert_id)).await
+        self.execute(request).await
     }
 
     /// Send a `get_info` request for DFN-CERT advisories and return a typed
@@ -244,9 +242,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_dfn_cert_advisories(
         &mut self,
-        opts: GetSecInfoOpts,
+        request: GetDfnCertAdvisoriesRequest,
     ) -> Result<GetDfnCertAdvisoriesResponse, GvmError> {
-        self.execute(GetDfnCertAdvisoriesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_info` request for a single DFN-CERT advisory and return a
@@ -256,21 +254,17 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_dfn_cert_advisory(
         &mut self,
-        cert_id: &str,
+        request: GetDfnCertAdvisoryRequest,
     ) -> Result<GetDfnCertAdvisoriesResponse, GvmError> {
-        self.execute(GetDfnCertAdvisoryRequest::new(cert_id)).await
+        self.execute(request).await
     }
 
     /// Send a generic single-entry `get_info` request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_info(
-        &mut self,
-        info_id: &str,
-        info_type: GenericInfoType,
-    ) -> Result<GetInfoResponse, GvmError> {
-        self.execute(GetInfoRequest::new(info_id, info_type)).await
+    pub async fn get_info(&mut self, request: GetInfoRequest) -> Result<GetInfoResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a generic `get_info` list request.
@@ -279,38 +273,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_info_list(
         &mut self,
-        info_type: GenericInfoType,
-        opts: GetInfoListOpts,
+        request: GetInfoListRequest,
     ) -> Result<GetInfoResponse, GvmError> {
-        self.execute(GetInfoListRequest::new(info_type, opts)).await
-    }
-
-    /// Send a `SecInfo` `get_info type="os"` list request.
-    ///
-    /// This is distinct from [`Self::get_operating_system_assets`], which
-    /// executes the `get_assets` command family.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_secinfo_operating_systems(
-        &mut self,
-        opts: GetSecInfoOpts,
-    ) -> Result<GetOperatingSystemsResponse, GvmError> {
-        self.execute(GetOperatingSystemsRequest::new(opts)).await
-    }
-
-    /// Send a `SecInfo` `get_info type="vuln"` list request.
-    ///
-    /// This is distinct from [`Self::get_vulnerabilities`], which executes the
-    /// legacy `get_vulns` command family.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_secinfo_vulnerabilities(
-        &mut self,
-        opts: GetSecInfoOpts,
-    ) -> Result<GetVulnerabilitiesResponse, GvmError> {
-        self.execute(GetVulnerabilitiesRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_vulns` request for vulnerabilities and return a typed
@@ -320,9 +285,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_vulnerabilities(
         &mut self,
-        opts: FilteredGetOpts,
+        request: GetVulnsRequest,
     ) -> Result<GetVulnerabilitiesResponse, GvmError> {
-        self.execute(GetVulnsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `get_vulns` request for a single vulnerability and return a typed
@@ -332,10 +297,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_vulnerability(
         &mut self,
-        vulnerability_id: &str,
+        request: GetVulnerabilityRequest,
     ) -> Result<GetVulnerabilitiesResponse, GvmError> {
-        self.execute(GetVulnerabilityRequest::new(vulnerability_id))
-            .await
+        self.execute(request).await
     }
 
     // ── Credentials ───────────────────────────────────────────────────────────

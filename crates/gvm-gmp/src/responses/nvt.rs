@@ -6,8 +6,7 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_score, status_from_response, CountInfo,
-    ParseError,
+    count_info, parse_document, parse_score, status_from_response, CountInfo, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -75,7 +74,12 @@ impl Nvt {
             cvss_base: node.optional_child_text("cvss_base"),
             severity: node.optional_child_text("severity"),
             tags: node.optional_child_text("tags"),
-            solution_type: node.optional_child_text("solution_type"),
+            solution_type: node
+                .child("solution")
+                .and_then(|solution| solution.attr("type"))
+                .map(str::to_string)
+                // Explicit compatibility fallback for the historical mock shape.
+                .or_else(|| node.optional_child_text("solution_type")),
         })
     }
 }
@@ -84,9 +88,29 @@ impl NvtFamily {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             name: node.required_child_text("name")?,
-            max_nvt_count: optional_u32(node, "count", "nvt_family.count")?,
+            max_nvt_count: parse_family_max(node)?,
         })
     }
+}
+
+fn parse_family_max(node: &crate::responses::common::XmlNode) -> Result<Option<u32>, ParseError> {
+    let value = node
+        .child_text("max_nvt_count")
+        // Explicit compatibility fallback for the historical `nvt_family` shape.
+        .or_else(|| node.child_text("count"));
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value == "-1" {
+        return Ok(None);
+    }
+    value
+        .parse::<u32>()
+        .map(Some)
+        .map_err(|_| ParseError::InvalidValue {
+            field: "family.max_nvt_count".to_string(),
+            value,
+        })
 }
 
 impl GetNvtsResponse {
@@ -116,10 +140,17 @@ impl GetNvtFamiliesResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
         let root = parse_document(response.data())?;
-        let items = root
-            .children_named("nvt_family")
-            .map(NvtFamily::from_node)
-            .collect::<Result<Vec<_>, _>>()?;
+        let items = if let Some(families) = root.child("families") {
+            families
+                .children_named("family")
+                .map(NvtFamily::from_node)
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            // Explicit compatibility fallback for historical direct children.
+            root.children_named("nvt_family")
+                .map(NvtFamily::from_node)
+                .collect::<Result<Vec<_>, _>>()?
+        };
         let counts = {
             let counts = count_info(&root, "nvt_family_count")?;
             if counts.total.is_none() && counts.filtered.is_none() && counts.page.is_none() {
@@ -311,5 +342,36 @@ mod tests {
         assert_eq!(parsed.counts.total, Some(2));
         assert_eq!(parsed.counts.filtered, Some(2));
         assert_eq!(parsed.counts.page, Some(1));
+    }
+
+    #[test]
+    fn parses_source_shaped_family_container_and_minus_one_sentinel() {
+        let response = Response::from(
+            r#"<get_nvt_families_response status="200" status_text="OK"><families><family><name>General</name><max_nvt_count>2</max_nvt_count></family><family><name></name><max_nvt_count>-1</max_nvt_count></family></families></get_nvt_families_response>"#,
+        );
+        let parsed = GetNvtFamiliesResponse::from_response(&response).expect("families parse");
+        assert_eq!(parsed.items.len(), 2);
+        assert_eq!(parsed.items[0].max_nvt_count, Some(2));
+        assert_eq!(parsed.items[1].name, "");
+        assert_eq!(parsed.items[1].max_nvt_count, None);
+        assert_eq!(parsed.counts, CountInfo::default());
+    }
+
+    #[test]
+    fn canonical_solution_type_precedes_legacy_child() {
+        let response = Response::from(
+            r#"<get_nvts_response status="200" status_text="OK"><nvt oid="1.3.6.1"><name>Example</name><solution type="VendorFix">upgrade</solution><solution_type>legacy</solution_type><unknown>future</unknown></nvt></get_nvts_response>"#,
+        );
+        let parsed = GetNvtsResponse::from_response(&response).expect("NVT parses");
+        assert_eq!(parsed.items[0].solution_type.as_deref(), Some("VendorFix"));
+        assert_eq!(parsed.counts, CountInfo::default());
+    }
+
+    #[test]
+    fn rejects_other_negative_family_counts() {
+        let response = Response::from(
+            r#"<get_nvt_families_response status="200" status_text="OK"><families><family><name>General</name><max_nvt_count>-2</max_nvt_count></family></families></get_nvt_families_response>"#,
+        );
+        assert!(GetNvtFamiliesResponse::from_response(&response).is_err());
     }
 }

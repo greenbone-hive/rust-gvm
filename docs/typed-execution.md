@@ -366,26 +366,35 @@ permission subject/resource relationships.
 
 ## NVT and SecInfo queries
 
-All seven NVT builders have matching semantic requests for global and
-scan-config-scoped list/detail retrieval, NVT preference list/detail retrieval,
-and family discovery. Requests continue to delegate to the public builders, so
-filters, preference flags, scan-config identifiers, sorting, and exact XML
-bytes remain unchanged. NVT preferences reuse the established
-`GetScanConfigPreferencesResponse` codec because gvmd returns the same
-`get_preferences_response` shape.
+The seven NVT, ten SecInfo, and two observed-vulnerability requests are
+complete canonical codecs. They own public inputs, final-value validation,
+semantic metadata, direct encoding, and typed response association. Each named
+facade accepts the same request by value and delegates unchanged to `execute`;
+the parallel option bags and public builders are removed.
 
-The twelve SecInfo builders retain separate semantic Rust values even though
-they all encode `get_info`. Specialized CPE, CVE, CERT-Bund, DFN-CERT,
-operating-system, and vulnerability requests keep their existing response
-models. `GetInfoRequest` and `GetInfoListRequest` instead select
-`GetInfoResponse`, which provides one typed compatibility model across all
-public `GenericInfoType` variants, including NVT and OVAL definitions.
+NVT contexts remain semantically distinct. `config_id` restricts list
+membership, while a detail selector remains visible even when it is not a
+member. `preferences_config_id` changes observed preference values without
+membership filtering. Config-scoped lists require a family. Preferences,
+preference counts, lean output, and skip flags require details; timeout also
+requires a configuration context. NVT preference list/detail requests reuse
+`GetScanConfigPreferencesResponse`, including the scanner-preference empty-OID
+boundary and value-redacting `Debug` implementation.
 
-Existing CPE, CVE, and advisory facade names remain source-compatible. The
-SecInfo operating-system and vulnerability facades are named
-`get_secinfo_operating_systems` and `get_secinfo_vulnerabilities` so they do not
-change the distinct `get_assets` and legacy `get_vulns` helper behavior. Raw
-builders and `send`/`call` remain available for callers that need complete XML.
+Pinned `get_info` dispatch supports exactly CERT-Bund, CPE, CVE, DFN-CERT, and
+NVT. Generic and specialized requests share that one root and authoritative
+`<info>` wrapper response shape. Historical OS/vulnerability spellings remain
+documented by `InfoType`, but cannot be converted wholesale into
+`GenericInfoType` and have no canonical request/facade. OS assets use the asset
+family. Observed vulnerabilities use `GetVulnsRequest` or the semantic
+`GetVulnerabilityRequest`, both over `get_vulns`.
+
+Response models intentionally expose bounded projections. Generic SecInfo uses
+the wrapper's ID/name and direct payload type; richer payload content and
+observed-vulnerability detail remain available through raw execution. Trace
+redaction covers preference value/default/alternative content and attributes,
+while raw responses and serde remain data-bearing. See the
+[pinned evidence and mock qualification](nvt-secinfo-request-gvmd-evidence.md).
 
 ## Assets, hosts, operating-system assets, and results
 
@@ -554,18 +563,15 @@ but raw responses and serde remain data-bearing. See the
 
 ## Read-only system discovery
 
-The system-discovery family adds semantic requests for all 22 public builders
-owned by the aggregates, features, feed, help, system-report, and system
-compatibility modules. Each request delegates to its original builder, including
-both current and legacy aggregate forms, the optional-feed compatibility form,
-both help representations, resource-name list/detail requests, and the
-byte-identical `get_vuln`/`get_vulnerability` aliases.
+The system-discovery family adds semantic requests across aggregates, features,
+feed, help, system-report, and remaining compatibility modules. #648 moves the
+NVT/SecInfo roots to their owning modules and replaces the old
+`get_vuln`/`get_vulnerability` wrappers with two direct canonical
+`get_vulns` requests.
 
 The associated response remains the established domain model. In particular,
-the compatibility `get_preferences` builder uses
-`GetScanConfigPreferencesResponse`, generic system `get_info` uses
-`GetInfoResponse`, and the payload-free `get_license` response uses
-`ActionResponse`. The 12 existing typed-returning convenience methods for
+the payload-free `get_license` response uses `ActionResponse`. Existing
+typed-returning convenience methods for
 aggregates, features, feeds, timezones, settings, system reports, help,
 authentication description, and vulnerabilities are thin `execute` wrappers.
 

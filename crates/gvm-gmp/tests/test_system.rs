@@ -7,7 +7,13 @@ mod common;
 
 use common::{id, xml};
 use gvm_gmp::commands::system::*;
-use gvm_gmp::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
+use gvm_gmp::{
+    AggregateStatistic, FeedType, GmpRequestCodec, GmpVersion, HelpFormat, ResourceType, SortOrder,
+};
+
+fn typed_xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap()
+}
 
 #[test]
 fn test_system_help_and_feeds() {
@@ -33,17 +39,10 @@ fn test_system_filtered_getters() {
         "<get_system_reports brief=\"1\" name=\"load\"/>"
     );
     assert_eq!(
-        xml(get_preferences(FilteredGetOpts {
-            filter_string: Some("foo=bar".into()),
-            filter_id: None
-        })),
-        "<get_preferences filter=\"foo=bar\"/>"
-    );
-    assert_eq!(
-        xml(get_vulns(FilteredGetOpts {
+        typed_xml(&GetVulnsRequest {
             filter_string: Some("qod>0".into()),
             filter_id: Some(id("f2"))
-        })),
+        }),
         "<get_vulns filt_id=\"f2\" filter=\"qod&gt;0\"/>"
     );
 }
@@ -61,15 +60,6 @@ fn test_system_aggregates_info_resource_names_and_mutations() {
             filter_id: Some(id("f1")),
         })),
         "<get_aggregates data_column=\"severity\" filt_id=\"f1\" filter=\"rows=10\" group_column=\"task_id\" sort_field=\"severity\" sort_order=\"descending\" statistic=\"count\"/>"
-    );
-    assert_eq!(
-        xml(get_info(GetInfoOpts {
-            info_type: Some(InfoType::Nvt),
-            info_id: Some(id("i1")),
-            filter_string: Some("family=foo".into()),
-            filter_id: Some(id("f1"))
-        })),
-        "<get_info filt_id=\"f1\" filter=\"family=foo\" info_id=\"i1\" type=\"NVT\"/>"
     );
     assert_eq!(
         xml(get_resource_names(GetResourceNamesOpts {

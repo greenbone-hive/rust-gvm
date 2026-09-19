@@ -3,7 +3,7 @@
 
 //! Fixture library for realistic GMP responses.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::util::now_iso;
 use crate::version::GmpVersion;
@@ -13,6 +13,7 @@ use crate::version::GmpVersion;
 pub struct FixtureStore {
     /// Fixtures keyed by command name (e.g., "get_tasks").
     fixtures: HashMap<String, String>,
+    overrides: HashSet<String>,
     version: GmpVersion,
 }
 
@@ -21,6 +22,7 @@ impl FixtureStore {
     pub fn new(version: GmpVersion) -> Self {
         let mut store = Self {
             fixtures: HashMap::new(),
+            overrides: HashSet::new(),
             version,
         };
         store.load_builtins();
@@ -44,6 +46,14 @@ impl FixtureStore {
     pub fn insert(&mut self, command_name: &str, xml: &str) {
         self.fixtures
             .insert(command_name.to_string(), xml.to_string());
+        self.overrides.insert(command_name.to_string());
+    }
+
+    pub(crate) fn get_override(&self, command_name: &str) -> Option<String> {
+        self.overrides
+            .contains(command_name)
+            .then(|| self.get(command_name))
+            .flatten()
     }
 
     fn substitute_variables(&self, template: &str) -> String {

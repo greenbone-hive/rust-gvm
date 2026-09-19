@@ -160,6 +160,7 @@ fn redact_attributes(
     let mut redacted = start.clone().into_owned();
     redacted.clear_attributes();
     let credential_store_preference = is_credential_store_preference(stack, element_name);
+    let discovery_preference = is_discovery_preference(stack, element_name);
 
     for attribute in start.attributes() {
         let attribute = attribute.ok()?;
@@ -167,7 +168,9 @@ fn redact_attributes(
         let key_name = local_name(attribute.key.local_name().as_ref())?;
         let sensitive = is_sensitive_name(&key_name)
             || (key_name == "value"
-                && (credential_store_preference || is_sensitive_name(element_name)));
+                && (credential_store_preference
+                    || discovery_preference
+                    || is_sensitive_name(element_name)));
         if sensitive {
             redacted.push_attribute((key, REDACTED));
         } else {
@@ -180,6 +183,8 @@ fn redact_attributes(
 fn is_sensitive_element(stack: &[String], element_name: &str) -> bool {
     is_sensitive_name(element_name)
         || matches!(element_name, "value" | "param" | "default_value")
+        || (matches!(element_name, "default" | "alt")
+            && is_discovery_preference(stack, element_name))
         || is_alert_data(stack, element_name)
         || (element_name == "file" && stack.first().is_some_and(|root| root == "modify_license"))
         || is_report_format_file(stack, element_name)
@@ -187,6 +192,18 @@ fn is_sensitive_element(stack: &[String], element_name: &str) -> bool {
             && stack
                 .first()
                 .is_some_and(|root| root.contains("credential_store")))
+}
+
+fn is_discovery_preference(stack: &[String], element_name: &str) -> bool {
+    let discovery_root = stack.first().is_some_and(|root| {
+        matches!(
+            root.as_str(),
+            "get_preferences_response" | "get_nvts_response" | "get_info_response"
+        )
+    });
+    let in_preference =
+        element_name == "preference" || stack.iter().any(|name| name == "preference");
+    discovery_root && in_preference
 }
 
 fn is_report_format_file(stack: &[String], element_name: &str) -> bool {
@@ -370,6 +387,39 @@ mod tests {
         assert_eq!(
             redact_wire_bytes(b"<root><file name=\"visible.txt\">visible</file></root>"),
             b"<root><file name=\"visible.txt\">visible</file></root>"
+        );
+    }
+
+    #[test]
+    fn redacts_discovery_preference_values_independent_of_shape_and_order() {
+        for xml in [
+            br#"<get_preferences_response><preference><alt value="attribute-alt">alternate-secret</alt><name>visible</name><default>default-secret</default><value>configured-secret</value></preference></get_preferences_response>"#.as_slice(),
+            br#"<G:GET_NVTS_RESPONSE xmlns:G="urn:gmp"><G:NVT><G:PREFERENCES><G:PREFERENCE VALUE="attribute-secret"><G:DEFAULT VALUE="attribute-default">default-secret</G:DEFAULT><G:ALT>alternate-secret</G:ALT><G:NAME>visible</G:NAME></G:PREFERENCE></G:PREFERENCES></G:NVT></G:GET_NVTS_RESPONSE>"#.as_slice(),
+            br#"<get_info_response><info><preference><default>default-secret</default><name>visible</name><alt>alternate-secret</alt></preference></info></get_info_response>"#.as_slice(),
+        ] {
+            let redacted = String::from_utf8(redact_wire_bytes(xml)).expect("valid UTF-8");
+            assert!(redacted.contains("visible"));
+            assert!(redacted.contains("redacted"));
+            for secret in [
+                "attribute-alt",
+                "attribute-secret",
+                "attribute-default",
+                "configured-secret",
+                "default-secret",
+                "alternate-secret",
+            ] {
+                assert!(!redacted.contains(secret), "leaked {secret}: {redacted}");
+            }
+        }
+    }
+
+    #[test]
+    fn does_not_redact_generic_default_or_alt_elements() {
+        assert_eq!(
+            redact_wire_bytes(
+                b"<root><default>visible</default><alt value=\"keep\">also-visible</alt></root>"
+            ),
+            b"<root><default>visible</default><alt value=\"keep\">also-visible</alt></root>"
         );
     }
 }
