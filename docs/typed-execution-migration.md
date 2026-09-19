@@ -1070,6 +1070,96 @@ See the [source evidence](report-format-request-gvmd-evidence.md) for schema
 differences, source quirks, response limits, and declared mock approximations;
 no live-gvmd validation is claimed.
 
+## TLS-certificate lifecycle
+
+The two TLS option bags and six free builders are removed. Construct one of
+the six complete requests and pass it unchanged to the same-named client
+method or `execute`:
+
+```rust
+use gvm_gmp::commands::tls_certificates::{
+    CloneTlsCertificateRequest, CreateTlsCertificateRequest,
+    DeleteTlsCertificateRequest, GetTlsCertificateRequest,
+    GetTlsCertificatesRequest, ModifyTlsCertificateRequest,
+};
+
+let pem = b"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n";
+let mut create = CreateTlsCertificateRequest::new(pem.to_vec());
+create.name = Some("gateway certificate".into());
+create.trust = Some(true);
+let created = client.create_tls_certificate(create).await?;
+
+let mut modify = ModifyTlsCertificateRequest::new(created.id.clone());
+modify.comment = Some(String::new()); // explicit empty clears
+client.modify_tls_certificate(modify).await?;
+
+let mut detail = GetTlsCertificateRequest::new(created.id.clone());
+detail.details = Some(false);
+detail.include_certificate_data = Some(true);
+let certificate = client.get_tls_certificate(detail).await?;
+
+client
+    .delete_tls_certificate(DeleteTlsCertificateRequest::new(created.id))
+    .await?;
+# let _ = (certificate, CloneTlsCertificateRequest::new,
+#     GetTlsCertificatesRequest::new);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Direct signature migrations:
+
+- `get_tls_certificates(opts)` becomes
+  `get_tls_certificates(GetTlsCertificatesRequest { ... })`;
+- `get_tls_certificate(&id)` becomes
+  `get_tls_certificate(GetTlsCertificateRequest::new(id))`;
+- `create_tls_certificate(name, opts)` becomes
+  `create_tls_certificate(CreateTlsCertificateRequest::new(original_bytes))`,
+  with name/comment/trust on the request;
+- `clone_tls_certificate(&id)` becomes
+  `clone_tls_certificate(CloneTlsCertificateRequest::new(id))`;
+- `modify_tls_certificate(&id, opts)` becomes
+  `modify_tls_certificate(ModifyTlsCertificateRequest::new(id))`; and
+- `delete_tls_certificate(&id, ultimate)` becomes
+  `delete_tls_certificate(DeleteTlsCertificateRequest::new(id))`.
+
+Creation input is now the original certificate-file bytes. Callers that
+previously held a GMP base64 carrier must decode it once before constructing
+the request; already-base64-looking bytes are encoded as literal bytes again.
+PEM line endings and binary DER are preserved. Certificate must be nonempty,
+but X.509 parsing, validity windows, chain trust, and size policy remain
+server-authoritative. Name is optional, and omission or empty text requests
+gvmd's SHA-256 fingerprint fallback. There is no compatibility field for the
+unsupported private key or for certificate replacement during modification.
+
+Creation and cloning use owner-scoped SHA-256 or MD5 identity rather than
+names. A permitted foreign certificate can be cloned once if the caller does
+not already own its fingerprint. Empty or omitted clone name/comment copies
+the source; empty comment does not clear during clone. Clone copies parsed
+certificate metadata, trust, and tag associations, but not observation
+sources. To clear its comment, modify the created certificate afterward.
+
+Modify omission preserves name, comment, and trust. Explicit empty name or
+comment clears it, and selector-only modification is valid. Trust is a stored
+boolean independent of the response's time-validity observation. TLS deletion
+is permanent for both former `ultimate` values; there is no trash selector,
+restore path, ownership assignment, root pagination, or effective pagination
+bypass on the canonical surface.
+
+Certificate text is requested independently with
+`include_certificate_data`; details also includes it and additionally asks
+for sources. The typed response retains optional wire base64 text and a
+bounded projection. Format, serial, trust, time status, last-seen, tags,
+permissions, and source graphs require raw response access. `Debug` and wire
+trace diagnostics redact certificate/private-key element content, while raw
+responses, explicit encoding, and serde remain data-bearing APIs.
+
+Create/get/modify retain pinned-schema evidence and source-supported delete
+retains its GMP 22.4+ availability. Raw `Request`, `XmlCommand`, `send`/`call`,
+and downstream custom codecs remain available for intentionally unmodeled XML;
+they do not make unsupported private-key or certificate mutation meaningful.
+See the [pinned source evidence](tls-certificate-request-gvmd-evidence.md) for
+schema discrepancies and bounded mock limitations.
+
 ## Compatibility boundary
 
 The promoted #523 baseline was additive, but it has not been published as the

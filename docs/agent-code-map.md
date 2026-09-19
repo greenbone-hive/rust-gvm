@@ -34,6 +34,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   canonical report-format lifecycle, opaque import envelope, clone and
   parameter quirks, trash/verification behavior, typed response boundary, and
   bounded mock approximations.
+- `docs/tls-certificate-request-gvmd-evidence.md`: pinned gvmd evidence for the
+  canonical TLS-certificate lifecycle, original-byte encoding, ownership and
+  fingerprint identity, clone/modify/delete semantics, query expansions, and
+  bounded registered-fixture mock behavior.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -116,6 +120,9 @@ Changing mock server behavior:
 - `crates/gvm-mock-server/src/stateful_report_formats.rs`: bounded
   report-format import/clone/modify/query/delete/verify behavior; files remain
   inert and signed verification outcomes are injected rather than computed.
+- `crates/gvm-mock-server/src/stateful_tls_certificates.rs`: bounded
+  registered-fixture TLS creation/clone/modify/query/delete behavior,
+  authenticated ownership, fingerprint collisions, expansions, and filters.
 - `crates/gvm-mock-server/src/fixtures.rs`: fixture-mode responses.
 - `crates/gvm-mock-server/src/fault.rs` and `scenario.rs`: failure injection and scripted playback.
 - Tests live under `crates/gvm-mock-server/tests/`.

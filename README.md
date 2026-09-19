@@ -295,8 +295,11 @@ surface. Canonical generic asset, host, operating-system asset, and result
 list/detail queries, plus the GMP 22.8 agent, agent-group, and
 integration-configuration families use the same execution contract, including
 binary/base64 support bundles. Generic configuration and port-list/port-range
-lifecycles and the report-configuration and report-format lifecycles are also
-fully migrated; the TLS-certificate lifecycle remains typed but transitional.
+lifecycles and the report-configuration, report-format, and TLS-certificate
+lifecycles are also fully migrated. TLS creation accepts original PEM or DER
+bytes and encodes the GMP carrier exactly once; the lifecycle has no
+private-key, certificate-replacement, trash, or restore controls. See the
+[pinned gvmd evidence](docs/tls-certificate-request-gvmd-evidence.md).
 Read-only system discovery is
 covered as well, including aggregates, features, feeds, settings, timezones,
 help, system reports, generic information, preferences, resource names,

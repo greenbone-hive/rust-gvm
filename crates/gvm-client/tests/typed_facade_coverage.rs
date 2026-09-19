@@ -118,7 +118,10 @@ use gvm_gmp::commands::tasks::{
     ModifyTaskOpts, ModifyTaskRequest, ResumeTaskRequest, StartTaskRequest, StopTaskRequest,
 };
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
-use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
+use gvm_gmp::commands::tls_certificates::{
+    CloneTlsCertificateRequest, CreateTlsCertificateRequest, DeleteTlsCertificateRequest,
+    GetTlsCertificateRequest, GetTlsCertificatesRequest, ModifyTlsCertificateRequest,
+};
 use gvm_gmp::commands::user_settings::{
     GetUserSettingRequest, GetUserSettingsOpts, GetUserSettingsRequest, ModifyUserSettingOpts,
     ModifyUserSettingRequest,
@@ -1588,16 +1591,22 @@ async fn report_config_format_and_tls_facades_cover_all_semantic_requests() {
         client.verify_report_format(VerifyReportFormatRequest::new(resource_id.clone()))
     );
 
-    assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
-    assert_typed_success!(client.get_tls_certificate(&resource_id));
-    assert_create_success!(
-        client.create_tls_certificate("certificate", TlsCertificateOpts::default(),)
-    );
-    assert_create_success!(client.clone_tls_certificate(&resource_id));
+    assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesRequest::default()));
     assert_typed_success!(
-        client.modify_tls_certificate(&resource_id, TlsCertificateOpts::default(),)
+        client.get_tls_certificate(GetTlsCertificateRequest::new(resource_id.clone()))
     );
-    assert_typed_success!(client.delete_tls_certificate(&resource_id, true));
+    assert_create_success!(
+        client.create_tls_certificate(CreateTlsCertificateRequest::new(b"certificate".to_vec()))
+    );
+    assert_create_success!(
+        client.clone_tls_certificate(CloneTlsCertificateRequest::new(resource_id.clone()))
+    );
+    assert_typed_success!(
+        client.modify_tls_certificate(ModifyTlsCertificateRequest::new(resource_id.clone()))
+    );
+    assert_typed_success!(
+        client.delete_tls_certificate(DeleteTlsCertificateRequest::new(resource_id.clone()))
+    );
 
     let history = server.command_history();
     assert_eq!(history.len(), 19);
@@ -1656,7 +1665,7 @@ async fn report_config_format_and_tls_preserve_status_and_parse_context() {
         "configuration conflict"
     );
     let error = client
-        .clone_tls_certificate(&id(CREATED_ID))
+        .clone_tls_certificate(CloneTlsCertificateRequest::new(id(CREATED_ID)))
         .await
         .expect_err("missing cloned certificate id should fail");
     assert!(matches!(
@@ -2911,7 +2920,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_roles(GetRolesRequest::default()));
     assert_typed_success!(client.get_permissions(GetPermissionsRequest::default()));
     assert_typed_success!(client.get_hosts(GetHostsRequest::default()));
-    assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
+    assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesRequest::default()));
     assert_typed_success!(client.get_report_formats(GetReportFormatsRequest::default()));
     assert_typed_success!(client.get_report_configs(GetReportConfigsRequest::default()));
     assert_typed_success!(client.get_settings());
@@ -3016,7 +3025,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     assert_create_success!(client.create_permission(permission_create_request()));
     assert_create_success!(client.create_host(CreateHostRequest::new("192.0.2.10")));
     assert_create_success!(
-        client.create_tls_certificate("certificate", TlsCertificateOpts::default())
+        client.create_tls_certificate(CreateTlsCertificateRequest::new(b"certificate".to_vec()))
     );
     assert_create_success!(client.create_task(
         "scan",

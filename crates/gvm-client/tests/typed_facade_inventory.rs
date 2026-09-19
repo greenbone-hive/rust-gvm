@@ -332,6 +332,7 @@ fn normalized_integration_sources() -> String {
         include_str!("report_config_integration.rs"),
         include_str!("report_format_canonical_integration.rs"),
         include_str!("structured_audit_report_integration.rs"),
+        include_str!("tls_certificate_canonical_integration.rs"),
         include_str!("tls_certificate_integration.rs"),
         include_str!("typed_facade_coverage.rs"),
         include_str!("versioned_client.rs"),
