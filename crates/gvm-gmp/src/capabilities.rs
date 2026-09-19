@@ -14,6 +14,8 @@ pub enum MockSupport {
     Fixture,
     /// Command intentionally returns the generic echo success response.
     EchoOnly,
+    /// Known schema command that built-in protocol modes reject explicitly.
+    Rejected,
 }
 
 /// Public gvmd evidence supporting a command in the registry.
@@ -242,7 +244,7 @@ command_capabilities! {
     ("start_task", Stateful, None, PinnedSchema),
     ("stop_task", Stateful, None, PinnedSchema),
     ("sync_agents", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
-    ("sync_config", EchoOnly, None, PinnedSchema),
+    ("sync_config", Rejected, None, PinnedSchema),
     ("test_alert", EchoOnly, None, PinnedSchema),
     ("verify_credential_store", Stateful, Some(GmpVersion(22, 8)), PublicSourceOnly),
     ("verify_report_format", Stateful, None, PinnedSchema),

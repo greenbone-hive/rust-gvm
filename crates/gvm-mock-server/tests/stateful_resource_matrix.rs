@@ -512,7 +512,7 @@ async fn matrix_configs_create_get_list() {
 
     let config_id = create_and_get_id(
         &mut stream,
-        b"<create_config><name>Matrix Config</name><comment>cfg</comment></create_config>",
+        b"<create_config><copy>daba56c8-73ec-11df-a475-002264764cea</copy><name>Matrix Config</name><comment>cfg</comment></create_config>",
         "create_config",
     )
     .await;
@@ -532,7 +532,7 @@ async fn matrix_configs_create_get_list() {
     let list_text = list_resp.as_str().expect("valid utf8");
     assert!(list_text.contains(&config_id));
     assert!(list_text.contains("Matrix Config"));
-    assert!(list_text.contains("<config_count>2") || list_text.contains("<filtered>2</filtered>"));
+    assert!(list_text.contains("<config_count>6") || list_text.contains("<filtered>6</filtered>"));
 
     server.shutdown().await;
 }
@@ -547,7 +547,7 @@ async fn matrix_configs_full_lifecycle_helpers() {
 
     let config_id = create_and_get_id(
         &mut stream,
-        b"<create_config><name>Matrix Config</name><comment>cfg</comment></create_config>",
+        b"<create_config><copy>daba56c8-73ec-11df-a475-002264764cea</copy><name>Matrix Config</name><comment>cfg</comment></create_config>",
         "create_config",
     )
     .await;
@@ -573,7 +573,11 @@ async fn matrix_configs_full_lifecycle_helpers() {
     assert!(get_text.contains("<usage_type>scan</usage_type>"));
 
     let sync_resp = send_recv(&mut stream, b"<sync_config/>").await;
-    assert_eq!(sync_resp.status_code(), Some(200));
+    assert_eq!(sync_resp.status_code(), Some(400));
+    assert_eq!(
+        sync_resp.status_text(),
+        Some("Bogus command name".to_string())
+    );
 
     let cloned_config_id = create_and_get_id(
         &mut stream,

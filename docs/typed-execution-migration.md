@@ -1207,6 +1207,55 @@ traces redact configured/default/alternate values, but raw response and serde
 access remain data-bearing. See the
 [pinned evidence](nvt-secinfo-request-gvmd-evidence.md).
 
+## Configuration, scan-configuration, and policy lifecycle
+
+Lifecycle calls now take one of 24 complete requests. Six generic and fourteen
+scoped facade methods accept their request unchanged; the four policy
+create/clone/modify/delete aliases remain available through `execute` and do
+not gain new symmetry facades.
+
+```rust
+use gvm_gmp::commands::configs::CreateConfigRequest;
+use gvm_gmp::commands::scan_configs::{GetPoliciesRequest, ImportPolicyRequest};
+
+let created = client
+    .create_config(CreateConfigRequest::new("Copied", base_config_id))
+    .await?;
+let policies = client.get_policies(GetPoliciesRequest::new()).await?;
+let imported = client
+    .import_policy(ImportPolicyRequest::new(exported_config_xml))
+    .await?;
+# let _ = (created, policies, imported);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Named create requests require a base. Clone requests may omit/empty the name
+for generated naming and inherit omitted/empty comment and usage values.
+Canonical usage is `ConfigUsageType::Scan` or `Policy`; audit remains a task
+usage. Policy import adds an outer policy override, while scan import can carry
+an optional typed override.
+
+Import constructors are infallible storage boundaries. Final validation accepts
+an optional BOM/declaration, requires one unnamespaced exported config with a
+nonempty name and explicit selector/preference containers, and preserves all
+remaining carrier bytes. Failures are request errors before discovery or I/O
+and diagnostics do not include the XML.
+
+Modify requests no longer contain usage. Empty name/comment elements and omitted
+values preserve existing metadata; they do not clear. Detail requests retain
+collection response types, and ID selection bypasses usage/filter/pagination
+predicates even though policy/scan detail aliases still emit their usage field.
+
+Remove uses of `SyncConfigRequest`, `scan_configs::sync_config`,
+`GmpClient::sync_config`, and deprecated `sync_scan_config`. The schema name has
+no pinned/current gvmd dispatcher and is explicitly rejected in built-in mock
+modes. This is not feed synchronization.
+
+Preference query options/builders/facades and all eight configured
+preference/NVT/family mutation APIs remain unchanged for the next ordered
+child. See the
+[pinned evidence](scan-config-policy-request-gvmd-evidence.md).
+
 ## Compatibility boundary
 
 The promoted #523 baseline was additive, but it has not been published as the
@@ -1220,10 +1269,10 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 261 current public async methods: 257 delegate
+The facade inventory locks all 259 current public async methods: 256 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
-compatibility path, and the deprecated `sync_scan_config` alias delegates
-indirectly through `sync_config`.
+compatibility path. Unsupported `sync_config` and its deprecated per-config
+delegate are absent.
 
 The existing rust-gvm GMP ticket surface is frozen: it remains supported for
 compatibility and may receive maintenance, but it is not expanded or migrated

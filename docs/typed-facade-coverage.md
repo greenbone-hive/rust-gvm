@@ -14,10 +14,9 @@ directory, extracts every `pub async fn`, rejects duplicate and unknown entries,
 and fails when a new helper is not classified.
 It additionally requires every integration-covered name to appear as a direct
 method call in the client/mock integration suite.
-The enforced surface currently contains 261 names: 257 direct `execute`
-delegates, three frozen ticket raw paths, and one indirect deprecated sync
-alias. The unsupported operating-system asset modification helper is not part
-of the inventory.
+The enforced surface currently contains 259 names: 256 direct `execute`
+delegates and three frozen ticket raw paths. Unsupported configuration sync and
+operating-system asset modification helpers are not part of the inventory.
 
 Coverage is organized by behavior family:
 
@@ -30,8 +29,8 @@ Coverage is organized by behavior family:
 - report export exercises both the simple and options XML shapes;
 - generic assets, host and operating-system aliases, and result queries assert
   every typed facade shape plus their shared wire-command inventory;
-- generic configuration and port-list coverage exercises all fourteen list,
-  detail, lifecycle, and port-range semantic operations;
+- generic configuration, scan-config/policy lifecycle, and port-list coverage
+  exercises the complete request-by-value facades and shared wire roots;
 - report configuration, report format, and TLS-certificate coverage exercises
   their complete canonical requests through fixed response associations;
 - report import exercises the semantic create response plus malformed-response
