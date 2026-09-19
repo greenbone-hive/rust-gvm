@@ -53,6 +53,7 @@ pub mod scenario;
 pub mod server;
 #[cfg(feature = "ssh")]
 pub mod ssh_listener;
+mod stateful_results;
 pub mod store;
 #[cfg(feature = "tls")]
 pub mod tls_listener;

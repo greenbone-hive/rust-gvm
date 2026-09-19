@@ -155,8 +155,8 @@ builder	crates/gvm-gmp/src/commands/reports.rs	get_report_vulns	transitional	Pen
 builder	crates/gvm-gmp/src/commands/reports.rs	get_reports	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/reports.rs	get_scan_report	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/reports.rs	import_report	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/results.rs	get_result	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/results.rs	get_results	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/results.rs	get_result	removed	Removed by #643; GetResultRequest owns detail selection, validation, metadata, and encoding.
+builder	crates/gvm-gmp/src/commands/results.rs	get_results	removed	Removed by #643; GetResultsRequest owns complete list selection, validation, metadata, and encoding.
 builder	crates/gvm-gmp/src/commands/roles.rs	clone_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 builder	crates/gvm-gmp/src/commands/roles.rs	create_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 builder	crates/gvm-gmp/src/commands/roles.rs	delete_role	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
@@ -417,8 +417,8 @@ facade	crates/gvm-client/src/typed/reports.rs	get_report_tls_certificates	transi
 facade	crates/gvm-client/src/typed/reports.rs	get_report_vulnerabilities	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_vulns	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_reports	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_result	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_results	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	get_result	canonical-request	Accepts the complete canonical GetResultRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_results	canonical-request	Accepts the complete canonical GetResultsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificate	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	get_tls_certificates	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/reports.rs	import_report	transitional	Pending bounded family migration under #602.
@@ -661,7 +661,7 @@ options	crates/gvm-gmp/src/commands/reports.rs	GetReportExportOpts	transitional	
 options	crates/gvm-gmp/src/commands/reports.rs	GetReportsOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/reports.rs	GetScanReportOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/reports.rs	ImportReportOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/results.rs	GetResultsOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/results.rs	GetResultsOpts	removed	Removed by #643; all query inputs are public fields on the two canonical result requests.
 options	crates/gvm-gmp/src/commands/roles.rs	GetRolesOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 options	crates/gvm-gmp/src/commands/roles.rs	RoleOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	ConfigOpts	transitional	Pending bounded family migration under #602.
@@ -845,8 +845,8 @@ request	crates/gvm-gmp/src/commands/reports.rs	GetReportRequest	transitional	Pen
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportsRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/reports.rs	GetScanReportRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/reports.rs	ImportReportRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/results.rs	GetResultRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/results.rs	GetResultsRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/results.rs	GetResultRequest	canonical-request	Complete ID-selected request with default detail expansion, final-value validation, semantic alias metadata, direct encoding, and typed collection response.
+request	crates/gvm-gmp/src/commands/results.rs	GetResultsRequest	canonical-request	Complete list request with optional ID/context/filter/detail/count controls, final-value validation, direct metadata/encoding, and typed collection response.
 request	crates/gvm-gmp/src/commands/roles.rs	CloneRoleRequest	canonical-request	Complete semantic alias owns inputs, encoding and response association; formerly macro-generated.
 request	crates/gvm-gmp/src/commands/roles.rs	CreateRoleRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 request	crates/gvm-gmp/src/commands/roles.rs	DeleteRoleRequest	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.

@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_entity_meta, parse_entity_ref, parse_score,
-    status_from_response, CountInfo, EntityMeta, NamedEntity, ParseError,
+    count_info, optional_u32, parse_document, parse_entity_meta_optional_name, parse_entity_ref,
+    parse_score, status_from_response, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -65,7 +65,7 @@ impl ScanResult {
 
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
-            meta: parse_entity_meta(node)?,
+            meta: parse_entity_meta_optional_name(node)?,
             host: node.optional_child_text("host"),
             port: node.optional_child_text("port"),
             task: parse_entity_ref(node, "task")?,
@@ -349,5 +349,113 @@ mod tests {
             Some("unknown")
         );
         assert_eq!(result.nvt.as_ref().and_then(NvtRef::cvss_base_score), None);
+    }
+
+    #[test]
+    fn parses_source_shaped_result_without_name_and_ignores_expansion_subtrees() {
+        let response = Response::from(
+            r#"<get_results_response status="200" status_text="OK">
+                <result id="result-1">
+                    <host>192.0.2.10</host>
+                    <port>443/tcp</port>
+                    <task id="task-1"><name>Task one</name></task>
+                    <report id="report-1"/>
+                    <nvt oid="1.3.6.1.4.1.25623.1.0.1">
+                        <name>TLS finding</name>
+                        <family>General</family>
+                        <cvss_base>8.1</cvss_base>
+                        <refs>
+                            <ref type="cve">CVE-2026-1000</ref>
+                            <ref type="url" id="https://example.test"/>
+                        </refs>
+                    </nvt>
+                    <threat>High</threat>
+                    <severity>8.1</severity>
+                    <qod><value>95</value><type>remote_vul</type></qod>
+                    <description>Expanded finding</description>
+                    <original_severity>7.5</original_severity>
+                    <notes><note id="note-1"><text>ignored projection</text></note></notes>
+                    <overrides><override id="override-1"><new_severity>8.1</new_severity></override></overrides>
+                    <tickets><ticket id="ticket-1"/></tickets>
+                    <detection><result id="detection-1"/></detection>
+                    <tags><tag id="tag-1"/></tags>
+                </result>
+                <results start="1" max="100"/>
+                <result_count>
+                    9
+                    <filtered>4</filtered>
+                    <page>1</page>
+                </result_count>
+            </get_results_response>"#,
+        );
+
+        let parsed = GetResultsResponse::from_response(&response).expect("result parses");
+        let result = &parsed.items[0];
+        assert_eq!(result.meta.name, "");
+        assert_eq!(result.meta.id.as_str(), "result-1");
+        assert_eq!(
+            result.report.as_ref().map(|report| report.id.as_str()),
+            Some("report-1")
+        );
+        assert_eq!(
+            result.report.as_ref().map(|report| report.name.as_str()),
+            Some("")
+        );
+        assert_eq!(
+            result.nvt.as_ref().map(|nvt| nvt.cves.as_slice()),
+            Some(["CVE-2026-1000".to_string()].as_slice())
+        );
+        assert_eq!(parsed.counts.total, Some(9));
+        assert_eq!(parsed.counts.filtered, Some(4));
+        assert_eq!(parsed.counts.page, Some(1));
+    }
+
+    #[test]
+    fn missing_count_block_is_valid() {
+        let response = Response::from(
+            r#"<get_results_response status="200" status_text="OK"><results start="1" max="0"/></get_results_response>"#,
+        );
+        let parsed = GetResultsResponse::from_response(&response).expect("missing counts parse");
+        assert!(parsed.items.is_empty());
+        assert_eq!(parsed.counts, CountInfo::default());
+    }
+
+    #[test]
+    fn missing_result_id_retains_result_field_context() {
+        let response = Response::from(
+            r#"<get_results_response status="200" status_text="OK"><result><name>Missing id</name></result></get_results_response>"#,
+        );
+        assert!(matches!(
+            GetResultsResponse::from_response(&response),
+            Err(ParseError::MissingElement(field)) if field == "result.id"
+        ));
+    }
+
+    #[test]
+    fn malformed_numeric_fields_retain_field_context() {
+        for (xml, expected) in [
+            (
+                r#"<get_results_response status="200" status_text="OK"><result id="result-1"><qod><value>many</value></qod></result></get_results_response>"#,
+                "qod.value",
+            ),
+            (
+                r#"<get_results_response status="200" status_text="OK"><result_count>many<filtered>1</filtered><page>1</page></result_count></get_results_response>"#,
+                "result_count",
+            ),
+            (
+                r#"<get_results_response status="200" status_text="OK"><result_count>1<filtered>many</filtered><page>1</page></result_count></get_results_response>"#,
+                "result_count.filtered",
+            ),
+            (
+                r#"<get_results_response status="200" status_text="OK"><result_count>1<filtered>1</filtered><page>many</page></result_count></get_results_response>"#,
+                "result_count.page",
+            ),
+        ] {
+            let response = Response::from(xml);
+            assert!(matches!(
+                GetResultsResponse::from_response(&response),
+                Err(ParseError::InvalidValue { field, .. }) if field == expected
+            ));
+        }
     }
 }

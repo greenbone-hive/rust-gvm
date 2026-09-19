@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
 ## Support Direction
 
@@ -185,15 +185,11 @@ records those contracts. Issue #639 documents why the legacy delete-user
 `ultimate` input is intentionally absent and provides the
 [v0.7 user/group migration mapping](v0.7.0-migration.md#users-and-groups).
 
-The next #602 slice converts all twelve role and permission lifecycle operations
-to complete requests and request-accepting facades. Four option bags and twelve
-forwarding builders are removed. Role modification owns final name, comment,
-and membership; permission modification preserves omitted fields and supports
-partial subject/resource references and explicit resource clearing. Detail and
-clone metadata retain their aliases. Role clones omit membership and copy
-command-level permissions in the stateful mock; permission clones support only
-comment overrides. [Pinned role/permission evidence](role-permission-request-gvmd-evidence.md)
-records these contracts separately from mock validation.
+The next ordered #602 group is report definitions, beginning with a bounded
+report-configuration lifecycle child. Report formats and TLS certificates
+follow as separate reviewable slices before NVT/SecInfo discovery. Report
+retrieval, exports, and report-specific lean/delta behavior remain separately
+ordered families.
 
 The sections below retain the bounded delivery history for each migrated
 family.
@@ -291,9 +287,20 @@ Reads require a type and expose filters, details, and pagination control without
 asset trash. Direct creation requires one IPv4 or IPv6 host name; modification
 replaces or clears the host comment; deletion is permanent without an
 `ultimate` mode. The unsupported OS-modification request, builder, and facade
-are removed. Asset OS remains distinct from deferred SecInfo OS. Result
-list/detail requests remain transitional for the next ordered child. See the
+are removed. Asset OS remains distinct from deferred SecInfo OS. See the
 [pinned evidence](asset-request-gvmd-evidence.md).
+
+Issue #643 completes the result child of the asset/results group: the plural
+and discoverable detail requests now own all eight supported query controls,
+final-value validation, semantic metadata, direct encoding, and their shared
+`GetResultsResponse`. The redundant `GetResultsOpts` and two public free
+builders are removed; both named facade methods accept canonical requests
+unchanged. Root task context remains distinct from task/report filter
+selection, expansion richness remains distinct from inclusion and override
+application, and counts may be absent. Result names are optional in the
+source-shaped response parser. Nested expansion payloads remain outside the
+typed `ScanResult` projection. See the
+[pinned result evidence](result-request-gvmd-evidence.md).
 
 The additive alternate-target Phase 2 batch, tracked by
 [`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), originally
@@ -540,6 +547,7 @@ de-duplication without rewriting otherwise valid host spellings.
 | get_version (pre-auth) | ✅ | Always allowed without authentication |
 | authenticate (credential validation) | ✅ | Per-session state |
 | direct-host asset lifecycle and canonical `get_assets` | ✅ | Strict gvmd behavior by default; legacy flat inputs are explicit opt-in; report-import/bulk-delete paths are not modeled |
+| result list/detail conformance | ✅ | Bounded saved/inline filter, effective task context, resolved pagination/counts, ID-tied sorting, task-restricted expansions, and effective seeded override behavior; unsupported or malformed terms are explicit and the full gvmd filter/permission/CVSS engine is not modeled |
 | get_report (nested results XML) | ✅ | Proper `<report><report><results>` nesting |
 | structured audit reports (22.7+) | ✅ | Typed summaries and hosts with compliance filtering, pagination, details, and lean output |
 | create_note/override (text + nvt_oid) | ✅ | Non-standard element parsing |

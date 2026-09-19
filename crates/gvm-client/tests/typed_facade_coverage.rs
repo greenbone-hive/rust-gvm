@@ -80,7 +80,7 @@ use gvm_gmp::commands::reports::{
     GetReportDetailsOpts, GetReportExportRequest, GetReportVulnsRequest, GetReportsOpts,
     GetReportsRequest, ImportReportOpts, ImportReportRequest,
 };
-use gvm_gmp::commands::results::GetResultsOpts;
+use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::GetScanConfigsOpts;
 use gvm_gmp::commands::scanners::{
@@ -1224,8 +1224,8 @@ async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade
     assert_typed_success!(client
         .delete_operating_system_asset(DeleteOperatingSystemAssetRequest::new(asset_id.clone())));
 
-    assert_typed_success!(client.get_results(GetResultsOpts::default()));
-    assert_typed_success!(client.get_result(&asset_id));
+    assert_typed_success!(client.get_results(GetResultsRequest::default()));
+    assert_typed_success!(client.get_result(GetResultRequest::new(asset_id)));
 
     let history = server.command_history();
     for (command, expected_count) in [
@@ -1478,7 +1478,7 @@ async fn asset_and_result_facades_preserve_status_and_parse_context() {
     };
     let mut parse_client = client(&server).await;
     let parse_error = parse_client
-        .get_result(&id("result-1"))
+        .get_result(GetResultRequest::new(id("result-1")))
         .await
         .expect_err("malformed result should fail");
     assert!(matches!(
@@ -2885,7 +2885,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_tasks(GetTasksOpts::default()));
     assert_typed_success!(client.get_task(&id("11111111-1111-1111-1111-111111111111")));
     assert_typed_success!(client.get_reports(GetReportsOpts::default()));
-    assert_typed_success!(client.get_results(GetResultsOpts::default()));
+    assert_typed_success!(client.get_results(GetResultsRequest::default()));
     assert_typed_success!(client.get_nvts(GetNvtsOpts::default()));
     assert_typed_success!(client.get_nvt_families());
     assert_typed_success!(client.get_cves(GetSecInfoOpts::default()));

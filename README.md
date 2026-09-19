@@ -291,8 +291,8 @@ lifecycles, scan-config, policy, and credential-store operations, alerts and
 schedules, filters, tags, notes, overrides, trashcan recovery, user, group,
 role, and permission lifecycles, plus irregular report retrieval, drill-down,
 export, create, import, and delete operations and the complete NVT/SecInfo query
-surface. Canonical generic asset, host, and operating-system asset lifecycles,
-transitional result list/detail queries, and the GMP 22.8 agent, agent-group, and
+surface. Canonical generic asset, host, operating-system asset, and result
+list/detail queries, plus the GMP 22.8 agent, agent-group, and
 integration-configuration families use the same execution contract, including
 binary/base64 support bundles. Generic configuration and port-list/port-range
 lifecycles are also fully migrated, and report-configuration, report-format,
@@ -319,6 +319,36 @@ replaces or clears the host comment; and deletion is permanent without an
 removed, as is the unsupported OS-modification helper. Asset OS remains
 distinct from SecInfo OS. See the [migration guide](docs/v0.7.0-migration.md#assets-hosts-and-operating-system-assets)
 and [pinned gvmd evidence](docs/asset-request-gvmd-evidence.md).
+
+Result queries also use complete requests over the shared `get_results` wire
+root. List requests expose result/task context, inline and saved filters, detail
+and expansion-detail controls, and optional counts. The detail constructor
+selects one result and defaults `details` to true:
+
+```rust
+use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
+use gvm_gmp::EntityId;
+
+let mut list = GetResultsRequest::default();
+list.filter_string = Some("task_id=task-1 rows=25 sort-reverse=severity".into());
+list.notes_details = Some(true);
+let results = client.get_results(list).await?;
+
+let result_id = EntityId::new("result-1")?;
+let detail = client
+    .get_result(GetResultRequest::new(result_id))
+    .await?;
+# let _ = (results, detail);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Root `task_id` supplies note/override context; it does not select results.
+Inclusion (`notes`/`overrides`) and override application remain filter
+controls, while the corresponding detail flags only change expansion richness.
+Counts may be absent. Nested expansion payloads remain available through raw
+`send`/`call`, outside the current `ScanResult` projection. See the
+[result migration](docs/v0.7.0-migration.md#results) and
+[pinned gvmd evidence](docs/result-request-gvmd-evidence.md).
 
 The standard target family is the canonical reference slice: its requests own
 their complete input and encoding, and its redundant options types and free
@@ -564,6 +594,12 @@ The mock server is the most developed component. It's designed to be a drop-in t
   stateful direct-host create/get/modify/delete; historical flat asset inputs
   require an explicit compatibility profile. Report-import creation and
   report-based bulk deletion are outside this stateful handler's scope.
+- **bounded stateful result conformance** — list/ID selection, task/report
+  relationships and effective rendering context, saved/inline filter
+  precedence, deterministic pagination and ID-tied sorting, task-restricted
+  note/override expansions, and effective seeded override filtering, counts,
+  and rendering. Unsupported or malformed filter terms fail explicitly; this
+  is not a full gvmd filter, permission, CVSS, or override engine.
 
 ### Validated Against
 
