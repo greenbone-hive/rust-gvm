@@ -27,6 +27,9 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/result-request-gvmd-evidence.md`: pinned gvmd evidence for canonical
   result list/detail requests, task context, filtering, expansions, counts, and
   the bounded typed response/mock boundary.
+- `docs/report-config-request-gvmd-evidence.md`: pinned gvmd evidence for the
+  canonical report-configuration lifecycle, ordered parameter updates, query
+  controls, trash behavior, parser boundary, and bounded mock approximations.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -61,7 +64,7 @@ Adding or changing a GMP command:
   `docs/canonical-request-disposition.tsv`. Standard targets are the reference;
   alternate targets, agent groups, agents, integration configurations, port
   lists, credentials, filters, tags, alerts, schedules, scanners, notes,
-  overrides, users, groups, roles, permissions, assets, and results show the same contract across their
+  overrides, users, groups, roles, permissions, assets, results, and report configurations show the same contract across their
   applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.
@@ -103,6 +106,9 @@ Changing mock server behavior:
 - `crates/gvm-mock-server/src/store.rs`: in-memory state and CRUD resources.
 - `crates/gvm-mock-server/src/stateful_results.rs`: bounded result-specific
   filtering, pagination/counts, associations, and expansion rendering.
+- `crates/gvm-mock-server/src/stateful_report_configs.rs`: bounded
+  report-configuration create/clone/modify/query rendering and filtering;
+  atomic storage operations remain in `store.rs`.
 - `crates/gvm-mock-server/src/fixtures.rs`: fixture-mode responses.
 - `crates/gvm-mock-server/src/fault.rs` and `scenario.rs`: failure injection and scripted playback.
 - Tests live under `crates/gvm-mock-server/tests/`.

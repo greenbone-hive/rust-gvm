@@ -24,13 +24,16 @@ use gvm_gmp::commands::oci_image_targets::{
     CreateOciImageTargetRequest, DeleteOciImageTargetRequest, GetOciImageTargetsRequest,
     ModifyOciImageTargetRequest,
 };
-use gvm_gmp::commands::report_configs::{create_report_config, get_report_configs};
+use gvm_gmp::commands::report_configs::{
+    CloneReportConfigRequest, CreateReportConfigRequest, DeleteReportConfigRequest,
+    GetReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
+};
 use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
 use gvm_gmp::commands::tasks::{create_web_application_task, CreateWebApplicationTaskOpts};
 use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetRequest, GetWebApplicationTargetsRequest,
 };
-use gvm_gmp::{CredentialStoreCredentialType, GmpRequestCodec};
+use gvm_gmp::{CredentialStoreCredentialType, EntityId, GmpRequestCodec};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -65,10 +68,11 @@ async fn connect(server: &MockGmpServer) -> UnixStream {
 }
 
 async fn send_recv(stream: &mut UnixStream, request: impl Request) -> Response {
-    stream
-        .write_all(&request.to_bytes())
-        .await
-        .expect("write failed");
+    send_recv_bytes(stream, &request.to_bytes()).await
+}
+
+async fn send_recv_bytes(stream: &mut UnixStream, bytes: &[u8]) -> Response {
+    stream.write_all(bytes).await.expect("write failed");
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let mut buf = vec![0_u8; 64 * 1024];
     let n = stream.read(&mut buf).await.expect("read failed");
@@ -94,25 +98,55 @@ async fn assert_version_gated_rejected(version: GmpVersion) {
     let mut stream = connect(&server).await;
     authenticate_admin(&mut stream).await;
 
-    let create_response = send_recv(
-        &mut stream,
-        create_report_config("Version Gated Config", "report-format-1"),
-    )
-    .await;
-    assert_eq!(create_response.status_code(), Some(400));
-    let create_text = create_response.status_text().unwrap();
-    assert!(
-        create_text.contains("create_report_config"),
-        "expected create_report_config in status_text, got: {create_text}"
-    );
-
-    let list_response = send_recv(&mut stream, get_report_configs()).await;
-    assert_eq!(list_response.status_code(), Some(400));
-    let list_text = list_response.status_text().unwrap();
-    assert!(
-        list_text.contains("get_report_configs"),
-        "expected get_report_configs in status_text, got: {list_text}"
-    );
+    let report_config_id = EntityId::new("00000000-0000-0000-0000-000000000300").unwrap();
+    let report_format_id = EntityId::new("00000000-0000-0000-0000-000000000200").unwrap();
+    let requests = vec![
+        (
+            encode(&GetReportConfigsRequest::default(), version),
+            "get_report_configs",
+        ),
+        (
+            encode(
+                &GetReportConfigRequest::new(report_config_id.clone()),
+                version,
+            ),
+            "get_report_configs",
+        ),
+        (
+            encode(
+                &CreateReportConfigRequest::new("Version Gated Config", report_format_id),
+                version,
+            ),
+            "create_report_config",
+        ),
+        (
+            encode(
+                &CloneReportConfigRequest::new(report_config_id.clone()),
+                version,
+            ),
+            "create_report_config",
+        ),
+        (
+            encode(
+                &ModifyReportConfigRequest::new(report_config_id.clone()),
+                version,
+            ),
+            "modify_report_config",
+        ),
+        (
+            encode(&DeleteReportConfigRequest::new(report_config_id), version),
+            "delete_report_config",
+        ),
+    ];
+    for (request, command) in requests {
+        let response = send_recv_bytes(&mut stream, &request).await;
+        assert_eq!(response.status_code(), Some(400));
+        let status = response.status_text().unwrap();
+        assert!(
+            status.contains(command),
+            "expected {command} in status_text, got: {status}"
+        );
+    }
 
     let features_response = send_recv(&mut stream, get_features()).await;
     assert_eq!(features_response.status_code(), Some(400));
@@ -132,18 +166,52 @@ async fn assert_version_gated_accepted(version: GmpVersion) {
     let mut stream = connect(&server).await;
     authenticate_admin(&mut stream).await;
 
-    let create_response = send_recv(
+    let create = CreateReportConfigRequest::new(
+        "Version Gated Config",
+        EntityId::new("00000000-0000-0000-0000-000000000200").unwrap(),
+    );
+    let create_response = send_recv_bytes(&mut stream, &encode(&create, version)).await;
+    assert_eq!(create_response.status_code(), Some(201));
+    let created_id =
+        EntityId::new(create_response.id().expect("created report config ID")).unwrap();
+
+    let list_response = send_recv_bytes(
         &mut stream,
-        create_report_config("Version Gated Config", "report-format-1"),
+        &encode(&GetReportConfigsRequest::default(), version),
     )
     .await;
-    assert_eq!(create_response.status_code(), Some(201));
-    assert!(create_response.id().is_some());
-
-    let list_response = send_recv(&mut stream, get_report_configs()).await;
     assert_eq!(list_response.status_code(), Some(200));
     let list_text = list_response.as_str().expect("valid utf8");
     assert!(list_text.contains("Version Gated Config"));
+
+    let detail_response = send_recv_bytes(
+        &mut stream,
+        &encode(&GetReportConfigRequest::new(created_id.clone()), version),
+    )
+    .await;
+    assert_eq!(detail_response.status_code(), Some(200));
+
+    let clone_response = send_recv_bytes(
+        &mut stream,
+        &encode(&CloneReportConfigRequest::new(created_id.clone()), version),
+    )
+    .await;
+    assert_eq!(clone_response.status_code(), Some(201));
+    let clone_id = EntityId::new(clone_response.id().expect("cloned report config ID")).unwrap();
+
+    let modify_response = send_recv_bytes(
+        &mut stream,
+        &encode(&ModifyReportConfigRequest::new(created_id.clone()), version),
+    )
+    .await;
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let delete_response = send_recv_bytes(
+        &mut stream,
+        &encode(&DeleteReportConfigRequest::new(clone_id), version),
+    )
+    .await;
+    assert_eq!(delete_response.status_code(), Some(200));
 
     let features_response = send_recv(&mut stream, get_features()).await;
     assert_eq!(features_response.status_code(), Some(200));
@@ -174,6 +242,11 @@ async fn version_22_6_accepts_report_config() {
 #[tokio::test]
 async fn version_22_7_accepts_report_config() {
     assert_version_gated_accepted(GmpVersion::V22_7).await;
+}
+
+#[tokio::test]
+async fn next_version_accepts_report_config() {
+    assert_version_gated_accepted(GmpVersion::V22_8).await;
 }
 
 #[tokio::test]

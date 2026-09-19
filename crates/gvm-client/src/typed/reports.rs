@@ -4,10 +4,8 @@
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::report_configs::{
-    CloneReportConfigRequest, CreateReportConfigOpts, CreateReportConfigRequest,
-    CreateReportConfigWithOptsRequest, DeleteReportConfigOpts, DeleteReportConfigRequest,
-    DeleteReportConfigWithOptsRequest, GetReportConfigRequest, GetReportConfigsOpts,
-    GetReportConfigsWithOptsRequest, ModifyReportConfigOpts, ModifyReportConfigRequest,
+    CloneReportConfigRequest, CreateReportConfigRequest, DeleteReportConfigRequest,
+    GetReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
 };
 use gvm_gmp::commands::report_formats::{
     CloneReportFormatRequest, CreateReportFormatRequest, DeleteReportFormatRequest,
@@ -526,20 +524,16 @@ impl<C: GvmConnection + Send> GmpClient<C> {
 
     // ── Report Configs ────────────────────────────────────────────────────────
 
-    /// Send a `get_report_configs` request with filter options and return a typed
+    /// Send a `get_report_configs` request and return a typed
     /// [`GetReportConfigsResponse`].
-    ///
-    /// Note: This method uses the `_parsed` suffix to avoid conflicting with the
-    /// [`crate::Gmp226Commands::get_report_configs`] trait method.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_configs_parsed(
+    pub async fn get_report_configs(
         &mut self,
-        opts: GetReportConfigsOpts,
+        request: GetReportConfigsRequest,
     ) -> Result<GetReportConfigsResponse, GvmError> {
-        self.execute(GetReportConfigsWithOptsRequest::new(opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a detailed `get_report_configs` request for one report configuration.
@@ -548,9 +542,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_config(
         &mut self,
-        id: &str,
+        request: GetReportConfigRequest,
     ) -> Result<GetReportConfigsResponse, GvmError> {
-        self.execute(GetReportConfigRequest::new(id)).await
+        self.execute(request).await
     }
 
     /// Create a report configuration with default options.
@@ -559,29 +553,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_report_config(
         &mut self,
-        name: &str,
-        report_format_id: &str,
+        request: CreateReportConfigRequest,
     ) -> Result<CreateReportConfigResponse, GvmError> {
-        self.execute(CreateReportConfigRequest::new(name, report_format_id))
-            .await
-    }
-
-    /// Create a report configuration with optional fields.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn create_report_config_with_opts(
-        &mut self,
-        name: &str,
-        report_format_id: &str,
-        opts: CreateReportConfigOpts,
-    ) -> Result<CreateReportConfigResponse, GvmError> {
-        self.execute(CreateReportConfigWithOptsRequest::new(
-            name,
-            report_format_id,
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `clone_report_config` request and return a typed
@@ -591,9 +565,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_report_config(
         &mut self,
-        id: &str,
+        request: CloneReportConfigRequest,
     ) -> Result<CreateReportConfigResponse, GvmError> {
-        self.execute(CloneReportConfigRequest::new(id)).await
+        self.execute(request).await
     }
 
     /// Modify a report configuration.
@@ -602,10 +576,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_report_config(
         &mut self,
-        id: &str,
-        opts: ModifyReportConfigOpts,
+        request: ModifyReportConfigRequest,
     ) -> Result<ModifyReportConfigResponse, GvmError> {
-        self.execute(ModifyReportConfigRequest::new(id, opts)).await
+        self.execute(request).await
     }
 
     /// Delete a report configuration with default options.
@@ -614,21 +587,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_report_config(
         &mut self,
-        id: &str,
+        request: DeleteReportConfigRequest,
     ) -> Result<DeleteReportConfigResponse, GvmError> {
-        self.execute(DeleteReportConfigRequest::new(id)).await
-    }
-
-    /// Delete a report configuration with optional fields.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn delete_report_config_with_opts(
-        &mut self,
-        id: &str,
-        opts: DeleteReportConfigOpts,
-    ) -> Result<DeleteReportConfigResponse, GvmError> {
-        self.execute(DeleteReportConfigWithOptsRequest::new(id, opts))
-            .await
+        self.execute(request).await
     }
 }

@@ -71,8 +71,8 @@ use gvm_gmp::commands::port_lists::{
     DeletePortRangeRequest, GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
 };
 use gvm_gmp::commands::report_configs::{
-    CreateReportConfigOpts, DeleteReportConfigOpts, GetReportConfigsOpts, GetReportConfigsRequest,
-    ModifyReportConfigOpts,
+    CloneReportConfigRequest, CreateReportConfigRequest, DeleteReportConfigRequest,
+    GetReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
 };
 use gvm_gmp::commands::report_formats::{GetReportFormatsOpts, ReportFormatOpts};
 use gvm_gmp::commands::reports::{
@@ -1545,32 +1545,24 @@ async fn report_config_format_and_tls_facades_cover_all_semantic_requests() {
     let resource_id = id(CREATED_ID);
     server.clear_history();
 
-    assert_typed_success!(client.execute(GetReportConfigsRequest::new()));
-    assert_typed_success!(client.get_report_configs_parsed(GetReportConfigsOpts::default()));
-    assert_typed_success!(client.get_report_config(CREATED_ID));
-    assert_create_success!(client.create_report_config("config", CREATED_ID));
-    assert_create_success!(client.create_report_config_with_opts(
-        "config with comment",
-        CREATED_ID,
-        CreateReportConfigOpts {
-            comment: Some("comment".into()),
-        },
-    ));
-    assert_create_success!(client.clone_report_config(CREATED_ID));
-    assert_typed_success!(client.modify_report_config(
-        CREATED_ID,
-        ModifyReportConfigOpts {
-            name: Some("renamed".into()),
-            comment: Some("changed".into()),
-        },
-    ));
-    assert_typed_success!(client.delete_report_config(CREATED_ID));
-    assert_typed_success!(client.delete_report_config_with_opts(
-        CREATED_ID,
-        DeleteReportConfigOpts {
-            ultimate: Some(true),
-        },
-    ));
+    assert_typed_success!(client.get_report_configs(GetReportConfigsRequest::new()));
+    assert_typed_success!(
+        client.get_report_config(GetReportConfigRequest::new(resource_id.clone()))
+    );
+    assert_create_success!(client.create_report_config(CreateReportConfigRequest::new(
+        "config",
+        resource_id.clone(),
+    )));
+    assert_create_success!(
+        client.clone_report_config(CloneReportConfigRequest::new(resource_id.clone(),))
+    );
+    let mut modify = ModifyReportConfigRequest::new(resource_id.clone());
+    modify.name = Some("renamed".into());
+    modify.comment = Some("changed".into());
+    assert_typed_success!(client.modify_report_config(modify));
+    let mut delete = DeleteReportConfigRequest::new(resource_id.clone());
+    delete.ultimate = Some(true);
+    assert_typed_success!(client.delete_report_config(delete));
 
     assert_typed_success!(client.get_report_formats(GetReportFormatsOpts::default()));
     assert_typed_success!(client.get_report_format(&resource_id));
@@ -1594,11 +1586,11 @@ async fn report_config_format_and_tls_facades_cover_all_semantic_requests() {
     assert_typed_success!(client.delete_tls_certificate(&resource_id, true));
 
     let history = server.command_history();
-    assert_eq!(history.len(), 23);
+    assert_eq!(history.len(), 20);
     for (command, expected_count) in [
-        ("create_report_config", 3),
-        ("delete_report_config", 2),
-        ("get_report_configs", 3),
+        ("create_report_config", 2),
+        ("delete_report_config", 1),
+        ("get_report_configs", 2),
         ("modify_report_config", 1),
         ("create_report_format", 3),
         ("delete_report_format", 1),
@@ -1645,7 +1637,7 @@ async fn report_config_format_and_tls_preserve_status_and_parse_context() {
     let mut client = client(&server).await;
 
     assert_server_error!(
-        client.get_report_config(CREATED_ID),
+        client.get_report_config(GetReportConfigRequest::new(id(CREATED_ID))),
         409,
         "configuration conflict"
     );
@@ -2907,7 +2899,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_hosts(GetHostsRequest::default()));
     assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
     assert_typed_success!(client.get_report_formats(GetReportFormatsOpts::default()));
-    assert_typed_success!(client.get_report_configs_parsed(GetReportConfigsOpts::default()));
+    assert_typed_success!(client.get_report_configs(GetReportConfigsRequest::default()));
     assert_typed_success!(client.get_settings());
     assert_typed_success!(client.get_help());
     assert_typed_success!(client.describe_auth());
@@ -3698,7 +3690,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         } if command == "get_features"
     ));
     let report_configs_error = v225_client
-        .get_report_configs_parsed(GetReportConfigsOpts::default())
+        .get_report_configs(GetReportConfigsRequest::default())
         .await
         .expect_err("22.6 report-config gate should reject 22.5");
     assert!(matches!(

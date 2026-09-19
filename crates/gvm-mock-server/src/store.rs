@@ -39,6 +39,12 @@ pub(crate) const DEFAULT_CONFIG_ID: Uuid =
     Uuid::from_u128(0xdaba_56c8_73ec_11df_a475_0022_6476_4cea);
 pub(crate) const DEFAULT_SCANNER_ID: Uuid =
     Uuid::from_u128(0x08b6_9003_5fc2_4037_a479_93b4_4021_1c73);
+pub(crate) const CONFIGURABLE_REPORT_FORMAT_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0200);
+pub(crate) const NONCONFIGURABLE_REPORT_FORMAT_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0201);
+pub(crate) const REPORT_CONFIG_SAVED_FILTER_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0202);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StoreError {
@@ -47,6 +53,12 @@ pub(crate) enum StoreError {
     InvalidArgument(&'static str),
     InvalidState(&'static str),
     Inconsistent(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ReportConfigParamUpdate {
+    Value { name: String, value: String },
+    UseDefault { name: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -983,6 +995,34 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     scanner.set_attr("type", "OpenVAS");
     resources.insert(scanner.id, scanner);
 
+    let mut configurable_format = Resource::with_id(
+        "report_format",
+        "Mock configurable format",
+        CONFIGURABLE_REPORT_FORMAT_ID,
+    );
+    configurable_format.set_attr("configurable", "1");
+    configurable_format.set_attr("report_config_param:Label", "string:12");
+    configurable_format.set_attr("report_config_default:Label", "Default label");
+    configurable_format.set_attr("report_config_param:Graph Type", "selection:bar,line");
+    configurable_format.set_attr("report_config_default:Graph Type", "bar");
+    resources.insert(configurable_format.id, configurable_format);
+
+    let mut nonconfigurable_format = Resource::with_id(
+        "report_format",
+        "Mock nonconfigurable format",
+        NONCONFIGURABLE_REPORT_FORMAT_ID,
+    );
+    nonconfigurable_format.set_attr("configurable", "0");
+    resources.insert(nonconfigurable_format.id, nonconfigurable_format);
+
+    let mut report_config_filter = Resource::with_id(
+        "filter",
+        "Mock report configuration filter",
+        REPORT_CONFIG_SAVED_FILTER_ID,
+    );
+    report_config_filter.set_attr("term", "name~Saved sort=name rows=1");
+    resources.insert(report_config_filter.id, report_config_filter);
+
     resources
 }
 
@@ -1012,6 +1052,69 @@ fn unique_clone_name(inner: &StoreInner, resource_type: &str, original_name: &st
         }
         number += 1;
     }
+}
+
+fn active_name_exists(
+    inner: &StoreInner,
+    resource_type: &str,
+    name: &str,
+    except: Option<&Uuid>,
+) -> bool {
+    inner.resources.values().any(|resource| {
+        !resource.trashed
+            && resource.resource_type == resource_type
+            && resource.name == name
+            && except != Some(&resource.id)
+    })
+}
+
+fn validate_report_config_updates(
+    report_format: &Resource,
+    params: &[ReportConfigParamUpdate],
+    reset_removes: bool,
+) -> Result<Vec<(String, Option<String>)>, StoreError> {
+    let mut updates = Vec::new();
+    for param in params {
+        match param {
+            ReportConfigParamUpdate::UseDefault { name } => {
+                if reset_removes {
+                    updates.push((normalize_report_config_param_name(name), None));
+                }
+            }
+            ReportConfigParamUpdate::Value { name, value } => {
+                let name = normalize_report_config_param_name(name);
+                let definition = report_format
+                    .attr(&format!("report_config_param:{name}"))
+                    .ok_or(StoreError::InvalidArgument(
+                        "Unknown report configuration parameter",
+                    ))?;
+                validate_seeded_report_config_value(definition, value)?;
+                updates.push((name, Some(value.clone())));
+            }
+        }
+    }
+    Ok(updates)
+}
+
+fn normalize_report_config_param_name(name: &str) -> String {
+    name.trim_matches(|character: char| character.is_ascii_whitespace())
+        .to_string()
+}
+
+fn validate_seeded_report_config_value(definition: &str, value: &str) -> Result<(), StoreError> {
+    if let Some(maximum) = definition.strip_prefix("string:") {
+        let maximum = maximum.parse::<usize>().unwrap_or(usize::MAX);
+        if value.len() <= maximum {
+            return Ok(());
+        }
+    } else if let Some(choices) = definition.strip_prefix("selection:") {
+        if choices.split(',').any(|choice| choice == value) {
+            return Ok(());
+        }
+    }
+    Err(StoreError::InvalidArgument(
+        "Invalid report configuration parameter value",
+    ))
 }
 
 fn validate_task_reference(
@@ -1274,6 +1377,114 @@ impl ResourceStore {
         resource.modification_time = now_iso();
         let mut inner = self.inner.write().expect("store lock poisoned");
         insert_resource(&mut inner, resource)
+    }
+
+    pub(crate) fn create_report_config(
+        &self,
+        name: &str,
+        comment: &str,
+        report_format_id: Uuid,
+        params: &[ReportConfigParamUpdate],
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let report_format = active_typed_resource(&inner, &report_format_id, "report_format")?;
+        if report_format.attr("configurable") != Some("1") {
+            return Err(StoreError::InvalidArgument(
+                "Report format is not configurable",
+            ));
+        }
+        if active_name_exists(&inner, "report_config", name, None) {
+            return Err(StoreError::InvalidArgument(
+                "Report configuration exists already",
+            ));
+        }
+        let overrides = validate_report_config_updates(report_format, params, false)?;
+
+        let mut resource = Resource::new("report_config", name);
+        resource.comment = comment.to_string();
+        resource.set_attr("report_format_id", &report_format_id.to_string());
+        for (name, value) in overrides {
+            if let Some(value) = value {
+                resource.set_attr(&format!("report_config_value:{name}"), &value);
+            }
+        }
+        Ok(insert_resource(&mut inner, resource))
+    }
+
+    pub(crate) fn clone_report_config(
+        &self,
+        id: &Uuid,
+        requested_name: Option<&str>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let original = active_typed_resource(&inner, id, "report_config")?.clone();
+        let name = requested_name.filter(|name| !name.is_empty()).map_or_else(
+            || unique_clone_name(&inner, "report_config", &original.name),
+            str::to_string,
+        );
+        if active_name_exists(&inner, "report_config", &name, None) {
+            return Err(StoreError::InvalidArgument(
+                "Report configuration exists already",
+            ));
+        }
+
+        let mut copy = original;
+        copy.id = Uuid::new_v4();
+        copy.name = name;
+        let now = now_iso();
+        copy.creation_time = now.clone();
+        copy.modification_time = now;
+        Ok(insert_resource(&mut inner, copy))
+    }
+
+    pub(crate) fn modify_report_config(
+        &self,
+        id: &Uuid,
+        name: Option<&str>,
+        comment: Option<&str>,
+        params: &[ReportConfigParamUpdate],
+    ) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let original = active_typed_resource(&inner, id, "report_config")?.clone();
+        let report_format_id = original
+            .attr("report_format_id")
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .ok_or(StoreError::NotFound("report format".to_string()))?;
+        // The pinned gvmd path resolves the format even for a metadata-only
+        // request because the terminated parameter array is non-empty.
+        let report_format = active_typed_resource(&inner, &report_format_id, "report_format")?;
+        if name.is_some_and(str::is_empty) {
+            return Err(StoreError::InvalidArgument("Name must not be empty"));
+        }
+        if let Some(name) = name {
+            if active_name_exists(&inner, "report_config", name, Some(id)) {
+                return Err(StoreError::InvalidArgument(
+                    "Report configuration exists already",
+                ));
+            }
+        }
+        let updates = validate_report_config_updates(report_format, params, true)?;
+
+        let resource = inner
+            .resources
+            .get_mut(id)
+            .expect("validated report configuration remains present while locked");
+        if let Some(name) = name {
+            resource.name = name.to_string();
+        }
+        if let Some(comment) = comment {
+            resource.comment = comment.to_string();
+        }
+        for (name, value) in updates {
+            let key = format!("report_config_value:{name}");
+            if let Some(value) = value {
+                resource.set_attr(&key, &value);
+            } else {
+                resource.remove_attr(&key);
+            }
+        }
+        resource.modification_time = now_iso();
+        Ok(())
     }
 
     pub(crate) fn create_task(

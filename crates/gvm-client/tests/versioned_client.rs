@@ -29,6 +29,7 @@ use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
+use gvm_gmp::commands::report_configs::CreateReportConfigRequest;
 use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
 use gvm_gmp::commands::targets::GetTargetsRequest;
 use gvm_gmp::commands::web_application_targets::{
@@ -1150,23 +1151,25 @@ async fn gmp226_commands_work_on_v226() {
         .expect("authenticate should succeed");
     assert_eq!(auth_response.status_code(), Some(200));
 
+    let create_response = client
+        .execute(CreateReportConfigRequest::new(
+            "Client Report Config",
+            id("00000000-0000-0000-0000-000000000200"),
+        ))
+        .await
+        .expect("create_report_config should succeed");
+    assert_eq!(create_response.status, 201);
+    assert!(!create_response.id.as_str().is_empty());
+
     let mut client = match client {
         GmpVersioned::V226(client) => client,
         other => panic!("expected V226 client, got {other:?}"),
     };
-
     let features_response = client
         .get_features()
         .await
         .expect("get_features should succeed");
     assert_eq!(features_response.status_code(), Some(200));
-
-    let create_response = client
-        .create_report_config("Client Report Config", "report-format-1")
-        .await
-        .expect("create_report_config should succeed");
-    assert_eq!(create_response.status_code(), Some(201));
-    assert!(create_response.id().is_some());
 
     server.shutdown().await;
 }

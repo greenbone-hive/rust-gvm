@@ -466,6 +466,10 @@ impl SessionHandler {
             "get_assets" => self.handle_get_assets(cmd, store),
             "modify_asset" => self.handle_modify_asset(cmd, store),
             "delete_asset" => self.handle_delete_asset(cmd, store),
+            "create_report_config" => crate::stateful_report_configs::handle_create(cmd, store),
+            "get_report_configs" => crate::stateful_report_configs::handle_get(cmd, store),
+            "modify_report_config" => crate::stateful_report_configs::handle_modify(cmd, store),
+            "delete_report_config" => self.handle_delete(cmd, store),
             // Create commands
             name if name.starts_with("create_") => self.handle_create(cmd, raw_xml, store),
             // Get commands

@@ -33,6 +33,7 @@ use gvm_gmp::commands::oci_image_targets::{
 };
 use gvm_gmp::commands::overrides::CreateOverrideRequest;
 use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
+use gvm_gmp::commands::report_configs::CreateReportConfigRequest;
 use gvm_gmp::commands::scanners::CreateScannerRequest;
 use gvm_gmp::commands::schedules::ModifyScheduleRequest;
 use gvm_gmp::commands::tags::{CreateTagRequest, TagResources};
@@ -111,6 +112,28 @@ async fn client(server: &MockGmpServer) -> GmpClient<UnixSocketConnection> {
     ))
     .await
     .expect("client should connect")
+}
+
+#[tokio::test]
+async fn invalid_report_config_request_wins_over_version_gate_and_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let request =
+        CreateReportConfigRequest::new("", gvm_gmp::EntityId::new("format-1").expect("valid ID"));
+
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("validation must precede the GMP 22.6 gate");
+    assert!(matches!(
+        error,
+        GvmError::Request(GmpRequestError::InvalidField { field, .. }) if field == "name"
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
 }
 
 async fn assert_unsupported_22_8_request<R: GmpRequest>(
