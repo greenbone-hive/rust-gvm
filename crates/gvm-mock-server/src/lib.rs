@@ -56,6 +56,7 @@ pub mod ssh_listener;
 mod stateful_nvt_secinfo;
 mod stateful_report_configs;
 mod stateful_report_formats;
+mod stateful_reports;
 mod stateful_results;
 mod stateful_scan_configs;
 mod stateful_tls_certificates;

@@ -264,6 +264,90 @@ not invent a parser-unsupported usage child. Audit delete now owns its
 and preference values remain redacted from diagnostics and traces. See the
 [pinned gvmd evidence](specialized-task-audit-request-gvmd-evidence.md).
 
+## Report and audit-report lifecycle
+
+Issue #661 replaces the report lifecycle and structured-report forwarding
+surfaces with complete request values. Each named typed helper accepts the
+canonical request unchanged and delegates to `execute`.
+
+```rust
+use gvm_gmp::commands::reports::{
+    DeleteReportRequest, GetAuditReportHostsRequest, GetAuditReportsRequest,
+    GetReportRequest, GetReportsRequest, GetScanReportRequest,
+    ImportReportRequest,
+};
+
+let reports = client.get_reports(GetReportsRequest::default()).await?;
+
+let mut detail = GetReportRequest::new(report_id.clone());
+detail.filter_string = Some("rows=25 first=1".into());
+let report = client.get_report(detail).await?;
+
+let mut import = ImportReportRequest::new(import_task_id, report_xml);
+import.in_assets = Some(true);
+let created = client.import_report(import).await?;
+
+client
+    .delete_report(DeleteReportRequest::new(created.id.clone()))
+    .await?;
+
+let audits = client
+    .get_audit_reports(GetAuditReportsRequest::default())
+    .await?;
+let hosts = client
+    .get_audit_report_hosts(GetAuditReportHostsRequest::new(audit_report_id))
+    .await?;
+let scan = client
+    .get_scan_report(GetScanReportRequest::new(report_id))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Migration mapping:
+
+- `get_reports(opts)` becomes `get_reports(GetReportsRequest { ... })`;
+- `get_report(&id)` becomes `get_report(GetReportRequest::new(id))`;
+- the empty `create_report` form and `CreateReportRequest` are removed because
+  pinned gvmd only creates reports from an imported `<report>` envelope;
+- `import_report(xml, &task, opts)` becomes
+  `import_report(ImportReportRequest::new(task_id, xml))`;
+- `delete_report(&id, ultimate)` becomes
+  `delete_report(DeleteReportRequest::new(id))`; gvmd has no permanence
+  choice here and successful ordinary deletion is permanent;
+- `get_audit_reports(opts)` and `delete_audit_report(&id)` become the distinct
+  `GetAuditReportsRequest` and `DeleteAuditReportRequest` operations;
+- structured scan, structured audit, and audit-host calls take
+  `GetScanReportRequest`, `GetAuditReportRequest`, and
+  `GetAuditReportHostsRequest`, respectively.
+
+Import validation occurs before capability checks or transport. It accepts
+exactly one supported `<report>` document, rejects trailing or sibling XML,
+retains the original bytes for authoritative embedding, and redacts the
+payload from diagnostics. `task_id` is a required existing import-task
+relationship. `in_assets` is optional and is omitted by default.
+
+Report-list selection uses `report_filter`/`report_filt_id`; result selection
+inside an ID-selected ordinary report and all structured-report selection use
+`filter`/`filt_id`. Detail, pagination bypass, note details, override details,
+result tags, and lean output are independently optional and omitted by
+default. `GetReportRequest::new` explicitly selects detailed output; list and
+audit-host constructors preserve gvmd's omitted defaults. Audit lists fix
+`usage_type=audit`; ordinary report list/detail requests add scan usage only
+when GMP 22.6 supports the selector.
+
+The response associations remain intentionally separate: ordinary list/detail
+XML uses the explicit nested report parser, audit lists have their own semantic
+response association, structured scan and audit responses retain their
+mixed/repeated parsers, and host summaries keep their lean/detail model. Audit
+list/delete require GMP 22.6, structured audit and hosts require 22.7, and
+structured scan requires 22.8.
+
+Format/config selection changes the response into report export data and is
+not a lifecycle selector. It remains with synchronous/asynchronous exports,
+delta behavior, and the nine drill-down projections in issue #662. See the
+[pinned gvmd evidence](report-request-gvmd-evidence.md) for parser, schema,
+default, gate, deletion, and transaction references.
+
 ## Agent family
 
 The agent slice removes `GetAgentsOpts`, `ModifyAgentOpts`,
@@ -1365,7 +1449,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 257 current public async methods: 254 delegate
+The facade inventory locks all 262 current public async methods: 259 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path. Unsupported `sync_config` and its deprecated per-config
 delegate are absent.

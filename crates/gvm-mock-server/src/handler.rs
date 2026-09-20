@@ -504,6 +504,11 @@ impl SessionHandler {
             "modify_report_format" => crate::stateful_report_formats::handle_modify(cmd, store),
             "delete_report_format" => crate::stateful_report_formats::handle_delete(cmd, store),
             "verify_report_format" => crate::stateful_report_formats::handle_verify(cmd, store),
+            "create_report" => crate::stateful_reports::handle_create(cmd, store),
+            "get_reports" => {
+                crate::stateful_reports::handle_get(cmd, store, self.large_report.as_ref())
+            }
+            "delete_report" => crate::stateful_reports::handle_delete(cmd, store),
             "create_tls_certificate" => crate::stateful_tls_certificates::handle_create(
                 cmd,
                 store,

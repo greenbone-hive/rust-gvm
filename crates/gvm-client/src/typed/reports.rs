@@ -13,13 +13,13 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    ExportScanReportOpts, ExportScanReportRequest, GetAuditReportHostsOpts,
-    GetAuditReportHostsRequest, GetAuditReportOpts, GetAuditReportRequest,
+    DeleteAuditReportRequest, DeleteReportRequest, ExportScanReportOpts, ExportScanReportRequest,
+    GetAuditReportHostsRequest, GetAuditReportRequest, GetAuditReportsRequest,
     GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
     GetReportDetailsOpts, GetReportErrorsRequest, GetReportExportOpts, GetReportExportRequest,
     GetReportHostsRequest, GetReportOperatingSystemsRequest, GetReportPortsRequest,
-    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsOpts, GetReportsRequest,
-    ImportReportOpts, ImportReportRequest,
+    GetReportRequest, GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsRequest,
+    GetScanReportRequest, ImportReportRequest,
 };
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::tls_certificates::{
@@ -29,14 +29,15 @@ use gvm_gmp::commands::tls_certificates::{
 use gvm_gmp::responses::{
     CreateReportConfigResponse, CreateReportFormatResponse, CreateReportResponse,
     CreateTlsCertificateResponse, DeleteReportConfigResponse, DeleteReportFormatResponse,
-    DeleteTlsCertificateResponse, ExportScanReportResponse, GetAuditReportHostsResponse,
-    GetAuditReportResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
-    GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
-    GetReportFormatsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetResultsResponse, GetTlsCertificatesResponse, ModifyReportConfigResponse,
-    ModifyReportFormatResponse, ModifyTlsCertificateResponse, ReportExport,
-    VerifyReportFormatResponse,
+    DeleteReportResponse, DeleteTlsCertificateResponse, ExportScanReportResponse,
+    GetAuditReportHostsResponse, GetAuditReportResponse, GetAuditReportsResponse,
+    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
+    GetReportCvesResponse, GetReportErrorsResponse, GetReportFormatsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
+    GetResultsResponse, GetScanReportResponse, GetTlsCertificatesResponse,
+    ModifyReportConfigResponse, ModifyReportFormatResponse, ModifyTlsCertificateResponse,
+    ReportExport, VerifyReportFormatResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -49,11 +50,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_audit_report(
         &mut self,
-        audit_report_id: &EntityId,
-        opts: GetAuditReportOpts,
+        request: GetAuditReportRequest,
     ) -> Result<GetAuditReportResponse, GvmError> {
-        self.execute(GetAuditReportRequest::new(audit_report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_audit_report_hosts` request and return typed host summaries.
@@ -62,11 +61,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_audit_report_hosts(
         &mut self,
-        report_id: &EntityId,
-        opts: GetAuditReportHostsOpts,
+        request: GetAuditReportHostsRequest,
     ) -> Result<GetAuditReportHostsResponse, GvmError> {
-        self.execute(GetAuditReportHostsRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_reports` request and return a typed [`GetReportsResponse`].
@@ -75,9 +72,64 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_reports(
         &mut self,
-        opts: GetReportsOpts,
+        request: GetReportsRequest,
     ) -> Result<GetReportsResponse, GvmError> {
-        self.execute(GetReportsRequest::new(opts)).await
+        self.execute(request).await
+    }
+
+    /// Retrieve one detailed ordinary scan report.
+    ///
+    /// # Errors
+    /// Returns an error if validation, support checks, transport, or parsing fails.
+    pub async fn get_report(
+        &mut self,
+        request: GetReportRequest,
+    ) -> Result<GetReportsResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// List audit reports through the audit-scoped `get_reports` operation.
+    ///
+    /// # Errors
+    /// Returns an error if validation, support checks, transport, or parsing fails.
+    pub async fn get_audit_reports(
+        &mut self,
+        request: GetAuditReportsRequest,
+    ) -> Result<GetAuditReportsResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Retrieve one structured vulnerability report.
+    ///
+    /// # Errors
+    /// Returns an error if validation, support checks, transport, or parsing fails.
+    pub async fn get_scan_report(
+        &mut self,
+        request: GetScanReportRequest,
+    ) -> Result<GetScanReportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Permanently delete one ordinary scan report.
+    ///
+    /// # Errors
+    /// Returns an error if support checks, transport, or parsing fails.
+    pub async fn delete_report(
+        &mut self,
+        request: DeleteReportRequest,
+    ) -> Result<DeleteReportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Delete one audit report through the non-ultimate audit semantic alias.
+    ///
+    /// # Errors
+    /// Returns an error if support checks, transport, or parsing fails.
+    pub async fn delete_audit_report(
+        &mut self,
+        request: DeleteAuditReportRequest,
+    ) -> Result<DeleteReportResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Queue or reuse an asynchronous scan-report export and return its typed
@@ -470,12 +522,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// response parsing fails.
     pub async fn import_report(
         &mut self,
-        report_xml: &str,
-        task_id: &EntityId,
-        opts: ImportReportOpts,
+        request: ImportReportRequest,
     ) -> Result<CreateReportResponse, GvmError> {
-        self.execute(ImportReportRequest::new(report_xml, task_id, opts)?)
-            .await
+        self.execute(request).await
     }
 
     // ── Report Configs ────────────────────────────────────────────────────────

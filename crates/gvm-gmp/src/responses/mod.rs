@@ -134,7 +134,7 @@ pub use port_list::{
 };
 pub use preference::{GetPreferencesResponse, Preference, PreferenceNvt};
 pub use report::{
-    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,
+    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse, GetAuditReportsResponse,
     GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
     GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
     GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,

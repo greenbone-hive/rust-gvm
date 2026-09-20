@@ -34,6 +34,10 @@ use gvm_gmp::commands::oci_image_targets::{
 use gvm_gmp::commands::overrides::CreateOverrideRequest;
 use gvm_gmp::commands::port_lists::CreatePortRangeRequest;
 use gvm_gmp::commands::report_configs::CreateReportConfigRequest;
+use gvm_gmp::commands::reports::{
+    DeleteAuditReportRequest, GetAuditReportHostsRequest, GetAuditReportRequest,
+    GetAuditReportsRequest, GetScanReportRequest, ImportReportRequest,
+};
 use gvm_gmp::commands::scanners::CreateScannerRequest;
 use gvm_gmp::commands::schedules::ModifyScheduleRequest;
 use gvm_gmp::commands::tags::{CreateTagRequest, TagResources};
@@ -137,6 +141,120 @@ async fn invalid_report_config_request_wins_over_version_gate_and_transport() {
     ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_report_envelopes_are_redacted_and_never_reach_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_4).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    for payload in [
+        b"<wrong><secret>alpha</secret></wrong>".as_slice(),
+        b"<report><secret>beta</secret></report><report/>".as_slice(),
+        b"<report><secret>gamma</secret>".as_slice(),
+    ] {
+        let error = client
+            .import_report(ImportReportRequest::new(
+                "task-1".parse().expect("valid task ID"),
+                payload,
+            ))
+            .await
+            .expect_err("invalid import must fail before transport");
+        let diagnostic = error.to_string();
+        assert!(matches!(
+            error,
+            GvmError::Request(GmpRequestError::InvalidField { field, .. })
+                if field == "report_xml"
+        ));
+        assert!(!diagnostic.contains("alpha"));
+        assert!(!diagnostic.contains("beta"));
+        assert!(!diagnostic.contains("gamma"));
+    }
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn report_semantic_aliases_observe_their_independent_version_floors() {
+    let Some(server_225) = fixture_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let mut client_225 = client(&server_225).await;
+    server_225.clear_history();
+    let audit_id = gvm_gmp::EntityId::new("audit-1").expect("valid audit ID");
+    for error in [
+        client_225
+            .execute(GetAuditReportsRequest::default())
+            .await
+            .expect_err("audit list requires 22.6"),
+        client_225
+            .execute(DeleteAuditReportRequest::new(audit_id.clone()))
+            .await
+            .expect_err("audit delete requires 22.6"),
+    ] {
+        assert!(matches!(
+            error,
+            GvmError::UnsupportedCommand {
+                version: GmpVersion(22, 5),
+                required: "22.6",
+                ..
+            }
+        ));
+    }
+    assert!(server_225.command_history().is_empty());
+    server_225.shutdown().await;
+
+    let Some(server_226) = fixture_server(MockVersion::V22_6).await else {
+        return;
+    };
+    let mut client_226 = client(&server_226).await;
+    server_226.clear_history();
+    for error in [
+        client_226
+            .execute(GetAuditReportRequest::new(audit_id.clone()))
+            .await
+            .expect_err("structured audit requires 22.7"),
+        client_226
+            .execute(GetAuditReportHostsRequest::new(audit_id.clone()))
+            .await
+            .expect_err("audit hosts require 22.7"),
+    ] {
+        assert!(matches!(
+            error,
+            GvmError::UnsupportedCommand {
+                version: GmpVersion(22, 6),
+                required: "22.7",
+                ..
+            }
+        ));
+    }
+    assert!(server_226.command_history().is_empty());
+    server_226.shutdown().await;
+
+    let Some(server_227) = fixture_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client_227 = client(&server_227).await;
+    server_227.clear_history();
+    let error = client_227
+        .execute(GetScanReportRequest::new(
+            "scan-1".parse().expect("valid scan ID"),
+        ))
+        .await
+        .expect_err("structured scan requires 22.8");
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "get_scan_report"
+    ));
+    assert!(server_227.command_history().is_empty());
+    server_227.shutdown().await;
 }
 
 #[tokio::test]

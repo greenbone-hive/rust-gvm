@@ -14,7 +14,7 @@ directory, extracts every `pub async fn`, rejects duplicate and unknown entries,
 and fails when a new helper is not classified.
 It additionally requires every integration-covered name to appear as a direct
 method call in the client/mock integration suite.
-The enforced surface currently contains 259 names: 256 direct `execute`
+The enforced surface currently contains 262 names: 259 direct `execute`
 delegates and three frozen ticket raw paths. Unsupported configuration sync and
 operating-system asset modification helpers are not part of the inventory.
 
@@ -33,8 +33,10 @@ Coverage is organized by behavior family:
   exercises the complete request-by-value facades and shared wire roots;
 - report configuration, report format, and TLS-certificate coverage exercises
   their complete canonical requests through fixed response associations;
-- report import exercises the semantic create response plus malformed-response
-  context, while direct execution covers create and both deletion intents;
+- report import exercises byte-preserving envelope validation, the semantic
+  create response, and malformed-response context; ordinary/audit lists,
+  deletion, structured scan/audit, and audit-host summaries use canonical
+  request-by-value facade calls;
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.

@@ -112,6 +112,15 @@ async fn create_task(stream: &mut UnixStream, name: &str, usage_type: &str) -> S
     extract_id(&task)
 }
 
+async fn create_import_task(stream: &mut UnixStream, name: &str) -> String {
+    let task = send_recv(
+        stream,
+        format!("<create_task><name>{name}</name><target id=\"0\"/></create_task>").as_bytes(),
+    )
+    .await;
+    extract_id(&task)
+}
+
 fn id(value: &str) -> EntityId {
     EntityId::new(value).expect("valid id")
 }
@@ -1098,15 +1107,17 @@ async fn stateful_audit_reports_filter_by_usage_type() {
 
     let audit_report = send_recv(
         &mut stream,
-        format!("<create_report><task id=\"{audit_task_id}\"/></create_report>").as_bytes(),
+        format!("<start_task task_id=\"{audit_task_id}\"/>").as_bytes(),
     )
     .await;
     let _scan_report = send_recv(
         &mut stream,
-        format!("<create_report><task id=\"{scan_task_id}\"/></create_report>").as_bytes(),
+        format!("<start_task task_id=\"{scan_task_id}\"/>").as_bytes(),
     )
     .await;
-    let audit_report_id = extract_id(&audit_report);
+    let audit_report_id = audit_report
+        .child_text("report_id")
+        .expect("start response should contain report_id");
 
     let reports = send_recv(&mut stream, br#"<get_reports usage_type="audit"/>"#).await;
     let reports_text = reports.as_str().expect("utf8");
@@ -1114,9 +1125,16 @@ async fn stateful_audit_reports_filter_by_usage_type() {
     assert!(reports_text.contains("<usage_type>audit</usage_type>"));
     assert!(!reports_text.contains("Scan Task"));
 
+    let stopped = send_recv(
+        &mut stream,
+        format!("<stop_task task_id=\"{audit_task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(stopped.status_code(), Some(200));
+
     let delete = send_recv(
         &mut stream,
-        format!("<delete_report report_id=\"{audit_report_id}\" ultimate=\"0\"/>").as_bytes(),
+        format!("<delete_report report_id=\"{audit_report_id}\"/>").as_bytes(),
     )
     .await;
     assert_eq!(delete.status_code(), Some(200));
@@ -1133,12 +1151,12 @@ async fn stateful_import_report_persists_task_and_in_assets() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_task(&mut stream, "Imported Report Task", "scan").await;
+    let task_id = create_import_task(&mut stream, "Imported Report Task").await;
 
     let create = send_recv(
         &mut stream,
         format!(
-            "<create_report><task id=\"{task_id}\"/><report id=\"imported-report\"><name>Imported</name><in_assets>0</in_assets></report><in_assets>1</in_assets></create_report>"
+            "<create_report><report id=\"imported-report\"><name>Imported</name><results><result><name>Finding</name><host>192.0.2.10</host></result></results></report><task id=\"{task_id}\"/><in_assets>1</in_assets></create_report>"
         )
         .as_bytes(),
     )
@@ -1151,7 +1169,7 @@ async fn stateful_import_report_persists_task_and_in_assets() {
     let listed_text = listed.as_str().expect("response XML should be UTF-8");
 
     assert!(
-        listed_text.contains(&format!("<task_id>{task_id}</task_id>")),
+        listed_text.contains(&format!("<task id=\"{task_id}\"")),
         "{listed_text}"
     );
     assert!(
@@ -1162,6 +1180,12 @@ async fn stateful_import_report_persists_task_and_in_assets() {
         listed_text.contains("<in_assets>1</in_assets>"),
         "{listed_text}"
     );
+
+    let assets = send_recv(&mut stream, br#"<get_assets type="host"/>"#).await;
+    assert!(assets
+        .as_str()
+        .expect("asset response should be UTF-8")
+        .contains("192.0.2.10"));
 
     server.shutdown().await;
 }

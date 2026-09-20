@@ -54,6 +54,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   evidence for specialized/import task creation, scanner-specific preferences,
   move destinations, audit usage identity, lifecycle actions, and bounded
   transactional mock behavior.
+- `docs/report-request-gvmd-evidence.md`: pinned/current gvmd evidence for
+  ordinary report import/list/detail/delete, audit list/delete, structured
+  scan/audit retrieval, audit host summaries, source defaults, version gates,
+  and the #662 export/drill-down boundary.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -104,6 +108,10 @@ Adding or changing a GMP command:
   rollback plus move/start/stop/resume state live in `store.rs`, with bounded
   coverage in `stateful_task_lifecycle.rs`, `stateful_task_graph.rs`, and
   `stateful_specialized_task_audit.rs`.
+  Report import/query/delete behavior is isolated in `stateful_reports.rs`;
+  atomic report/result/host-asset insertion and deletion dependencies live in
+  `store.rs`, with bounded coverage in `stateful_report_lifecycle.rs`,
+  `stateful_scan_report.rs`, and `stateful_audit_report.rs`.
 
 Changing response parsing:
 

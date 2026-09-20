@@ -304,10 +304,10 @@ fn every_public_request_surface_has_an_explicit_disposition() {
             *counts.entry(disposition.value.as_str()).or_insert(0_usize) += 1;
             counts
         });
-    assert_eq!(ledger.len(), 998, "#660 disposition ledger total drifted");
-    assert_eq!(counts.get("transitional"), Some(&150));
-    assert_eq!(counts.get("canonical-request"), Some(&345));
-    assert_eq!(counts.get("removed"), Some(&380));
+    assert_eq!(ledger.len(), 1003, "#661 disposition ledger total drifted");
+    assert_eq!(counts.get("transitional"), Some(&120));
+    assert_eq!(counts.get("canonical-request"), Some(&363));
+    assert_eq!(counts.get("removed"), Some(&397));
     assert_eq!(counts.get("retained-construction"), Some(&111));
     assert_eq!(counts.get("frozen-ticket"), Some(&12));
 }
