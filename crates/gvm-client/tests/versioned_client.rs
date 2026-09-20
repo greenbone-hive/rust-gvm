@@ -5,8 +5,8 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AgentInstallerLanguage, CommandSupport, CredentialStoreCredentialType, ExportScanReportOpts,
-    Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError,
+    AgentInstallerLanguage, CommandSupport, CredentialStoreCredentialType, Gmp226Commands,
+    GmpNextCommands, GmpVersioned, GvmError,
 };
 use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
@@ -29,7 +29,7 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::report_configs::CreateReportConfigRequest;
-use gvm_gmp::commands::reports::GetScanReportRequest;
+use gvm_gmp::commands::reports::{ExportScanReportRequest, GetScanReportRequest};
 use gvm_gmp::commands::targets::GetTargetsRequest;
 use gvm_gmp::commands::tasks::{
     CreateAgentGroupTaskRequest, CreateContainerImageTaskRequest, CreateWebApplicationTaskRequest,
@@ -767,7 +767,7 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
     let report_id = EntityId::new("11111111-1111-1111-1111-111111111111").expect("valid report ID");
 
     let error = client
-        .export_scan_report(&report_id, ExportScanReportOpts::default())
+        .export_scan_report(ExportScanReportRequest::new(report_id.clone()))
         .await
         .expect_err("undiscovered export should fail");
     assert!(matches!(
@@ -787,7 +787,7 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
         CommandSupport::Supported
     );
     let error = client
-        .export_scan_report(&report_id, ExportScanReportOpts::default())
+        .export_scan_report(ExportScanReportRequest::new(report_id))
         .await
         .expect_err("missing report should reach the mock");
     assert!(matches!(error, GvmError::Server { status: 404, .. }));

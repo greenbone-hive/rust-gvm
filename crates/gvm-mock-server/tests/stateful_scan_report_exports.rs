@@ -6,8 +6,8 @@
 
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::help::{help_with_mode, HelpMode};
-use gvm_gmp::commands::reports::{export_scan_report, ExportScanReportOpts};
-use gvm_gmp::EntityId;
+use gvm_gmp::commands::reports::ExportScanReportRequest;
+use gvm_gmp::{EntityId, GmpRequestCodec};
 use gvm_mock_server::{GmpVersion, MockGmpServer, Resource, ServerMode};
 use gvm_protocol::{Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -62,6 +62,17 @@ async fn send_recv(stream: &mut UnixStream, request: impl Request) -> Response {
     Response::new(bytes)
 }
 
+async fn send_recv_export(stream: &mut UnixStream, request: &ExportScanReportRequest) -> Response {
+    stream
+        .write_all(&request.encode(gvm_gmp::GmpVersion(22, 8)).expect("encode"))
+        .await
+        .expect("request write");
+    let mut bytes = vec![0; 16 * 1024];
+    let size = stream.read(&mut bytes).await.expect("response read");
+    bytes.truncate(size);
+    Response::new(bytes)
+}
+
 async fn assert_created_and_reused(server: &MockGmpServer, stream: &mut UnixStream) {
     let help = send_recv(stream, help_with_mode(HelpMode::BriefXml)).await;
     assert_eq!(help.status_code(), Some(200));
@@ -71,12 +82,18 @@ async fn assert_created_and_reused(server: &MockGmpServer, stream: &mut UnixStre
         .contains("<name>export_scan_report</name>"));
 
     let report_id = EntityId::new(REPORT_ID).expect("valid entity id");
-    let export_options = || ExportScanReportOpts {
+    let export_request = || ExportScanReportRequest {
+        report_id: report_id.clone(),
+        report_format_id: None,
+        report_config_id: None,
         filter_string: Some("severity>5 & rows=10".into()),
+        ignore_pagination: None,
+        lean: None,
         notes_details: Some(true),
-        ..Default::default()
+        overrides_details: None,
+        result_tags: None,
     };
-    let created = send_recv(stream, export_scan_report(&report_id, export_options())).await;
+    let created = send_recv_export(stream, &export_request()).await;
     assert_eq!(created.status_code(), Some(201));
     assert!(created
         .as_str()
@@ -84,7 +101,7 @@ async fn assert_created_and_reused(server: &MockGmpServer, stream: &mut UnixStre
         .contains("OK, resource created"));
     let created_id = created.id().expect("created export id");
 
-    let reused = send_recv(stream, export_scan_report(&report_id, export_options())).await;
+    let reused = send_recv_export(stream, &export_request()).await;
     assert_eq!(reused.status_code(), Some(200));
     assert_eq!(reused.id().as_deref(), Some(created_id.as_str()));
     assert!(reused
@@ -104,11 +121,10 @@ async fn assert_created_and_reused(server: &MockGmpServer, stream: &mut UnixStre
 }
 
 async fn assert_validation_errors(stream: &mut UnixStream) {
-    let invalid = send_recv(
+    let invalid = send_recv_export(
         stream,
-        export_scan_report(
-            &EntityId::new("not-a-uuid").expect("valid protocol entity id"),
-            ExportScanReportOpts::default(),
+        &ExportScanReportRequest::new(
+            EntityId::new("not-a-uuid").expect("valid protocol entity id"),
         ),
     )
     .await;
@@ -118,11 +134,10 @@ async fn assert_validation_errors(stream: &mut UnixStream) {
         Some("Missing or invalid report_id")
     );
 
-    let missing = send_recv(
+    let missing = send_recv_export(
         stream,
-        export_scan_report(
-            &EntityId::new("44444444-4444-4444-4444-444444444444").expect("valid entity id"),
-            ExportScanReportOpts::default(),
+        &ExportScanReportRequest::new(
+            EntityId::new("44444444-4444-4444-4444-444444444444").expect("valid entity id"),
         ),
     )
     .await;
@@ -133,12 +148,9 @@ async fn assert_validation_errors(stream: &mut UnixStream) {
     );
 
     for report_id in [AUDIT_REPORT_ID, DELTA_REPORT_ID] {
-        let response = send_recv(
+        let response = send_recv_export(
             stream,
-            export_scan_report(
-                &EntityId::new(report_id).expect("valid entity id"),
-                ExportScanReportOpts::default(),
-            ),
+            &ExportScanReportRequest::new(EntityId::new(report_id).expect("valid entity id")),
         )
         .await;
         assert_eq!(response.status_code(), Some(400));
@@ -157,12 +169,9 @@ async fn assert_pre_22_7_unsupported() {
         .await
         .expect("connect");
     let _ = send_recv(&mut stream, authenticate("admin", "admin")).await;
-    let unsupported = send_recv(
+    let unsupported = send_recv_export(
         &mut stream,
-        export_scan_report(
-            &EntityId::new(REPORT_ID).expect("valid entity id"),
-            ExportScanReportOpts::default(),
-        ),
+        &ExportScanReportRequest::new(EntityId::new(REPORT_ID).expect("valid entity id")),
     )
     .await;
     assert_eq!(unsupported.status_code(), Some(400));

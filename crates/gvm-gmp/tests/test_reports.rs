@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::reports::*;
 use gvm_gmp::{GmpRequestCodec, GmpVersion};
 
@@ -76,8 +76,13 @@ fn test_report_get_and_delete() {
         "<get_reports details=\"1\" report_id=\"r1\" usage_type=\"scan\"/>"
     );
     assert_eq!(
-        xml(get_report_export(&id("r1"), &id("rf1"))),
-        "<get_reports details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(
+            GetReportExportRequest::new(id("r1"), id("rf1"))
+                .encode(GmpVersion(22, 8))
+                .unwrap()
+        )
+        .unwrap(),
+        "<get_reports format_id=\"rf1\" report_id=\"r1\"/>"
     );
     let delete = DeleteReportRequest::new(id("r1"));
     assert_eq!(
@@ -209,66 +214,67 @@ fn test_get_audit_report_hosts_serializes_schema_attributes() {
 
 #[test]
 fn test_report_export_with_report_config() {
-    let mut opts = GetReportExportOpts::new(id("rf1"));
-    opts.report_config_id = Some(id("rc1"));
+    let mut request = GetReportExportRequest::new(id("r1"), id("rf1"));
+    request.report_config_id = Some(id("rc1"));
 
     assert_eq!(
-        xml(get_report_export_with_opts(&id("r1"), opts)),
-        "<get_reports config_id=\"rc1\" details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
+        "<get_reports config_id=\"rc1\" format_id=\"rf1\" report_id=\"r1\"/>"
     );
 }
 
 #[test]
 fn test_report_export_with_filter_string() {
-    let mut opts = GetReportExportOpts::new(id("rf1"));
-    opts.filter_string = Some("severity>5".into());
+    let mut request = GetReportExportRequest::new(id("r1"), id("rf1"));
+    request.filter_string = Some("severity>5".into());
 
     assert_eq!(
-        xml(get_report_export_with_opts(&id("r1"), opts)),
-        "<get_reports details=\"1\" filter=\"severity&gt;5\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
+        "<get_reports filter=\"severity&gt;5\" format_id=\"rf1\" report_id=\"r1\"/>"
     );
 }
 
 #[test]
 fn test_report_export_with_filter_id() {
-    let mut opts = GetReportExportOpts::new(id("rf1"));
-    opts.filter_id = Some(id("f1"));
+    let mut request = GetReportExportRequest::new(id("r1"), id("rf1"));
+    request.filter_id = Some(id("f1"));
 
     assert_eq!(
-        xml(get_report_export_with_opts(&id("r1"), opts)),
-        "<get_reports details=\"1\" filt_id=\"f1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
+        "<get_reports filt_id=\"f1\" format_id=\"rf1\" report_id=\"r1\"/>"
     );
 }
 
 #[test]
 fn test_report_export_with_combined_options() {
-    let mut opts = GetReportExportOpts::new(id("rf1"));
-    opts.report_config_id = Some(id("rc1"));
-    opts.filter_string = Some("severity>5".into());
-    opts.filter_id = Some(id("f1"));
+    let mut request = GetReportExportRequest::new(id("r1"), id("rf1"));
+    request.report_config_id = Some(id("rc1"));
+    request.filter_string = Some("severity>5".into());
+    request.filter_id = Some(id("f1"));
+    request.details = Some(true);
+    request.ignore_pagination = Some(true);
 
     assert_eq!(
-        xml(get_report_export_with_opts(&id("r1"), opts)),
+        String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
         "<get_reports config_id=\"rc1\" details=\"1\" filt_id=\"f1\" filter=\"severity&gt;5\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
     );
 }
 
 #[test]
 fn test_export_scan_report_with_all_current_attributes_and_escaping() {
+    let request = ExportScanReportRequest {
+        report_id: id("11111111-1111-1111-1111-111111111111"),
+        report_format_id: Some(id("22222222-2222-2222-2222-222222222222")),
+        report_config_id: Some(id("33333333-3333-3333-3333-333333333333")),
+        filter_string: Some("severity>5 & name='quoted'".into()),
+        ignore_pagination: Some(true),
+        lean: Some(false),
+        notes_details: Some(true),
+        overrides_details: Some(false),
+        result_tags: Some(true),
+    };
     assert_eq!(
-        xml(export_scan_report(
-            &id("11111111-1111-1111-1111-111111111111"),
-            ExportScanReportOpts {
-                format_id: Some(id("22222222-2222-2222-2222-222222222222")),
-                config_id: Some(id("33333333-3333-3333-3333-333333333333")),
-                filter_string: Some("severity>5 & name='quoted'".into()),
-                ignore_pagination: Some(true),
-                lean: Some(false),
-                notes_details: Some(true),
-                overrides_details: Some(false),
-                result_tags: Some(true),
-            },
-        )),
+        String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
         "<export_scan_report config_id=\"33333333-3333-3333-3333-333333333333\" filter=\"severity&gt;5 &amp; name=&apos;quoted&apos;\" format_id=\"22222222-2222-2222-2222-222222222222\" ignore_pagination=\"1\" lean=\"0\" notes_details=\"1\" overrides_details=\"0\" report_id=\"11111111-1111-1111-1111-111111111111\" result_tags=\"1\"/>"
     );
 }
@@ -276,49 +282,60 @@ fn test_export_scan_report_with_all_current_attributes_and_escaping() {
 #[test]
 fn test_export_scan_report_allows_source_default_format() {
     assert_eq!(
-        xml(export_scan_report(
-            &id("11111111-1111-1111-1111-111111111111"),
-            ExportScanReportOpts::default(),
-        )),
+        String::from_utf8(
+            ExportScanReportRequest::new(id("11111111-1111-1111-1111-111111111111"))
+                .encode(GmpVersion(22, 8))
+                .unwrap()
+        )
+        .unwrap(),
         "<export_scan_report report_id=\"11111111-1111-1111-1111-111111111111\"/>"
     );
 }
 
 #[test]
 fn test_report_helper_commands() {
+    let mut hosts = GetReportHostsRequest::new(id("r1"));
+    hosts.filter_string = Some("severity>5".into());
+    hosts.filter_id = Some(id("f1"));
+    hosts.ignore_pagination = Some(true);
+    hosts.details = Some(false);
+    hosts.lean = Some(true);
     assert_eq!(
-        xml(get_report_hosts(
-            &id("r1"),
-            GetReportDetailsOpts {
-                filter_string: Some("severity>5".into()),
-                filter_id: Some(id("f1")),
-                ignore_pagination: Some(true),
-                details: Some(false),
-            }
-        )),
-        "<get_report_hosts details=\"0\" filt_id=\"f1\" filter=\"severity&gt;5\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(hosts.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
+        "<get_report_hosts details=\"0\" filt_id=\"f1\" filter=\"severity&gt;5\" ignore_pagination=\"1\" lean=\"1\" report_id=\"r1\"/>"
     );
+    let mut ports = GetReportPortsRequest::new(id("r1"));
+    ports.ignore_pagination = Some(false);
+    ports.details = Some(true);
     assert_eq!(
-        xml(get_report_ports(
-            &id("r1"),
-            GetReportDetailsOpts {
-                ignore_pagination: Some(false),
-                details: Some(true),
-                ..Default::default()
-            }
-        )),
+        String::from_utf8(ports.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
         "<get_report_ports details=\"1\" ignore_pagination=\"0\" report_id=\"r1\"/>"
     );
     assert_eq!(
-        xml(get_report_applications(&id("r1"), Default::default())),
-        "<get_report_applications details=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(
+            GetReportApplicationsRequest::new(id("r1"))
+                .encode(GmpVersion(22, 8))
+                .unwrap()
+        )
+        .unwrap(),
+        "<get_report_applications report_id=\"r1\"/>"
     );
     assert_eq!(
-        xml(get_report_operating_systems(&id("r1"), Default::default())),
-        "<get_report_operating_systems details=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(
+            GetReportOperatingSystemsRequest::new(id("r1"))
+                .encode(GmpVersion(22, 8))
+                .unwrap()
+        )
+        .unwrap(),
+        "<get_report_operating_systems report_id=\"r1\"/>"
     );
     assert_eq!(
-        xml(get_report_cves(&id("r1"), Default::default())),
-        "<get_report_cves details=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(
+            GetReportCvesRequest::new(id("r1"))
+                .encode(GmpVersion(22, 8))
+                .unwrap()
+        )
+        .unwrap(),
+        "<get_report_cves report_id=\"r1\"/>"
     );
 }

@@ -342,11 +342,62 @@ mixed/repeated parsers, and host summaries keep their lean/detail model. Audit
 list/delete require GMP 22.6, structured audit and hosts require 22.7, and
 structured scan requires 22.8.
 
-Format/config selection changes the response into report export data and is
-not a lifecycle selector. It remains with synchronous/asynchronous exports,
-delta behavior, and the nine drill-down projections in issue #662. See the
-[pinned gvmd evidence](report-request-gvmd-evidence.md) for parser, schema,
-default, gate, deletion, and transaction references.
+### Report drill-downs and exports
+
+Issue #662 replaces every report projection and export forwarding surface with
+one complete request value. The nine projection constructors retain gvmd's
+omitted false defaults; set `details=Some(true)` when rows, rather than count
+metadata, are required. Hosts additionally expose `lean`.
+
+```rust
+use gvm_gmp::commands::reports::{
+    ExportScanReportRequest, GetReportExportRequest, GetReportHostsRequest,
+};
+
+let mut hosts = GetReportHostsRequest::new(report_id.clone());
+hosts.filter_string = Some("rows=25 first=1".into());
+hosts.details = Some(true);
+hosts.lean = Some(true);
+let hosts = client.get_report_hosts(hosts).await?;
+
+let mut export = GetReportExportRequest::new(report_id.clone(), format_id);
+export.report_config_id = Some(config_id);
+export.ignore_pagination = Some(true);
+let bytes = client.get_report_export(export).await?.bytes;
+
+client.discover_commands().await?;
+let queued = client
+    .export_scan_report(ExportScanReportRequest::new(report_id))
+    .await?;
+# let _ = (hosts, bytes, queued);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Migration mapping:
+
+- `get_report_hosts(&id, opts)` and the other projection builders become their
+  corresponding `GetReport*Request::new(id)` values;
+- `_parsed` facade suffixes are removed; the unsuffixed names are typed;
+- `get_report_vulnerabilities` is removed; use the concrete wire name
+  `get_report_vulns(GetReportVulnsRequest::new(id))`;
+- `get_report_export(&id, &format)` and `_with_opts` become
+  `get_report_export(GetReportExportRequest::new(id, format))`;
+- `export_scan_report(&id, opts)` becomes
+  `export_scan_report(ExportScanReportRequest::new(id))`, with optional fields
+  set on the request.
+
+The old synchronous-export builder forced details and pagination bypass. The
+canonical constructor follows gvmd omission defaults instead; set both fields
+explicitly to preserve the former policy. Asynchronous export accepts no saved
+filter ID or `details`, and omitted format selects gvmd's executable XML
+default despite the published schema saying it is required.
+
+All projections and synchronous export require GMP 22.8. Asynchronous export
+has a 22.7 lower bound but additionally requires positive XML-help discovery.
+The explicit response codecs preserve projection container/count variants,
+mixed-element order, nested XML, and binary/base64 payloads within the existing
+bounded response limit. Streaming redesign remains tracked separately by #4.
+See the [pinned gvmd evidence](report-request-gvmd-evidence.md).
 
 ## Agent family
 

@@ -590,18 +590,15 @@ retaining their existing explicit parsers:
 
 ```rust
 use gvm_gmp::commands::reports::{
-    GetReportExportOpts, GetReportExportRequest, GetReportVulnsRequest,
+    GetReportExportRequest, GetReportVulnsRequest,
 };
 
 let export = client
-    .execute(GetReportExportRequest::new(
-        report_id.clone(),
-        GetReportExportOpts::new(report_format_id),
-    ))
+    .execute(GetReportExportRequest::new(report_id.clone(), report_format_id))
     .await?;
 
 let vulnerabilities = client
-    .execute(GetReportVulnsRequest::new(report_id, Default::default()))
+    .execute(GetReportVulnsRequest::new(report_id))
     .await?;
 ```
 
@@ -619,8 +616,8 @@ alone:
   export require GMP 22.8;
 - synchronous export uses `<get_reports ...>` on the wire but declares the
   semantic capability `get_report_export`;
-- asynchronous `export_scan_report` was added without a distinct GMP version
-  and therefore continues to require positive XML-help discovery.
+- asynchronous `export_scan_report` has a GMP 22.7 lower bound but version
+  alone is insufficient; it requires positive XML-help discovery.
 
 `GmpClient::command_support` exposes the execution gate's actionable state.
 It distinguishes a registered command that still needs discovery from an
@@ -633,9 +630,12 @@ server advertisement exists; authorization and command success are still
 determined when gvmd executes it. Unknown names retain the raw `send`/`call`
 escape hatch.
 
-These checks run before transmission through the same `send` path used by raw
-and ordinary typed requests. The retained raw builders and helpers remain
-available when callers need unmodeled report details.
+These checks run before canonical encoding and transmission. Named projection
+and export helpers accept complete request values and delegate only to
+`execute`. Forwarding builders, raw projection facades, `_parsed` suffixes, and
+the duplicate `get_report_vulnerabilities` name are removed. Generic
+`send`/`call`, `XmlCommand`, and custom codecs remain available when callers
+need intentionally unmodeled report XML.
 
 ## Report mutations
 
