@@ -349,6 +349,18 @@ mod tests {
     }
 
     #[test]
+    fn redacts_task_preference_values() {
+        let secret = "confidential-task-preference";
+        let xml = format!(
+            "<create_task><name>visible</name><preferences><preference><scanner_name>token</scanner_name><value>{secret}</value></preference></preferences></create_task>"
+        );
+        let redacted = String::from_utf8(redact_wire_bytes(xml.as_bytes())).expect("valid UTF-8");
+        assert!(redacted.contains("<scanner_name>token</scanner_name>"));
+        assert!(redacted.contains("<value><redacted/></value>"));
+        assert!(!redacted.contains(secret));
+    }
+
+    #[test]
     fn malformed_or_unsafe_xml_fails_closed() {
         for xml in [
             "<root><password>secret",

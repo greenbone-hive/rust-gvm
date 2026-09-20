@@ -548,6 +548,7 @@ impl SessionHandler {
             // Delete commands
             name if name.starts_with("delete_") => self.handle_delete(cmd, store),
             // Task actions
+            "move_task" => self.handle_move_task(cmd, store),
             "start_task" => self.handle_start_task(cmd, store),
             "stop_task" => self.handle_stop_task(cmd, store),
             "resume_task" => self.handle_resume_task(cmd, store),
@@ -1449,21 +1450,27 @@ impl SessionHandler {
 
         // Task-specific: extract references
         if resource_type == "task" {
-            let has_web_application_target = cmd
+            let specialized_target = cmd
                 .children
                 .iter()
-                .any(|child| child.name == "web_application_target");
-            if has_web_application_target && !matches!(self.version, GmpVersion::V22_8) {
+                .find(|child| {
+                    matches!(
+                        child.name.as_str(),
+                        "agent_group" | "oci_image_target" | "web_application_target"
+                    )
+                })
+                .map(|child| child.name.as_str());
+            if specialized_target.is_some() && !matches!(self.version, GmpVersion::V22_8) {
                 return error_response(
                     &cmd.name,
                     400,
                     &format!(
-                        "Web application target tasks are not available in GMP {}",
+                        "Specialized task variants are not available in GMP {}",
                         self.version
                     ),
                 );
             }
-            if has_web_application_target
+            if specialized_target == Some("web_application_target")
                 && cmd
                     .child_attr("web_application_target", "id")
                     .is_none_or(str::is_empty)
@@ -2088,6 +2095,13 @@ impl SessionHandler {
         } else {
             None
         };
+        if new_task_observer_group_ids.is_some() && new_task_observers.is_none() {
+            return error_response(
+                &cmd.name,
+                400,
+                "Observer group updates require an observers user update",
+            );
+        }
         let new_task_alterable = if resource_type == "task" {
             match parse_element_text(raw_xml, "alterable") {
                 Some(value) if matches!(value.as_str(), "0" | "1") => Some(value),
@@ -2470,8 +2484,10 @@ impl SessionHandler {
             if let Some(ref active) = new_active {
                 r.set_attr("active", active);
             }
-            if let Some(ref usage_type) = new_usage_type {
-                r.set_attr("usage_type", usage_type);
+            if resource_type != "task" {
+                if let Some(ref usage_type) = new_usage_type {
+                    r.set_attr("usage_type", usage_type);
+                }
             }
             if let Some(ref observers) = new_task_observers {
                 r.set_attr("observers", observers);
@@ -2804,6 +2820,31 @@ impl SessionHandler {
                      </start_task_response>"
             )
             .into_bytes(),
+            Err(error) => store_error_response(&cmd.name, error),
+        }
+    }
+
+    fn handle_move_task(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let Some(task_id) = cmd.attr("task_id").filter(|id| !id.is_empty()) else {
+            return error_response(&cmd.name, 400, "A non-empty task_id attribute is required");
+        };
+        let Ok(task_id) = Uuid::parse_str(task_id) else {
+            return error_response(&cmd.name, 400, "Invalid task UUID");
+        };
+        let Some(destination) = cmd.attr("slave_id") else {
+            return error_response(&cmd.name, 400, "A slave_id attribute is required");
+        };
+        let destination = if destination.is_empty() {
+            DEFAULT_SCANNER_ID
+        } else {
+            let Ok(destination) = Uuid::parse_str(destination) else {
+                return error_response(&cmd.name, 400, "Invalid slave UUID");
+            };
+            destination
+        };
+
+        match store.move_task(&task_id, destination) {
+            Ok(()) => b"<move_task_response status=\"200\" status_text=\"OK\"/>".to_vec(),
             Err(error) => store_error_response(&cmd.name, error),
         }
     }
@@ -4354,11 +4395,16 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
         if target.is_some() {
             return Err("A task cannot have multiple target types");
         }
+        let scanner = optional_child_uuid(cmd, "scanner")?;
+        if !matches!(specialized_target, SpecializedTaskTarget::AgentGroup(_)) && scanner.is_none()
+        {
+            return Err("A scanner is required");
+        }
         return Ok(TaskReferences {
             target: None,
             specialized_target: Some(specialized_target),
             config: optional_child_uuid(cmd, "config")?,
-            scanner: Some(optional_child_uuid(cmd, "scanner")?.ok_or("A scanner is required")?),
+            scanner,
             schedule: optional_child_uuid(cmd, "schedule")?,
             schedule_periods: task_schedule_periods(cmd)?,
         });

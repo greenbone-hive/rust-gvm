@@ -95,8 +95,8 @@ use gvm_gmp::commands::targets::{
     ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
-    CreateTaskRequest, DeleteTaskRequest, GetTaskRequest, GetTasksRequest, ModifyTaskRequest,
-    ResumeTaskRequest, StartTaskRequest, StopTaskRequest, TaskPreference,
+    CreateImportTaskRequest, CreateTaskRequest, DeleteTaskRequest, GetTaskRequest, GetTasksRequest,
+    ModifyTaskRequest, ResumeTaskRequest, StartTaskRequest, StopTaskRequest, TaskPreference,
 };
 use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
@@ -4573,7 +4573,7 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
     server.clear_history();
 
     let import_task = client
-        .create_import_task("Report Import Task", None)
+        .create_import_task(CreateImportTaskRequest::new("Report Import Task"))
         .await
         .expect("import task should succeed");
     let task_id = import_task.id;
@@ -4635,7 +4635,7 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .expect("authenticate should succeed");
 
     let task_id = client
-        .create_import_task("Report Drilldown Task", None)
+        .create_import_task(CreateImportTaskRequest::new("Report Drilldown Task"))
         .await
         .expect("import task should succeed")
         .id;
@@ -5112,8 +5112,10 @@ async fn typed_create_import_task_uses_import_task_shape() {
 
     server.clear_history();
 
+    let mut request = CreateImportTaskRequest::new("Import Task");
+    request.comment = Some("Imported reports".into());
     let response = client
-        .create_import_task("Import Task", Some("Imported reports"))
+        .create_import_task(request)
         .await
         .expect("create_import_task should succeed");
 

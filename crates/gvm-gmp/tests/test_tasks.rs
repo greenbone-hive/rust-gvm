@@ -1,305 +1,220 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-#![allow(missing_docs, clippy::unwrap_used)]
+//! Canonical specialized-task and audit request conformance tests.
 
-mod common;
-
-use common::{id, xml};
 use gvm_gmp::commands::tasks::*;
-use gvm_gmp::{CollectionUpdate, GmpRequestCodec, GmpRequestError, GmpVersion};
+use gvm_gmp::types::{CollectionUpdate, EntityId, ScalarUpdate};
+use gvm_gmp::{GmpRequestCodec, GmpRequestError, GmpVersion};
+
+fn id(value: &str) -> EntityId {
+    EntityId::new(value).expect("valid ID")
+}
 
 fn encoded(request: &impl GmpRequestCodec) -> String {
-    String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap()
+    String::from_utf8(
+        request
+            .encode(GmpVersion(22, 8))
+            .expect("request should encode"),
+    )
+    .expect("request XML should be UTF-8")
 }
 
 #[test]
-fn test_create_task_basic() {
+fn specialized_creation_shapes_encode_canonical_values() {
+    let mut import = CreateImportTaskRequest::new("Import");
+    import.comment = Some("Reports".into());
     assert_eq!(
-        encoded(&CreateTaskRequest::new("foo", id("c1"), id("t1"), id("s1"))),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/></create_task>"
+        encoded(&import),
+        "<create_task><name>Import</name><target id=\"0\"/><comment>Reports</comment></create_task>"
+    );
+
+    let mut container = CreateContainerTaskRequest::new("Container");
+    container.comment = Some("Reports".into());
+    assert_eq!(
+        encoded(&container),
+        encoded(&import).replace("Import", "Container")
+    );
+
+    let mut agent = CreateAgentGroupTaskRequest::new("Agents", id("agent-group-1"));
+    agent.comment = Some("Agent scan".into());
+    agent.alterable = Some(true);
+    agent.schedule_id = Some(id("schedule-1"));
+    agent.schedule_periods = Some(2);
+    agent.alert_ids = vec![id("alert-1")];
+    agent.observers = vec!["alice".into()];
+    agent.observer_group_ids = vec![id("group-1")];
+    agent.preferences = vec![TaskPreference::new("max_hosts", "10")];
+    assert_eq!(
+        encoded(&agent),
+        "<create_task><name>Agents</name><usage_type>scan</usage_type><agent_group id=\"agent-group-1\"/><comment>Agent scan</comment><alterable>1</alterable><schedule id=\"schedule-1\"/><schedule_periods>2</schedule_periods><alert id=\"alert-1\"/><observers>alice<group id=\"group-1\"/></observers><preferences><preference><scanner_name>max_hosts</scanner_name><value>10</value></preference></preferences></create_task>"
+    );
+
+    let mut oci =
+        CreateOciImageTargetTaskRequest::new("OCI", id("oci-target-1"), id("container-scanner-1"));
+    oci.schedule_periods = Some(4);
+    assert_eq!(
+        encoded(&oci),
+        "<create_task><name>OCI</name><usage_type>scan</usage_type><oci_image_target id=\"oci-target-1\"/><scanner id=\"container-scanner-1\"/><schedule_periods>4</schedule_periods></create_task>"
+    );
+
+    let alias = CreateContainerImageTaskRequest::new(
+        "Container Image",
+        id("oci-target-1"),
+        id("container-scanner-1"),
+    );
+    assert_eq!(
+        encoded(&alias),
+        "<create_task><name>Container Image</name><usage_type>scan</usage_type><oci_image_target id=\"oci-target-1\"/><scanner id=\"container-scanner-1\"/></create_task>"
+    );
+
+    let web = CreateWebApplicationTaskRequest::new("Web", id("web-target-1"), id("web-scanner-1"));
+    assert_eq!(
+        encoded(&web),
+        "<create_task><name>Web</name><usage_type>scan</usage_type><web_application_target id=\"web-target-1\"/><scanner id=\"web-scanner-1\"/></create_task>"
     );
 }
 
 #[test]
-fn test_create_task_with_optionals() {
-    let mut request = CreateTaskRequest::new("foo", id("c1"), id("t1"), id("s1"));
-    request.alterable = Some(true);
-    request.schedule_id = Some(id("sched1"));
-    request.alert_ids = vec![id("a1"), id("a2")];
-    request.comment = Some("bar".into());
-    request.schedule_periods = Some(5);
-    request.observers = vec!["alice".into(), "bob".into()];
-    request.observer_group_ids = vec![id("group-1")];
-    request.preferences = vec![TaskPreference::new("k", "v")];
-    assert_eq!(
-        encoded(&request),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><alert id=\"a1\"/><alert id=\"a2\"/><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
-    );
+fn specialized_final_values_and_preferences_validate_without_leaking() {
+    let secret = "confidential-task-preference";
+    let preference = TaskPreference::new("token", secret);
+    let debug = format!("{preference:?}");
+    assert!(!debug.contains(secret));
+    assert!(debug.contains("<redacted>"));
+
+    let mut debug_request =
+        CreateWebApplicationTaskRequest::new("Web", id("web-target"), id("scanner"));
+    debug_request.preferences.push(preference);
+    assert!(!format!("{debug_request:?}").contains(secret));
+
+    let mut invalid_name = CreateImportTaskRequest::new("");
+    invalid_name.comment = Some("valid".into());
+    assert!(matches!(
+        invalid_name.validate(),
+        Err(GmpRequestError::InvalidField { field: "name", .. })
+    ));
+
+    let mut container =
+        CreateOciImageTargetTaskRequest::new("OCI", id("oci-target"), id("scanner"));
+    container.preferences = vec![TaskPreference::new("in_assets", secret)];
+    let error = container.validate().expect_err("in_assets must fail");
+    assert!(!error.to_string().contains(secret));
+
+    let mut web = CreateWebApplicationTaskRequest::new("Web", id("web-target"), id("scanner"));
+    web.preferences = vec![TaskPreference::new("scan_mode", secret)];
+    assert!(web.validate().is_err());
+    web.preferences = vec![TaskPreference::new("ajax_spider_timeout", "-1")];
+    assert!(web.validate().is_err());
+    web.preferences = vec![TaskPreference::new("scan_mode", "safe")];
+    assert!(web.validate().is_ok());
 }
 
 #[test]
-fn test_create_agent_group_task() {
+fn move_owns_required_destination_semantics() {
     assert_eq!(
-        xml(create_agent_group_task(
-            "foo",
-            &id("ag1"),
-            &id("s1"),
-            Default::default()
+        encoded(&MoveTaskRequest::new(
+            id("task-1"),
+            TaskMoveDestination::Slave(id("scanner-1")),
         )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/></create_task>"
+        "<move_task slave_id=\"scanner-1\" task_id=\"task-1\"/>"
     );
-}
-
-#[test]
-fn test_create_agent_group_task_with_optionals() {
     assert_eq!(
-        xml(create_agent_group_task(
-            "foo",
-            &id("ag1"),
-            &id("s1"),
-            CreateAgentGroupTaskOpts {
-                comment: Some("bar".into()),
-                alterable: Some(true),
-                schedule_id: Some(id("sched1")),
-                alert_ids: vec![id("a1"), id("a2")],
-                schedule_periods: Some(5),
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![id("group-1")],
-                preferences: vec![("k".into(), "v".into())],
-            }
+        encoded(&MoveTaskRequest::new(
+            id("task-1"),
+            TaskMoveDestination::Master,
         )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+        "<move_task slave_id=\"\" task_id=\"task-1\"/>"
     );
 }
 
 #[test]
-fn test_create_agent_group_task_ignores_schedule_periods_without_schedule() {
-    assert_eq!(
-        xml(create_agent_group_task(
-            "foo",
-            &id("ag1"),
-            &id("s1"),
-            CreateAgentGroupTaskOpts {
-                schedule_periods: Some(5),
-                ..Default::default()
-            }
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/></create_task>"
-    );
-}
-
-#[test]
-fn test_create_oci_image_target_task() {
-    assert_eq!(
-        xml(create_oci_image_target_task(
-            "foo",
-            &id("oci1"),
-            &id("s1"),
-            Default::default()
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><oci_image_target id=\"oci1\"/><scanner id=\"s1\"/></create_task>"
-    );
-    assert_eq!(
-        xml(create_container_image_task(
-            "foo",
-            &id("oci1"),
-            &id("s1"),
-            Default::default()
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><oci_image_target id=\"oci1\"/><scanner id=\"s1\"/></create_task>"
-    );
-}
-
-#[test]
-fn test_create_oci_image_target_task_with_optionals() {
-    assert_eq!(
-        xml(create_oci_image_target_task(
-            "foo",
-            &id("oci1"),
-            &id("s1"),
-            CreateOciImageTargetTaskOpts {
-                comment: Some("bar".into()),
-                alterable: Some(true),
-                schedule_id: Some(id("sched1")),
-                alert_ids: vec![id("a1"), id("a2")],
-                schedule_periods: Some(5),
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![id("group-1")],
-                preferences: vec![("k".into(), "v".into())],
-            }
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><oci_image_target id=\"oci1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
-    );
-}
-
-#[test]
-fn test_create_oci_image_target_task_ignores_schedule_periods_without_schedule() {
-    assert_eq!(
-        xml(create_oci_image_target_task(
-            "foo",
-            &id("oci1"),
-            &id("s1"),
-            CreateOciImageTargetTaskOpts {
-                schedule_periods: Some(5),
-                ..Default::default()
-            }
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><oci_image_target id=\"oci1\"/><scanner id=\"s1\"/></create_task>"
-    );
-}
-
-#[test]
-fn test_create_web_application_task_basic() {
-    assert_eq!(
-        xml(create_web_application_task(
-            "foo",
-            &id("wt1"),
-            &id("s1"),
-            Default::default()
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/></create_task>"
-    );
-}
-
-#[test]
-fn test_create_web_application_task_with_optionals() {
-    assert_eq!(
-        xml(create_web_application_task(
-            "foo",
-            &id("wt1"),
-            &id("s1"),
-            CreateWebApplicationTaskOpts {
-                alterable: Some(true),
-                schedule_id: Some(id("sched1")),
-                alert_ids: vec![id("a1"), id("a2")],
-                comment: Some("bar".into()),
-                schedule_periods: Some(5),
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![id("group-1")],
-                preferences: vec![("k".into(), "v".into())],
-            }
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
-    );
-}
-
-#[test]
-fn test_create_web_application_task_omits_schedule_periods_without_schedule() {
-    assert_eq!(
-        xml(create_web_application_task(
-            "foo",
-            &id("wt1"),
-            &id("s1"),
-            CreateWebApplicationTaskOpts {
-                schedule_periods: Some(5),
-                ..Default::default()
-            }
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/></create_task>"
-    );
-}
-
-#[test]
-fn test_task_mutation_and_actions() {
-    assert_eq!(
-        encoded(&CloneTaskRequest::new(id("a1"))),
-        "<create_task><copy>a1</copy></create_task>"
-    );
-    assert_eq!(
-        xml(clone_audit(&id("a1"))),
-        "<create_task><copy>a1</copy></create_task>"
-    );
-    assert_eq!(
-        xml(create_container_task("foo", Some("bar"))),
-        "<create_task><name>foo</name><target id=\"0\"/><comment>bar</comment></create_task>"
-    );
-    assert_eq!(
-        xml(create_import_task("foo", Some("bar"))),
-        "<create_task><name>foo</name><target id=\"0\"/><comment>bar</comment></create_task>"
-    );
-    assert_eq!(
-        encoded(&GetTaskRequest::new(id("a1"))),
-        "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"scan\"/>"
-    );
-    assert_eq!(
-        xml(get_audit(&id("a1"))),
-        "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"audit\"/>"
-    );
-    assert_eq!(
-        xml(move_task(&id("a1"), Some(&id("s1")))),
-        "<move_task slave_id=\"s1\" task_id=\"a1\"/>"
-    );
-    assert_eq!(
-        encoded(&StartTaskRequest::new(id("a1"))),
-        "<start_task task_id=\"a1\"/>"
-    );
-    assert_eq!(
-        encoded(&ResumeTaskRequest::new(id("a1"))),
-        "<resume_task task_id=\"a1\"/>"
-    );
-    assert_eq!(
-        encoded(&StopTaskRequest::new(id("a1"))),
-        "<stop_task task_id=\"a1\"/>"
-    );
-}
-
-#[test]
-fn test_audit_and_modify_task_observers_use_user_list_text() {
-    assert_eq!(
-        xml(create_audit(
-            "audit",
-            &id("c1"),
-            &id("t1"),
-            &id("s1"),
-            CreateTaskOpts {
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![id("group-1")],
-                ..Default::default()
-            },
-        )),
-        "<create_task><name>audit</name><usage_type>audit</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><observers>alice bob<group id=\"group-1\"/></observers></create_task>"
-    );
-    let mut request = ModifyTaskRequest::new(id("t1"));
-    request.observers = CollectionUpdate::replace(["alice".into(), "bob".into()]);
-    assert_eq!(
-        encoded(&request),
-        "<modify_task task_id=\"t1\"><observers>alice bob</observers></modify_task>"
-    );
-}
-
-#[test]
-fn test_modify_task_empty_comment_is_an_explicit_clear() {
-    let mut request = ModifyTaskRequest::new(id("t1"));
-    request.comment = Some(String::new());
-
-    assert_eq!(
-        encoded(&request),
-        "<modify_task task_id=\"t1\"><comment></comment></modify_task>"
-    );
-}
-
-#[test]
-fn test_standard_task_final_text_values_are_validated() {
-    let list = GetTasksRequest {
-        filter_string: Some("name=bad\u{0}".into()),
+fn audit_lifecycle_encodes_identity_and_complete_values() {
+    let list = GetAuditsRequest {
+        details: Some(true),
+        ignore_pagination: Some(true),
         ..Default::default()
     };
-    assert!(matches!(
-        list.encode(GmpVersion(22, 8)),
-        Err(GmpRequestError::InvalidField {
-            field: "filter_string",
-            ..
-        })
-    ));
+    assert_eq!(
+        encoded(&list),
+        "<get_tasks details=\"1\" ignore_pagination=\"1\" usage_type=\"audit\"/>"
+    );
+    assert_eq!(
+        encoded(&GetAuditRequest::new(id("audit-1"))),
+        "<get_tasks details=\"1\" task_id=\"audit-1\" usage_type=\"audit\"/>"
+    );
 
-    let mut create = CreateTaskRequest::new("task", id("c1"), id("t1"), id("s1"));
-    create.comment = Some("bad\u{0}".into());
+    let mut create =
+        CreateAuditRequest::new("Audit", id("policy-1"), id("target-1"), id("scanner-1"));
+    create.comment = Some("Compliance".into());
+    create.observers = vec!["alice".into()];
+    create.preferences = vec![TaskPreference::new("max_hosts", "10")];
+    assert_eq!(
+        encoded(&create),
+        "<create_task><name>Audit</name><usage_type>audit</usage_type><config id=\"policy-1\"/><target id=\"target-1\"/><scanner id=\"scanner-1\"/><comment>Compliance</comment><observers>alice</observers><preferences><preference><scanner_name>max_hosts</scanner_name><value>10</value></preference></preferences></create_task>"
+    );
+
+    let mut clone = CloneAuditRequest::new(id("audit-1"));
+    clone.comment = Some("Clone comment".into());
+    clone.alterable = Some(false);
+    assert_eq!(
+        encoded(&clone),
+        "<create_task><comment>Clone comment</comment><copy>audit-1</copy><alterable>0</alterable></create_task>"
+    );
+
+    let mut modify = ModifyAuditRequest::new(id("audit-1"));
+    modify.name = Some("Renamed".into());
+    modify.comment = Some(String::new());
+    modify.policy_id = Some(id("policy-2"));
+    modify.schedule_id = ScalarUpdate::Clear;
+    modify.alert_ids = CollectionUpdate::Clear;
+    modify.observers = CollectionUpdate::replace(["bob".into()]);
+    modify.observer_group_ids = CollectionUpdate::replace([id("group-2")]);
+    assert_eq!(
+        encoded(&modify),
+        "<modify_task task_id=\"audit-1\"><name>Renamed</name><comment></comment><schedule id=\"0\"/><config id=\"policy-2\"/><alert id=\"0\"/><observers>bob<group id=\"group-2\"/></observers></modify_task>"
+    );
+
+    assert_eq!(
+        encoded(&DeleteAuditRequest::new(id("audit-1"), true)),
+        "<delete_task task_id=\"audit-1\" ultimate=\"1\"/>"
+    );
+    assert_eq!(
+        encoded(&StartAuditRequest::new(id("audit-1"))),
+        "<start_task task_id=\"audit-1\"/>"
+    );
+    assert_eq!(
+        encoded(&StopAuditRequest::new(id("audit-1"))),
+        "<stop_task task_id=\"audit-1\"/>"
+    );
+    assert_eq!(
+        encoded(&ResumeAuditRequest::new(id("audit-1"))),
+        "<resume_task task_id=\"audit-1\"/>"
+    );
+}
+
+#[test]
+fn modify_audit_validates_final_observer_relationship_before_encoding() {
+    let mut request = ModifyAuditRequest::new(id("audit-1"));
+    request.comment = Some("would otherwise be sent".into());
+    request.observer_group_ids = CollectionUpdate::replace([id("group-1")]);
     assert!(matches!(
-        create.encode(GmpVersion(22, 8)),
-        Err(GmpRequestError::InvalidField {
-            field: "comment",
-            ..
-        })
+        request.validate(),
+        Err(GmpRequestError::InvalidCombination { .. })
     ));
+    assert!(request.encode(GmpVersion(22, 8)).is_err());
+}
+
+#[test]
+fn standard_task_requests_still_encode_canonical_shapes() {
+    let mut create = CreateTaskRequest::new("Task", id("config"), id("target"), id("scanner"));
+    create.schedule_periods = Some(5);
+    assert!(encoded(&create).contains("<schedule_periods>5</schedule_periods>"));
+
+    let mut modify = ModifyTaskRequest::new(id("task"));
+    modify.comment = Some(String::new());
+    assert_eq!(
+        encoded(&modify),
+        "<modify_task task_id=\"task\"><comment></comment></modify_task>"
+    );
 }

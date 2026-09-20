@@ -5,8 +5,7 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AgentInstallerLanguage, CommandSupport, CreateAgentGroupTaskOpts, CreateOciImageTargetTaskOpts,
-    CreateWebApplicationTaskOpts, CredentialStoreCredentialType, ExportScanReportOpts,
+    AgentInstallerLanguage, CommandSupport, CredentialStoreCredentialType, ExportScanReportOpts,
     Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError,
 };
 use gvm_client::{GmpClient, GmpNext};
@@ -32,6 +31,9 @@ use gvm_gmp::commands::oci_image_targets::{
 use gvm_gmp::commands::report_configs::CreateReportConfigRequest;
 use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
 use gvm_gmp::commands::targets::GetTargetsRequest;
+use gvm_gmp::commands::tasks::{
+    CreateAgentGroupTaskRequest, CreateContainerImageTaskRequest, CreateWebApplicationTaskRequest,
+};
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
@@ -130,21 +132,17 @@ where
 {
     server.clear_history();
 
-    let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id");
+    let mut request =
+        CreateAgentGroupTaskRequest::new("Client Agent Group Task", agent_group_id.clone());
+    request.scanner_id =
+        Some(EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id"));
+    request.comment = Some("task through client".into());
+    request.alterable = Some(true);
     let task_response = client
-        .create_agent_group_task(
-            "Client Agent Group Task",
-            agent_group_id,
-            &scanner_id,
-            CreateAgentGroupTaskOpts {
-                comment: Some("task through client".into()),
-                alterable: Some(true),
-                ..Default::default()
-            },
-        )
+        .create_agent_group_task(request)
         .await
         .expect("create_agent_group_task should succeed");
-    assert_eq!(task_response.status_code(), Some(201));
+    assert_eq!(task_response.status, 201);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -157,8 +155,7 @@ where
             agent_group_id.as_str()
         )
     );
-    let task_id =
-        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task_id = task_response.id;
     let task = typed_task_by_id(server, &task_id).await;
     assert_eq!(
         task.agent_group.as_ref().map(|target| &target.id),
@@ -178,21 +175,18 @@ where
 {
     server.clear_history();
 
-    let scanner_id = id("08b69003-5fc2-4037-a479-93b440211c73");
+    let mut request = CreateContainerImageTaskRequest::new(
+        "Client OCI Target Task",
+        oci_image_target_id.clone(),
+        id("00000000-0000-4000-8000-000000000010"),
+    );
+    request.comment = Some("task through client".into());
+    request.alterable = Some(true);
     let task_response = client
-        .create_container_image_task(
-            "Client OCI Target Task",
-            oci_image_target_id,
-            &scanner_id,
-            CreateOciImageTargetTaskOpts {
-                comment: Some("task through client".into()),
-                alterable: Some(true),
-                ..Default::default()
-            },
-        )
+        .create_container_image_task(request)
         .await
         .expect("create_container_image_task should succeed");
-    assert_eq!(task_response.status_code(), Some(201));
+    assert_eq!(task_response.status, 201);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -201,12 +195,11 @@ where
     assert_eq!(
         String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8"),
         format!(
-            "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
+            "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"00000000-0000-4000-8000-000000000010\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
             oci_image_target_id.as_str()
         )
     );
-    let task_id =
-        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task_id = task_response.id;
     let task = typed_task_by_id(server, &task_id).await;
     assert_eq!(
         task.oci_image_target.as_ref().map(|target| &target.id),
@@ -222,20 +215,17 @@ async fn assert_create_web_application_task_round_trip(
     target_id: &EntityId,
 ) -> EntityId {
     server.clear_history();
-    let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id");
+    let mut request = CreateWebApplicationTaskRequest::new(
+        "Client Web Task",
+        target_id.clone(),
+        EntityId::new("00000000-0000-4000-8000-000000000011").expect("valid id"),
+    );
+    request.comment = Some("created from versioned client".into());
     let task_response = client
-        .create_web_application_task(
-            "Client Web Task",
-            target_id,
-            &scanner_id,
-            CreateWebApplicationTaskOpts {
-                comment: Some("created from versioned client".into()),
-                ..Default::default()
-            },
-        )
+        .create_web_application_task(request)
         .await
         .expect("create_web_application_task should succeed");
-    assert_eq!(task_response.status_code(), Some(201));
+    assert_eq!(task_response.status, 201);
     let history = server.command_history();
     let command = history.last().expect("create task command recorded");
     assert_eq!(command.command_name(), "create_task");
@@ -243,11 +233,10 @@ async fn assert_create_web_application_task_round_trip(
     assert_eq!(
         raw_xml,
         format!(
-            "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>created from versioned client</comment></create_task>"
+            "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"00000000-0000-4000-8000-000000000011\"/><comment>created from versioned client</comment></create_task>"
         )
     );
-    let task_id =
-        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task_id = task_response.id;
     let task = typed_task_by_id(server, &task_id).await;
     assert_eq!(
         task.web_application_target

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Canonical standard-task requests and transitional specialized-task builders.
+//! Canonical task and audit requests.
 
 use std::fmt;
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
 use crate::commands::usage_type::UsageType;
 use crate::common::{
-    add_filter_attrs, add_id_element, add_optional_id_element, add_preferences,
-    add_scalar_id_update, add_text_element, bool_str, set_optional_bool_attr,
+    add_filter_attrs, add_id_element, add_optional_id_element, add_scalar_id_update,
+    add_text_element, bool_str, set_optional_bool_attr,
 };
 use crate::responses::{
     CreateTaskResponse, DeleteTaskResponse, GetTasksResponse, ModifyTaskResponse, MoveTaskResponse,
@@ -18,155 +18,6 @@ use crate::responses::{
 };
 use crate::types::{CollectionUpdate, EntityId, ScalarUpdate};
 use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
-
-/// Transitional options retained for audit creation until #660.
-#[derive(Debug, Clone, Default)]
-pub struct CreateTaskOpts {
-    /// Whether the task should be alterable.
-    pub alterable: Option<bool>,
-    /// Optional schedule identifier.
-    pub schedule_id: Option<EntityId>,
-    /// Alert identifiers associated with the request.
-    pub alert_ids: Vec<EntityId>,
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
-    pub schedule_periods: Option<u32>,
-    /// Observer names associated with the task.
-    pub observers: Vec<String>,
-    /// Observer group identifiers associated with the task.
-    pub observer_group_ids: Vec<EntityId>,
-    /// Preference key/value pairs to include.
-    pub preferences: Vec<(String, String)>,
-}
-
-/// Optional fields for `create_agent_group_task` requests.
-#[derive(Debug, Clone, Default)]
-pub struct CreateAgentGroupTaskOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Whether the task should be alterable.
-    pub alterable: Option<bool>,
-    /// Optional schedule identifier.
-    pub schedule_id: Option<EntityId>,
-    /// Alert identifiers associated with the request.
-    pub alert_ids: Vec<EntityId>,
-    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
-    pub schedule_periods: Option<u32>,
-    /// Observer names associated with the task.
-    pub observers: Vec<String>,
-    /// Observer group identifiers associated with the task.
-    pub observer_group_ids: Vec<EntityId>,
-    /// Preference key/value pairs to include.
-    pub preferences: Vec<(String, String)>,
-}
-
-/// Optional fields for `create_oci_image_target_task` requests.
-#[derive(Debug, Clone, Default)]
-pub struct CreateOciImageTargetTaskOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Whether the task should be alterable.
-    pub alterable: Option<bool>,
-    /// Optional schedule identifier.
-    pub schedule_id: Option<EntityId>,
-    /// Alert identifiers associated with the request.
-    pub alert_ids: Vec<EntityId>,
-    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
-    pub schedule_periods: Option<u32>,
-    /// Observer names associated with the task.
-    pub observers: Vec<String>,
-    /// Observer group identifiers associated with the task.
-    pub observer_group_ids: Vec<EntityId>,
-    /// Preference key/value pairs to include.
-    pub preferences: Vec<(String, String)>,
-}
-
-/// Optional fields for web application target `create_task` requests.
-#[derive(Debug, Clone, Default)]
-pub struct CreateWebApplicationTaskOpts {
-    /// Whether the task should be alterable.
-    pub alterable: Option<bool>,
-    /// Optional schedule identifier.
-    pub schedule_id: Option<EntityId>,
-    /// Alert identifiers associated with the request.
-    pub alert_ids: Vec<EntityId>,
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
-    pub schedule_periods: Option<u32>,
-    /// Observer names associated with the task.
-    pub observers: Vec<String>,
-    /// Observer group identifiers associated with the task.
-    pub observer_group_ids: Vec<EntityId>,
-    /// Preference key/value pairs to include.
-    pub preferences: Vec<(String, String)>,
-}
-
-/// Transitional options retained for audit listing until #660.
-#[derive(Debug, Clone, Default)]
-pub struct GetTasksOpts {
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-    /// Whether to query trashcan resources.
-    pub trash: Option<bool>,
-    /// Whether to request detailed output.
-    pub details: Option<bool>,
-    /// Whether to limit results to scheduled tasks.
-    pub schedules_only: Option<bool>,
-    /// Whether pagination should be ignored.
-    pub ignore_pagination: Option<bool>,
-}
-
-/// Transitional options retained for audit modification until #660.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyTaskOpts {
-    /// Optional resource name.
-    pub name: Option<String>,
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Whether the task should be alterable.
-    pub alterable: Option<bool>,
-    /// Schedule relationship update: omit, set, or detach.
-    pub schedule_id: ScalarUpdate<EntityId>,
-    /// Optional schedule period count.
-    pub schedule_periods: Option<u32>,
-    /// Optional target identifier.
-    pub target_id: Option<EntityId>,
-    /// Optional scan configuration identifier.
-    pub config_id: Option<EntityId>,
-    /// Optional scanner identifier.
-    pub scanner_id: Option<EntityId>,
-    /// Alert identifiers associated with the request.
-    pub alert_ids: Option<Vec<EntityId>>,
-    /// Observer-user update: omit, replace, or clear.
-    ///
-    /// An explicit clear emits an empty `<observers>` element, which gvmd
-    /// interprets as removing every user observer.
-    pub observers: CollectionUpdate<String>,
-    /// Observer-group update: omit, replace, or clear.
-    ///
-    /// gvmd accepts group children on `modify_task` even though the published
-    /// GMP grammar documents only observer-user text. Because opening the
-    /// shared `<observers>` container also updates the user list, a group
-    /// update requires [`Self::observers`] to explicitly replace or clear the
-    /// users. Clearing groups is encoded with gvmd's `group id="0"` sentinel.
-    pub observer_group_ids: CollectionUpdate<EntityId>,
-    /// Preference key/value pairs to include.
-    pub preferences: Vec<(String, String)>,
-}
-
-/// Errors raised while building a `modify_task` request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum ModifyTaskError {
-    /// A group update would otherwise clear users implicitly on gvmd.
-    #[error(
-        "updating task observer groups requires explicitly replacing or clearing observer users"
-    )]
-    ObserverGroupsWithoutUserUpdate,
-}
 
 /// A task preference assignment.
 ///
@@ -826,55 +677,42 @@ fn task_action_command(name: &'static str, task_id: &EntityId) -> XmlCommand {
     XmlCommand::new(name).attribute("task_id", task_id.as_str())
 }
 
-macro_rules! transitional_task_action_request {
-    ($request:ident, $response:ty, $builder:ident, $doc:literal) => {
-        #[doc = $doc]
-        #[derive(Debug, Clone)]
-        pub struct $request {
-            task_id: EntityId,
-        }
-
-        impl $request {
-            /// Create the task-action request.
-            #[must_use]
-            pub fn new(task_id: EntityId) -> Self {
-                Self { task_id }
-            }
-        }
-
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.task_id).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $request {
-            type Response = $response;
-        }
-    };
-}
-
 /// Semantic request for creating an import task.
 #[derive(Debug, Clone)]
 pub struct CreateImportTaskRequest {
-    name: String,
-    comment: Option<String>,
+    /// Import-task name.
+    pub name: String,
+    /// Optional import-task comment.
+    pub comment: Option<String>,
 }
 
 impl CreateImportTaskRequest {
     /// Create an import-task request.
     #[must_use]
-    pub fn new(name: impl Into<String>, comment: Option<String>) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            comment,
+            comment: None,
         }
     }
 }
 
-impl Request for CreateImportTaskRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_import_task(&self.name, self.comment.as_deref()).to_bytes()
+impl GmpRequestCodec for CreateImportTaskRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required_xml_text(&self.name, "name")?;
+        validate_optional_xml_text(self.comment.as_deref(), "comment")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_task",
+            "create_import_task",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(import_task_command(&self.name, self.comment.as_deref()).to_bytes())
     }
 }
 
@@ -885,24 +723,39 @@ impl GmpRequest for CreateImportTaskRequest {
 /// Semantic compatibility-alias request for creating a container/import task.
 #[derive(Debug, Clone)]
 pub struct CreateContainerTaskRequest {
-    name: String,
-    comment: Option<String>,
+    /// Container/import-task name.
+    pub name: String,
+    /// Optional container/import-task comment.
+    pub comment: Option<String>,
 }
 
 impl CreateContainerTaskRequest {
     /// Create a container/import-task request.
     #[must_use]
-    pub fn new(name: impl Into<String>, comment: Option<String>) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            comment,
+            comment: None,
         }
     }
 }
 
-impl Request for CreateContainerTaskRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_container_task(&self.name, self.comment.as_deref()).to_bytes()
+impl GmpRequestCodec for CreateContainerTaskRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required_xml_text(&self.name, "name")?;
+        validate_optional_xml_text(self.comment.as_deref(), "comment")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_task",
+            "create_container_task",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(import_task_command(&self.name, self.comment.as_deref()).to_bytes())
     }
 }
 
@@ -913,43 +766,94 @@ impl GmpRequest for CreateContainerTaskRequest {
 /// Semantic request for creating an agent-group scan task.
 #[derive(Debug, Clone)]
 pub struct CreateAgentGroupTaskRequest {
-    name: String,
-    agent_group_id: EntityId,
-    scanner_id: EntityId,
-    opts: CreateAgentGroupTaskOpts,
+    /// Task name.
+    pub name: String,
+    /// Agent-group relationship.
+    pub agent_group_id: EntityId,
+    /// Optional scanner relationship. When omitted, gvmd uses the scanner of
+    /// the agent group; when present, gvmd requires the two to match.
+    pub scanner_id: Option<EntityId>,
+    /// Optional task comment.
+    pub comment: Option<String>,
+    /// Whether the task is alterable.
+    pub alterable: Option<bool>,
+    /// Optional schedule relationship.
+    pub schedule_id: Option<EntityId>,
+    /// Number of scheduled runs, or zero for no limit.
+    pub schedule_periods: Option<u32>,
+    /// Alert relationships.
+    pub alert_ids: Vec<EntityId>,
+    /// Observer user names.
+    pub observers: Vec<String>,
+    /// Observer group relationships.
+    pub observer_group_ids: Vec<EntityId>,
+    /// Ordered scanner preference assignments.
+    pub preferences: Vec<TaskPreference>,
 }
 
 impl CreateAgentGroupTaskRequest {
     /// Create an agent-group task request.
     #[must_use]
-    pub fn new(
-        name: impl Into<String>,
-        agent_group_id: EntityId,
-        scanner_id: EntityId,
-        opts: CreateAgentGroupTaskOpts,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, agent_group_id: EntityId) -> Self {
         Self {
             name: name.into(),
             agent_group_id,
-            scanner_id,
-            opts,
+            scanner_id: None,
+            comment: None,
+            alterable: None,
+            schedule_id: None,
+            schedule_periods: None,
+            alert_ids: Vec::new(),
+            observers: Vec::new(),
+            observer_group_ids: Vec::new(),
+            preferences: Vec::new(),
         }
     }
 }
 
-impl Request for CreateAgentGroupTaskRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_agent_group_task(
+impl GmpRequestCodec for CreateAgentGroupTaskRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_specialized_task_common(
             &self.name,
-            &self.agent_group_id,
-            &self.scanner_id,
-            self.opts.clone(),
-        )
-        .to_bytes()
+            self.comment.as_deref(),
+            self.schedule_id.as_ref(),
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+            SpecializedPreferenceKind::Agent,
+        )?;
+        validate_relationship_id(&self.agent_group_id, "agent_group_id")?;
+        if let Some(scanner_id) = &self.scanner_id {
+            validate_relationship_id(scanner_id, "scanner_id")?;
+        }
+        Ok(())
     }
 
-    fn semantic_command_name(&self) -> Option<&'static str> {
-        Some("create_agent_group_task")
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_task",
+            "create_agent_group_task",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(specialized_task_command(
+            &self.name,
+            "agent_group",
+            &self.agent_group_id,
+            self.scanner_id.as_ref(),
+            self.comment.as_deref(),
+            self.alterable,
+            self.schedule_id.as_ref(),
+            self.schedule_periods,
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+        )
+        .to_bytes())
     }
 }
 
@@ -960,10 +864,28 @@ impl GmpRequest for CreateAgentGroupTaskRequest {
 /// Semantic request for creating an OCI image-target scan task.
 #[derive(Debug, Clone)]
 pub struct CreateOciImageTargetTaskRequest {
-    name: String,
-    oci_image_target_id: EntityId,
-    scanner_id: EntityId,
-    opts: CreateOciImageTargetTaskOpts,
+    /// Task name.
+    pub name: String,
+    /// OCI-image-target relationship.
+    pub oci_image_target_id: EntityId,
+    /// Container-image scanner relationship.
+    pub scanner_id: EntityId,
+    /// Optional task comment.
+    pub comment: Option<String>,
+    /// Whether the task is alterable.
+    pub alterable: Option<bool>,
+    /// Optional schedule relationship.
+    pub schedule_id: Option<EntityId>,
+    /// Number of scheduled runs, or zero for no limit.
+    pub schedule_periods: Option<u32>,
+    /// Alert relationships.
+    pub alert_ids: Vec<EntityId>,
+    /// Observer user names.
+    pub observers: Vec<String>,
+    /// Observer group relationships.
+    pub observer_group_ids: Vec<EntityId>,
+    /// Ordered scanner preference assignments.
+    pub preferences: Vec<TaskPreference>,
 }
 
 impl CreateOciImageTargetTaskRequest {
@@ -973,30 +895,63 @@ impl CreateOciImageTargetTaskRequest {
         name: impl Into<String>,
         oci_image_target_id: EntityId,
         scanner_id: EntityId,
-        opts: CreateOciImageTargetTaskOpts,
     ) -> Self {
         Self {
             name: name.into(),
             oci_image_target_id,
             scanner_id,
-            opts,
+            comment: None,
+            alterable: None,
+            schedule_id: None,
+            schedule_periods: None,
+            alert_ids: Vec::new(),
+            observers: Vec::new(),
+            observer_group_ids: Vec::new(),
+            preferences: Vec::new(),
         }
     }
 }
 
-impl Request for CreateOciImageTargetTaskRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_oci_image_target_task(
+impl GmpRequestCodec for CreateOciImageTargetTaskRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_specialized_task_common(
             &self.name,
-            &self.oci_image_target_id,
-            &self.scanner_id,
-            self.opts.clone(),
-        )
-        .to_bytes()
+            self.comment.as_deref(),
+            self.schedule_id.as_ref(),
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+            SpecializedPreferenceKind::Container,
+        )?;
+        validate_relationship_id(&self.oci_image_target_id, "oci_image_target_id")?;
+        validate_relationship_id(&self.scanner_id, "scanner_id")
     }
 
-    fn semantic_command_name(&self) -> Option<&'static str> {
-        Some("create_oci_image_target_task")
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_task",
+            "create_oci_image_target_task",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(specialized_task_command(
+            &self.name,
+            "oci_image_target",
+            &self.oci_image_target_id,
+            Some(&self.scanner_id),
+            self.comment.as_deref(),
+            self.alterable,
+            self.schedule_id.as_ref(),
+            self.schedule_periods,
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+        )
+        .to_bytes())
     }
 }
 
@@ -1007,10 +962,28 @@ impl GmpRequest for CreateOciImageTargetTaskRequest {
 /// Semantic compatibility-alias request for creating a container-image task.
 #[derive(Debug, Clone)]
 pub struct CreateContainerImageTaskRequest {
-    name: String,
-    oci_image_target_id: EntityId,
-    scanner_id: EntityId,
-    opts: CreateOciImageTargetTaskOpts,
+    /// Task name.
+    pub name: String,
+    /// OCI-image-target relationship.
+    pub oci_image_target_id: EntityId,
+    /// Container-image scanner relationship.
+    pub scanner_id: EntityId,
+    /// Optional task comment.
+    pub comment: Option<String>,
+    /// Whether the task is alterable.
+    pub alterable: Option<bool>,
+    /// Optional schedule relationship.
+    pub schedule_id: Option<EntityId>,
+    /// Number of scheduled runs, or zero for no limit.
+    pub schedule_periods: Option<u32>,
+    /// Alert relationships.
+    pub alert_ids: Vec<EntityId>,
+    /// Observer user names.
+    pub observers: Vec<String>,
+    /// Observer group relationships.
+    pub observer_group_ids: Vec<EntityId>,
+    /// Ordered scanner preference assignments.
+    pub preferences: Vec<TaskPreference>,
 }
 
 impl CreateContainerImageTaskRequest {
@@ -1020,30 +993,63 @@ impl CreateContainerImageTaskRequest {
         name: impl Into<String>,
         oci_image_target_id: EntityId,
         scanner_id: EntityId,
-        opts: CreateOciImageTargetTaskOpts,
     ) -> Self {
         Self {
             name: name.into(),
             oci_image_target_id,
             scanner_id,
-            opts,
+            comment: None,
+            alterable: None,
+            schedule_id: None,
+            schedule_periods: None,
+            alert_ids: Vec::new(),
+            observers: Vec::new(),
+            observer_group_ids: Vec::new(),
+            preferences: Vec::new(),
         }
     }
 }
 
-impl Request for CreateContainerImageTaskRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_container_image_task(
+impl GmpRequestCodec for CreateContainerImageTaskRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_specialized_task_common(
             &self.name,
-            &self.oci_image_target_id,
-            &self.scanner_id,
-            self.opts.clone(),
-        )
-        .to_bytes()
+            self.comment.as_deref(),
+            self.schedule_id.as_ref(),
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+            SpecializedPreferenceKind::Container,
+        )?;
+        validate_relationship_id(&self.oci_image_target_id, "oci_image_target_id")?;
+        validate_relationship_id(&self.scanner_id, "scanner_id")
     }
 
-    fn semantic_command_name(&self) -> Option<&'static str> {
-        Some("create_oci_image_target_task")
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_task",
+            "create_oci_image_target_task",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(specialized_task_command(
+            &self.name,
+            "oci_image_target",
+            &self.oci_image_target_id,
+            Some(&self.scanner_id),
+            self.comment.as_deref(),
+            self.alterable,
+            self.schedule_id.as_ref(),
+            self.schedule_periods,
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+        )
+        .to_bytes())
     }
 }
 
@@ -1054,10 +1060,28 @@ impl GmpRequest for CreateContainerImageTaskRequest {
 /// Semantic request for creating a web-application-target scan task.
 #[derive(Debug, Clone)]
 pub struct CreateWebApplicationTaskRequest {
-    name: String,
-    web_application_target_id: EntityId,
-    scanner_id: EntityId,
-    opts: CreateWebApplicationTaskOpts,
+    /// Task name.
+    pub name: String,
+    /// Web-application-target relationship.
+    pub web_application_target_id: EntityId,
+    /// Web-application scanner relationship.
+    pub scanner_id: EntityId,
+    /// Optional task comment.
+    pub comment: Option<String>,
+    /// Whether the task is alterable.
+    pub alterable: Option<bool>,
+    /// Optional schedule relationship.
+    pub schedule_id: Option<EntityId>,
+    /// Number of scheduled runs, or zero for no limit.
+    pub schedule_periods: Option<u32>,
+    /// Alert relationships.
+    pub alert_ids: Vec<EntityId>,
+    /// Observer user names.
+    pub observers: Vec<String>,
+    /// Observer group relationships.
+    pub observer_group_ids: Vec<EntityId>,
+    /// Ordered scanner preference assignments.
+    pub preferences: Vec<TaskPreference>,
 }
 
 impl CreateWebApplicationTaskRequest {
@@ -1067,30 +1091,63 @@ impl CreateWebApplicationTaskRequest {
         name: impl Into<String>,
         web_application_target_id: EntityId,
         scanner_id: EntityId,
-        opts: CreateWebApplicationTaskOpts,
     ) -> Self {
         Self {
             name: name.into(),
             web_application_target_id,
             scanner_id,
-            opts,
+            comment: None,
+            alterable: None,
+            schedule_id: None,
+            schedule_periods: None,
+            alert_ids: Vec::new(),
+            observers: Vec::new(),
+            observer_group_ids: Vec::new(),
+            preferences: Vec::new(),
         }
     }
 }
 
-impl Request for CreateWebApplicationTaskRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_web_application_task(
+impl GmpRequestCodec for CreateWebApplicationTaskRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_specialized_task_common(
             &self.name,
-            &self.web_application_target_id,
-            &self.scanner_id,
-            self.opts.clone(),
-        )
-        .to_bytes()
+            self.comment.as_deref(),
+            self.schedule_id.as_ref(),
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+            SpecializedPreferenceKind::WebApplication,
+        )?;
+        validate_relationship_id(&self.web_application_target_id, "web_application_target_id")?;
+        validate_relationship_id(&self.scanner_id, "scanner_id")
     }
 
-    fn semantic_command_name(&self) -> Option<&'static str> {
-        Some("create_web_application_task")
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_task",
+            "create_web_application_task",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(specialized_task_command(
+            &self.name,
+            "web_application_target",
+            &self.web_application_target_id,
+            Some(&self.scanner_id),
+            self.comment.as_deref(),
+            self.alterable,
+            self.schedule_id.as_ref(),
+            self.schedule_periods,
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+        )
+        .to_bytes())
     }
 }
 
@@ -1098,24 +1155,57 @@ impl GmpRequest for CreateWebApplicationTaskRequest {
     type Response = CreateTaskResponse;
 }
 
-/// Semantic request for moving a task to or from a remote slave.
+/// Destination for a task move.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskMoveDestination {
+    /// Move the task back to gvmd's default master scanner.
+    Master,
+    /// Move the task to this slave scanner.
+    Slave(EntityId),
+}
+
+/// Semantic request for moving a task to a slave scanner or back to the master.
 #[derive(Debug, Clone)]
 pub struct MoveTaskRequest {
-    task_id: EntityId,
-    slave_id: Option<EntityId>,
+    /// Task identifier to move.
+    pub task_id: EntityId,
+    /// Final scanner destination.
+    pub destination: TaskMoveDestination,
 }
 
 impl MoveTaskRequest {
     /// Create a task-move request.
     #[must_use]
-    pub fn new(task_id: EntityId, slave_id: Option<EntityId>) -> Self {
-        Self { task_id, slave_id }
+    pub fn new(task_id: EntityId, destination: TaskMoveDestination) -> Self {
+        Self {
+            task_id,
+            destination,
+        }
     }
 }
 
-impl Request for MoveTaskRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        move_task(&self.task_id, self.slave_id.as_ref()).to_bytes()
+impl GmpRequestCodec for MoveTaskRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if let TaskMoveDestination::Slave(scanner_id) = &self.destination {
+            validate_relationship_id(scanner_id, "destination")?;
+        }
+        Ok(())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("move_task"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let destination = match &self.destination {
+            TaskMoveDestination::Master => "",
+            TaskMoveDestination::Slave(scanner_id) => scanner_id.as_str(),
+        };
+        Ok(XmlCommand::new("move_task")
+            .attribute("task_id", self.task_id.as_str())
+            .attribute("slave_id", destination)
+            .to_bytes())
     }
 }
 
@@ -1126,20 +1216,42 @@ impl GmpRequest for MoveTaskRequest {
 /// Semantic request for listing audit tasks.
 #[derive(Debug, Clone, Default)]
 pub struct GetAuditsRequest {
-    opts: GetTasksOpts,
+    /// Optional inline filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether to query trashcan audits.
+    pub trash: Option<bool>,
+    /// Whether to request detailed output.
+    pub details: Option<bool>,
+    /// Whether to limit results to scheduled audits.
+    pub schedules_only: Option<bool>,
+    /// Whether pagination should be ignored.
+    pub ignore_pagination: Option<bool>,
 }
 
-impl GetAuditsRequest {
-    /// Create an audit-list request.
-    #[must_use]
-    pub fn new(opts: GetTasksOpts) -> Self {
-        Self { opts }
+impl GmpRequestCodec for GetAuditsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_xml_text(self.filter_string.as_deref(), "filter_string")
     }
-}
 
-impl Request for GetAuditsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_audits(self.opts.clone()).to_bytes()
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_tasks", "get_audits"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut cmd = XmlCommand::new("get_tasks").attribute("usage_type", "audit");
+        add_filter_attrs(
+            &mut cmd,
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        );
+        set_optional_bool_attr(&mut cmd, "trash", self.trash);
+        set_optional_bool_attr(&mut cmd, "details", self.details);
+        set_optional_bool_attr(&mut cmd, "schedules_only", self.schedules_only);
+        set_optional_bool_attr(&mut cmd, "ignore_pagination", self.ignore_pagination);
+        Ok(cmd.to_bytes())
     }
 }
 
@@ -1150,11 +1262,30 @@ impl GmpRequest for GetAuditsRequest {
 /// Semantic request for creating an audit task.
 #[derive(Debug, Clone)]
 pub struct CreateAuditRequest {
-    name: String,
-    config_id: EntityId,
-    target_id: EntityId,
-    scanner_id: EntityId,
-    opts: CreateTaskOpts,
+    /// Audit name.
+    pub name: String,
+    /// Audit-policy relationship, encoded as gvmd's `config` element.
+    pub policy_id: EntityId,
+    /// Target relationship.
+    pub target_id: EntityId,
+    /// Scanner relationship.
+    pub scanner_id: EntityId,
+    /// Optional audit comment.
+    pub comment: Option<String>,
+    /// Whether the audit is alterable.
+    pub alterable: Option<bool>,
+    /// Optional schedule relationship.
+    pub schedule_id: Option<EntityId>,
+    /// Number of scheduled runs, or zero for no limit.
+    pub schedule_periods: Option<u32>,
+    /// Alert relationships.
+    pub alert_ids: Vec<EntityId>,
+    /// Observer user names.
+    pub observers: Vec<String>,
+    /// Observer group relationships.
+    pub observer_group_ids: Vec<EntityId>,
+    /// Ordered scanner preference assignments.
+    pub preferences: Vec<TaskPreference>,
 }
 
 impl CreateAuditRequest {
@@ -1162,31 +1293,70 @@ impl CreateAuditRequest {
     #[must_use]
     pub fn new(
         name: impl Into<String>,
-        config_id: EntityId,
+        policy_id: EntityId,
         target_id: EntityId,
         scanner_id: EntityId,
-        opts: CreateTaskOpts,
     ) -> Self {
         Self {
             name: name.into(),
-            config_id,
+            policy_id,
             target_id,
             scanner_id,
-            opts,
+            comment: None,
+            alterable: None,
+            schedule_id: None,
+            schedule_periods: None,
+            alert_ids: Vec::new(),
+            observers: Vec::new(),
+            observer_group_ids: Vec::new(),
+            preferences: Vec::new(),
         }
     }
 }
 
-impl Request for CreateAuditRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_audit(
-            &self.name,
-            &self.config_id,
-            &self.target_id,
-            &self.scanner_id,
-            self.opts.clone(),
-        )
-        .to_bytes()
+impl GmpRequestCodec for CreateAuditRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required_xml_text(&self.name, "name")?;
+        validate_optional_xml_text(self.comment.as_deref(), "comment")?;
+        validate_relationship_id(&self.policy_id, "policy_id")?;
+        validate_relationship_id(&self.target_id, "target_id")?;
+        validate_relationship_id(&self.scanner_id, "scanner_id")?;
+        if let Some(schedule_id) = &self.schedule_id {
+            validate_relationship_id(schedule_id, "schedule_id")?;
+        }
+        validate_relationship_ids(&self.alert_ids, "alert_ids")?;
+        validate_observer_names(&self.observers)?;
+        validate_relationship_ids(&self.observer_group_ids, "observer_group_ids")?;
+        validate_preferences(&self.preferences)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_task",
+            "create_audit",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut cmd = XmlCommand::new("create_task");
+        cmd.add_element_with_text("name", &self.name);
+        cmd.add_element_with_text("usage_type", UsageType::Audit.as_gmp_str());
+        add_id_element(&mut cmd, "config", &self.policy_id);
+        add_id_element(&mut cmd, "target", &self.target_id);
+        add_id_element(&mut cmd, "scanner", &self.scanner_id);
+        add_task_create_values(
+            &mut cmd,
+            self.comment.as_deref(),
+            self.alterable,
+            self.schedule_id.as_ref(),
+            self.schedule_periods,
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+        );
+        Ok(cmd.to_bytes())
     }
 }
 
@@ -1194,40 +1364,187 @@ impl GmpRequest for CreateAuditRequest {
     type Response = CreateTaskResponse;
 }
 
-transitional_task_action_request!(
-    GetAuditRequest,
-    GetTasksResponse,
-    get_audit,
-    "Semantic request for one detailed audit task."
-);
-transitional_task_action_request!(
-    CloneAuditRequest,
-    CreateTaskResponse,
-    clone_audit,
-    "Semantic request for cloning an audit task."
-);
+/// Semantic request for one detailed audit task.
+#[derive(Debug, Clone)]
+pub struct GetAuditRequest {
+    /// Audit identifier to retrieve.
+    pub audit_id: EntityId,
+}
+
+impl GetAuditRequest {
+    /// Create a detailed single-audit request.
+    #[must_use]
+    pub fn new(audit_id: EntityId) -> Self {
+        Self { audit_id }
+    }
+}
+
+impl GmpRequestCodec for GetAuditRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_tasks", "get_audit"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("get_tasks")
+            .attribute("task_id", self.audit_id.as_str())
+            .attribute("usage_type", UsageType::Audit.as_gmp_str())
+            .attribute("details", "1")
+            .to_bytes())
+    }
+}
+
+impl GmpRequest for GetAuditRequest {
+    type Response = GetTasksResponse;
+}
+
+/// Semantic request for cloning an audit task.
+#[derive(Debug, Clone)]
+pub struct CloneAuditRequest {
+    /// Existing audit identifier to copy.
+    pub audit_id: EntityId,
+    /// Optional non-empty comment override. Empty and omitted comments inherit.
+    pub comment: Option<String>,
+    /// Optional alterable override.
+    pub alterable: Option<bool>,
+}
+
+impl CloneAuditRequest {
+    /// Create an audit-clone request.
+    #[must_use]
+    pub fn new(audit_id: EntityId) -> Self {
+        Self {
+            audit_id,
+            comment: None,
+            alterable: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for CloneAuditRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_xml_text(self.comment.as_deref(), "comment")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("create_task", "clone_audit"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut cmd = XmlCommand::new("create_task");
+        add_text_element(&mut cmd, "comment", self.comment.as_deref());
+        cmd.add_element_with_text("copy", self.audit_id.as_str());
+        if let Some(alterable) = self.alterable {
+            cmd.add_element_with_text("alterable", bool_str(alterable));
+        }
+        Ok(cmd.to_bytes())
+    }
+}
+
+impl GmpRequest for CloneAuditRequest {
+    type Response = CreateTaskResponse;
+}
 
 /// Semantic request for modifying an audit task.
 #[derive(Debug, Clone)]
 pub struct ModifyAuditRequest {
-    task_id: EntityId,
-    opts: ModifyTaskOpts,
+    /// Audit identifier to modify.
+    pub audit_id: EntityId,
+    /// Optional non-empty replacement name.
+    pub name: Option<String>,
+    /// Optional comment replacement; an empty value clears the comment.
+    pub comment: Option<String>,
+    /// Whether the audit is alterable.
+    pub alterable: Option<bool>,
+    /// Schedule update: preserve, set/replace, or detach.
+    pub schedule_id: ScalarUpdate<EntityId>,
+    /// Schedule-period update. With a schedule set/clear, omission resets to zero.
+    pub schedule_periods: Option<u32>,
+    /// Optional target replacement.
+    pub target_id: Option<EntityId>,
+    /// Optional policy replacement, encoded as gvmd's `config` element.
+    pub policy_id: Option<EntityId>,
+    /// Optional scanner replacement.
+    pub scanner_id: Option<EntityId>,
+    /// Alert update: preserve, replace, or clear.
+    pub alert_ids: CollectionUpdate<EntityId>,
+    /// Observer-user update: preserve, replace, or clear.
+    pub observers: CollectionUpdate<String>,
+    /// Observer-group update: preserve, replace, or clear.
+    ///
+    /// A group update requires an explicit user replacement or clear because
+    /// opening gvmd's shared `<observers>` container otherwise clears users.
+    pub observer_group_ids: CollectionUpdate<EntityId>,
+    /// Ordered scanner preference assignments.
+    pub preferences: Vec<TaskPreference>,
 }
 
 impl ModifyAuditRequest {
-    /// Validate and create an audit-modification request.
-    ///
-    /// # Errors
-    /// Returns the same construction errors as [`modify_audit`].
-    pub fn new(task_id: EntityId, opts: ModifyTaskOpts) -> Result<Self, ModifyTaskError> {
-        validate_modify_task_opts(&opts)?;
-        Ok(Self { task_id, opts })
+    /// Create an audit-modification request with no field updates.
+    #[must_use]
+    pub fn new(audit_id: EntityId) -> Self {
+        Self {
+            audit_id,
+            name: None,
+            comment: None,
+            alterable: None,
+            schedule_id: ScalarUpdate::Omitted,
+            schedule_periods: None,
+            target_id: None,
+            policy_id: None,
+            scanner_id: None,
+            alert_ids: CollectionUpdate::Omitted,
+            observers: CollectionUpdate::Omitted,
+            observer_group_ids: CollectionUpdate::Omitted,
+            preferences: Vec::new(),
+        }
     }
 }
 
-impl Request for ModifyAuditRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_task_with_usage(&self.task_id, self.opts.clone(), Some(UsageType::Audit)).to_bytes()
+impl GmpRequestCodec for ModifyAuditRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_task_update_values(
+            self.name.as_deref(),
+            self.comment.as_deref(),
+            &self.schedule_id,
+            self.target_id.as_ref(),
+            self.policy_id.as_ref(),
+            self.scanner_id.as_ref(),
+            &self.alert_ids,
+            &self.observers,
+            &self.observer_group_ids,
+            &self.preferences,
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "modify_task",
+            "modify_audit",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut cmd = XmlCommand::new("modify_task").attribute("task_id", self.audit_id.as_str());
+        add_text_element(&mut cmd, "name", self.name.as_deref());
+        if let Some(comment) = self.comment.as_deref() {
+            cmd.add_element_with_text("comment", comment);
+        }
+        if let Some(alterable) = self.alterable {
+            cmd.add_element_with_text("alterable", bool_str(alterable));
+        }
+        add_scalar_id_update(&mut cmd, "schedule", &self.schedule_id);
+        if let Some(schedule_periods) = self.schedule_periods {
+            cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
+        }
+        add_optional_id_element(&mut cmd, "target", self.target_id.as_ref());
+        add_optional_id_element(&mut cmd, "config", self.policy_id.as_ref());
+        add_optional_id_element(&mut cmd, "scanner", self.scanner_id.as_ref());
+        add_task_alert_update(&mut cmd, &self.alert_ids);
+        add_task_observer_update(&mut cmd, &self.observers, &self.observer_group_ids);
+        add_task_preferences(&mut cmd, &self.preferences);
+        Ok(cmd.to_bytes())
     }
 }
 
@@ -1235,34 +1552,134 @@ impl GmpRequest for ModifyAuditRequest {
     type Response = ModifyTaskResponse;
 }
 
-transitional_task_action_request!(
-    DeleteAuditRequest,
-    DeleteTaskResponse,
-    delete_audit,
-    "Semantic request for deleting an audit task."
-);
-transitional_task_action_request!(
-    StartAuditRequest,
-    StartTaskResponse,
-    start_audit,
-    "Semantic request for starting an audit task."
-);
-transitional_task_action_request!(
-    StopAuditRequest,
-    StopTaskResponse,
-    stop_audit,
-    "Semantic request for stopping an audit task."
-);
-transitional_task_action_request!(
-    ResumeAuditRequest,
-    ResumeTaskResponse,
-    resume_audit,
-    "Semantic request for resuming an audit task."
-);
+/// Semantic request for deleting an audit task.
+#[derive(Debug, Clone)]
+pub struct DeleteAuditRequest {
+    /// Audit identifier to delete.
+    pub audit_id: EntityId,
+    /// Whether to delete permanently instead of moving to trash.
+    pub ultimate: bool,
+}
 
-/// Build a `create_task` request for an import task.
-#[must_use]
-pub fn create_import_task(name: &str, comment: Option<&str>) -> impl Request {
+impl DeleteAuditRequest {
+    /// Create an audit-deletion request.
+    #[must_use]
+    pub fn new(audit_id: EntityId, ultimate: bool) -> Self {
+        Self { audit_id, ultimate }
+    }
+}
+
+impl GmpRequestCodec for DeleteAuditRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "delete_task",
+            "delete_audit",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("delete_task")
+            .attribute("task_id", self.audit_id.as_str())
+            .attribute("ultimate", bool_str(self.ultimate))
+            .to_bytes())
+    }
+}
+
+impl GmpRequest for DeleteAuditRequest {
+    type Response = DeleteTaskResponse;
+}
+
+/// Semantic request for starting an audit task.
+#[derive(Debug, Clone)]
+pub struct StartAuditRequest {
+    /// Audit identifier to start.
+    pub audit_id: EntityId,
+}
+
+impl StartAuditRequest {
+    /// Create an audit-start request.
+    #[must_use]
+    pub fn new(audit_id: EntityId) -> Self {
+        Self { audit_id }
+    }
+}
+
+impl GmpRequestCodec for StartAuditRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("start_task", "start_audit"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(task_action_command("start_task", &self.audit_id).to_bytes())
+    }
+}
+
+impl GmpRequest for StartAuditRequest {
+    type Response = StartTaskResponse;
+}
+
+/// Semantic request for stopping an audit task.
+#[derive(Debug, Clone)]
+pub struct StopAuditRequest {
+    /// Audit identifier to stop.
+    pub audit_id: EntityId,
+}
+
+impl StopAuditRequest {
+    /// Create an audit-stop request.
+    #[must_use]
+    pub fn new(audit_id: EntityId) -> Self {
+        Self { audit_id }
+    }
+}
+
+impl GmpRequestCodec for StopAuditRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("stop_task", "stop_audit"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(task_action_command("stop_task", &self.audit_id).to_bytes())
+    }
+}
+
+impl GmpRequest for StopAuditRequest {
+    type Response = StopTaskResponse;
+}
+
+/// Semantic request for resuming an audit task.
+#[derive(Debug, Clone)]
+pub struct ResumeAuditRequest {
+    /// Audit identifier to resume.
+    pub audit_id: EntityId,
+}
+
+impl ResumeAuditRequest {
+    /// Create an audit-resume request.
+    #[must_use]
+    pub fn new(audit_id: EntityId) -> Self {
+        Self { audit_id }
+    }
+}
+
+impl GmpRequestCodec for ResumeAuditRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "resume_task",
+            "resume_audit",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(task_action_command("resume_task", &self.audit_id).to_bytes())
+    }
+}
+
+impl GmpRequest for ResumeAuditRequest {
+    type Response = ResumeTaskResponse;
+}
+
+fn import_task_command(name: &str, comment: Option<&str>) -> XmlCommand {
     let mut cmd = XmlCommand::new("create_task");
     cmd.add_element_with_text("name", name);
     cmd.add_element("target").set_attribute("id", "0");
@@ -1270,211 +1687,197 @@ pub fn create_import_task(name: &str, comment: Option<&str>) -> impl Request {
     cmd
 }
 
-/// Build a `create_task` request for an import task.
-///
-/// This is a compatibility alias for [`create_import_task`].
-#[must_use]
-pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request {
-    create_import_task(name, comment)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpecializedPreferenceKind {
+    Agent,
+    Container,
+    WebApplication,
 }
 
-/// Build a `create_task` request for an agent-group scan task.
-#[must_use]
-pub fn create_agent_group_task(
+#[allow(clippy::too_many_arguments)]
+fn validate_specialized_task_common(
     name: &str,
-    agent_group_id: &EntityId,
-    scanner_id: &EntityId,
-    opts: CreateAgentGroupTaskOpts,
-) -> impl Request {
-    let mut cmd = XmlCommand::new("create_task");
-    cmd.add_element_with_text("name", name);
-    cmd.add_element_with_text("usage_type", UsageType::Scan.as_gmp_str());
-    add_id_element(&mut cmd, "agent_group", agent_group_id);
-    add_id_element(&mut cmd, "scanner", scanner_id);
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(alterable) = opts.alterable {
-        cmd.add_element_with_text("alterable", bool_str(alterable));
+    comment: Option<&str>,
+    schedule_id: Option<&EntityId>,
+    alert_ids: &[EntityId],
+    observers: &[String],
+    observer_group_ids: &[EntityId],
+    preferences: &[TaskPreference],
+    kind: SpecializedPreferenceKind,
+) -> Result<(), GmpRequestError> {
+    validate_required_xml_text(name, "name")?;
+    validate_optional_xml_text(comment, "comment")?;
+    if let Some(schedule_id) = schedule_id {
+        validate_relationship_id(schedule_id, "schedule_id")?;
     }
-    for alert_id in &opts.alert_ids {
-        add_id_element(&mut cmd, "alert", alert_id);
-    }
-    if let Some(schedule_id) = opts.schedule_id.as_ref() {
-        add_id_element(&mut cmd, "schedule", schedule_id);
-        if let Some(schedule_periods) = opts.schedule_periods {
-            cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
+    validate_relationship_ids(alert_ids, "alert_ids")?;
+    validate_observer_names(observers)?;
+    validate_relationship_ids(observer_group_ids, "observer_group_ids")?;
+    validate_preferences(preferences)?;
+    for preference in preferences {
+        if matches!(
+            kind,
+            SpecializedPreferenceKind::Container | SpecializedPreferenceKind::WebApplication
+        ) && preference.name == "in_assets"
+        {
+            return Err(GmpRequestError::invalid_field(
+                "preferences.value",
+                "in_assets is not supported by this task scanner type",
+            ));
         }
-    }
-    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
-    add_preferences(&mut cmd, &opts.preferences);
-    cmd
-}
-
-/// Build a `create_task` request for an OCI image target scan task.
-#[must_use]
-pub fn create_oci_image_target_task(
-    name: &str,
-    oci_image_target_id: &EntityId,
-    scanner_id: &EntityId,
-    opts: CreateOciImageTargetTaskOpts,
-) -> impl Request {
-    let mut cmd = XmlCommand::new("create_task");
-    cmd.add_element_with_text("name", name);
-    cmd.add_element_with_text("usage_type", UsageType::Scan.as_gmp_str());
-    add_id_element(&mut cmd, "oci_image_target", oci_image_target_id);
-    add_id_element(&mut cmd, "scanner", scanner_id);
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(alterable) = opts.alterable {
-        cmd.add_element_with_text("alterable", bool_str(alterable));
-    }
-    for alert_id in &opts.alert_ids {
-        add_id_element(&mut cmd, "alert", alert_id);
-    }
-    if let Some(schedule_id) = opts.schedule_id.as_ref() {
-        add_id_element(&mut cmd, "schedule", schedule_id);
-        if let Some(schedule_periods) = opts.schedule_periods {
-            cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
+        if kind == SpecializedPreferenceKind::WebApplication
+            && preference.name == "scan_mode"
+            && !matches!(preference.value.as_str(), "active" | "safe")
+        {
+            return Err(GmpRequestError::invalid_field(
+                "preferences.value",
+                "scan_mode must be active or safe",
+            ));
         }
-    }
-    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
-    add_preferences(&mut cmd, &opts.preferences);
-    cmd
-}
-
-/// Build a `create_task` request for an OCI image target scan task.
-///
-/// This compatibility alias uses python-gvm's historic "container image"
-/// helper name for the same GMP Next OCI image target task shape.
-#[must_use]
-pub fn create_container_image_task(
-    name: &str,
-    oci_image_target_id: &EntityId,
-    scanner_id: &EntityId,
-    opts: CreateOciImageTargetTaskOpts,
-) -> impl Request {
-    create_oci_image_target_task(name, oci_image_target_id, scanner_id, opts)
-}
-
-fn create_task_with_usage(
-    name: &str,
-    config_id: &EntityId,
-    target_id: &EntityId,
-    scanner_id: &EntityId,
-    opts: CreateTaskOpts,
-    usage_type: UsageType,
-) -> XmlCommand {
-    let mut cmd = XmlCommand::new("create_task");
-    cmd.add_element_with_text("name", name);
-    cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
-    add_id_element(&mut cmd, "config", config_id);
-    add_id_element(&mut cmd, "target", target_id);
-    add_id_element(&mut cmd, "scanner", scanner_id);
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(alterable) = opts.alterable {
-        cmd.add_element_with_text("alterable", bool_str(alterable));
-    }
-    add_optional_id_element(&mut cmd, "schedule", opts.schedule_id.as_ref());
-    if let Some(schedule_periods) = opts.schedule_periods {
-        cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
-    }
-    for alert_id in &opts.alert_ids {
-        add_id_element(&mut cmd, "alert", alert_id);
-    }
-    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
-    add_preferences(&mut cmd, &opts.preferences);
-    cmd
-}
-
-/// Build a `create_task` request for a web application target.
-#[must_use]
-pub fn create_web_application_task(
-    name: &str,
-    web_application_target_id: &EntityId,
-    scanner_id: &EntityId,
-    opts: CreateWebApplicationTaskOpts,
-) -> impl Request {
-    let mut cmd = XmlCommand::new("create_task");
-    cmd.add_element_with_text("name", name);
-    cmd.add_element_with_text("usage_type", UsageType::Scan.as_gmp_str());
-    add_id_element(
-        &mut cmd,
-        "web_application_target",
-        web_application_target_id,
-    );
-    add_id_element(&mut cmd, "scanner", scanner_id);
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(alterable) = opts.alterable {
-        cmd.add_element_with_text("alterable", bool_str(alterable));
-    }
-    for alert_id in &opts.alert_ids {
-        add_id_element(&mut cmd, "alert", alert_id);
-    }
-    if let Some(schedule_id) = opts.schedule_id.as_ref() {
-        add_id_element(&mut cmd, "schedule", schedule_id);
-        if let Some(schedule_periods) = opts.schedule_periods {
-            cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
+        if kind == SpecializedPreferenceKind::WebApplication
+            && preference.name == "ajax_spider_timeout"
+            && preference.value.parse::<i64>().is_err()
+        {
+            return Err(GmpRequestError::invalid_field(
+                "preferences.value",
+                "ajax_spider_timeout must be a non-negative integer",
+            ));
         }
-    }
-    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
-    add_preferences(&mut cmd, &opts.preferences);
-    cmd
-}
-
-fn get_tasks_with_usage(opts: GetTasksOpts, usage_type: UsageType) -> XmlCommand {
-    let mut cmd = XmlCommand::new("get_tasks").attribute("usage_type", usage_type.as_gmp_str());
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    set_optional_bool_attr(&mut cmd, "schedules_only", opts.schedules_only);
-    set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
-    cmd
-}
-
-fn validate_modify_task_opts(opts: &ModifyTaskOpts) -> Result<(), ModifyTaskError> {
-    if !matches!(opts.observer_group_ids, CollectionUpdate::Omitted)
-        && matches!(opts.observers, CollectionUpdate::Omitted)
-    {
-        return Err(ModifyTaskError::ObserverGroupsWithoutUserUpdate);
+        if kind == SpecializedPreferenceKind::WebApplication
+            && preference.name == "ajax_spider_timeout"
+            && preference.value.parse::<i64>().is_ok_and(|value| value < 0)
+        {
+            return Err(GmpRequestError::invalid_field(
+                "preferences.value",
+                "ajax_spider_timeout must be a non-negative integer",
+            ));
+        }
     }
     Ok(())
 }
 
-fn modify_task_with_usage(
-    task_id: &EntityId,
-    opts: ModifyTaskOpts,
-    usage_type: Option<UsageType>,
+#[allow(clippy::too_many_arguments)]
+fn specialized_task_command(
+    name: &str,
+    target_element: &'static str,
+    target_id: &EntityId,
+    scanner_id: Option<&EntityId>,
+    comment: Option<&str>,
+    alterable: Option<bool>,
+    schedule_id: Option<&EntityId>,
+    schedule_periods: Option<u32>,
+    alert_ids: &[EntityId],
+    observers: &[String],
+    observer_group_ids: &[EntityId],
+    preferences: &[TaskPreference],
 ) -> XmlCommand {
-    let mut cmd = XmlCommand::new("modify_task").attribute("task_id", task_id.as_str());
-    add_text_element(&mut cmd, "name", opts.name.as_deref());
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(usage_type) = usage_type {
-        cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
-    }
-    if let Some(alterable) = opts.alterable {
+    let mut cmd = XmlCommand::new("create_task");
+    cmd.add_element_with_text("name", name);
+    cmd.add_element_with_text("usage_type", UsageType::Scan.as_gmp_str());
+    add_id_element(&mut cmd, target_element, target_id);
+    add_optional_id_element(&mut cmd, "scanner", scanner_id);
+    add_task_create_values(
+        &mut cmd,
+        comment,
+        alterable,
+        schedule_id,
+        schedule_periods,
+        alert_ids,
+        observers,
+        observer_group_ids,
+        preferences,
+    );
+    cmd
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_task_create_values(
+    cmd: &mut XmlCommand,
+    comment: Option<&str>,
+    alterable: Option<bool>,
+    schedule_id: Option<&EntityId>,
+    schedule_periods: Option<u32>,
+    alert_ids: &[EntityId],
+    observers: &[String],
+    observer_group_ids: &[EntityId],
+    preferences: &[TaskPreference],
+) {
+    add_text_element(cmd, "comment", comment);
+    if let Some(alterable) = alterable {
         cmd.add_element_with_text("alterable", bool_str(alterable));
     }
-    add_scalar_id_update(&mut cmd, "schedule", &opts.schedule_id);
-    if let Some(schedule_periods) = opts.schedule_periods {
+    add_optional_id_element(cmd, "schedule", schedule_id);
+    if let Some(schedule_periods) = schedule_periods {
         cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
     }
-    add_optional_id_element(&mut cmd, "target", opts.target_id.as_ref());
-    add_optional_id_element(&mut cmd, "config", opts.config_id.as_ref());
-    add_optional_id_element(&mut cmd, "scanner", opts.scanner_id.as_ref());
-    if let Some(alert_ids) = opts.alert_ids.as_ref() {
-        if alert_ids.is_empty() {
-            cmd.add_element("alert").set_attribute("id", "0");
-        } else {
-            for alert_id in alert_ids {
-                add_id_element(&mut cmd, "alert", alert_id);
-            }
+    for alert_id in alert_ids {
+        add_id_element(cmd, "alert", alert_id);
+    }
+    add_task_observers(cmd, observers, observer_group_ids);
+    add_task_preferences(cmd, preferences);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_task_update_values(
+    name: Option<&str>,
+    comment: Option<&str>,
+    schedule_id: &ScalarUpdate<EntityId>,
+    target_id: Option<&EntityId>,
+    config_id: Option<&EntityId>,
+    scanner_id: Option<&EntityId>,
+    alert_ids: &CollectionUpdate<EntityId>,
+    observers: &CollectionUpdate<String>,
+    observer_group_ids: &CollectionUpdate<EntityId>,
+    preferences: &[TaskPreference],
+) -> Result<(), GmpRequestError> {
+    if let Some(name) = name {
+        validate_required_xml_text(name, "name")?;
+    }
+    validate_optional_xml_text(comment, "comment")?;
+    if let ScalarUpdate::Set(schedule_id) = schedule_id {
+        validate_relationship_id(schedule_id, "schedule_id")?;
+    }
+    for (id, field) in [
+        (target_id, "target_id"),
+        (config_id, "config_id"),
+        (scanner_id, "scanner_id"),
+    ] {
+        if let Some(id) = id {
+            validate_relationship_id(id, field)?;
         }
     }
-    add_task_observer_update(&mut cmd, &opts.observers, &opts.observer_group_ids);
-    add_preferences(&mut cmd, &opts.preferences);
-    cmd
+    if let CollectionUpdate::Replace(alert_ids) = alert_ids {
+        validate_relationship_ids(alert_ids, "alert_ids")?;
+    }
+    if let CollectionUpdate::Replace(observers) = observers {
+        validate_observer_names(observers)?;
+    }
+    if let CollectionUpdate::Replace(group_ids) = observer_group_ids {
+        validate_relationship_ids(group_ids, "observer_group_ids")?;
+    }
+    if !matches!(observer_group_ids, CollectionUpdate::Omitted)
+        && matches!(observers, CollectionUpdate::Omitted)
+    {
+        return Err(GmpRequestError::invalid_combination(
+            &["observers", "observer_group_ids"],
+            "observer-group updates require an explicit observer-user replacement or clear",
+        ));
+    }
+    validate_preferences(preferences)
+}
+
+fn add_task_alert_update(cmd: &mut XmlCommand, alert_ids: &CollectionUpdate<EntityId>) {
+    match alert_ids {
+        CollectionUpdate::Omitted => {}
+        CollectionUpdate::Replace(alert_ids) if !alert_ids.is_empty() => {
+            for alert_id in alert_ids {
+                add_id_element(cmd, "alert", alert_id);
+            }
+        }
+        CollectionUpdate::Replace(_) | CollectionUpdate::Clear => {
+            cmd.add_element("alert").set_attribute("id", "0");
+        }
+    }
 }
 
 fn add_task_observers(cmd: &mut XmlCommand, observers: &[String], observer_group_ids: &[EntityId]) {
@@ -1529,103 +1932,9 @@ fn add_task_observer_update(
     }
 }
 
-/// Build a `move_task` request.
-#[must_use]
-pub fn move_task(task_id: &EntityId, slave_id: Option<&EntityId>) -> impl Request {
-    let mut cmd = XmlCommand::new("move_task").attribute("task_id", task_id.as_str());
-    if let Some(slave_id) = slave_id {
-        cmd.set_attribute("slave_id", slave_id.as_str());
-    }
-    cmd
-}
-
-/// Build a `create_task` request for an audit.
-#[must_use]
-pub fn create_audit(
-    name: &str,
-    config_id: &EntityId,
-    target_id: &EntityId,
-    scanner_id: &EntityId,
-    opts: CreateTaskOpts,
-) -> impl Request {
-    create_task_with_usage(
-        name,
-        config_id,
-        target_id,
-        scanner_id,
-        opts,
-        UsageType::Audit,
-    )
-}
-
-/// Build a `get_tasks` request scoped to audits.
-#[must_use]
-pub fn get_audits(opts: GetTasksOpts) -> impl Request {
-    get_tasks_with_usage(opts, UsageType::Audit)
-}
-
-/// Build a clone request for an existing audit.
-#[must_use]
-pub fn clone_audit(task_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_task").child_with_text("copy", task_id.as_str())
-}
-
-/// Build a `get_tasks` request for a single audit.
-#[must_use]
-pub fn get_audit(task_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_tasks")
-        .attribute("task_id", task_id.as_str())
-        .attribute("usage_type", UsageType::Audit.as_gmp_str())
-        .attribute("details", "1")
-}
-
-/// Build a `start_task` request for an audit.
-#[must_use]
-pub fn start_audit(task_id: &EntityId) -> impl Request {
-    task_action_command("start_task", task_id)
-}
-
-/// Build a `stop_task` request for an audit.
-#[must_use]
-pub fn stop_audit(task_id: &EntityId) -> impl Request {
-    task_action_command("stop_task", task_id)
-}
-
-/// Build a `resume_task` request for an audit.
-#[must_use]
-pub fn resume_audit(task_id: &EntityId) -> impl Request {
-    task_action_command("resume_task", task_id)
-}
-
-/// Build a `modify_task` request scoped to audits.
-///
-/// # Errors
-/// Returns [`ModifyTaskError::ObserverGroupsWithoutUserUpdate`] when observer
-/// groups are updated without an explicit observer-user replacement or clear.
-pub fn modify_audit(
-    task_id: &EntityId,
-    opts: ModifyTaskOpts,
-) -> Result<impl Request, ModifyTaskError> {
-    validate_modify_task_opts(&opts)?;
-    Ok(modify_task_with_usage(
-        task_id,
-        opts,
-        Some(UsageType::Audit),
-    ))
-}
-
-/// Build a `delete_task` request for an audit.
-#[must_use]
-pub fn delete_audit(task_id: &EntityId) -> impl Request {
-    XmlCommand::new("delete_task")
-        .attribute("task_id", task_id.as_str())
-        .attribute("ultimate", "0")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
@@ -1745,555 +2054,5 @@ mod tests {
         assert!(modify.validate().is_err());
         modify.preferences = vec![TaskPreference::new("auto_delete_data", "1200")];
         assert!(modify.validate().is_ok());
-    }
-
-    #[test]
-    fn semantic_specialized_task_requests_match_legacy_builder_bytes() {
-        let task_id = id("task-1");
-        let scanner_id = id("scanner-1");
-        assert_eq!(
-            CreateImportTaskRequest::new("import", Some("comment".into())).to_bytes(),
-            create_import_task("import", Some("comment")).to_bytes()
-        );
-        assert_eq!(
-            CreateContainerTaskRequest::new("container", Some("comment".into())).to_bytes(),
-            create_container_task("container", Some("comment")).to_bytes()
-        );
-
-        let agent_opts = CreateAgentGroupTaskOpts {
-            comment: Some("agents".into()),
-            alterable: Some(true),
-            schedule_id: Some(id("schedule-1")),
-            alert_ids: vec![id("alert-1")],
-            schedule_periods: Some(2),
-            observers: vec!["alice".into()],
-            observer_group_ids: vec![id("group-1")],
-            preferences: vec![("key".into(), "value".into())],
-        };
-        assert_eq!(
-            CreateAgentGroupTaskRequest::new(
-                "agent task",
-                id("agent-group-1"),
-                scanner_id.clone(),
-                agent_opts.clone(),
-            )
-            .to_bytes(),
-            create_agent_group_task("agent task", &id("agent-group-1"), &scanner_id, agent_opts,)
-                .to_bytes()
-        );
-
-        let oci_opts = CreateOciImageTargetTaskOpts {
-            comment: Some("images".into()),
-            alterable: Some(true),
-            schedule_id: Some(id("schedule-1")),
-            alert_ids: vec![id("alert-1")],
-            schedule_periods: Some(2),
-            observers: vec!["alice".into()],
-            observer_group_ids: vec![id("group-1")],
-            preferences: vec![("key".into(), "value".into())],
-        };
-        assert_eq!(
-            CreateOciImageTargetTaskRequest::new(
-                "oci task",
-                id("oci-target-1"),
-                scanner_id.clone(),
-                oci_opts.clone(),
-            )
-            .to_bytes(),
-            create_oci_image_target_task(
-                "oci task",
-                &id("oci-target-1"),
-                &scanner_id,
-                oci_opts.clone(),
-            )
-            .to_bytes()
-        );
-        assert_eq!(
-            CreateContainerImageTaskRequest::new(
-                "container image task",
-                id("oci-target-1"),
-                scanner_id.clone(),
-                oci_opts.clone(),
-            )
-            .to_bytes(),
-            create_container_image_task(
-                "container image task",
-                &id("oci-target-1"),
-                &scanner_id,
-                oci_opts,
-            )
-            .to_bytes()
-        );
-
-        let web_opts = CreateWebApplicationTaskOpts {
-            alterable: Some(true),
-            schedule_id: Some(id("schedule-1")),
-            alert_ids: vec![id("alert-1")],
-            comment: Some("web".into()),
-            schedule_periods: Some(2),
-            observers: vec!["alice".into()],
-            observer_group_ids: vec![id("group-1")],
-            preferences: vec![("key".into(), "value".into())],
-        };
-        assert_eq!(
-            CreateWebApplicationTaskRequest::new(
-                "web task",
-                id("web-target-1"),
-                scanner_id.clone(),
-                web_opts.clone(),
-            )
-            .to_bytes(),
-            create_web_application_task("web task", &id("web-target-1"), &scanner_id, web_opts,)
-                .to_bytes()
-        );
-        assert_eq!(
-            MoveTaskRequest::new(task_id.clone(), Some(id("slave-1"))).to_bytes(),
-            move_task(&task_id, Some(&id("slave-1"))).to_bytes()
-        );
-    }
-
-    #[test]
-    fn semantic_audit_requests_match_legacy_builder_bytes() {
-        let task_id = id("task-1");
-        let scanner_id = id("scanner-1");
-        let list_opts = GetTasksOpts {
-            details: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(
-            GetAuditsRequest::new(list_opts.clone()).to_bytes(),
-            get_audits(list_opts).to_bytes()
-        );
-        assert_eq!(
-            GetAuditRequest::new(task_id.clone()).to_bytes(),
-            get_audit(&task_id).to_bytes()
-        );
-        let audit_create_opts = CreateTaskOpts::default();
-        assert_eq!(
-            CreateAuditRequest::new(
-                "audit",
-                id("config-1"),
-                id("target-1"),
-                scanner_id.clone(),
-                audit_create_opts.clone(),
-            )
-            .to_bytes(),
-            create_audit(
-                "audit",
-                &id("config-1"),
-                &id("target-1"),
-                &scanner_id,
-                audit_create_opts,
-            )
-            .to_bytes()
-        );
-        assert_eq!(
-            CloneAuditRequest::new(task_id.clone()).to_bytes(),
-            clone_audit(&task_id).to_bytes()
-        );
-        let audit_modify_opts = ModifyTaskOpts {
-            comment: Some("updated".into()),
-            ..Default::default()
-        };
-        assert_eq!(
-            ModifyAuditRequest::new(task_id.clone(), audit_modify_opts.clone())
-                .expect("valid semantic audit modification")
-                .to_bytes(),
-            modify_audit(&task_id, audit_modify_opts)
-                .expect("valid builder audit modification")
-                .to_bytes()
-        );
-        assert_eq!(
-            DeleteAuditRequest::new(task_id.clone()).to_bytes(),
-            delete_audit(&task_id).to_bytes()
-        );
-        assert_eq!(
-            StartAuditRequest::new(task_id.clone()).to_bytes(),
-            start_audit(&task_id).to_bytes()
-        );
-        assert_eq!(
-            StopAuditRequest::new(task_id.clone()).to_bytes(),
-            stop_audit(&task_id).to_bytes()
-        );
-        assert_eq!(
-            ResumeAuditRequest::new(task_id.clone()).to_bytes(),
-            resume_audit(&task_id).to_bytes()
-        );
-    }
-
-    #[test]
-    fn canonical_modify_task_rejects_implicit_observer_user_clear() {
-        let mut request = ModifyTaskRequest::new(id("task-1"));
-        request.observer_group_ids = CollectionUpdate::replace([id("group-1")]);
-        assert!(matches!(
-            request.validate(),
-            Err(GmpRequestError::InvalidCombination { .. })
-        ));
-        let audit_opts = ModifyTaskOpts {
-            observer_group_ids: CollectionUpdate::replace([id("group-1")]),
-            ..Default::default()
-        };
-        assert_eq!(
-            ModifyAuditRequest::new(id("audit-1"), audit_opts.clone()).err(),
-            Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
-        );
-        assert_eq!(
-            modify_audit(&id("audit-1"), audit_opts).err(),
-            Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
-        );
-    }
-
-    #[test]
-    fn semantic_task_requests_have_the_expected_response_associations() {
-        fn assert_response<R, T>(_: &R)
-        where
-            R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
-        {
-        }
-
-        let task_id = id("task-1");
-        assert_response::<_, GetTasksResponse>(&GetTasksRequest::default());
-        assert_response::<_, GetTasksResponse>(&GetTaskRequest::new(task_id.clone()));
-        assert_response::<_, CreateTaskResponse>(&CreateTaskRequest::new(
-            "scan",
-            id("config-1"),
-            id("target-1"),
-            id("scanner-1"),
-        ));
-        assert_response::<_, CreateTaskResponse>(&CloneTaskRequest::new(task_id.clone()));
-        assert_response::<_, ModifyTaskResponse>(&ModifyTaskRequest::new(task_id.clone()));
-        assert_response::<_, DeleteTaskResponse>(&DeleteTaskRequest::new(task_id.clone(), false));
-        assert_response::<_, StartTaskResponse>(&StartTaskRequest::new(task_id.clone()));
-        assert_response::<_, StopTaskResponse>(&StopTaskRequest::new(task_id.clone()));
-        assert_response::<_, ResumeTaskResponse>(&ResumeTaskRequest::new(task_id.clone()));
-        assert_response::<_, CreateTaskResponse>(&CreateImportTaskRequest::new("import", None));
-        assert_response::<_, CreateTaskResponse>(&CreateContainerTaskRequest::new(
-            "container",
-            None,
-        ));
-        assert_response::<_, CreateTaskResponse>(&CreateAgentGroupTaskRequest::new(
-            "agents",
-            id("agent-group-1"),
-            id("scanner-1"),
-            CreateAgentGroupTaskOpts::default(),
-        ));
-        assert_response::<_, CreateTaskResponse>(&CreateOciImageTargetTaskRequest::new(
-            "oci",
-            id("oci-target-1"),
-            id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        ));
-        assert_response::<_, CreateTaskResponse>(&CreateContainerImageTaskRequest::new(
-            "container image",
-            id("oci-target-1"),
-            id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        ));
-        assert_response::<_, CreateTaskResponse>(&CreateWebApplicationTaskRequest::new(
-            "web",
-            id("web-target-1"),
-            id("scanner-1"),
-            CreateWebApplicationTaskOpts::default(),
-        ));
-        assert_response::<_, MoveTaskResponse>(&MoveTaskRequest::new(task_id.clone(), None));
-        assert_response::<_, GetTasksResponse>(&GetAuditsRequest::default());
-        assert_response::<_, GetTasksResponse>(&GetAuditRequest::new(task_id.clone()));
-        assert_response::<_, CreateTaskResponse>(&CreateAuditRequest::new(
-            "audit",
-            id("config-1"),
-            id("target-1"),
-            id("scanner-1"),
-            CreateTaskOpts::default(),
-        ));
-        assert_response::<_, CreateTaskResponse>(&CloneAuditRequest::new(task_id.clone()));
-        assert_response::<_, ModifyTaskResponse>(
-            &ModifyAuditRequest::new(task_id.clone(), ModifyTaskOpts::default())
-                .expect("valid audit modification"),
-        );
-        assert_response::<_, DeleteTaskResponse>(&DeleteAuditRequest::new(task_id.clone()));
-        assert_response::<_, StartTaskResponse>(&StartAuditRequest::new(task_id.clone()));
-        assert_response::<_, StopTaskResponse>(&StopAuditRequest::new(task_id.clone()));
-        assert_response::<_, ResumeTaskResponse>(&ResumeAuditRequest::new(task_id));
-    }
-
-    #[test]
-    fn specialized_task_requests_preserve_next_only_semantic_names() {
-        let agent = CreateAgentGroupTaskRequest::new(
-            "agents",
-            id("agent-group-1"),
-            id("scanner-1"),
-            CreateAgentGroupTaskOpts::default(),
-        );
-        assert_eq!(
-            agent.semantic_command_name(),
-            Some("create_agent_group_task")
-        );
-
-        let oci = CreateOciImageTargetTaskRequest::new(
-            "oci",
-            id("oci-target-1"),
-            id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        );
-        assert_eq!(
-            oci.semantic_command_name(),
-            Some("create_oci_image_target_task")
-        );
-        let alias = CreateContainerImageTaskRequest::new(
-            "container image",
-            id("oci-target-1"),
-            id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        );
-        assert_eq!(
-            alias.semantic_command_name(),
-            Some("create_oci_image_target_task")
-        );
-
-        let web = CreateWebApplicationTaskRequest::new(
-            "web",
-            id("web-target-1"),
-            id("scanner-1"),
-            CreateWebApplicationTaskOpts::default(),
-        );
-        assert_eq!(
-            web.semantic_command_name(),
-            Some("create_web_application_task")
-        );
-    }
-
-    #[test]
-    fn create_task_builds_full_xml() {
-        let mut request = CreateTaskRequest::new("foo", id("c1"), id("t1"), id("s1"));
-        request.alterable = Some(true);
-        request.schedule_id = Some(id("sched1"));
-        request.alert_ids = vec![id("a1"), id("a2")];
-        request.comment = Some("bar".into());
-        request.schedule_periods = Some(5);
-        request.observers = vec!["alice".into(), "bob".into()];
-        request.observer_group_ids = vec![id("group-1")];
-        request.preferences = vec![TaskPreference::new("k", "v")];
-        let rendered = encoded(&request);
-        assert!(rendered.contains("<usage_type>scan</usage_type>"));
-        assert!(rendered.contains("<config id=\"c1\"/>"));
-        assert!(!rendered.contains("hosts_ordering"));
-        assert!(rendered.contains("<schedule id=\"sched1\"/>"));
-        assert!(rendered.contains("<alert id=\"a1\"/>"));
-        assert!(rendered.contains("<observers>alice bob<group id=\"group-1\"/></observers>"));
-        assert!(rendered.contains("<scanner_name>k</scanner_name><value>v</value>"));
-    }
-
-    #[test]
-    fn create_web_application_task_builds_full_xml() {
-        let rendered = xml(create_web_application_task(
-            "web task",
-            &id("wt1"),
-            &id("s1"),
-            CreateWebApplicationTaskOpts {
-                alterable: Some(true),
-                schedule_id: Some(id("sched1")),
-                alert_ids: vec![id("a1"), id("a2")],
-                comment: Some("scan web app".into()),
-                schedule_periods: Some(5),
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![id("group-1")],
-                preferences: vec![("k".into(), "v".into())],
-            },
-        ));
-        assert_eq!(
-            rendered,
-            "<create_task><name>web task</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>scan web app</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
-        );
-    }
-
-    #[test]
-    fn create_web_application_task_omits_schedule_periods_without_schedule() {
-        assert_eq!(
-            xml(create_web_application_task(
-                "web task",
-                &id("wt1"),
-                &id("s1"),
-                CreateWebApplicationTaskOpts {
-                    schedule_periods: Some(5),
-                    ..Default::default()
-                },
-            )),
-            "<create_task><name>web task</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/></create_task>"
-        );
-    }
-
-    #[test]
-    fn get_and_delete_task_commands_build_attributes() {
-        assert_eq!(
-            encoded(&GetTaskRequest::new(id("a1"))),
-            "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"scan\"/>"
-        );
-        assert_eq!(
-            encoded(&DeleteTaskRequest::new(id("a1"), true)),
-            "<delete_task task_id=\"a1\" ultimate=\"1\"/>"
-        );
-    }
-
-    #[test]
-    fn modify_and_action_commands_build_xml() {
-        let mut request = ModifyTaskRequest::new(id("t1"));
-        request.name = Some("foo".into());
-        request.alert_ids = CollectionUpdate::Clear;
-        let rendered = encoded(&request);
-        assert_eq!(
-            rendered,
-            "<modify_task task_id=\"t1\"><name>foo</name><alert id=\"0\"/></modify_task>"
-        );
-        assert_eq!(
-            xml(move_task(&id("a1"), Some(&id("s1")))),
-            "<move_task slave_id=\"s1\" task_id=\"a1\"/>"
-        );
-        assert_eq!(
-            encoded(&StartTaskRequest::new(id("a1"))),
-            "<start_task task_id=\"a1\"/>"
-        );
-        assert_eq!(
-            encoded(&ResumeTaskRequest::new(id("a1"))),
-            "<resume_task task_id=\"a1\"/>"
-        );
-        assert_eq!(
-            encoded(&StopTaskRequest::new(id("a1"))),
-            "<stop_task task_id=\"a1\"/>"
-        );
-    }
-
-    #[test]
-    fn modify_task_builds_observer_user_list_text() {
-        let mut request = ModifyTaskRequest::new(id("t1"));
-        request.observers = CollectionUpdate::replace(["alice".into(), "bob".into()]);
-        assert_eq!(
-            encoded(&request),
-            "<modify_task task_id=\"t1\"><observers>alice bob</observers></modify_task>"
-        );
-    }
-
-    #[test]
-    fn modify_task_distinguishes_omitted_replaced_and_cleared_observers() {
-        assert_eq!(
-            encoded(&ModifyTaskRequest::new(id("t1"))),
-            "<modify_task task_id=\"t1\"/>"
-        );
-        let mut replace = ModifyTaskRequest::new(id("t1"));
-        replace.observers = CollectionUpdate::replace(["alice".into()]);
-        replace.observer_group_ids = CollectionUpdate::replace([id("group-1")]);
-        assert_eq!(
-            encoded(&replace),
-            "<modify_task task_id=\"t1\"><observers>alice<group id=\"group-1\"/></observers></modify_task>"
-        );
-        let mut clear = ModifyTaskRequest::new(id("t1"));
-        clear.observers = CollectionUpdate::Clear;
-        assert_eq!(
-            encoded(&clear),
-            "<modify_task task_id=\"t1\"><observers/></modify_task>"
-        );
-        let mut clear_groups = ModifyTaskRequest::new(id("t1"));
-        clear_groups.observers = CollectionUpdate::replace(["alice".into()]);
-        clear_groups.observer_group_ids = CollectionUpdate::Clear;
-        assert_eq!(
-            encoded(&clear_groups),
-            "<modify_task task_id=\"t1\"><observers>alice<group id=\"0\"/></observers></modify_task>"
-        );
-    }
-
-    #[test]
-    fn modify_task_rejects_group_update_without_explicit_users() {
-        let mut request = ModifyTaskRequest::new(id("t1"));
-        request.observer_group_ids = CollectionUpdate::replace([id("group-1")]);
-        assert!(matches!(
-            request.validate(),
-            Err(GmpRequestError::InvalidCombination { .. })
-        ));
-    }
-
-    #[test]
-    fn modify_task_distinguishes_omitted_set_and_cleared_schedule() {
-        assert_eq!(
-            encoded(&ModifyTaskRequest::new(id("t1"))),
-            "<modify_task task_id=\"t1\"/>"
-        );
-        let mut set = ModifyTaskRequest::new(id("t1"));
-        set.schedule_id = ScalarUpdate::set(id("schedule-1"));
-        assert_eq!(
-            encoded(&set),
-            "<modify_task task_id=\"t1\"><schedule id=\"schedule-1\"/></modify_task>"
-        );
-        let mut clear = ModifyTaskRequest::new(id("t1"));
-        clear.schedule_id = ScalarUpdate::Clear;
-        assert_eq!(
-            encoded(&clear),
-            "<modify_task task_id=\"t1\"><schedule id=\"0\"/></modify_task>"
-        );
-    }
-
-    #[test]
-    fn get_tasks_builds_optional_attributes() {
-        let rendered = encoded(&GetTasksRequest {
-            filter_string: Some("name=foo".into()),
-            filter_id: Some(id("f1")),
-            trash: Some(true),
-            details: Some(true),
-            schedules_only: Some(true),
-            ignore_pagination: Some(true),
-        });
-        assert!(rendered.contains("usage_type=\"scan\""));
-        assert!(rendered.contains("filter=\"name=foo\""));
-        assert!(rendered.contains("filt_id=\"f1\""));
-        assert!(rendered.contains("trash=\"1\""));
-        assert!(rendered.contains("details=\"1\""));
-        assert!(rendered.contains("schedules_only=\"1\""));
-        assert!(rendered.contains("ignore_pagination=\"1\""));
-    }
-
-    #[test]
-    fn audit_commands_build_xml() {
-        assert!(xml(create_audit(
-            "audit",
-            &id("c1"),
-            &id("t1"),
-            &id("s1"),
-            CreateTaskOpts::default(),
-        ))
-        .contains("<usage_type>audit</usage_type>"));
-        assert_eq!(
-            xml(get_audits(GetTasksOpts::default())),
-            "<get_tasks usage_type=\"audit\"/>"
-        );
-        assert_eq!(
-            xml(clone_audit(&id("a1"))),
-            "<create_task><copy>a1</copy></create_task>"
-        );
-        assert_eq!(
-            xml(get_audit(&id("a1"))),
-            "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"audit\"/>"
-        );
-        assert_eq!(
-            xml(
-                modify_audit(
-                    &id("a1"),
-                    ModifyTaskOpts {
-                        comment: Some("updated".into()),
-                        ..Default::default()
-                    },
-                )
-                .expect("valid audit update"),
-            ),
-            "<modify_task task_id=\"a1\"><comment>updated</comment><usage_type>audit</usage_type></modify_task>"
-        );
-        assert_eq!(xml(start_audit(&id("a1"))), "<start_task task_id=\"a1\"/>");
-        assert_eq!(xml(stop_audit(&id("a1"))), "<stop_task task_id=\"a1\"/>");
-        assert_eq!(
-            xml(resume_audit(&id("a1"))),
-            "<resume_task task_id=\"a1\"/>"
-        );
-        assert_eq!(
-            xml(delete_audit(&id("a1"))),
-            "<delete_task task_id=\"a1\" ultimate=\"0\"/>"
-        );
     }
 }

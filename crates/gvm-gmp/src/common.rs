@@ -60,18 +60,6 @@ pub(crate) fn set_optional_bool_attr(cmd: &mut XmlCommand, name: &str, value: Op
     }
 }
 
-pub(crate) fn add_preferences(cmd: &mut XmlCommand, preferences: &[(String, String)]) {
-    if preferences.is_empty() {
-        return;
-    }
-    let prefs = cmd.add_element("preferences");
-    for (key, value) in preferences {
-        let pref = prefs.add_child("preference");
-        pref.add_child_with_text("scanner_name", key);
-        pref.add_child_with_text("value", value);
-    }
-}
-
 pub(crate) fn validate_single_xml_document(
     xml: &str,
     field: &str,

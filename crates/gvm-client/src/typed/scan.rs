@@ -18,14 +18,12 @@ use gvm_gmp::commands::schedules::{
     GetSchedulesRequest, ModifyScheduleRequest,
 };
 use gvm_gmp::commands::tasks::{
-    CloneAuditRequest, CloneTaskRequest, CreateAgentGroupTaskOpts, CreateAgentGroupTaskRequest,
-    CreateAuditRequest, CreateContainerImageTaskRequest, CreateContainerTaskRequest,
-    CreateImportTaskRequest, CreateOciImageTargetTaskOpts, CreateOciImageTargetTaskRequest,
-    CreateTaskOpts, CreateTaskRequest, CreateWebApplicationTaskOpts,
-    CreateWebApplicationTaskRequest, DeleteAuditRequest, DeleteTaskRequest, GetAuditRequest,
-    GetAuditsRequest, GetTaskRequest, GetTasksOpts, GetTasksRequest, ModifyAuditRequest,
-    ModifyTaskOpts, ModifyTaskRequest, MoveTaskRequest, ResumeAuditRequest, ResumeTaskRequest,
-    StartAuditRequest, StartTaskRequest, StopAuditRequest, StopTaskRequest,
+    CloneAuditRequest, CloneTaskRequest, CreateAgentGroupTaskRequest, CreateAuditRequest,
+    CreateContainerImageTaskRequest, CreateContainerTaskRequest, CreateImportTaskRequest,
+    CreateOciImageTargetTaskRequest, CreateTaskRequest, CreateWebApplicationTaskRequest,
+    DeleteAuditRequest, DeleteTaskRequest, GetAuditRequest, GetAuditsRequest, GetTaskRequest,
+    GetTasksRequest, ModifyAuditRequest, ModifyTaskRequest, MoveTaskRequest, ResumeAuditRequest,
+    ResumeTaskRequest, StartAuditRequest, StartTaskRequest, StopAuditRequest, StopTaskRequest,
 };
 use gvm_gmp::commands::trashcan::{
     EmptyTrashcanRequest, RestoreFromTrashcanRequest, RestoreRequest,
@@ -340,14 +338,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_import_task(
         &mut self,
-        name: &str,
-        comment: Option<&str>,
+        request: CreateImportTaskRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CreateImportTaskRequest::new(
-            name,
-            comment.map(str::to_owned),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send the compatibility-alias container/import `create_task` request.
@@ -356,14 +349,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_container_task(
         &mut self,
-        name: &str,
-        comment: Option<&str>,
+        request: CreateContainerTaskRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CreateContainerTaskRequest::new(
-            name,
-            comment.map(str::to_owned),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send an agent-group `create_task` request.
@@ -372,18 +360,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_agent_group_task(
         &mut self,
-        name: &str,
-        agent_group_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateAgentGroupTaskOpts,
+        request: CreateAgentGroupTaskRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CreateAgentGroupTaskRequest::new(
-            name,
-            agent_group_id.clone(),
-            scanner_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send an OCI image-target `create_task` request.
@@ -392,18 +371,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_oci_image_target_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
+        request: CreateOciImageTargetTaskRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CreateOciImageTargetTaskRequest::new(
-            name,
-            oci_image_target_id.clone(),
-            scanner_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send the compatibility-alias container-image `create_task` request.
@@ -412,18 +382,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_container_image_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
+        request: CreateContainerImageTaskRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CreateContainerImageTaskRequest::new(
-            name,
-            oci_image_target_id.clone(),
-            scanner_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a web-application-target `create_task` request.
@@ -432,18 +393,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_web_application_task(
         &mut self,
-        name: &str,
-        web_application_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateWebApplicationTaskOpts,
+        request: CreateWebApplicationTaskRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CreateWebApplicationTaskRequest::new(
-            name,
-            web_application_target_id.clone(),
-            scanner_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `move_task` request.
@@ -452,27 +404,31 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn move_task(
         &mut self,
-        task_id: &EntityId,
-        slave_id: Option<&EntityId>,
+        request: MoveTaskRequest,
     ) -> Result<MoveTaskResponse, GvmError> {
-        self.execute(MoveTaskRequest::new(task_id.clone(), slave_id.cloned()))
-            .await
+        self.execute(request).await
     }
 
     /// Send an audit-scoped `get_tasks` request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_audits(&mut self, opts: GetTasksOpts) -> Result<GetTasksResponse, GvmError> {
-        self.execute(GetAuditsRequest::new(opts)).await
+    pub async fn get_audits(
+        &mut self,
+        request: GetAuditsRequest,
+    ) -> Result<GetTasksResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a detailed single-audit `get_tasks` request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_audit(&mut self, audit_id: &EntityId) -> Result<GetTasksResponse, GvmError> {
-        self.execute(GetAuditRequest::new(audit_id.clone())).await
+    pub async fn get_audit(
+        &mut self,
+        request: GetAuditRequest,
+    ) -> Result<GetTasksResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send an audit `create_task` request.
@@ -481,20 +437,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_audit(
         &mut self,
-        name: &str,
-        config_id: &EntityId,
-        target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateTaskOpts,
+        request: CreateAuditRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CreateAuditRequest::new(
-            name,
-            config_id.clone(),
-            target_id.clone(),
-            scanner_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send an audit-copy `create_task` request.
@@ -503,9 +448,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_audit(
         &mut self,
-        audit_id: &EntityId,
+        request: CloneAuditRequest,
     ) -> Result<CreateTaskResponse, GvmError> {
-        self.execute(CloneAuditRequest::new(audit_id.clone())).await
+        self.execute(request).await
     }
 
     /// Send an audit-scoped `modify_task` request.
@@ -514,11 +459,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if request construction, transmission, or response parsing fails.
     pub async fn modify_audit(
         &mut self,
-        audit_id: &EntityId,
-        opts: ModifyTaskOpts,
+        request: ModifyAuditRequest,
     ) -> Result<ModifyTaskResponse, GvmError> {
-        self.execute(ModifyAuditRequest::new(audit_id.clone(), opts)?)
-            .await
+        self.execute(request).await
     }
 
     /// Send an audit `delete_task` request.
@@ -527,10 +470,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_audit(
         &mut self,
-        audit_id: &EntityId,
+        request: DeleteAuditRequest,
     ) -> Result<DeleteTaskResponse, GvmError> {
-        self.execute(DeleteAuditRequest::new(audit_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send an audit `start_task` request.
@@ -539,17 +481,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn start_audit(
         &mut self,
-        audit_id: &EntityId,
+        request: StartAuditRequest,
     ) -> Result<StartTaskResponse, GvmError> {
-        self.execute(StartAuditRequest::new(audit_id.clone())).await
+        self.execute(request).await
     }
 
     /// Send an audit `stop_task` request.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn stop_audit(&mut self, audit_id: &EntityId) -> Result<StopTaskResponse, GvmError> {
-        self.execute(StopAuditRequest::new(audit_id.clone())).await
+    pub async fn stop_audit(
+        &mut self,
+        request: StopAuditRequest,
+    ) -> Result<StopTaskResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send an audit `resume_task` request.
@@ -558,10 +503,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn resume_audit(
         &mut self,
-        audit_id: &EntityId,
+        request: ResumeAuditRequest,
     ) -> Result<ResumeTaskResponse, GvmError> {
-        self.execute(ResumeAuditRequest::new(audit_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `start_task` request and return a typed [`StartTaskResponse`].

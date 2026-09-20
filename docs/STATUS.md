@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-19
+Last updated: 2026-09-20
 
 ## Support Direction
 
@@ -205,11 +205,18 @@ pinned gvmd neither parses it nor retains its task column. See the
 [task gvmd evidence](task-request-gvmd-evidence.md) and
 [v0.7 migration mapping](v0.7.0-migration.md#standard-tasks).
 
-Specialized import/container, agent-group, OCI/container-image,
-web-application creation and `move_task` remain separate transitional
-surfaces. Audit aliases and their lifecycle, including the task option bags
-retained solely for that purpose, are deferred to #660. This #659 slice does
-not canonicalize or otherwise alter either boundary.
+Issue #660 completes the remaining 16 task-family semantic operations:
+import/container, agent-group, OCI/container-image, and web-application task
+creation; `move_task`; and the audit list/detail/create/clone/modify/delete/
+start/stop/resume lifecycle. Complete request values directly encode each
+variant's actual shape, the GMP 22.8 gates remain attached to agent/OCI/web
+semantic identities, move destinations are explicit, and audit usage identity
+is preserved without emitting an unsupported modify child. All remaining task
+option bags and forwarding builders are removed. The stateful mock covers each
+creation shape, scanner/target relationships, move semantics, audit state,
+observer coupling, and atomic rollback. See the
+[specialized task/audit gvmd evidence](specialized-task-audit-request-gvmd-evidence.md)
+and [v0.7 migration mapping](v0.7.0-migration.md#specialized-tasks-and-audits).
 
 The earlier additive credential batches in #544 and #551 established typed
 execution while retaining their builders and options. The bounded canonical
