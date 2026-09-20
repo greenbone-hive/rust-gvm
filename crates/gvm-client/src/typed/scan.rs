@@ -25,9 +25,7 @@ use gvm_gmp::commands::tasks::{
     GetTasksRequest, ModifyAuditRequest, ModifyTaskRequest, MoveTaskRequest, ResumeAuditRequest,
     ResumeTaskRequest, StartAuditRequest, StartTaskRequest, StopAuditRequest, StopTaskRequest,
 };
-use gvm_gmp::commands::trashcan::{
-    EmptyTrashcanRequest, RestoreFromTrashcanRequest, RestoreRequest,
-};
+use gvm_gmp::commands::trashcan::{EmptyTrashcanRequest, RestoreRequest};
 use gvm_gmp::responses::{
     CreateScanConfigResponse, CreateScannerResponse, CreateScheduleResponse, CreateTaskResponse,
     DeleteScanConfigResponse, DeleteScannerResponse, DeleteScheduleResponse, DeleteTaskResponse,
@@ -36,7 +34,6 @@ use gvm_gmp::responses::{
     ModifyTaskResponse, MoveTaskResponse, RestoreResponse, ResumeTaskResponse, StartTaskResponse,
     StopTaskResponse, VerifyScannerResponse,
 };
-use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Scan Configs ──────────────────────────────────────────────────────────
@@ -567,28 +564,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn empty_trashcan(&mut self) -> Result<EmptyTrashcanResponse, GvmError> {
-        self.execute(EmptyTrashcanRequest::new()).await
+    pub async fn empty_trashcan(
+        &mut self,
+        request: EmptyTrashcanRequest,
+    ) -> Result<EmptyTrashcanResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `restore` request through its baseline helper name.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn restore(&mut self, resource_id: &EntityId) -> Result<RestoreResponse, GvmError> {
-        self.execute(RestoreRequest::new(resource_id.clone())).await
-    }
-
-    /// Send a `restore` request and return a typed [`RestoreResponse`].
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn restore_from_trashcan(
-        &mut self,
-        resource_id: &EntityId,
-    ) -> Result<RestoreResponse, GvmError> {
-        self.execute(RestoreFromTrashcanRequest::new(resource_id.clone()))
-            .await
+    pub async fn restore(&mut self, request: RestoreRequest) -> Result<RestoreResponse, GvmError> {
+        self.execute(request).await
     }
 
     // ── Schedules ─────────────────────────────────────────────────────────────

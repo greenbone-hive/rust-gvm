@@ -9,7 +9,7 @@ use gvm_gmp::commands::help::HelpRequest;
 use gvm_gmp::commands::resource_names::{GetResourceNameRequest, GetResourceNamesRequest};
 use gvm_gmp::commands::system::{
     DescribeAuthRequest, GetLicenseRequest, GetSettingsRequest, ModifyAuthRequest,
-    ModifyLicenseOpts, ModifyLicenseWithOptsRequest, RunWizardOpts, RunWizardWithOptsRequest,
+    ModifyLicenseRequest, RunWizardRequest,
 };
 use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::responses::{
@@ -132,51 +132,35 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Modify a named authentication group and return a typed
     /// [`ModifyAuthResponse`].
     ///
-    /// `auth_conf_settings` must contain at least one key/value pair.
-    ///
     /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
+    /// Returns an error if validation, the request, or response parsing fails.
     pub async fn modify_auth(
         &mut self,
-        group_name: &str,
-        auth_conf_settings: &[(String, String)],
+        request: ModifyAuthRequest,
     ) -> Result<ModifyAuthResponse, GvmError> {
-        self.execute(ModifyAuthRequest::new(
-            group_name,
-            auth_conf_settings.iter().cloned(),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Upload a base64-encoded license file and return a typed
     /// [`ModifyLicenseResponse`].
     ///
     /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
+    /// Returns an error if validation, the request, or response parsing fails.
     pub async fn modify_license(
         &mut self,
-        file: &str,
-        opts: ModifyLicenseOpts,
+        request: ModifyLicenseRequest,
     ) -> Result<ModifyLicenseResponse, GvmError> {
-        self.execute(ModifyLicenseWithOptsRequest::new(file, opts))
-            .await
+        self.execute(request).await
     }
 
     /// Run a gvmd wizard and return its typed response envelope.
     ///
     /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
+    /// Returns an error if validation, the request, or response parsing fails.
     pub async fn run_wizard(
         &mut self,
-        name: &str,
-        params: &[(String, String)],
-        opts: RunWizardOpts,
+        request: RunWizardRequest,
     ) -> Result<RunWizardResponse, GvmError> {
-        self.execute(RunWizardWithOptsRequest::new(
-            name,
-            params.iter().cloned(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 }

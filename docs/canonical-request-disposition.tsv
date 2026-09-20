@@ -233,12 +233,12 @@ builder	crates/gvm-gmp/src/commands/system.rs	get_vuln	removed	Removed by #648; 
 builder	crates/gvm-gmp/src/commands/system.rs	get_vulnerability	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
 builder	crates/gvm-gmp/src/commands/system.rs	get_vulns	removed	Removed by #648; canonical request values are the only supported construction and encoding path.
 builder	crates/gvm-gmp/src/commands/system.rs	help	removed	Removed by #663 as a duplicate discovery encoder; use the owning canonical request value.
-builder	crates/gvm-gmp/src/commands/system.rs	modify_auth	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	modify_license	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	modify_license_with_opts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	modify_setting	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	run_wizard	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/system.rs	run_wizard_with_opts	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/system.rs	modify_auth	removed	Removed by #664; ModifyAuthRequest owns the complete authentication-group mutation.
+builder	crates/gvm-gmp/src/commands/system.rs	modify_license	removed	Removed by #664; ModifyLicenseRequest owns the payload and explicit allow-empty decision.
+builder	crates/gvm-gmp/src/commands/system.rs	modify_license_with_opts	removed	Removed by #664 with the redundant option-bearing license construction path.
+builder	crates/gvm-gmp/src/commands/system.rs	modify_setting	removed	Removed by #664; ModifySettingRequest owns the selector and confidential value.
+builder	crates/gvm-gmp/src/commands/system.rs	run_wizard	removed	Removed by #664; RunWizardRequest owns the wizard name, parameters, mode, and read-only decision.
+builder	crates/gvm-gmp/src/commands/system.rs	run_wizard_with_opts	removed	Removed by #664 with the redundant option-bearing wizard construction path.
 builder	crates/gvm-gmp/src/commands/system_reports.rs	get_system_reports	removed	Removed by #663; the canonical request value is the sole typed encoder.
 builder	crates/gvm-gmp/src/commands/tags.rs	clone_tag	removed	Removed by #624; CloneTagRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/tags.rs	create_tag	removed	Removed by #624; CreateTagRequest owns validation and canonical encoding.
@@ -289,12 +289,12 @@ builder	crates/gvm-gmp/src/commands/tls_certificates.rs	delete_tls_certificate	r
 builder	crates/gvm-gmp/src/commands/tls_certificates.rs	get_tls_certificate	removed	Removed redundant singular builder; GetTlsCertificateRequest owns the shared list-root encoding.
 builder	crates/gvm-gmp/src/commands/tls_certificates.rs	get_tls_certificates	removed	Removed redundant builder; supported query controls belong to the complete request.
 builder	crates/gvm-gmp/src/commands/tls_certificates.rs	modify_tls_certificate	removed	Removed builder that emitted unsupported certificate and private-key mutation children.
-builder	crates/gvm-gmp/src/commands/trashcan.rs	empty_trashcan	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/trashcan.rs	restore	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/trashcan.rs	restore_from_trashcan	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/user_settings.rs	get_user_setting	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/user_settings.rs	get_user_settings	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/user_settings.rs	modify_user_setting	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/trashcan.rs	empty_trashcan	removed	Removed by #664; EmptyTrashcanRequest is the sole typed encoder.
+builder	crates/gvm-gmp/src/commands/trashcan.rs	restore	removed	Removed by #664; RestoreRequest is the sole typed encoder.
+builder	crates/gvm-gmp/src/commands/trashcan.rs	restore_from_trashcan	removed	Removed by #664 because pinned gvmd exposes one restore operation, not a second semantic command.
+builder	crates/gvm-gmp/src/commands/user_settings.rs	get_user_setting	removed	Removed by #664; GetUserSettingRequest owns the detail selector.
+builder	crates/gvm-gmp/src/commands/user_settings.rs	get_user_settings	removed	Removed by #664; GetUserSettingsRequest owns all supported list controls.
+builder	crates/gvm-gmp/src/commands/user_settings.rs	modify_user_setting	removed	Removed by #664; ModifyUserSettingRequest owns the selector and confidential value.
 builder	crates/gvm-gmp/src/commands/users.rs	clone_user	removed	Removed by #636; CloneUserRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/users.rs	create_user	removed	Removed by #636; CreateUserRequest owns canonical validation and encoding.
 builder	crates/gvm-gmp/src/commands/users.rs	delete_user	removed	Removed by #636; DeleteUserRequest owns selector validation and canonical encoding; legacy ultimate is ignored by pinned gvmd and intentionally removed (see docs/user-group-request-gvmd-evidence.md).
@@ -488,7 +488,7 @@ facade	crates/gvm-client/src/typed/scan.rs	delete_scan_config	canonical-request	
 facade	crates/gvm-client/src/typed/scan.rs	delete_scanner	retained-construction	Retained for discoverability; accepts the canonical DeleteScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	delete_schedule	retained-construction	Retained for discoverability; accepts the canonical DeleteScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	delete_task	canonical-request	Accepts DeleteTaskRequest unchanged and delegates only to execute.
-facade	crates/gvm-client/src/typed/scan.rs	empty_trashcan	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	empty_trashcan	retained-construction	Retained for discoverability by #664; accepts EmptyTrashcanRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_audit	canonical-request	Accepts GetAuditRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_audits	canonical-request	Accepts GetAuditsRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_policies	canonical-request	Retained by #649; accepts GetPoliciesRequest unchanged and delegates to execute.
@@ -516,8 +516,8 @@ facade	crates/gvm-client/src/typed/scan.rs	modify_schedule	retained-construction
 facade	crates/gvm-client/src/typed/scan.rs	modify_task	canonical-request	Accepts ModifyTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	modify_typed_schedule	removed	Removed by #629; typed input constructs ModifyScheduleRequest and uses modify_schedule.
 facade	crates/gvm-client/src/typed/scan.rs	move_task	canonical-request	Accepts MoveTaskRequest unchanged and delegates only to execute.
-facade	crates/gvm-client/src/typed/scan.rs	restore	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	restore_from_trashcan	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	restore	retained-construction	Retained for discoverability by #664; accepts RestoreRequest unchanged and delegates only to execute.
+facade	crates/gvm-client/src/typed/scan.rs	restore_from_trashcan	removed	Removed by #664 because it forwarded byte-identically to gvmd's single restore operation.
 facade	crates/gvm-client/src/typed/scan.rs	resume_audit	canonical-request	Accepts ResumeAuditRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	resume_task	canonical-request	Accepts ResumeTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	start_audit	canonical-request	Accepts StartAuditRequest unchanged and delegates only to execute.
@@ -573,9 +573,9 @@ facade	crates/gvm-client/src/typed/system.rs	get_resource_name	retained-construc
 facade	crates/gvm-client/src/typed/system.rs	get_resource_names	retained-construction	Retained for discoverability by #663; accepts the canonical request unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/system.rs	get_settings	retained-construction	Retained for discoverability by #663; accepts the canonical request unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/system.rs	get_system_reports	retained-construction	Retained for discoverability by #663; accepts the canonical request unchanged and delegates only to execute.
-facade	crates/gvm-client/src/typed/system.rs	modify_auth	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/system.rs	modify_license	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/system.rs	run_wizard	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/system.rs	modify_auth	retained-construction	Retained for discoverability by #664; accepts ModifyAuthRequest unchanged and delegates only to execute.
+facade	crates/gvm-client/src/typed/system.rs	modify_license	retained-construction	Retained for discoverability by #664; accepts ModifyLicenseRequest unchanged and delegates only to execute.
+facade	crates/gvm-client/src/typed/system.rs	run_wizard	retained-construction	Retained for discoverability by #664; accepts RunWizardRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/targets.rs	clone_oci_image_target	retained-construction	Retained for discoverability; accepts the canonical CloneOciImageTargetRequest unchanged.
 facade	crates/gvm-client/src/typed/targets.rs	clone_oci_image_target_parsed	removed	Removed by #609; clone_oci_image_target is the canonical typed convenience.
 facade	crates/gvm-client/src/typed/targets.rs	clone_web_application_target	retained-construction	Retained for discoverability; accepts the canonical CloneWebApplicationTargetRequest unchanged.
@@ -695,8 +695,8 @@ options	crates/gvm-gmp/src/commands/system.rs	GetAggregatesOpts	removed	Removed 
 options	crates/gvm-gmp/src/commands/system.rs	GetFeedsOpts	removed	Removed by #663; all supported fields now live directly on the canonical request value.
 options	crates/gvm-gmp/src/commands/system.rs	GetInfoOpts	removed	Removed by #648; supported fields now live directly on the canonical request value.
 options	crates/gvm-gmp/src/commands/system.rs	GetResourceNamesOpts	removed	Removed by #663; all supported fields now live directly on the canonical request value.
-options	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/system.rs	RunWizardOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseOpts	removed	Removed by #664; allow_empty belongs directly to ModifyLicenseRequest.
+options	crates/gvm-gmp/src/commands/system.rs	RunWizardOpts	removed	Removed by #664; mode and read_only belong directly to RunWizardRequest.
 options	crates/gvm-gmp/src/commands/system_reports.rs	GetSystemReportsOpts	removed	Removed by #663; all supported fields now live directly on the canonical request value.
 options	crates/gvm-gmp/src/commands/tags.rs	GetTagsOpts	removed	Removed by #624; fields now belong to GetTagsRequest.
 options	crates/gvm-gmp/src/commands/tags.rs	TagOpts	removed	Removed by #624; supported fields now belong to create and modify requests; unsupported severity was removed.
@@ -714,8 +714,8 @@ options	crates/gvm-gmp/src/commands/tickets.rs	GetTicketsOpts	frozen-ticket	Tick
 options	crates/gvm-gmp/src/commands/tickets.rs	ModifyTicketOpts	frozen-ticket	Ticket surface is frozen by product scope.
 options	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificatesOpts	removed	Removed options bag with unsupported trash control; complete list and detail requests own supported query inputs.
 options	crates/gvm-gmp/src/commands/tls_certificates.rs	TlsCertificateOpts	removed	Removed shared options that exposed unsupported private-key and certificate-replacement fields.
-options	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/user_settings.rs	ModifyUserSettingOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingsOpts	removed	Removed by #664; supported list controls belong directly to GetUserSettingsRequest.
+options	crates/gvm-gmp/src/commands/user_settings.rs	ModifyUserSettingOpts	removed	Removed by #664; the selector and value belong directly to ModifyUserSettingRequest.
 options	crates/gvm-gmp/src/commands/users.rs	GetUsersOpts	removed	Removed by #636; fields now belong to GetUsersRequest.
 options	crates/gvm-gmp/src/commands/users.rs	ModifyUserOpts	removed	Removed by #636; fields now belong to ModifyUserRequest.
 options	crates/gvm-gmp/src/commands/users.rs	UserOpts	removed	Removed by #636; fields now belong to create and clone request values.
@@ -955,12 +955,12 @@ request	crates/gvm-gmp/src/commands/system.rs	GetTimezonesRequest	canonical-requ
 request	crates/gvm-gmp/src/commands/system.rs	GetVulnRequest	removed	Removed by #648 as duplicate or unsupported discovery construction; use the canonical NVT/SecInfo request owner.
 request	crates/gvm-gmp/src/commands/system.rs	GetVulnerabilityRequest	canonical-request	Complete #648 observed-vulnerability request with direct get_vulns encoding, final-value validation, semantic metadata, and typed response.
 request	crates/gvm-gmp/src/commands/system.rs	GetVulnsRequest	canonical-request	Complete #648 observed-vulnerability request with direct get_vulns encoding, final-value validation, semantic metadata, and typed response.
-request	crates/gvm-gmp/src/commands/system.rs	ModifyAuthRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseWithOptsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	ModifySettingRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	RunWizardRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/system.rs	RunWizardWithOptsRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/system.rs	ModifyAuthRequest	canonical-request	Complete #664 request owns its group, confidential settings, validation, metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseRequest	canonical-request	Complete #664 request owns the confidential payload, allow-empty decision, validation, metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/system.rs	ModifyLicenseWithOptsRequest	removed	Removed by #664 as a redundant forwarding variant of the complete ModifyLicenseRequest.
+request	crates/gvm-gmp/src/commands/system.rs	ModifySettingRequest	canonical-request	Complete #664 generic setting mutation owns its selector, confidential value, validation, metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/system.rs	RunWizardRequest	canonical-request	Complete #664 request owns its name, confidential parameter values, options, validation, metadata, direct encoding, and typed response.
+request	crates/gvm-gmp/src/commands/system.rs	RunWizardWithOptsRequest	removed	Removed by #664 as a redundant forwarding variant of the complete RunWizardRequest.
 request	crates/gvm-gmp/src/commands/system.rs	SystemHelpRequest	removed	Removed by #663 as a duplicate or byte-identical forwarding request; use the authoritative domain request.
 request	crates/gvm-gmp/src/commands/system_reports.rs	GetSystemReportsRequest	canonical-request	Complete #663 request owns all supported discovery input, validation, command metadata, direct encoding, and its typed response.
 request	crates/gvm-gmp/src/commands/tags.rs	CloneTagRequest	canonical-request	Complete clone request owns the create_tag semantic alias and optional gvmd-supported overrides.
@@ -1006,10 +1006,12 @@ request	crates/gvm-gmp/src/commands/tls_certificates.rs	DeleteTlsCertificateRequ
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificateRequest	canonical-request	Complete detail input owns selector and query expansions with semantic alias metadata and direct encoding.
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificatesRequest	canonical-request	Complete list input owns selector, filter, detail, and certificate-data controls with final validation.
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	ModifyTlsCertificateRequest	canonical-request	Complete supported metadata/trust mutation input with clear/preserve semantics and direct encoding.
-request	crates/gvm-gmp/src/commands/trashcan.rs	EmptyTrashcanRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/user_settings.rs	ModifyUserSettingRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/trashcan.rs	EmptyTrashcanRequest	canonical-request	Complete #664 cleanup request owns direct metadata, encoding, and its typed response.
+request	crates/gvm-gmp/src/commands/trashcan.rs	RestoreRequest	canonical-request	Complete #664 cleanup request owns the restore identifier, direct metadata, encoding, and its typed response.
+request	crates/gvm-gmp/src/commands/trashcan.rs	RestoreFromTrashcanRequest	removed	Removed by #664 as a byte-identical forwarding alias; pinned gvmd exposes only the restore operation modeled by RestoreRequest.
+request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingRequest	canonical-request	Complete #664 detail request owns its identifier and source-faithful get_settings response association.
+request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingsRequest	canonical-request	Complete #664 list request owns filtering, pagination, sorting, validation, metadata, direct encoding, and its typed response.
+request	crates/gvm-gmp/src/commands/user_settings.rs	ModifyUserSettingRequest	canonical-request	Complete #664 mutation owns its selector, confidential value, validation, shared source-faithful encoding, and typed response.
 request	crates/gvm-gmp/src/commands/users.rs	CloneUserRequest	canonical-request	Complete clone input with semantic alias metadata, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/users.rs	CreateUserRequest	canonical-request	Complete create input with secret-safe diagnostics, direct validation/encoding, and typed response.
 request	crates/gvm-gmp/src/commands/users.rs	DeleteUserRequest	canonical-request	Complete selector and inheritance input with direct validation/encoding and typed response.

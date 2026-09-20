@@ -239,77 +239,6 @@ fn initial_disposition(surface: &Surface) -> Disposition {
     }
 }
 
-fn is_issue_663_surface(surface: &Surface) -> bool {
-    let source = surface.source.as_str();
-    if [
-        "/aggregates.rs",
-        "/authentication.rs",
-        "/features.rs",
-        "/feed.rs",
-        "/help.rs",
-        "/resource_names.rs",
-        "/system_reports.rs",
-        "/version.rs",
-    ]
-    .iter()
-    .any(|suffix| source.ends_with(suffix))
-    {
-        return true;
-    }
-
-    if source.ends_with("/commands/system.rs") {
-        return matches!(
-            surface.symbol.as_str(),
-            "DescribeAuthRequest"
-                | "FilteredGetOpts"
-                | "GetAggregatesOpts"
-                | "GetFeedsOpts"
-                | "GetLicenseRequest"
-                | "GetResourceNameRequest"
-                | "GetResourceNamesOpts"
-                | "GetResourceNamesRequest"
-                | "GetSettingsRequest"
-                | "GetSystemAggregatesRequest"
-                | "GetSystemFeedsRequest"
-                | "GetTimezonesRequest"
-                | "SystemHelpRequest"
-                | "describe_auth"
-                | "get_aggregates"
-                | "get_feeds"
-                | "get_license"
-                | "get_resource_name"
-                | "get_resource_names"
-                | "get_settings"
-                | "get_timezones"
-                | "help"
-        );
-    }
-
-    match source.strip_prefix("crates/gvm-client/src/typed/") {
-        Some("core.rs") => matches!(surface.symbol.as_str(), "authenticate" | "get_version"),
-        Some("security.rs") => matches!(
-            surface.symbol.as_str(),
-            "get_feed" | "get_feeds" | "get_timezones"
-        ),
-        Some("system.rs") => matches!(
-            surface.symbol.as_str(),
-            "describe_auth"
-                | "get_aggregates"
-                | "get_features"
-                | "get_features_parsed"
-                | "get_help"
-                | "get_help_with_mode"
-                | "get_legacy_aggregates"
-                | "get_license"
-                | "get_resource_name"
-                | "get_resource_names"
-                | "get_settings"
-                | "get_system_reports"
-        ),
-        _ => false,
-    }
-}
-
 fn render_ledger(actual: &BTreeSet<Surface>, existing: &BTreeMap<Surface, Disposition>) -> String {
     let mut entries = existing.clone();
     for surface in actual {
@@ -389,22 +318,14 @@ fn every_public_request_surface_has_an_explicit_disposition() {
             *counts.entry(disposition.value.as_str()).or_insert(0_usize) += 1;
             counts
         });
-    assert_eq!(ledger.len(), 1024, "#663 disposition ledger total drifted");
-    assert_eq!(counts.get("transitional"), Some(&32));
-    assert_eq!(counts.get("canonical-request"), Some(&400));
-    assert_eq!(counts.get("removed"), Some(&454));
-    assert_eq!(counts.get("retained-construction"), Some(&126));
-    assert_eq!(counts.get("frozen-ticket"), Some(&12));
-
-    let scoped_transitional = ledger
-        .iter()
-        .filter(|(surface, disposition)| {
-            is_issue_663_surface(surface) && disposition.value == "transitional"
-        })
-        .map(|(surface, _)| surface)
-        .collect::<Vec<_>>();
-    assert!(
-        scoped_transitional.is_empty(),
-        "#663 surfaces must have zero transitional rows: {scoped_transitional:#?}"
+    assert_eq!(ledger.len(), 1026, "#664 disposition ledger total drifted");
+    assert_eq!(
+        counts.get("transitional").copied().unwrap_or_default(),
+        0,
+        "the completed #658-#664 inventory must contain zero transitional rows"
     );
+    assert_eq!(counts.get("canonical-request"), Some(&409));
+    assert_eq!(counts.get("removed"), Some(&474));
+    assert_eq!(counts.get("retained-construction"), Some(&131));
+    assert_eq!(counts.get("frozen-ticket"), Some(&12));
 }

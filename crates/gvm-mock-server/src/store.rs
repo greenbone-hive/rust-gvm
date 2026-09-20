@@ -1278,9 +1278,25 @@ fn task_report_reference_xml(field: &str, report: &Resource, results: &[&Resourc
 }
 
 /// Thread-safe resource store.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ResourceStore {
     inner: Arc<RwLock<StoreInner>>,
+}
+
+impl std::fmt::Debug for ResourceStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = self.inner.read().map_err(|_| std::fmt::Error)?;
+        formatter
+            .debug_struct("ResourceStore")
+            .field("resource_count", &inner.resources.len())
+            .field(
+                "authenticated_session_count",
+                &inner.authenticated_sessions.len(),
+            )
+            .field("asset_input_profile", &inner.asset_input_profile)
+            .field("system_administration", &inner.system_administration)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -1295,7 +1311,46 @@ struct StoreInner {
     /// Configured credentials.
     username: String,
     password: String,
+    system_administration: SystemAdministrationState,
     discovery: DiscoverySnapshot,
+}
+
+#[derive(Clone, Default)]
+struct SystemAdministrationState {
+    auth_groups: BTreeMap<String, BTreeMap<String, String>>,
+    license_file: Option<String>,
+    wizard_runs: Vec<WizardRun>,
+}
+
+impl std::fmt::Debug for SystemAdministrationState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SystemAdministrationState")
+            .field("auth_group_count", &self.auth_groups.len())
+            .field("license_installed", &self.license_file.is_some())
+            .field("wizard_run_count", &self.wizard_runs.len())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+struct WizardRun {
+    name: String,
+    mode: Option<String>,
+    read_only: Option<bool>,
+    params: Vec<(String, String)>,
+}
+
+impl std::fmt::Debug for WizardRun {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WizardRun")
+            .field("name", &self.name)
+            .field("mode", &self.mode)
+            .field("read_only", &self.read_only)
+            .field("parameter_count", &self.params.len())
+            .finish()
+    }
 }
 
 fn default_resources() -> HashMap<Uuid, Resource> {
@@ -1968,6 +2023,7 @@ impl ResourceStore {
                 authenticated_sessions: HashMap::new(),
                 username: username.to_string(),
                 password: password.to_string(),
+                system_administration: SystemAdministrationState::default(),
                 discovery: default_discovery(),
             })),
         }
@@ -2171,6 +2227,101 @@ impl ResourceStore {
     pub(crate) fn authenticated_principal(&self, session_id: u64) -> Option<String> {
         let inner = self.inner.read().expect("store lock poisoned");
         inner.authenticated_sessions.get(&session_id).cloned()
+    }
+
+    pub(crate) fn apply_auth_groups(&self, groups: BTreeMap<String, BTreeMap<String, String>>) {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        for (name, settings) in groups {
+            if settings.is_empty() {
+                continue;
+            }
+            let group = inner
+                .system_administration
+                .auth_groups
+                .entry(name)
+                .or_default();
+            group.extend(settings);
+        }
+    }
+
+    pub(crate) fn auth_groups(&self) -> BTreeMap<String, BTreeMap<String, String>> {
+        self.inner
+            .read()
+            .expect("store lock poisoned")
+            .system_administration
+            .auth_groups
+            .clone()
+    }
+
+    pub(crate) fn replace_license(&self, file: String) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .system_administration
+            .license_file = (!file.is_empty()).then_some(file);
+    }
+
+    pub(crate) fn license_installed(&self) -> bool {
+        self.inner
+            .read()
+            .expect("store lock poisoned")
+            .system_administration
+            .license_file
+            .is_some()
+    }
+
+    pub(crate) fn record_wizard_run(
+        &self,
+        name: String,
+        mode: Option<String>,
+        read_only: Option<bool>,
+        params: Vec<(String, String)>,
+    ) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .system_administration
+            .wizard_runs
+            .push(WizardRun {
+                name,
+                mode,
+                read_only,
+                params,
+            });
+    }
+
+    /// Returns the number of wizard executions accepted by the stateful store.
+    ///
+    /// Parameter values remain deliberately unavailable because they may contain
+    /// confidential administration data.
+    pub fn wizard_run_count(&self) -> usize {
+        self.inner
+            .read()
+            .expect("store lock poisoned")
+            .system_administration
+            .wizard_runs
+            .len()
+    }
+
+    pub(crate) fn modify_setting_by_name(&self, name: &str, value: &str) -> bool {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        if name == "Password" {
+            value.clone_into(&mut inner.password);
+            return true;
+        }
+        if name != "Timezone" {
+            return false;
+        }
+        let Some(setting) = inner.resources.values_mut().find(|resource| {
+            !resource.trashed
+                && resource.resource_type == "setting"
+                && resource.name.eq_ignore_ascii_case("timezone")
+        }) else {
+            return false;
+        };
+        setting.set_attr("value", value);
+        setting.modification_time = now_iso();
+        true
     }
 
     /// Set the asset request parsing profile before the server starts.
@@ -5173,5 +5324,28 @@ mod tests {
                 .expect("resume interrupted task"),
             report_id
         );
+    }
+
+    #[test]
+    fn administration_state_changes_without_exposing_confidential_values() {
+        let store = ResourceStore::new();
+        store.apply_auth_groups(BTreeMap::from([(
+            "method:radius_connect".to_string(),
+            BTreeMap::from([("radiuskey".to_string(), "radius-secret".to_string())]),
+        )]));
+        store.replace_license("license-secret".to_string());
+        store.record_wizard_run(
+            "quick_first_scan".to_string(),
+            Some("step".to_string()),
+            Some(false),
+            vec![("password".to_string(), "wizard-secret".to_string())],
+        );
+
+        assert_eq!(store.wizard_run_count(), 1);
+        assert!(store.license_installed());
+        let debug = format!("{store:?}");
+        for secret in ["radius-secret", "license-secret", "wizard-secret"] {
+            assert!(!debug.contains(secret));
+        }
     }
 }

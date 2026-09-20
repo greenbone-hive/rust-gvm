@@ -199,21 +199,22 @@ tracing.
 
 ## System administration and user settings
 
-The system administration slice represents all six public mutation builders:
-authentication configuration, default and option-bearing license updates, the
-system-module setting compatibility wrapper, and default and option-bearing
-wizard execution. The three user-setting builders cover list, detail, and
-modification. Every request delegates to its established builder, so XML bytes,
-base64 setting encoding, option semantics, identifiers, status handling, and
-specialized wizard response parsing remain unchanged.
+The system administration slice uses complete direct-codec requests for
+authentication configuration, license updates, the system-module setting
+operation, and wizard execution. User-setting list, detail, and modification
+are complete requests as well. Former free builders and options bags are
+removed. License `allow_empty`, wizard mode/read-only, setting selectors,
+list filtering/paging/sorting, explicit clears, and response associations now
+belong to the request values.
 
 The system-module `ModifySettingRequest` and user-setting-module
 `ModifyUserSettingRequest` are distinct semantic values over the same canonical
 encoder. Authentication, license, and wizard convenience helpers use
 `execute`; the user-setting requests are available directly through generic
-execution without adding another facade. `Debug` output redacts authentication
-setting values, license files, wizard parameter values, and user-setting
-values, matching the wire-trace boundary's secret handling.
+execution without adding another facade. The default/option-bearing license and
+wizard types were redundant forwarding variants and are removed. `Debug`,
+validation/request errors, diagnostics, and wire traces redact authentication
+settings, license files, wizard parameter values, and user-setting values.
 
 Audit list, detail, create, clone, modify, delete, start, stop, and resume
 requests likewise remain audit-scoped types even where their wire command is a
@@ -339,12 +340,13 @@ severity, task, and result restrictions while preserving omitted NVT and
 activation. The unsupported note `orphan` child is no longer emitted.
 
 Trashcan operations follow the same rule. `EmptyTrashcanRequest` selects the
-existing empty-trashcan response, while `RestoreRequest` and
-`RestoreFromTrashcanRequest` preserve the two public builder names as distinct
-semantic values over the same byte-identical `<restore>` command and typed
-response. All of these baseline commands remain available on every supported
-GMP version, and retained facade helpers delegate through `execute` without
-changing raw `send` or `call` behavior.
+existing empty-trashcan response, while `RestoreRequest` owns the required ID
+and the sole `<restore>` command. Pinned gvmd has no second restore semantic
+operation, so the byte-identical `RestoreFromTrashcanRequest`, builder, and
+facade alias are removed. Both baseline commands remain available on every
+supported GMP version, and retained facade helpers accept canonical requests
+unchanged and delegate through `execute` without changing raw `send` or `call`
+behavior.
 
 ## Identity and authorization lifecycles
 
