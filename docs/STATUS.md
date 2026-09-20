@@ -221,15 +221,18 @@ methods remain additive wrappers over generic typed execution. Scan
 configurations were handled by a separate batch because they include larger
 and more specialized command surfaces.
 
-The scan-config/policy Phase 2 batch, tracked by
-[`#549`](https://github.com/greenbone-hive/rust-gvm/issues/549), migrates every
-operation owned by the scan-config command family: scan configurations and
-policies, import, preference retrieval and mutation, NVT/family selection, and
-global synchronization. The generic config builders remain the single encoder,
-import validation still happens before transmission, and a typed preference
-response preserves both default and configuration-scoped shapes. Existing
-convenience methods delegate to generic execution; raw builders, `send`, `call`,
-and the deprecated global-sync compatibility shim remain supported.
+The additive scan-config/policy Phase 2 batch, tracked by
+[`#549`](https://github.com/greenbone-hive/rust-gvm/issues/549), established
+semantic wrappers. Issue [#649](https://github.com/greenbone-hive/rust-gvm/issues/649)
+supersedes its lifecycle portion with 24 complete direct-codec requests over
+the four shared config roots and 20 request-by-value facades. Named creation
+requires an explicit base; clone inherits hidden selector/preference state;
+import validates one exported config and policy import adds an outer policy
+override. Metadata changes only nonempty names/comments, and canonical usage
+is restricted to scan/policy. The unsupported schema-only `sync_config`
+request and both sync facades are removed. Preference retrieval and the eight
+configured preference/NVT/family mutation requests remain transitional for the
+next ordered child. Raw `send`, `call`, and custom codecs remain available.
 
 The earlier additive alert-and-schedule Phase 2 batch, tracked by
 [`#555`](https://github.com/greenbone-hive/rust-gvm/issues/555), migrates every
@@ -876,7 +879,7 @@ its explicit raw-send compatibility path.
 | version | ✅ | — | `get_version()` |
 | auth | — | — | `authenticate()` |
 | target | ✅ | ✅ | |
-| scan_config | ✅ | ✅ | Also: `get_scan_config()`, `modify_scan_config()`, `delete_scan_config()`, `clone_scan_config()`, global `sync_config()`; deprecated `sync_scan_config(id)` remains source-compatible |
+| scan_config | ✅ | ✅ | Complete request values cover generic/scan/policy lifecycle aliases; creation requires copy/import, and unsupported GMP sync is removed |
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
 | port_list | ✅ | ✅ | |
 | task | ✅ | ✅ | Also: `start_task()` |

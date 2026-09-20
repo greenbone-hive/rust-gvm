@@ -135,14 +135,16 @@ fn parse_children(reader: &mut Reader<&[u8]>) -> Option<(Vec<ParsedElement>, Opt
             Ok(Event::Text(ref t)) => {
                 current_text.push_str(&t.xml_content(XmlVersion::Implicit1_0));
             }
+            Ok(Event::CData(ref text)) => {
+                current_text.push_str(text.as_ref());
+            }
             Ok(Event::GeneralRef(ref reference)) => {
                 current_text.push_str(&resolve_reference(reference)?);
             }
             Ok(Event::End(_)) => {
                 // quick-xml checks matching end names before yielding this
                 // event, so this closes the element for this recursion level.
-                let text = current_text.trim();
-                let text = (!text.is_empty()).then(|| text.to_string());
+                let text = (!current_text.is_empty()).then_some(current_text);
                 return Some((children, text));
             }
             Ok(Event::Eof) | Err(_) => return None,
@@ -174,6 +176,9 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
             }
             Ok(Event::Text(ref t)) if inside => {
                 result.push_str(&t.xml_content(XmlVersion::Implicit1_0));
+            }
+            Ok(Event::CData(ref text)) if inside => {
+                result.push_str(text.as_ref());
             }
             Ok(Event::GeneralRef(ref reference)) if inside => {
                 result.push_str(&resolve_reference(reference)?);
@@ -283,6 +288,27 @@ mod tests {
         assert_eq!(
             parse_element_text(xml, "name").as_deref(),
             Some("left & right ! done")
+        );
+    }
+
+    #[test]
+    fn test_parse_command_preserves_significant_surrounding_whitespace() {
+        let xml = b"<modify_config><name>  </name><comment> kept </comment></modify_config>";
+        let cmd = parse_command(xml).expect("should parse");
+
+        assert_eq!(cmd.child_text("name"), Some("  "));
+        assert_eq!(cmd.child_text("comment"), Some(" kept "));
+    }
+
+    #[test]
+    fn test_parse_command_appends_cdata_and_text_in_wire_order() {
+        let xml = b"<create_config><value>before<![CDATA[<&secret>]]>after</value></create_config>";
+        let cmd = parse_command(xml).expect("should parse");
+
+        assert_eq!(cmd.child_text("value"), Some("before<&secret>after"));
+        assert_eq!(
+            parse_element_text(xml, "value").as_deref(),
+            Some("before<&secret>after")
         );
     }
 

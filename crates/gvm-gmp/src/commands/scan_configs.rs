@@ -1,50 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Scan configuration command builders.
+//! Canonical scan-configuration and policy lifecycle requests plus deferred
+//! preference and selection mutation compatibility APIs.
+
+use std::fmt;
 
 use base64::Engine as _;
 use gvm_protocol::{xml_command::XmlElement, Request, XmlCommand};
-use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::events::{BytesRef, BytesStart, Event};
+use quick_xml::{Reader, XmlVersion};
 
 use crate::commands::configs::{
-    clone_config, create_config, delete_config, get_config, get_configs, modify_config,
-    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
-    GetConfigsOpts, ModifyConfigOpts,
+    config_copy_command, config_delete_command, config_modify_command, config_query_command,
+    is_xml_1_0_character, validate_id, validate_metadata, validate_named_copy,
+    validate_optional_xml_text, validate_query, ConfigUsageType,
 };
-use crate::commands::usage_type::UsageType;
 use crate::common::bool_str;
 use crate::responses::{
     CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferencesResponse,
-    GetScanConfigsResponse, ModifyScanConfigResponse, ParseError, SyncConfigResponse,
+    GetScanConfigsResponse, ModifyScanConfigResponse,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for scan-configuration create and modify requests.
-#[derive(Debug, Clone, Default)]
-pub struct ConfigOpts {
-    /// Optional comment text included in the request.
-    pub comment: Option<String>,
-    /// Optional usage type string.
-    pub usage_type: Option<String>,
-}
-
-/// Options for `get_scan_configs` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetScanConfigsOpts {
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-    /// Whether to query trashcan resources.
-    pub trash: Option<bool>,
-    /// Whether to request detailed output.
-    pub details: Option<bool>,
-}
-
-/// NVT family selection entry for scan-config and policy modify requests.
+/// NVT family selection entry for deferred scan-config and policy mutation requests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NvtFamilySelection {
     /// NVT family name.
@@ -55,7 +35,7 @@ pub struct NvtFamilySelection {
     pub all: bool,
 }
 
-/// Options for scan-config `get_preferences` requests.
+/// Options for deferred scan-config `get_preferences` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetScanConfigPreferencesOpts {
     /// Optional NVT OID to restrict preference lookup.
@@ -64,30 +44,74 @@ pub struct GetScanConfigPreferencesOpts {
     pub config_id: Option<EntityId>,
 }
 
-/// Options for singular policy `get_configs` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetPolicyOpts {
-    /// Whether to include audits using this policy.
-    pub audits: Option<bool>,
-}
-
-/// Semantic request for listing scan configurations.
+/// Request for listing scan configurations.
 #[derive(Debug, Clone, Default)]
 pub struct GetScanConfigsRequest {
-    opts: GetScanConfigsOpts,
+    /// Optional configuration identifier selector.
+    pub config_id: Option<EntityId>,
+    /// Optional inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// Optional saved-filter identifier. The `0` and `-2` sentinels are valid.
+    pub filter_id: Option<EntityId>,
+    /// Select trashed rather than active configurations.
+    pub trash: Option<bool>,
+    /// Request detailed output.
+    pub details: Option<bool>,
+    /// Request family expansion independently of details.
+    pub families: Option<bool>,
+    /// Request preference expansion independently of details.
+    pub preferences: Option<bool>,
+    /// Request associated tasks.
+    pub tasks: Option<bool>,
 }
 
 impl GetScanConfigsRequest {
-    /// Create a scan-configuration list request.
+    /// Create an unfiltered scan-configuration list request.
     #[must_use]
-    pub fn new(opts: GetScanConfigsOpts) -> Self {
-        Self { opts }
+    pub const fn new() -> Self {
+        Self {
+            config_id: None,
+            filter_string: None,
+            filter_id: None,
+            trash: None,
+            details: None,
+            families: None,
+            preferences: None,
+            tasks: None,
+        }
     }
 }
 
-impl Request for GetScanConfigsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_scan_configs(self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetScanConfigsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_query(
+            self.config_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_configs",
+            "get_scan_configs",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(config_query_command(
+            self.config_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.trash,
+            self.details,
+            self.families,
+            self.preferences,
+            self.tasks,
+            Some(ConfigUsageType::Scan),
+        )
+        .to_bytes())
     }
 }
 
@@ -95,23 +119,74 @@ impl GmpRequest for GetScanConfigsRequest {
     type Response = GetScanConfigsResponse;
 }
 
-/// Semantic request for one detailed scan configuration.
+/// Request for one scan configuration through `get_configs`.
 #[derive(Debug, Clone)]
 pub struct GetScanConfigRequest {
-    config_id: EntityId,
+    /// Required configuration identifier.
+    pub config_id: EntityId,
+    /// Optional inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// Optional saved-filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Select a trashed configuration.
+    pub trash: Option<bool>,
+    /// Request details; defaults to `Some(true)`.
+    pub details: Option<bool>,
+    /// Request family expansion.
+    pub families: Option<bool>,
+    /// Request preference expansion.
+    pub preferences: Option<bool>,
+    /// Request associated tasks.
+    pub tasks: Option<bool>,
 }
 
 impl GetScanConfigRequest {
-    /// Create a detailed single scan-configuration request.
+    /// Create an ID-selected detail request.
     #[must_use]
     pub fn new(config_id: EntityId) -> Self {
-        Self { config_id }
+        Self {
+            config_id,
+            filter_string: None,
+            filter_id: None,
+            trash: None,
+            details: Some(true),
+            families: None,
+            preferences: None,
+            tasks: None,
+        }
     }
 }
 
-impl Request for GetScanConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_scan_config(&self.config_id).to_bytes()
+impl GmpRequestCodec for GetScanConfigRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_query(
+            Some(&self.config_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_configs",
+            "get_scan_config",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(config_query_command(
+            Some(&self.config_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.trash,
+            self.details,
+            self.families,
+            self.preferences,
+            self.tasks,
+            Some(ConfigUsageType::Scan),
+        )
+        .to_bytes())
     }
 }
 
@@ -119,180 +194,74 @@ impl GmpRequest for GetScanConfigRequest {
     type Response = GetScanConfigsResponse;
 }
 
-/// Semantic request for creating a scan configuration.
-#[derive(Debug, Clone)]
-pub struct CreateScanConfigRequest {
-    name: String,
-    base_id: Option<EntityId>,
-    opts: ConfigOpts,
-}
-
-impl CreateScanConfigRequest {
-    /// Create a scan-configuration creation request.
-    #[must_use]
-    pub fn new(name: impl Into<String>, base_id: Option<EntityId>, opts: ConfigOpts) -> Self {
-        Self {
-            name: name.into(),
-            base_id,
-            opts,
-        }
-    }
-}
-
-impl Request for CreateScanConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_scan_config(&self.name, self.base_id.as_ref(), self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for CreateScanConfigRequest {
-    type Response = CreateScanConfigResponse;
-}
-
-/// Semantic request for cloning a scan configuration.
-#[derive(Debug, Clone)]
-pub struct CloneScanConfigRequest {
-    config_id: EntityId,
-}
-
-impl CloneScanConfigRequest {
-    /// Create a scan-configuration clone request.
-    #[must_use]
-    pub fn new(config_id: EntityId) -> Self {
-        Self { config_id }
-    }
-}
-
-impl Request for CloneScanConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        clone_scan_config(&self.config_id).to_bytes()
-    }
-}
-
-impl GmpRequest for CloneScanConfigRequest {
-    type Response = CreateScanConfigResponse;
-}
-
-/// Semantic request for importing scan-configuration XML.
-#[derive(Debug, Clone)]
-pub struct ImportScanConfigRequest {
-    bytes: Vec<u8>,
-}
-
-impl ImportScanConfigRequest {
-    /// Validate import XML and create a scan-configuration import request.
-    ///
-    /// # Errors
-    /// Returns an error under the same conditions as [`import_scan_config`].
-    pub fn new(scan_config_xml: &str) -> Result<Self, ParseError> {
-        Ok(Self {
-            bytes: import_scan_config(scan_config_xml)?.to_bytes(),
-        })
-    }
-}
-
-impl Request for ImportScanConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.bytes.clone()
-    }
-}
-
-impl GmpRequest for ImportScanConfigRequest {
-    type Response = CreateScanConfigResponse;
-}
-
-/// Semantic request for modifying a scan configuration.
-#[derive(Debug, Clone)]
-pub struct ModifyScanConfigRequest {
-    config_id: EntityId,
-    opts: ConfigOpts,
-}
-
-impl ModifyScanConfigRequest {
-    /// Create a scan-configuration modification request.
-    #[must_use]
-    pub fn new(config_id: EntityId, opts: ConfigOpts) -> Self {
-        Self { config_id, opts }
-    }
-}
-
-impl Request for ModifyScanConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_scan_config(&self.config_id, self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for ModifyScanConfigRequest {
-    type Response = ModifyScanConfigResponse;
-}
-
-/// Semantic request for deleting a scan configuration.
-#[derive(Debug, Clone)]
-pub struct DeleteScanConfigRequest {
-    config_id: EntityId,
-    ultimate: bool,
-}
-
-impl DeleteScanConfigRequest {
-    /// Create a scan-configuration deletion request.
-    #[must_use]
-    pub fn new(config_id: EntityId, ultimate: bool) -> Self {
-        Self {
-            config_id,
-            ultimate,
-        }
-    }
-}
-
-impl Request for DeleteScanConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_scan_config(&self.config_id, self.ultimate).to_bytes()
-    }
-}
-
-impl GmpRequest for DeleteScanConfigRequest {
-    type Response = DeleteScanConfigResponse;
-}
-
-/// Semantic request for globally synchronizing configurations.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SyncConfigRequest;
-
-impl SyncConfigRequest {
-    /// Create a global configuration synchronization request.
-    #[must_use]
-    pub const fn new() -> Self {
-        Self
-    }
-}
-
-impl Request for SyncConfigRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        sync_config().to_bytes()
-    }
-}
-
-impl GmpRequest for SyncConfigRequest {
-    type Response = SyncConfigResponse;
-}
-
-/// Semantic request for listing policies.
+/// Request for listing policies.
 #[derive(Debug, Clone, Default)]
 pub struct GetPoliciesRequest {
-    opts: GetScanConfigsOpts,
+    /// Optional policy identifier selector, encoded as `config_id`.
+    pub policy_id: Option<EntityId>,
+    /// Optional inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// Optional saved-filter identifier. The `0` and `-2` sentinels are valid.
+    pub filter_id: Option<EntityId>,
+    /// Select trashed rather than active configurations.
+    pub trash: Option<bool>,
+    /// Request detailed output.
+    pub details: Option<bool>,
+    /// Request family expansion independently of details.
+    pub families: Option<bool>,
+    /// Request preference expansion independently of details.
+    pub preferences: Option<bool>,
+    /// Request associated tasks, exposed as policy audits.
+    pub audits: Option<bool>,
 }
 
 impl GetPoliciesRequest {
-    /// Create a policy list request.
+    /// Create an unfiltered policy list request.
     #[must_use]
-    pub fn new(opts: GetScanConfigsOpts) -> Self {
-        Self { opts }
+    pub const fn new() -> Self {
+        Self {
+            policy_id: None,
+            filter_string: None,
+            filter_id: None,
+            trash: None,
+            details: None,
+            families: None,
+            preferences: None,
+            audits: None,
+        }
     }
 }
 
-impl Request for GetPoliciesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_policies(self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetPoliciesRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_query(
+            self.policy_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_configs",
+            "get_policies",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(config_query_command(
+            self.policy_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.trash,
+            self.details,
+            self.families,
+            self.preferences,
+            self.audits,
+            Some(ConfigUsageType::Policy),
+        )
+        .to_bytes())
     }
 }
 
@@ -300,24 +269,71 @@ impl GmpRequest for GetPoliciesRequest {
     type Response = GetScanConfigsResponse;
 }
 
-/// Semantic request for one detailed policy.
+/// Request for one policy through `get_configs`.
 #[derive(Debug, Clone)]
 pub struct GetPolicyRequest {
-    policy_id: EntityId,
-    opts: GetPolicyOpts,
+    /// Required policy identifier, encoded as `config_id`.
+    pub policy_id: EntityId,
+    /// Optional inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// Optional saved-filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Select a trashed configuration.
+    pub trash: Option<bool>,
+    /// Request details; defaults to `Some(true)`.
+    pub details: Option<bool>,
+    /// Request family expansion.
+    pub families: Option<bool>,
+    /// Request preference expansion.
+    pub preferences: Option<bool>,
+    /// Request associated tasks, exposed as policy audits.
+    pub audits: Option<bool>,
 }
 
 impl GetPolicyRequest {
-    /// Create a detailed single-policy request.
+    /// Create an ID-selected policy detail request.
     #[must_use]
-    pub fn new(policy_id: EntityId, opts: GetPolicyOpts) -> Self {
-        Self { policy_id, opts }
+    pub fn new(policy_id: EntityId) -> Self {
+        Self {
+            policy_id,
+            filter_string: None,
+            filter_id: None,
+            trash: None,
+            details: Some(true),
+            families: None,
+            preferences: None,
+            audits: None,
+        }
     }
 }
 
-impl Request for GetPolicyRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_policy(&self.policy_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetPolicyRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_query(
+            Some(&self.policy_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_configs", "get_policy"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(config_query_command(
+            Some(&self.policy_id),
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.trash,
+            self.details,
+            self.families,
+            self.preferences,
+            self.audits,
+            Some(ConfigUsageType::Policy),
+        )
+        .to_bytes())
     }
 }
 
@@ -325,27 +341,114 @@ impl GmpRequest for GetPolicyRequest {
     type Response = GetScanConfigsResponse;
 }
 
-/// Semantic request for creating a policy.
+/// Request for creating a named scan configuration from a required base.
 #[derive(Debug, Clone)]
-pub struct CreatePolicyRequest {
-    name: String,
-    opts: ConfigOpts,
+pub struct CreateScanConfigRequest {
+    /// Required nonempty name.
+    pub name: String,
+    /// Required source configuration.
+    pub base_id: EntityId,
+    /// Optional comment override.
+    pub comment: Option<String>,
+    /// Optional usage override; omission inherits the source usage.
+    pub usage_type: Option<ConfigUsageType>,
 }
 
-impl CreatePolicyRequest {
-    /// Create a policy creation request.
+impl CreateScanConfigRequest {
+    /// Create a named copy request.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: ConfigOpts) -> Self {
+    pub fn new(name: impl Into<String>, base_id: EntityId) -> Self {
         Self {
             name: name.into(),
-            opts,
+            base_id,
+            comment: None,
+            usage_type: None,
         }
     }
 }
 
-impl Request for CreatePolicyRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_policy(&self.name, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for CreateScanConfigRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_named_copy(
+            &self.name,
+            &self.base_id,
+            self.comment.as_deref(),
+            "base_id",
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_config",
+            "create_scan_config",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(config_copy_command(
+            &self.base_id,
+            Some(&self.name),
+            self.comment.as_deref(),
+            self.usage_type,
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for CreateScanConfigRequest {
+    type Response = CreateScanConfigResponse;
+}
+
+/// Request for creating a named policy from a required base.
+#[derive(Debug, Clone)]
+pub struct CreatePolicyRequest {
+    /// Required nonempty policy name.
+    pub name: String,
+    /// Required source configuration.
+    pub base_id: EntityId,
+    /// Optional comment override.
+    pub comment: Option<String>,
+}
+
+impl CreatePolicyRequest {
+    /// Create a named policy copy request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, base_id: EntityId) -> Self {
+        Self {
+            name: name.into(),
+            base_id,
+            comment: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for CreatePolicyRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_named_copy(
+            &self.name,
+            &self.base_id,
+            self.comment.as_deref(),
+            "base_id",
+        )
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_config",
+            "create_policy",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(config_copy_command(
+            &self.base_id,
+            Some(&self.name),
+            self.comment.as_deref(),
+            Some(ConfigUsageType::Policy),
+        )
+        .to_bytes())
     }
 }
 
@@ -353,51 +456,165 @@ impl GmpRequest for CreatePolicyRequest {
     type Response = CreateScanConfigResponse;
 }
 
-/// Semantic request for cloning a policy.
-#[derive(Debug, Clone)]
-pub struct ClonePolicyRequest {
-    policy_id: EntityId,
+macro_rules! clone_request {
+    ($name:ident, $id:ident, $semantic:literal, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            /// Required source configuration identifier.
+            pub $id: EntityId,
+            /// Optional name override; an empty value requests generated naming.
+            pub name: Option<String>,
+            /// Optional comment override; an empty value inherits the source comment.
+            pub comment: Option<String>,
+            /// Optional typed usage override; omission inherits source usage.
+            pub usage_type: Option<ConfigUsageType>,
+        }
+
+        impl $name {
+            /// Create a clone request with all overrides omitted.
+            #[must_use]
+            pub fn new($id: EntityId) -> Self {
+                Self {
+                    $id,
+                    name: None,
+                    comment: None,
+                    usage_type: None,
+                }
+            }
+        }
+
+        impl GmpRequestCodec for $name {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_id(&self.$id, stringify!($id))?;
+                validate_optional_xml_text(self.name.as_deref(), "name")?;
+                validate_optional_xml_text(self.comment.as_deref(), "comment")
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("create_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(config_copy_command(
+                    &self.$id,
+                    self.name.as_deref(),
+                    self.comment.as_deref(),
+                    self.usage_type,
+                )
+                .to_bytes())
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = CreateScanConfigResponse;
+        }
+    };
 }
 
-impl ClonePolicyRequest {
-    /// Create a policy clone request.
+clone_request!(
+    CloneScanConfigRequest,
+    config_id,
+    "clone_scan_config",
+    "Request for cloning a scan configuration while inheriting source usage by default."
+);
+clone_request!(
+    ClonePolicyRequest,
+    policy_id,
+    "clone_policy",
+    "Request for cloning through the policy alias without forcing usage conversion."
+);
+
+/// Request for importing exactly one scan-configuration export.
+#[derive(Clone)]
+pub struct ImportScanConfigRequest {
+    /// Original exported XML document.
+    pub xml: String,
+    /// Optional outer usage override.
+    pub usage_type: Option<ConfigUsageType>,
+}
+
+impl ImportScanConfigRequest {
+    /// Store import XML for validation at encode and execute time.
     #[must_use]
-    pub fn new(policy_id: EntityId) -> Self {
-        Self { policy_id }
+    pub fn new(xml: impl Into<String>) -> Self {
+        Self {
+            xml: xml.into(),
+            usage_type: None,
+        }
     }
 }
 
-impl Request for ClonePolicyRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        clone_policy(&self.policy_id).to_bytes()
+impl fmt::Debug for ImportScanConfigRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImportScanConfigRequest")
+            .field("xml_bytes", &self.xml.len())
+            .field("usage_type", &self.usage_type)
+            .finish()
     }
 }
 
-impl GmpRequest for ClonePolicyRequest {
+impl GmpRequestCodec for ImportScanConfigRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_import(&self.xml, "xml").map(|_| ())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_config",
+            "import_scan_config",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        encode_import(&self.xml, self.usage_type, "xml")
+    }
+}
+
+impl GmpRequest for ImportScanConfigRequest {
     type Response = CreateScanConfigResponse;
 }
 
-/// Semantic request for importing policy XML.
-#[derive(Debug, Clone)]
+/// Request for importing exactly one configuration as a policy.
+#[derive(Clone)]
 pub struct ImportPolicyRequest {
-    bytes: Vec<u8>,
+    /// Original exported XML document.
+    pub xml: String,
 }
 
 impl ImportPolicyRequest {
-    /// Validate import XML and create a policy import request.
-    ///
-    /// # Errors
-    /// Returns an error under the same conditions as [`import_policy`].
-    pub fn new(policy_xml: &str) -> Result<Self, ParseError> {
-        Ok(Self {
-            bytes: import_policy(policy_xml)?.to_bytes(),
-        })
+    /// Store import XML for validation at encode and execute time.
+    #[must_use]
+    pub fn new(xml: impl Into<String>) -> Self {
+        Self { xml: xml.into() }
     }
 }
 
-impl Request for ImportPolicyRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.bytes.clone()
+impl fmt::Debug for ImportPolicyRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImportPolicyRequest")
+            .field("xml_bytes", &self.xml.len())
+            .finish()
+    }
+}
+
+impl GmpRequestCodec for ImportPolicyRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_import(&self.xml, "xml").map(|_| ())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_config",
+            "import_policy",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        encode_import(&self.xml, Some(ConfigUsageType::Policy), "xml")
     }
 }
 
@@ -405,56 +622,673 @@ impl GmpRequest for ImportPolicyRequest {
     type Response = CreateScanConfigResponse;
 }
 
-/// Semantic request for modifying a policy.
-#[derive(Debug, Clone)]
-pub struct ModifyPolicyRequest {
-    policy_id: EntityId,
-    opts: ConfigOpts,
+macro_rules! modify_request {
+    ($name:ident, $id:ident, $semantic:literal, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            /// Required configuration identifier.
+            pub $id: EntityId,
+            /// Optional name update; an empty value is a server-side no-op.
+            pub name: Option<String>,
+            /// Optional comment update; an empty value is a server-side no-op.
+            pub comment: Option<String>,
+        }
+
+        impl $name {
+            /// Create a metadata no-op request.
+            #[must_use]
+            pub fn new($id: EntityId) -> Self {
+                Self {
+                    $id,
+                    name: None,
+                    comment: None,
+                }
+            }
+        }
+
+        impl GmpRequestCodec for $name {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_metadata(
+                    &self.$id,
+                    self.name.as_deref(),
+                    self.comment.as_deref(),
+                    stringify!($id),
+                )
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("modify_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(
+                    config_modify_command(&self.$id, self.name.as_deref(), self.comment.as_deref())
+                        .to_bytes(),
+                )
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
 }
 
-impl ModifyPolicyRequest {
-    /// Create a policy modification request.
-    #[must_use]
-    pub fn new(policy_id: EntityId, opts: ConfigOpts) -> Self {
-        Self { policy_id, opts }
+modify_request!(
+    ModifyScanConfigRequest,
+    config_id,
+    "modify_scan_config",
+    "Request for modifying scan-configuration metadata."
+);
+modify_request!(
+    ModifyPolicyRequest,
+    policy_id,
+    "modify_policy",
+    "Request for modifying policy metadata without changing usage."
+);
+
+macro_rules! delete_request {
+    ($name:ident, $id:ident, $semantic:literal, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            /// Required configuration identifier.
+            pub $id: EntityId,
+            /// Optional permanent-deletion flag. Omission uses trash semantics.
+            pub ultimate: Option<bool>,
+        }
+
+        impl $name {
+            /// Create a trash-by-default deletion request.
+            #[must_use]
+            pub fn new($id: EntityId) -> Self {
+                Self {
+                    $id,
+                    ultimate: None,
+                }
+            }
+        }
+
+        impl GmpRequestCodec for $name {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_id(&self.$id, stringify!($id))
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("delete_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(config_delete_command(&self.$id, self.ultimate).to_bytes())
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = DeleteScanConfigResponse;
+        }
+    };
+}
+
+delete_request!(
+    DeleteScanConfigRequest,
+    config_id,
+    "delete_scan_config",
+    "Request for trashing or permanently deleting a scan configuration."
+);
+delete_request!(
+    DeletePolicyRequest,
+    policy_id,
+    "delete_policy",
+    "Request for trashing or permanently deleting a policy."
+);
+
+macro_rules! metadata_setter_request {
+    ($name:ident, $id:ident, $field:ident, $semantic:literal, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            /// Required configuration identifier.
+            pub $id: EntityId,
+            /// Exact metadata value. Empty text is emitted and is a gvmd no-op.
+            pub $field: String,
+        }
+
+        impl $name {
+            /// Create a metadata setter request.
+            #[must_use]
+            pub fn new($id: EntityId, $field: impl Into<String>) -> Self {
+                Self {
+                    $id,
+                    $field: $field.into(),
+                }
+            }
+        }
+
+        impl GmpRequestCodec for $name {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_id(&self.$id, stringify!($id))?;
+                validate_optional_xml_text(Some(&self.$field), stringify!($field))
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("modify_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                let (name, comment) = if stringify!($field) == "name" {
+                    (Some(self.$field.as_str()), None)
+                } else {
+                    (None, Some(self.$field.as_str()))
+                };
+                Ok(config_modify_command(&self.$id, name, comment).to_bytes())
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+metadata_setter_request!(
+    ModifyScanConfigSetNameRequest,
+    config_id,
+    name,
+    "modify_scan_config_set_name",
+    "Request for setting a scan-configuration name; empty text is a no-op."
+);
+metadata_setter_request!(
+    ModifyPolicySetNameRequest,
+    policy_id,
+    name,
+    "modify_policy_set_name",
+    "Request for setting a policy name; empty text is a no-op."
+);
+
+macro_rules! comment_setter_request {
+    ($name:ident, $id:ident, $semantic:literal, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            /// Required configuration identifier.
+            pub $id: EntityId,
+            /// Optional comment. `None` omits it; `Some("")` emits a no-op element.
+            pub comment: Option<String>,
+        }
+
+        impl $name {
+            /// Create a comment setter request.
+            #[must_use]
+            pub fn new($id: EntityId, comment: Option<String>) -> Self {
+                Self { $id, comment }
+            }
+        }
+
+        impl GmpRequestCodec for $name {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_id(&self.$id, stringify!($id))?;
+                validate_optional_xml_text(self.comment.as_deref(), "comment")
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("modify_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(config_modify_command(&self.$id, None, self.comment.as_deref()).to_bytes())
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+comment_setter_request!(
+    ModifyScanConfigSetCommentRequest,
+    config_id,
+    "modify_scan_config_set_comment",
+    "Request for setting a scan-configuration comment; empty text is a no-op."
+);
+comment_setter_request!(
+    ModifyPolicySetCommentRequest,
+    policy_id,
+    "modify_policy_set_comment",
+    "Request for setting a policy comment; empty text is a no-op."
+);
+
+fn encode_import(
+    xml: &str,
+    usage_type: Option<ConfigUsageType>,
+    field: &'static str,
+) -> Result<Vec<u8>, GmpRequestError> {
+    let carrier = validate_import(xml, field)?;
+    let usage_capacity = usage_type.map_or(0, |_| "<usage_type>policy</usage_type>".len());
+    let mut bytes = Vec::with_capacity(
+        "<create_config></create_config>".len() + carrier.len() + usage_capacity,
+    );
+    bytes.extend_from_slice(b"<create_config>");
+    bytes.extend_from_slice(carrier.as_bytes());
+    if let Some(usage_type) = usage_type {
+        bytes.extend_from_slice(b"<usage_type>");
+        bytes.extend_from_slice(usage_type.as_gmp_str().as_bytes());
+        bytes.extend_from_slice(b"</usage_type>");
+    }
+    bytes.extend_from_slice(b"</create_config>");
+    Ok(bytes)
+}
+
+fn validate_import<'a>(xml: &'a str, field: &'static str) -> Result<&'a str, GmpRequestError> {
+    let carrier = strip_import_prolog(xml, field)?;
+    let mut reader = Reader::from_str(carrier);
+    reader.config_mut().trim_text(false);
+    reader.config_mut().check_comments = true;
+    let mut state = ConfigImportState::new(field);
+
+    loop {
+        let event = reader
+            .read_event()
+            .map_err(|_| import_error(field, "must be well-formed XML"))?;
+        match event {
+            Event::Start(element) => state.start(&element)?,
+            Event::Empty(element) => state.empty(&element)?,
+            Event::End(_) => state.end()?,
+            Event::Text(text) => state.text(&text.xml_content(XmlVersion::Implicit1_0))?,
+            Event::CData(text) => state.text(text.as_ref())?,
+            Event::GeneralRef(reference) => {
+                let resolved = resolve_reference(&reference).ok_or_else(|| {
+                    import_error(field, "contains an unsupported entity reference")
+                })?;
+                state.text(&resolved)?;
+            }
+            Event::Decl(_) => {
+                return Err(import_error(
+                    field,
+                    "XML declaration must appear once at the beginning",
+                ));
+            }
+            Event::DocType(_) => return Err(import_error(field, "DOCTYPE is not allowed")),
+            Event::PI(_) | Event::Comment(_) => {}
+            Event::Eof => break,
+        }
+    }
+    state.finish()?;
+    Ok(carrier)
+}
+
+fn strip_import_prolog<'a>(xml: &'a str, field: &'static str) -> Result<&'a str, GmpRequestError> {
+    let without_bom = xml.strip_prefix('\u{feff}').unwrap_or(xml);
+    if !without_bom.starts_with("<?xml") {
+        return Ok(without_bom);
+    }
+    let Some(end) = without_bom.find("?>") else {
+        return Err(import_error(
+            field,
+            "contains an incomplete XML declaration",
+        ));
+    };
+    let declaration = &without_bom[..end + 2];
+    let mut reader = Reader::from_str(declaration);
+    let Event::Decl(declaration) = reader
+        .read_event()
+        .map_err(|_| import_error(field, "contains an invalid XML declaration"))?
+    else {
+        return Err(import_error(field, "contains an invalid XML declaration"));
+    };
+    let version = declaration
+        .version()
+        .map_err(|_| import_error(field, "contains an invalid XML declaration"))?;
+    if version.as_ref() != "1.0" {
+        return Err(import_error(field, "XML declaration must use version 1.0"));
+    }
+    if let Some(encoding) = declaration.encoding() {
+        let encoding =
+            encoding.map_err(|_| import_error(field, "contains an invalid XML declaration"))?;
+        if !encoding.as_ref().eq_ignore_ascii_case("UTF-8") {
+            return Err(import_error(field, "XML declaration must use UTF-8"));
+        }
+    }
+    if let Some(standalone) = declaration.standalone() {
+        let standalone =
+            standalone.map_err(|_| import_error(field, "contains an invalid XML declaration"))?;
+        if !matches!(standalone.as_ref(), "yes" | "no") {
+            return Err(import_error(field, "contains an invalid XML declaration"));
+        }
+    }
+    Ok(&without_bom[end + 2..])
+}
+
+#[derive(Default)]
+struct ImportedPreferenceState {
+    nvt_oid_nonempty: bool,
+    saw_id: bool,
+    id: String,
+}
+
+struct ConfigImportState {
+    field: &'static str,
+    stack: Vec<String>,
+    saw_root: bool,
+    completed_root: bool,
+    invalid_outside_content: bool,
+    config_count: usize,
+    name_count: usize,
+    usage_count: usize,
+    selectors_count: usize,
+    preferences_count: usize,
+    name: String,
+    current_preference: Option<ImportedPreferenceState>,
+}
+
+impl ConfigImportState {
+    const fn new(field: &'static str) -> Self {
+        Self {
+            field,
+            stack: Vec::new(),
+            saw_root: false,
+            completed_root: false,
+            invalid_outside_content: false,
+            config_count: 0,
+            name_count: 0,
+            usage_count: 0,
+            selectors_count: 0,
+            preferences_count: 0,
+            name: String::new(),
+            current_preference: None,
+        }
+    }
+
+    fn start(&mut self, element: &BytesStart<'_>) -> Result<(), GmpRequestError> {
+        if self.stack.is_empty() {
+            self.begin_root(element)?;
+        } else if self.completed_root {
+            return Err(import_error(
+                self.field,
+                "must contain exactly one root element",
+            ));
+        }
+        validate_import_attributes(element, self.field)?;
+        let name = element.name().as_ref().to_string();
+        self.stack.push(name);
+        self.record_open(element)
+    }
+
+    fn empty(&mut self, element: &BytesStart<'_>) -> Result<(), GmpRequestError> {
+        if self.stack.is_empty() {
+            self.begin_root(element)?;
+            validate_import_attributes(element, self.field)?;
+            self.stack.push(element.name().as_ref().to_string());
+            self.record_open(element)?;
+            self.end()?;
+            return Ok(());
+        }
+        if self.completed_root {
+            return Err(import_error(
+                self.field,
+                "must contain exactly one root element",
+            ));
+        }
+        validate_import_attributes(element, self.field)?;
+        self.stack.push(element.name().as_ref().to_string());
+        self.record_open(element)?;
+        self.end()
+    }
+
+    fn begin_root(&mut self, element: &BytesStart<'_>) -> Result<(), GmpRequestError> {
+        if self.saw_root || self.completed_root {
+            return Err(import_error(
+                self.field,
+                "must contain exactly one root element",
+            ));
+        }
+        if element.name().as_ref() != "get_configs_response" {
+            return Err(import_error(
+                self.field,
+                "root must be an unqualified get_configs_response",
+            ));
+        }
+        reject_namespace_attributes(element, self.field)?;
+        self.saw_root = true;
+        Ok(())
+    }
+
+    fn record_open(&mut self, element: &BytesStart<'_>) -> Result<(), GmpRequestError> {
+        let depth = self.stack.len();
+        let name = self.stack.last().map(String::as_str).unwrap_or_default();
+        if depth == 2 && name == "config" {
+            reject_namespace_attributes(element, self.field)?;
+            self.config_count += 1;
+            if self.config_count > 1 {
+                return Err(import_error(
+                    self.field,
+                    "must contain exactly one direct config",
+                ));
+            }
+        }
+        if self.config_count == 1 && depth == 3 && self.stack[1] == "config" {
+            match name {
+                "name" => self.name_count += 1,
+                "usage_type" => self.usage_count += 1,
+                "nvt_selectors" => self.selectors_count += 1,
+                "preferences" => self.preferences_count += 1,
+                _ => {}
+            }
+            if self.name_count > 1
+                || self.usage_count > 1
+                || self.selectors_count > 1
+                || self.preferences_count > 1
+            {
+                return Err(import_error(
+                    self.field,
+                    "config contains an ambiguous duplicate direct field",
+                ));
+            }
+        }
+        if self.is_preference_path() {
+            self.current_preference = Some(ImportedPreferenceState::default());
+        } else if self.is_preference_nvt_path() {
+            if let Some(preference) = self.current_preference.as_mut() {
+                preference.nvt_oid_nonempty = attribute_value(element, "oid", self.field)?
+                    .is_some_and(|value| !value.is_empty());
+            }
+        } else if self.is_preference_id_path() {
+            if let Some(preference) = self.current_preference.as_mut() {
+                preference.saw_id = true;
+            }
+        }
+        Ok(())
+    }
+
+    fn text(&mut self, value: &str) -> Result<(), GmpRequestError> {
+        if !value.chars().all(is_xml_1_0_character) {
+            return Err(import_error(
+                self.field,
+                "contains a forbidden XML 1.0 character",
+            ));
+        }
+        if self.stack.is_empty() {
+            if !value.chars().all(char::is_whitespace) {
+                self.invalid_outside_content = true;
+            }
+        } else if self.stack.as_slice() == ["get_configs_response", "config", "name"] {
+            self.name.push_str(value);
+        } else if self.is_preference_id_path() {
+            if let Some(preference) = self.current_preference.as_mut() {
+                preference.id.push_str(value);
+            }
+        }
+        Ok(())
+    }
+
+    fn end(&mut self) -> Result<(), GmpRequestError> {
+        if self.is_preference_path() {
+            let preference = self.current_preference.take().ok_or_else(|| {
+                import_error(self.field, "contains an invalid preference structure")
+            })?;
+            if preference.nvt_oid_nonempty && (!preference.saw_id || preference.id.is_empty()) {
+                return Err(import_error(
+                    self.field,
+                    "NVT preferences require a nonempty direct id",
+                ));
+            }
+        }
+        if self.stack.pop().is_none() {
+            return Err(import_error(
+                self.field,
+                "contains an unmatched closing tag",
+            ));
+        }
+        if self.stack.is_empty() {
+            self.completed_root = true;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<(), GmpRequestError> {
+        if !self.saw_root
+            || !self.completed_root
+            || self.invalid_outside_content
+            || !self.stack.is_empty()
+        {
+            return Err(import_error(
+                self.field,
+                "must contain one complete response envelope",
+            ));
+        }
+        if self.config_count != 1 {
+            return Err(import_error(
+                self.field,
+                "must contain exactly one direct config",
+            ));
+        }
+        if self.name_count != 1 || self.name.is_empty() {
+            return Err(import_error(
+                self.field,
+                "config must have one nonempty direct name",
+            ));
+        }
+        if self.selectors_count != 1 {
+            return Err(import_error(
+                self.field,
+                "config must have one direct nvt_selectors container",
+            ));
+        }
+        if self.preferences_count != 1 {
+            return Err(import_error(
+                self.field,
+                "config must have one direct preferences container",
+            ));
+        }
+        Ok(())
+    }
+
+    fn is_preference_path(&self) -> bool {
+        self.stack.len() == 4
+            && self.stack[0] == "get_configs_response"
+            && self.stack[1] == "config"
+            && self.stack[2] == "preferences"
+            && self.stack[3] == "preference"
+    }
+
+    fn is_preference_nvt_path(&self) -> bool {
+        self.stack.len() == 5
+            && self.stack[0] == "get_configs_response"
+            && self.stack[1] == "config"
+            && self.stack[2] == "preferences"
+            && self.stack[3] == "preference"
+            && self.stack[4] == "nvt"
+    }
+
+    fn is_preference_id_path(&self) -> bool {
+        self.stack.len() == 5
+            && self.stack[0] == "get_configs_response"
+            && self.stack[1] == "config"
+            && self.stack[2] == "preferences"
+            && self.stack[3] == "preference"
+            && self.stack[4] == "id"
     }
 }
 
-impl Request for ModifyPolicyRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_policy(&self.policy_id, self.opts.clone()).to_bytes()
+fn validate_import_attributes(
+    element: &BytesStart<'_>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    for attribute in element.attributes() {
+        let attribute =
+            attribute.map_err(|_| import_error(field, "contains an invalid attribute"))?;
+        let value = attribute
+            .normalized_value(XmlVersion::Implicit1_0)
+            .map_err(|_| import_error(field, "contains an invalid attribute value"))?;
+        if !value.chars().all(is_xml_1_0_character) {
+            return Err(import_error(
+                field,
+                "contains a forbidden XML 1.0 character",
+            ));
+        }
     }
+    Ok(())
 }
 
-impl GmpRequest for ModifyPolicyRequest {
-    type Response = ModifyScanConfigResponse;
-}
-
-/// Semantic request for deleting a policy.
-#[derive(Debug, Clone)]
-pub struct DeletePolicyRequest {
-    policy_id: EntityId,
-}
-
-impl DeletePolicyRequest {
-    /// Create a policy deletion request.
-    #[must_use]
-    pub fn new(policy_id: EntityId) -> Self {
-        Self { policy_id }
+fn reject_namespace_attributes(
+    element: &BytesStart<'_>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    for attribute in element.attributes() {
+        let attribute =
+            attribute.map_err(|_| import_error(field, "contains an invalid attribute"))?;
+        let key = attribute.key.as_ref();
+        if key == "xmlns" || key.starts_with("xmlns:") {
+            return Err(import_error(
+                field,
+                "required envelope elements must be unqualified",
+            ));
+        }
     }
+    Ok(())
 }
 
-impl Request for DeletePolicyRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_policy(&self.policy_id).to_bytes()
+fn attribute_value(
+    element: &BytesStart<'_>,
+    expected: &str,
+    field: &'static str,
+) -> Result<Option<String>, GmpRequestError> {
+    for attribute in element.attributes() {
+        let attribute =
+            attribute.map_err(|_| import_error(field, "contains an invalid attribute"))?;
+        if attribute.key.as_ref() == expected {
+            let value = attribute
+                .normalized_value(XmlVersion::Implicit1_0)
+                .map_err(|_| import_error(field, "contains an invalid attribute value"))?;
+            if !value.chars().all(is_xml_1_0_character) {
+                return Err(import_error(
+                    field,
+                    "contains a forbidden XML 1.0 character",
+                ));
+            }
+            return Ok(Some(value.into_owned()));
+        }
     }
+    Ok(None)
 }
 
-impl GmpRequest for DeletePolicyRequest {
-    type Response = DeleteScanConfigResponse;
+fn resolve_reference(reference: &BytesRef<'_>) -> Option<String> {
+    if let Some(character) = reference.resolve_char_ref().ok()? {
+        return is_xml_1_0_character(character).then(|| character.to_string());
+    }
+    quick_xml::escape::resolve_xml_entity(reference.as_ref()).map(ToString::to_string)
 }
 
-/// Semantic request for scan-configuration preferences.
+fn import_error(field: &'static str, reason: &'static str) -> GmpRequestError {
+    GmpRequestError::invalid_field(field, reason)
+}
+
+/// Transitional request for scan-configuration preferences.
 #[derive(Debug, Clone, Default)]
 pub struct GetScanConfigPreferencesRequest {
     opts: GetScanConfigPreferencesOpts,
@@ -478,7 +1312,7 @@ impl GmpRequest for GetScanConfigPreferencesRequest {
     type Response = GetScanConfigPreferencesResponse;
 }
 
-/// Semantic request for one scan-configuration preference.
+/// Transitional request for one scan-configuration preference.
 #[derive(Debug, Clone)]
 pub struct GetScanConfigPreferenceRequest {
     name: String,
@@ -672,70 +1506,6 @@ macro_rules! define_family_selection_request {
     };
 }
 
-macro_rules! define_name_request {
-    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
-        #[doc = $request_doc]
-        #[derive(Debug, Clone)]
-        pub struct $request {
-            resource_id: EntityId,
-            name: String,
-        }
-
-        impl $request {
-            #[doc = $new_doc]
-            #[must_use]
-            pub fn new(resource_id: EntityId, name: impl Into<String>) -> Self {
-                Self {
-                    resource_id,
-                    name: name.into(),
-                }
-            }
-        }
-
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.resource_id, &self.name).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $request {
-            type Response = ModifyScanConfigResponse;
-        }
-    };
-}
-
-macro_rules! define_comment_request {
-    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
-        #[doc = $request_doc]
-        #[derive(Debug, Clone)]
-        pub struct $request {
-            resource_id: EntityId,
-            comment: Option<String>,
-        }
-
-        impl $request {
-            #[doc = $new_doc]
-            #[must_use]
-            pub fn new(resource_id: EntityId, comment: Option<String>) -> Self {
-                Self {
-                    resource_id,
-                    comment,
-                }
-            }
-        }
-
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.resource_id, self.comment.as_deref()).to_bytes()
-            }
-        }
-
-        impl GmpRequest for $request {
-            type Response = ModifyScanConfigResponse;
-        }
-    };
-}
-
 define_nvt_preference_request!(
     ModifyScanConfigSetNvtPreferenceRequest,
     modify_scan_config_set_nvt_preference,
@@ -760,19 +1530,6 @@ define_family_selection_request!(
     "Semantic request for replacing a scan-config family selection.",
     "Create a scan-config family-selection mutation request."
 );
-define_name_request!(
-    ModifyScanConfigSetNameRequest,
-    modify_scan_config_set_name,
-    "Semantic request for setting a scan-configuration name.",
-    "Create a scan-configuration name mutation request."
-);
-define_comment_request!(
-    ModifyScanConfigSetCommentRequest,
-    modify_scan_config_set_comment,
-    "Semantic request for setting or clearing a scan-configuration comment.",
-    "Create a scan-configuration comment mutation request."
-);
-
 define_nvt_preference_request!(
     ModifyPolicySetNvtPreferenceRequest,
     modify_policy_set_nvt_preference,
@@ -797,81 +1554,8 @@ define_family_selection_request!(
     "Semantic request for replacing a policy family selection.",
     "Create a policy family-selection mutation request."
 );
-define_name_request!(
-    ModifyPolicySetNameRequest,
-    modify_policy_set_name,
-    "Semantic request for setting a policy name.",
-    "Create a policy name mutation request."
-);
-define_comment_request!(
-    ModifyPolicySetCommentRequest,
-    modify_policy_set_comment,
-    "Semantic request for setting or clearing a policy comment.",
-    "Create a policy comment mutation request."
-);
 
-/// Build a clone request for an existing scan config.
-#[must_use]
-pub fn clone_scan_config(config_id: &EntityId) -> impl Request {
-    clone_config(config_id, CloneConfigOpts::default())
-}
-
-/// Build a `create_scan_config` request.
-#[must_use]
-pub fn create_scan_config(
-    name: &str,
-    base_id: Option<&EntityId>,
-    opts: ConfigOpts,
-) -> impl Request {
-    create_config(CreateConfigOpts {
-        name: name.into(),
-        base_id: base_id.cloned(),
-        comment: opts.comment,
-        usage_type: opts.usage_type.map(ConfigUsageType::custom),
-    })
-}
-
-/// Build a `create_config` request that imports scan-config XML.
-///
-/// # Errors
-/// Returns an error if `scan_config_xml` is not a single well-formed XML
-/// document rooted at `get_configs_response`.
-pub fn import_scan_config(scan_config_xml: &str) -> Result<impl Request, ParseError> {
-    validate_scan_config_import_xml(scan_config_xml)?;
-    let mut request =
-        Vec::with_capacity("<create_config></create_config>".len() + scan_config_xml.len());
-    request.extend_from_slice(b"<create_config>");
-    request.extend_from_slice(scan_config_xml.as_bytes());
-    request.extend_from_slice(b"</create_config>");
-    Ok(request)
-}
-
-/// Build a `get_scan_configs` request.
-#[must_use]
-pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
-    get_configs(GetConfigsOpts {
-        filter_string: opts.filter_string,
-        filter_id: opts.filter_id,
-        trash: opts.trash,
-        details: opts.details,
-        usage_type: Some(ConfigUsageType::from(UsageType::Scan)),
-        ..Default::default()
-    })
-}
-
-/// Build a `get_scan_config` request.
-#[must_use]
-pub fn get_scan_config(config_id: &EntityId) -> impl Request {
-    get_config(
-        config_id,
-        GetConfigOpts {
-            usage_type: Some(ConfigUsageType::from(UsageType::Scan)),
-            ..Default::default()
-        },
-    )
-}
-
-/// Build a `get_preferences` request for scan-config preferences.
+/// Build a deferred `get_preferences` request for scan-config preferences.
 #[must_use]
 pub fn get_scan_config_preferences(opts: GetScanConfigPreferencesOpts) -> impl Request {
     get_preferences_with(
@@ -881,7 +1565,7 @@ pub fn get_scan_config_preferences(opts: GetScanConfigPreferencesOpts) -> impl R
     )
 }
 
-/// Build a `get_preferences` request for a single scan-config preference.
+/// Build a deferred `get_preferences` request for one scan-config preference.
 #[must_use]
 pub fn get_scan_config_preference(name: &str, opts: GetScanConfigPreferencesOpts) -> impl Request {
     get_preferences_with(
@@ -896,36 +1580,20 @@ fn get_preferences_with(
     nvt_oid: Option<&str>,
     config_id: Option<&str>,
 ) -> XmlCommand {
-    let mut cmd = XmlCommand::new("get_preferences");
+    let mut command = XmlCommand::new("get_preferences");
     if let Some(preference) = preference {
-        cmd.set_attribute("preference", preference);
+        command.set_attribute("preference", preference);
     }
     if let Some(nvt_oid) = nvt_oid {
-        cmd.set_attribute("nvt_oid", nvt_oid);
+        command.set_attribute("nvt_oid", nvt_oid);
     }
     if let Some(config_id) = config_id {
-        cmd.set_attribute("config_id", config_id);
+        command.set_attribute("config_id", config_id);
     }
-    cmd
+    command
 }
 
-/// Build a `modify_scan_config` request.
-#[must_use]
-pub fn modify_scan_config(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
-    modify_config(
-        config_id,
-        ModifyConfigOpts {
-            comment: normalize_optional_text(opts.comment),
-            usage_type: opts.usage_type.map(ConfigUsageType::custom),
-            ..Default::default()
-        },
-    )
-}
-
-/// Build a `modify_config` request that sets a scan-config NVT preference.
-///
-/// Pass `None` for `value` to delete the configured value and fall back to the
-/// default preference.
+/// Build a deferred `modify_config` request that sets an NVT preference.
 #[must_use]
 pub fn modify_scan_config_set_nvt_preference(
     config_id: &EntityId,
@@ -936,10 +1604,7 @@ pub fn modify_scan_config_set_nvt_preference(
     modify_config_set_nvt_preference(config_id, name, nvt_oid, value)
 }
 
-/// Build a `modify_config` request that sets a scan-config scanner preference.
-///
-/// Pass `None` for `value` to delete the configured value and fall back to the
-/// default preference.
+/// Build a deferred `modify_config` request that sets a scanner preference.
 #[must_use]
 pub fn modify_scan_config_set_scanner_preference(
     config_id: &EntityId,
@@ -949,7 +1614,7 @@ pub fn modify_scan_config_set_scanner_preference(
     modify_config_set_scanner_preference(config_id, name, value)
 }
 
-/// Build a `modify_config` request that replaces a scan-config family NVT selection.
+/// Build a deferred `modify_config` request that replaces an NVT selection.
 #[must_use]
 pub fn modify_scan_config_set_nvt_selection(
     config_id: &EntityId,
@@ -959,7 +1624,7 @@ pub fn modify_scan_config_set_nvt_selection(
     modify_config_set_nvt_selection(config_id, family, nvt_oids)
 }
 
-/// Build a `modify_config` request that replaces scan-config family selection.
+/// Build a deferred `modify_config` request that replaces family selection.
 #[must_use]
 pub fn modify_scan_config_set_family_selection(
     config_id: &EntityId,
@@ -969,353 +1634,7 @@ pub fn modify_scan_config_set_family_selection(
     modify_config_set_family_selection(config_id, families, auto_add_new_families)
 }
 
-/// Build a `modify_config` request that sets a scan-config name.
-#[must_use]
-pub fn modify_scan_config_set_name(config_id: &EntityId, name: &str) -> impl Request {
-    modify_config_set_name(config_id, name)
-}
-
-/// Build a `modify_config` request that sets or clears a scan-config comment.
-#[must_use]
-pub fn modify_scan_config_set_comment(config_id: &EntityId, comment: Option<&str>) -> impl Request {
-    modify_config_set_comment(config_id, comment)
-}
-
-fn modify_config_set_nvt_preference(
-    config_id: &EntityId,
-    name: &str,
-    nvt_oid: &str,
-    value: Option<&str>,
-) -> XmlCommand {
-    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
-    let preference = cmd.add_element("preference");
-    preference.add_child("nvt").set_attribute("oid", nvt_oid);
-    preference.add_child_with_text("name", name);
-    add_encoded_preference_value(preference, value);
-    cmd
-}
-
-fn modify_config_set_scanner_preference(
-    config_id: &EntityId,
-    name: &str,
-    value: Option<&str>,
-) -> XmlCommand {
-    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
-    let preference = cmd.add_element("preference");
-    preference.add_child_with_text("name", name);
-    add_encoded_preference_value(preference, value);
-    cmd
-}
-
-fn modify_config_set_nvt_selection(
-    config_id: &EntityId,
-    family: &str,
-    nvt_oids: &[String],
-) -> XmlCommand {
-    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
-    let nvt_selection = cmd.add_element("nvt_selection");
-    nvt_selection.add_child_with_text("family", family);
-    for nvt_oid in nvt_oids {
-        nvt_selection.add_child("nvt").set_attribute("oid", nvt_oid);
-    }
-    cmd
-}
-
-fn modify_config_set_family_selection(
-    config_id: &EntityId,
-    families: &[NvtFamilySelection],
-    auto_add_new_families: bool,
-) -> XmlCommand {
-    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
-    let family_selection = cmd.add_element("family_selection");
-    family_selection.add_child_with_text("growing", bool_str(auto_add_new_families));
-    for family in families {
-        let family_element = family_selection.add_child("family");
-        family_element.add_child_with_text("name", &family.name);
-        family_element.add_child_with_text("all", bool_str(family.all));
-        family_element.add_child_with_text("growing", bool_str(family.growing));
-    }
-    cmd
-}
-
-fn add_encoded_preference_value(preference: &mut XmlElement, value: Option<&str>) {
-    if let Some(value) = value.filter(|value| !value.is_empty()) {
-        let encoded = base64::engine::general_purpose::STANDARD.encode(value.as_bytes());
-        preference.add_child_with_text("value", &encoded);
-    }
-}
-
-fn modify_config_set_name(config_id: &EntityId, name: &str) -> XmlCommand {
-    XmlCommand::new("modify_config")
-        .attribute("config_id", config_id.as_str())
-        .child_with_text("name", name)
-}
-
-fn modify_config_set_comment(config_id: &EntityId, comment: Option<&str>) -> XmlCommand {
-    XmlCommand::new("modify_config")
-        .attribute("config_id", config_id.as_str())
-        .child_with_text("comment", comment.unwrap_or_default())
-}
-
-/// Build a `delete_scan_config` request.
-#[must_use]
-pub fn delete_scan_config(config_id: &EntityId, ultimate: bool) -> impl Request {
-    delete_config(
-        config_id,
-        DeleteConfigOpts {
-            ultimate: Some(ultimate),
-        },
-    )
-}
-
-/// Build the global, parameterless `sync_config` request.
-#[must_use]
-pub fn sync_config() -> impl Request {
-    XmlCommand::new("sync_config")
-}
-
-/// Build a clone request for an existing policy.
-#[must_use]
-pub fn clone_policy(config_id: &EntityId) -> impl Request {
-    clone_scan_config(config_id)
-}
-
-/// Build a `create_config` request for a policy.
-#[must_use]
-pub fn create_policy(name: &str, opts: ConfigOpts) -> impl Request {
-    create_config(CreateConfigOpts {
-        name: name.into(),
-        base_id: None,
-        comment: opts.comment,
-        usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-    })
-}
-
-/// Build a `create_config` request that imports policy XML.
-///
-/// # Errors
-/// Returns an error if `policy_xml` is not a single well-formed XML document
-/// rooted at `get_configs_response`.
-pub fn import_policy(policy_xml: &str) -> Result<impl Request, ParseError> {
-    validate_policy_import_xml(policy_xml)?;
-    let policy_xml = strip_leading_xml_declaration(policy_xml);
-    let mut request =
-        Vec::with_capacity("<create_config></create_config>".len() + policy_xml.len());
-    request.extend_from_slice(b"<create_config>");
-    request.extend_from_slice(policy_xml.as_bytes());
-    request.extend_from_slice(b"</create_config>");
-    Ok(request)
-}
-
-/// Build a `get_configs` request scoped to policies.
-#[must_use]
-pub fn get_policies(opts: GetScanConfigsOpts) -> impl Request {
-    get_configs(GetConfigsOpts {
-        filter_string: opts.filter_string,
-        filter_id: opts.filter_id,
-        trash: opts.trash,
-        details: opts.details,
-        usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-        ..Default::default()
-    })
-}
-
-/// Build a `get_configs` request for a single policy.
-#[must_use]
-pub fn get_policy(policy_id: &EntityId, opts: GetPolicyOpts) -> impl Request {
-    get_config(
-        policy_id,
-        GetConfigOpts {
-            usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-            tasks: opts.audits,
-            ..Default::default()
-        },
-    )
-}
-
-/// Build a `modify_config` request scoped to policies.
-#[must_use]
-pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
-    modify_config(
-        config_id,
-        ModifyConfigOpts {
-            comment: normalize_optional_text(opts.comment),
-            usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
-            ..Default::default()
-        },
-    )
-}
-
-fn normalize_optional_text(value: Option<String>) -> Option<String> {
-    value.filter(|value| !value.is_empty())
-}
-
-fn validate_policy_import_xml(xml: &str) -> Result<(), ParseError> {
-    let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
-    reader.config_mut().check_comments = true;
-    let mut depth = 0usize;
-    let mut saw_root = false;
-    let mut completed_root = false;
-
-    loop {
-        match reader.read_event()? {
-            Event::Start(event) => {
-                if completed_root {
-                    return invalid_policy_xml("multiple root elements");
-                }
-                if !saw_root {
-                    validate_policy_import_root(event.name().as_ref())?;
-                    saw_root = true;
-                }
-                depth += 1;
-            }
-            Event::Empty(event) if depth == 0 => {
-                if completed_root {
-                    return invalid_policy_xml("multiple root elements");
-                }
-                completed_root = true;
-                saw_root = true;
-                validate_policy_import_root(event.name().as_ref())?;
-            }
-            Event::End(_) => {
-                depth = depth.checked_sub(1).ok_or(ParseError::InvalidValue {
-                    field: "policy_xml".to_string(),
-                    value: "unmatched end tag".to_string(),
-                })?;
-                if depth == 0 {
-                    completed_root = true;
-                }
-            }
-            Event::Text(event) if depth == 0 && !event.as_ref().trim().is_empty() => {
-                return invalid_policy_xml(if completed_root {
-                    "text after root element"
-                } else {
-                    "text before root element"
-                });
-            }
-            Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
-                return invalid_policy_xml("content outside root element");
-            }
-            Event::Decl(_) if saw_root || completed_root || depth != 0 => {
-                return invalid_policy_xml("XML declaration outside document prolog");
-            }
-            Event::DocType(_) => return invalid_policy_xml("DOCTYPE is not allowed"),
-            Event::Eof => {
-                if saw_root && depth == 0 {
-                    return Ok(());
-                }
-                return Err(ParseError::MissingElement(
-                    "get_configs_response".to_string(),
-                ));
-            }
-            _ => {}
-        }
-    }
-}
-
-fn strip_leading_xml_declaration(xml: &str) -> &str {
-    xml.strip_prefix("<?xml")
-        .and_then(|rest| rest.find("?>").map(|end| &rest[end + 2..]))
-        .unwrap_or(xml)
-}
-
-fn validate_policy_import_root(root: &str) -> Result<(), ParseError> {
-    if root == "get_configs_response" {
-        Ok(())
-    } else {
-        invalid_policy_xml("root element must be get_configs_response")
-    }
-}
-
-fn invalid_policy_xml<T>(value: &str) -> Result<T, ParseError> {
-    Err(ParseError::InvalidValue {
-        field: "policy_xml".to_string(),
-        value: value.to_string(),
-    })
-}
-
-fn validate_scan_config_import_xml(xml: &str) -> Result<(), ParseError> {
-    let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
-    reader.config_mut().check_comments = true;
-    let mut depth = 0usize;
-    let mut saw_root = false;
-    let mut completed_root = false;
-
-    loop {
-        match reader.read_event()? {
-            Event::Start(event) => {
-                if completed_root {
-                    return invalid_scan_config_xml("multiple root elements");
-                }
-                if !saw_root {
-                    validate_scan_config_import_root(event.name().as_ref())?;
-                    saw_root = true;
-                }
-                depth += 1;
-            }
-            Event::Empty(event) if depth == 0 => {
-                if completed_root {
-                    return invalid_scan_config_xml("multiple root elements");
-                }
-                completed_root = true;
-                saw_root = true;
-                validate_scan_config_import_root(event.name().as_ref())?;
-            }
-            Event::End(_) => {
-                depth = depth.checked_sub(1).ok_or(ParseError::InvalidValue {
-                    field: "scan_config_xml".to_string(),
-                    value: "unmatched end tag".to_string(),
-                })?;
-                if depth == 0 {
-                    completed_root = true;
-                }
-            }
-            Event::Text(event) if depth == 0 && !event.as_ref().trim().is_empty() => {
-                return invalid_scan_config_xml(if completed_root {
-                    "text after root element"
-                } else {
-                    "text before root element"
-                });
-            }
-            Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
-                return invalid_scan_config_xml("content outside root element");
-            }
-            Event::Decl(_) => return invalid_scan_config_xml("XML declaration is not allowed"),
-            Event::DocType(_) => return invalid_scan_config_xml("DOCTYPE is not allowed"),
-            Event::Eof => {
-                if saw_root && depth == 0 {
-                    return Ok(());
-                }
-                return Err(ParseError::MissingElement(
-                    "get_configs_response".to_string(),
-                ));
-            }
-            _ => {}
-        }
-    }
-}
-
-fn validate_scan_config_import_root(root: &str) -> Result<(), ParseError> {
-    if root == "get_configs_response" {
-        Ok(())
-    } else {
-        invalid_scan_config_xml("root element must be get_configs_response")
-    }
-}
-
-fn invalid_scan_config_xml<T>(value: &str) -> Result<T, ParseError> {
-    Err(ParseError::InvalidValue {
-        field: "scan_config_xml".to_string(),
-        value: value.to_string(),
-    })
-}
-
-/// Build a `modify_config` request that sets a policy NVT preference.
-///
-/// Pass `None` for `value` to delete the configured value and fall back to the
-/// default preference.
+/// Build a deferred policy NVT-preference mutation request.
 #[must_use]
 pub fn modify_policy_set_nvt_preference(
     policy_id: &EntityId,
@@ -1326,10 +1645,7 @@ pub fn modify_policy_set_nvt_preference(
     modify_config_set_nvt_preference(policy_id, name, nvt_oid, value)
 }
 
-/// Build a `modify_config` request that sets a policy scanner preference.
-///
-/// Pass `None` for `value` to delete the configured value and fall back to the
-/// default preference.
+/// Build a deferred policy scanner-preference mutation request.
 #[must_use]
 pub fn modify_policy_set_scanner_preference(
     policy_id: &EntityId,
@@ -1339,7 +1655,7 @@ pub fn modify_policy_set_scanner_preference(
     modify_config_set_scanner_preference(policy_id, name, value)
 }
 
-/// Build a `modify_config` request that replaces a policy family NVT selection.
+/// Build a deferred policy NVT-selection mutation request.
 #[must_use]
 pub fn modify_policy_set_nvt_selection(
     policy_id: &EntityId,
@@ -1349,7 +1665,7 @@ pub fn modify_policy_set_nvt_selection(
     modify_config_set_nvt_selection(policy_id, family, nvt_oids)
 }
 
-/// Build a `modify_config` request that replaces policy family selection.
+/// Build a deferred policy family-selection mutation request.
 #[must_use]
 pub fn modify_policy_set_family_selection(
     policy_id: &EntityId,
@@ -1359,462 +1675,66 @@ pub fn modify_policy_set_family_selection(
     modify_config_set_family_selection(policy_id, families, auto_add_new_families)
 }
 
-/// Build a `modify_config` request that sets a policy name.
-#[must_use]
-pub fn modify_policy_set_name(policy_id: &EntityId, name: &str) -> impl Request {
-    modify_config_set_name(policy_id, name)
+fn modify_config_set_nvt_preference(
+    config_id: &EntityId,
+    name: &str,
+    nvt_oid: &str,
+    value: Option<&str>,
+) -> XmlCommand {
+    let mut command = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let preference = command.add_element("preference");
+    preference.add_child("nvt").set_attribute("oid", nvt_oid);
+    preference.add_child_with_text("name", name);
+    add_encoded_preference_value(preference, value);
+    command
 }
 
-/// Build a `modify_config` request that sets or clears a policy comment.
-#[must_use]
-pub fn modify_policy_set_comment(policy_id: &EntityId, comment: Option<&str>) -> impl Request {
-    modify_config_set_comment(policy_id, comment)
+fn modify_config_set_scanner_preference(
+    config_id: &EntityId,
+    name: &str,
+    value: Option<&str>,
+) -> XmlCommand {
+    let mut command = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let preference = command.add_element("preference");
+    preference.add_child_with_text("name", name);
+    add_encoded_preference_value(preference, value);
+    command
 }
 
-/// Build a `delete_config` request for a policy.
-#[must_use]
-pub fn delete_policy(config_id: &EntityId) -> impl Request {
-    delete_scan_config(config_id, false)
+fn modify_config_set_nvt_selection(
+    config_id: &EntityId,
+    family: &str,
+    nvt_oids: &[String],
+) -> XmlCommand {
+    let mut command = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let selection = command.add_element("nvt_selection");
+    selection.add_child_with_text("family", family);
+    for nvt_oid in nvt_oids {
+        selection.add_child("nvt").set_attribute("oid", nvt_oid);
+    }
+    command
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::common::xml;
-
-    fn id(value: &str) -> EntityId {
-        EntityId::new(value).expect("valid id")
+fn modify_config_set_family_selection(
+    config_id: &EntityId,
+    families: &[NvtFamilySelection],
+    auto_add_new_families: bool,
+) -> XmlCommand {
+    let mut command = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let selection = command.add_element("family_selection");
+    selection.add_child_with_text("growing", bool_str(auto_add_new_families));
+    for family in families {
+        let family_element = selection.add_child("family");
+        family_element.add_child_with_text("name", &family.name);
+        family_element.add_child_with_text("all", bool_str(family.all));
+        family_element.add_child_with_text("growing", bool_str(family.growing));
     }
+    command
+}
 
-    #[test]
-    fn scan_config_commands_build_xml() {
-        let rendered = xml(create_scan_config(
-            "cfg",
-            Some(&id("base1")),
-            ConfigOpts {
-                comment: Some("c".into()),
-                usage_type: Some("scan".into()),
-            },
-        ));
-        assert!(rendered.contains("<copy>base1</copy>"));
-        assert_eq!(
-            xml(clone_scan_config(&id("c1"))),
-            "<create_config><copy>c1</copy></create_config>"
-        );
-        let rendered = xml(get_scan_config(&id("c1")));
-        assert!(rendered.contains("<get_configs "));
-        assert!(rendered.contains("config_id=\"c1\""));
-        assert!(rendered.contains("details=\"1\""));
-    }
-
-    #[test]
-    fn scan_config_preference_commands_build_xml() {
-        assert_eq!(
-            xml(get_scan_config_preferences(
-                GetScanConfigPreferencesOpts::default()
-            )),
-            "<get_preferences/>"
-        );
-        assert_eq!(
-            xml(get_scan_config_preferences(GetScanConfigPreferencesOpts {
-                nvt_oid: Some("1.3.6.1".into()),
-                config_id: Some(id("c1")),
-            })),
-            "<get_preferences config_id=\"c1\" nvt_oid=\"1.3.6.1\"/>"
-        );
-        assert_eq!(
-            xml(get_scan_config_preference(
-                "timeout",
-                GetScanConfigPreferencesOpts {
-                    nvt_oid: Some("1.3.6.1".into()),
-                    config_id: Some(id("c1")),
-                }
-            )),
-            "<get_preferences config_id=\"c1\" nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
-        );
-    }
-
-    #[test]
-    fn scan_config_get_modify_delete_sync_build_xml() {
-        assert_eq!(
-            xml(get_scan_configs(GetScanConfigsOpts::default())),
-            "<get_configs usage_type=\"scan\"/>"
-        );
-        let rendered = xml(get_scan_configs(GetScanConfigsOpts {
-            filter_string: Some("name=foo".into()),
-            ..Default::default()
-        }));
-        assert_eq!(
-            rendered,
-            "<get_configs filter=\"name=foo\" usage_type=\"scan\"/>"
-        );
-        assert_eq!(
-            xml(get_scan_config(&id("c1"))),
-            "<get_configs config_id=\"c1\" details=\"1\" usage_type=\"scan\"/>"
-        );
-        let rendered = xml(modify_scan_config(
-            &id("c1"),
-            ConfigOpts {
-                comment: Some("updated".into()),
-                ..Default::default()
-            },
-        ));
-        assert_eq!(
-            rendered,
-            "<modify_config config_id=\"c1\"><comment>updated</comment></modify_config>"
-        );
-        assert_eq!(
-            xml(modify_scan_config_set_name(&id("c1"), "renamed")),
-            "<modify_config config_id=\"c1\"><name>renamed</name></modify_config>"
-        );
-        assert_eq!(
-            xml(modify_scan_config_set_comment(&id("c1"), Some("updated"))),
-            "<modify_config config_id=\"c1\"><comment>updated</comment></modify_config>"
-        );
-        assert_eq!(
-            xml(modify_scan_config_set_comment(&id("c1"), None)),
-            "<modify_config config_id=\"c1\"><comment></comment></modify_config>"
-        );
-        assert_eq!(
-            xml(delete_scan_config(&id("c1"), false)),
-            "<delete_config config_id=\"c1\" ultimate=\"0\"/>"
-        );
-        assert_eq!(xml(sync_config()), "<sync_config/>");
-    }
-
-    #[test]
-    fn policy_commands_build_xml() {
-        assert_eq!(
-            xml(create_policy(
-                "policy",
-                ConfigOpts {
-                    comment: Some("audit baseline".into()),
-                    ..Default::default()
-                }
-            )),
-            "<create_config><name>policy</name><comment>audit baseline</comment><usage_type>policy</usage_type></create_config>"
-        );
-        assert_eq!(
-            xml(get_policies(GetScanConfigsOpts::default())),
-            "<get_configs usage_type=\"policy\"/>"
-        );
-        assert_eq!(
-            xml(get_policy(&id("p1"), GetPolicyOpts::default())),
-            "<get_configs config_id=\"p1\" details=\"1\" usage_type=\"policy\"/>"
-        );
-        assert_eq!(
-            xml(get_policy(&id("p1"), GetPolicyOpts { audits: Some(true) })),
-            "<get_configs config_id=\"p1\" details=\"1\" tasks=\"1\" usage_type=\"policy\"/>"
-        );
-        assert_eq!(
-            xml(modify_policy(
-                &id("p1"),
-                ConfigOpts {
-                    comment: Some("updated".into()),
-                    ..Default::default()
-                }
-            )),
-            "<modify_config config_id=\"p1\"><comment>updated</comment><usage_type>policy</usage_type></modify_config>"
-        );
-        assert_eq!(
-            xml(modify_policy_set_name(&id("p1"), "renamed")),
-            "<modify_config config_id=\"p1\"><name>renamed</name></modify_config>"
-        );
-        assert_eq!(
-            xml(modify_policy_set_comment(&id("p1"), Some("updated"))),
-            "<modify_config config_id=\"p1\"><comment>updated</comment></modify_config>"
-        );
-        assert_eq!(
-            xml(modify_policy_set_comment(&id("p1"), None)),
-            "<modify_config config_id=\"p1\"><comment></comment></modify_config>"
-        );
-        assert_eq!(
-            xml(delete_policy(&id("p1"))),
-            "<delete_config config_id=\"p1\" ultimate=\"0\"/>"
-        );
-        assert_eq!(
-            xml(clone_policy(&id("p1"))),
-            "<create_config><copy>p1</copy></create_config>"
-        );
-    }
-
-    #[test]
-    fn semantic_scan_config_and_policy_requests_match_builders() {
-        let config_id = id("config-1");
-        let base_id = id("base-1");
-        let list_opts = GetScanConfigsOpts {
-            filter_string: Some("name=example".into()),
-            details: Some(true),
-            ..Default::default()
-        };
-        let config_opts = ConfigOpts {
-            comment: Some("comment".into()),
-            usage_type: Some("custom".into()),
-        };
-        let policy_opts = GetPolicyOpts { audits: Some(true) };
-        let import_xml = "<get_configs_response><config id=\"config-1\"/></get_configs_response>";
-
-        assert_eq!(
-            GetScanConfigsRequest::new(list_opts.clone()).to_bytes(),
-            get_scan_configs(list_opts.clone()).to_bytes()
-        );
-        assert_eq!(
-            GetScanConfigRequest::new(config_id.clone()).to_bytes(),
-            get_scan_config(&config_id).to_bytes()
-        );
-        assert_eq!(
-            CreateScanConfigRequest::new("config", Some(base_id.clone()), config_opts.clone())
-                .to_bytes(),
-            create_scan_config("config", Some(&base_id), config_opts.clone()).to_bytes()
-        );
-        assert_eq!(
-            CloneScanConfigRequest::new(config_id.clone()).to_bytes(),
-            clone_scan_config(&config_id).to_bytes()
-        );
-        assert_eq!(
-            ImportScanConfigRequest::new(import_xml)
-                .expect("valid import")
-                .to_bytes(),
-            import_scan_config(import_xml)
-                .expect("valid import")
-                .to_bytes()
-        );
-        assert_eq!(
-            ModifyScanConfigRequest::new(config_id.clone(), config_opts.clone()).to_bytes(),
-            modify_scan_config(&config_id, config_opts.clone()).to_bytes()
-        );
-        assert_eq!(
-            DeleteScanConfigRequest::new(config_id.clone(), true).to_bytes(),
-            delete_scan_config(&config_id, true).to_bytes()
-        );
-        assert_eq!(
-            SyncConfigRequest::new().to_bytes(),
-            sync_config().to_bytes()
-        );
-
-        assert_eq!(
-            GetPoliciesRequest::new(list_opts.clone()).to_bytes(),
-            get_policies(list_opts).to_bytes()
-        );
-        assert_eq!(
-            GetPolicyRequest::new(config_id.clone(), policy_opts.clone()).to_bytes(),
-            get_policy(&config_id, policy_opts).to_bytes()
-        );
-        assert_eq!(
-            CreatePolicyRequest::new("policy", config_opts.clone()).to_bytes(),
-            create_policy("policy", config_opts.clone()).to_bytes()
-        );
-        assert_eq!(
-            ClonePolicyRequest::new(config_id.clone()).to_bytes(),
-            clone_policy(&config_id).to_bytes()
-        );
-        assert_eq!(
-            ImportPolicyRequest::new(import_xml)
-                .expect("valid import")
-                .to_bytes(),
-            import_policy(import_xml).expect("valid import").to_bytes()
-        );
-        assert_eq!(
-            ModifyPolicyRequest::new(config_id.clone(), config_opts.clone()).to_bytes(),
-            modify_policy(&config_id, config_opts).to_bytes()
-        );
-        assert_eq!(
-            DeletePolicyRequest::new(config_id.clone()).to_bytes(),
-            delete_policy(&config_id).to_bytes()
-        );
-
-        assert!(ImportScanConfigRequest::new("<invalid/>").is_err());
-        assert!(ImportPolicyRequest::new("<invalid/>").is_err());
-    }
-
-    #[test]
-    fn semantic_preference_and_selection_requests_match_builders() {
-        let resource_id = id("config-1");
-        let preference_opts = GetScanConfigPreferencesOpts {
-            nvt_oid: Some("1.3.6.1".into()),
-            config_id: Some(resource_id.clone()),
-        };
-        let nvt_oids = vec!["1.3.6.1".into(), "1.3.6.2".into()];
-        let families = vec![NvtFamilySelection {
-            name: "General".into(),
-            growing: true,
-            all: false,
-        }];
-
-        assert_eq!(
-            GetScanConfigPreferencesRequest::new(preference_opts.clone()).to_bytes(),
-            get_scan_config_preferences(preference_opts.clone()).to_bytes()
-        );
-        assert_eq!(
-            GetScanConfigPreferenceRequest::new("timeout", preference_opts.clone()).to_bytes(),
-            get_scan_config_preference("timeout", preference_opts).to_bytes()
-        );
-
-        assert_eq!(
-            ModifyScanConfigSetNvtPreferenceRequest::new(
-                resource_id.clone(),
-                "timeout",
-                "1.3.6.1",
-                Some("30".into())
-            )
-            .to_bytes(),
-            modify_scan_config_set_nvt_preference(&resource_id, "timeout", "1.3.6.1", Some("30"))
-                .to_bytes()
-        );
-        assert_eq!(
-            ModifyScanConfigSetScannerPreferenceRequest::new(
-                resource_id.clone(),
-                "max_checks",
-                None
-            )
-            .to_bytes(),
-            modify_scan_config_set_scanner_preference(&resource_id, "max_checks", None).to_bytes()
-        );
-        assert_eq!(
-            ModifyScanConfigSetNvtSelectionRequest::new(
-                resource_id.clone(),
-                "General",
-                nvt_oids.clone()
-            )
-            .to_bytes(),
-            modify_scan_config_set_nvt_selection(&resource_id, "General", &nvt_oids).to_bytes()
-        );
-        assert_eq!(
-            ModifyScanConfigSetFamilySelectionRequest::new(
-                resource_id.clone(),
-                families.clone(),
-                true
-            )
-            .to_bytes(),
-            modify_scan_config_set_family_selection(&resource_id, &families, true).to_bytes()
-        );
-        assert_eq!(
-            ModifyScanConfigSetNameRequest::new(resource_id.clone(), "renamed").to_bytes(),
-            modify_scan_config_set_name(&resource_id, "renamed").to_bytes()
-        );
-        assert_eq!(
-            ModifyScanConfigSetCommentRequest::new(resource_id.clone(), None).to_bytes(),
-            modify_scan_config_set_comment(&resource_id, None).to_bytes()
-        );
-    }
-
-    #[test]
-    fn semantic_policy_preference_and_selection_requests_match_builders() {
-        let resource_id = id("policy-1");
-        let nvt_oids = vec!["1.3.6.1".into(), "1.3.6.2".into()];
-        let families = vec![NvtFamilySelection {
-            name: "General".into(),
-            growing: true,
-            all: false,
-        }];
-
-        assert_eq!(
-            ModifyPolicySetNvtPreferenceRequest::new(
-                resource_id.clone(),
-                "timeout",
-                "1.3.6.1",
-                Some("30".into())
-            )
-            .to_bytes(),
-            modify_policy_set_nvt_preference(&resource_id, "timeout", "1.3.6.1", Some("30"))
-                .to_bytes()
-        );
-        assert_eq!(
-            ModifyPolicySetScannerPreferenceRequest::new(resource_id.clone(), "max_checks", None)
-                .to_bytes(),
-            modify_policy_set_scanner_preference(&resource_id, "max_checks", None).to_bytes()
-        );
-        assert_eq!(
-            ModifyPolicySetNvtSelectionRequest::new(
-                resource_id.clone(),
-                "General",
-                nvt_oids.clone()
-            )
-            .to_bytes(),
-            modify_policy_set_nvt_selection(&resource_id, "General", &nvt_oids).to_bytes()
-        );
-        assert_eq!(
-            ModifyPolicySetFamilySelectionRequest::new(
-                resource_id.clone(),
-                families.clone(),
-                false
-            )
-            .to_bytes(),
-            modify_policy_set_family_selection(&resource_id, &families, false).to_bytes()
-        );
-        assert_eq!(
-            ModifyPolicySetNameRequest::new(resource_id.clone(), "renamed").to_bytes(),
-            modify_policy_set_name(&resource_id, "renamed").to_bytes()
-        );
-        assert_eq!(
-            ModifyPolicySetCommentRequest::new(resource_id.clone(), Some("comment".into()))
-                .to_bytes(),
-            modify_policy_set_comment(&resource_id, Some("comment")).to_bytes()
-        );
-    }
-
-    #[test]
-    fn semantic_scan_config_requests_have_expected_response_associations() {
-        fn assert_response<R, T>(_: &R)
-        where
-            R: GmpRequest<Response = T>,
-            T: crate::GmpResponse,
-        {
-        }
-
-        let resource_id = id("config-1");
-        assert_response::<_, GetScanConfigsResponse>(&GetScanConfigsRequest::default());
-        assert_response::<_, GetScanConfigsResponse>(&GetScanConfigRequest::new(
-            resource_id.clone(),
-        ));
-        assert_response::<_, CreateScanConfigResponse>(&CreateScanConfigRequest::new(
-            "config",
-            None,
-            ConfigOpts::default(),
-        ));
-        assert_response::<_, CreateScanConfigResponse>(&CloneScanConfigRequest::new(
-            resource_id.clone(),
-        ));
-        assert_response::<_, CreateScanConfigResponse>(
-            &ImportScanConfigRequest::new("<get_configs_response/>").expect("valid import"),
-        );
-        assert_response::<_, ModifyScanConfigResponse>(&ModifyScanConfigRequest::new(
-            resource_id.clone(),
-            ConfigOpts::default(),
-        ));
-        assert_response::<_, DeleteScanConfigResponse>(&DeleteScanConfigRequest::new(
-            resource_id.clone(),
-            false,
-        ));
-        assert_response::<_, SyncConfigResponse>(&SyncConfigRequest::new());
-        assert_response::<_, GetScanConfigPreferencesResponse>(
-            &GetScanConfigPreferencesRequest::default(),
-        );
-        assert_response::<_, GetScanConfigPreferencesResponse>(
-            &GetScanConfigPreferenceRequest::new(
-                "timeout",
-                GetScanConfigPreferencesOpts::default(),
-            ),
-        );
-        assert_response::<_, GetScanConfigsResponse>(&GetPoliciesRequest::default());
-        assert_response::<_, GetScanConfigsResponse>(&GetPolicyRequest::new(
-            resource_id.clone(),
-            GetPolicyOpts::default(),
-        ));
-        assert_response::<_, CreateScanConfigResponse>(&CreatePolicyRequest::new(
-            "policy",
-            ConfigOpts::default(),
-        ));
-        assert_response::<_, CreateScanConfigResponse>(&ClonePolicyRequest::new(
-            resource_id.clone(),
-        ));
-        assert_response::<_, CreateScanConfigResponse>(
-            &ImportPolicyRequest::new("<get_configs_response/>").expect("valid import"),
-        );
-        assert_response::<_, ModifyScanConfigResponse>(&ModifyPolicyRequest::new(
-            resource_id.clone(),
-            ConfigOpts::default(),
-        ));
-        assert_response::<_, DeleteScanConfigResponse>(&DeletePolicyRequest::new(resource_id));
+fn add_encoded_preference_value(preference: &mut XmlElement, value: Option<&str>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(value.as_bytes());
+        preference.add_child_with_text("value", &encoded);
     }
 }

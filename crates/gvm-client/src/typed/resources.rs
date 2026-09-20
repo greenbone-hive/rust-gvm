@@ -7,9 +7,8 @@ use gvm_gmp::commands::assets::{
     CreateAssetRequest, DeleteAssetRequest, GetAssetRequest, GetAssetsRequest, ModifyAssetRequest,
 };
 use gvm_gmp::commands::configs::{
-    CloneConfigOpts, CloneConfigRequest, CreateConfigOpts, CreateConfigRequest, DeleteConfigOpts,
-    DeleteConfigRequest, GetConfigOpts, GetConfigRequest, GetConfigsOpts, GetConfigsRequest,
-    ModifyConfigOpts, ModifyConfigRequest,
+    CloneConfigRequest, CreateConfigRequest, DeleteConfigRequest, GetConfigRequest,
+    GetConfigsRequest, ModifyConfigRequest,
 };
 use gvm_gmp::commands::hosts::{
     CreateHostRequest, DeleteHostRequest, GetHostRequest, GetHostsRequest, ModifyHostRequest,
@@ -29,7 +28,6 @@ use gvm_gmp::responses::{
     GetHostsResponse, GetOperatingSystemAssetsResponse, GetPortListsResponse, ModifyAssetResponse,
     ModifyConfigResponse, ModifyHostResponse, ModifyPortListResponse,
 };
-use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Port Lists ────────────────────────────────────────────────────────────
@@ -281,9 +279,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_configs(
         &mut self,
-        opts: GetConfigsOpts,
+        request: GetConfigsRequest,
     ) -> Result<GetConfigsResponse, GvmError> {
-        self.execute(GetConfigsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a generic single-config `get_configs` request and return typed generic configs.
@@ -292,11 +290,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_config(
         &mut self,
-        config_id: &EntityId,
-        opts: GetConfigOpts,
+        request: GetConfigRequest,
     ) -> Result<GetConfigsResponse, GvmError> {
-        self.execute(GetConfigRequest::new(config_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a generic `create_config` request and return a typed response.
@@ -305,9 +301,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn create_config(
         &mut self,
-        opts: CreateConfigOpts,
+        request: CreateConfigRequest,
     ) -> Result<CreateConfigResponse, GvmError> {
-        self.execute(CreateConfigRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a generic config clone request and return a typed response.
@@ -316,11 +312,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_config(
         &mut self,
-        config_id: &EntityId,
-        opts: CloneConfigOpts,
+        request: CloneConfigRequest,
     ) -> Result<CreateConfigResponse, GvmError> {
-        self.execute(CloneConfigRequest::new(config_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a generic `modify_config` request and return a typed response.
@@ -329,11 +323,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_config(
         &mut self,
-        config_id: &EntityId,
-        opts: ModifyConfigOpts,
+        request: ModifyConfigRequest,
     ) -> Result<ModifyConfigResponse, GvmError> {
-        self.execute(ModifyConfigRequest::new(config_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a generic `delete_config` request and return a typed response.
@@ -342,10 +334,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_config(
         &mut self,
-        config_id: &EntityId,
-        opts: DeleteConfigOpts,
+        request: DeleteConfigRequest,
     ) -> Result<DeleteConfigResponse, GvmError> {
-        self.execute(DeleteConfigRequest::new(config_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 }

@@ -649,45 +649,46 @@ shape and action response. The `import_report` convenience method is a thin
 
 ## Scan configurations, policies, and preferences
 
-Scan configurations and policies demonstrate semantic typed requests layered
-over shared generic wire commands. Their requests continue to delegate to the
-existing `get_configs`, `create_config`, `modify_config`, and `delete_config`
-builders, so usage-type scoping, import XML validation, preference base64
-encoding, selection ordering, and exact bytes remain unchanged:
+Generic configurations, scan configurations, and policies share the
+`get_configs`, `create_config`, `modify_config`, and `delete_config` wire roots.
+Their 24 lifecycle requests now own complete inputs and direct encoding. Named
+creation requires a source; clone may omit its name to request server-generated
+naming. Import embeds one validated export document without reserialization:
 
 ```rust
-use gvm_gmp::commands::scan_configs::{
-    GetScanConfigPreferencesOpts, GetScanConfigPreferencesRequest,
-    ModifyScanConfigSetNvtPreferenceRequest,
-};
+use gvm_gmp::commands::scan_configs::{CreatePolicyRequest, GetPolicyRequest};
 
-let preferences = client
-    .execute(GetScanConfigPreferencesRequest::new(
-        GetScanConfigPreferencesOpts {
-            config_id: Some(config_id.clone()),
-            ..Default::default()
-        },
-    ))
+let created = client
+    .execute(CreatePolicyRequest::new("Reviewed policy", base_config_id))
     .await?;
 
-client
-    .execute(ModifyScanConfigSetNvtPreferenceRequest::new(
-        config_id,
-        "Network connection timeout :",
-        "1.3.6.1.4.1.25623.1.0.10330",
-        Some("30".into()),
-    ))
+let policy = client
+    .get_policy(GetPolicyRequest::new(created.id))
     .await?;
 ```
 
-`GetScanConfigPreferencesResponse` preserves both GMP response shapes: default
-preferences encode the NVT/type in the preference name, while config-scoped
-preferences expose separate NVT metadata, identifier, type, configured value,
-alternate values, and default value. Empty values remain distinguishable from
-missing values. Passing `None` to a preference-mutation request retains the
-existing delete/fallback encoding. Import request constructors validate their
-XML before they can be executed, and `SyncConfigRequest` remains global and
-parameterless.
+Canonical usage construction is deliberately limited to `Scan` and `Policy`.
+List usage remains a literal server predicate, while ID-selected detail bypasses
+usage and ordinary filter/pagination predicates. Families, preferences, and
+tasks expand independently; policy `audits` maps to the wire `tasks` field.
+
+Metadata requests contain only name/comment fields. Empty values are emitted
+but are server no-ops, not clear operations, and raw usage children do not
+modify usage. Imports accept an optional BOM/declaration, preserve the remaining
+carrier bytes, and require one direct config with a name plus selector and
+preference containers. Their Debug/errors/traces redact the carrier and
+preference value/default/alternative data.
+
+`GetScanConfigPreferencesRequest`, its options/builders/facades, and the eight
+configured preference/NVT/family mutation helpers remain transitional and
+unchanged. They are the next ordered migration slice. There is no canonical or
+facade `sync_config`: the public schema names it, but pinned/current gvmd have no
+GMP dispatcher and built-in mock modes return the source-shaped 400 response.
+
+The compact response types tolerate rich expansion subtrees but are not export
+models. Use raw `send`/`call` or a custom codec for complete exports and
+deliberately unmodeled server XML. See the
+[pinned evidence](scan-config-policy-request-gvmd-evidence.md).
 
 See [ADR 0001](adr/0001-typed-request-response-execution.md) for ownership,
 compatibility, error, and security decisions.

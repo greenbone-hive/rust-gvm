@@ -57,8 +57,6 @@ const INTEGRATION_COVERED: &[&str] = &[
     "modify_policy_set_comment",
     "delete_scan_config",
     "clone_scan_config",
-    "sync_scan_config",
-    "sync_config",
     "get_scanners",
     "create_scanner",
     "get_scanner",
@@ -329,6 +327,7 @@ fn normalized_integration_sources() -> String {
         include_str!("client_integration.rs"),
         include_str!("report_config_integration.rs"),
         include_str!("report_format_canonical_integration.rs"),
+        include_str!("scan_config_policy_canonical_integration.rs"),
         include_str!("structured_audit_report_integration.rs"),
         include_str!("tls_certificate_canonical_integration.rs"),
         include_str!("tls_certificate_integration.rs"),
@@ -344,6 +343,7 @@ fn normalized_integration_sources() -> String {
 #[test]
 fn every_public_typed_helper_has_exactly_one_enforced_classification() {
     let public = public_typed_methods();
+    assert_eq!(public.len(), 259);
     let mut classified = BTreeSet::new();
 
     for (class, methods) in [
@@ -385,7 +385,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 257);
+    assert_eq!(direct_execute_count, 256);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(
@@ -402,11 +402,8 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .find(|(path, _)| path.file_name().is_some_and(|name| name == "scan.rs"))
         .map(|(_, source)| source)
         .expect("scan facade module should be discovered");
-    assert!(
-        scan.contains("#[deprecated(note = \"use sync_config(), which has global semantics\")]")
-    );
-    assert!(scan.contains("pub async fn sync_scan_config("));
-    assert!(scan.contains("self.sync_config().await"));
+    assert!(!scan.contains("pub async fn sync_config("));
+    assert!(!scan.contains("pub async fn sync_scan_config("));
 }
 
 #[test]

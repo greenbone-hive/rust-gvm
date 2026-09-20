@@ -6,9 +6,10 @@
 
 use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
 use gvm_gmp::commands::reports::get_report;
-use gvm_gmp::commands::scan_configs::{get_scan_configs, GetScanConfigsOpts};
+use gvm_gmp::commands::scan_configs::GetScanConfigsRequest;
 use gvm_gmp::commands::tasks::{create_task, start_task, CreateTaskOpts};
 use gvm_gmp::types::EntityId;
+use gvm_gmp::GmpRequestCodec;
 use gvm_mock_server::{GmpVersion, LargeReportConfig, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 
@@ -90,12 +91,15 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
 
     let config_create_response = send(
         conn,
-        b"<create_config><name>large-response-config</name></create_config>".as_slice(),
+        b"<create_config><copy>daba56c8-73ec-11df-a475-002264764cea</copy><name>large-response-config</name></create_config>".as_slice(),
     )
     .await;
     assert_eq!(config_create_response.status_code(), Some(201));
 
-    let config_response = send(conn, get_scan_configs(GetScanConfigsOpts::default())).await;
+    let config_request = GetScanConfigsRequest::default()
+        .encode(gvm_gmp::GmpVersion(22, 5))
+        .expect("valid get-configs request");
+    let config_response = send(conn, config_request.as_slice()).await;
     assert_eq!(config_response.status_code(), Some(200));
     let config_id = extract_first_config_id(
         config_response

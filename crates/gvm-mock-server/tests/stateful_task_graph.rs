@@ -321,12 +321,16 @@ async fn referenced_resources_cannot_be_removed_or_addressed_as_another_type() {
 
     for command in [
         format!("<delete_target target_id=\"{target_id}\" ultimate=\"0\"/>"),
-        format!("<delete_config config_id=\"{DEFAULT_CONFIG_ID}\" ultimate=\"0\"/>"),
         format!("<delete_scanner scanner_id=\"{DEFAULT_SCANNER_ID}\" ultimate=\"0\"/>"),
     ] {
         let response = send_recv(&mut stream, command.as_bytes()).await;
         assert_eq!(response.status_code(), Some(409), "{command}");
     }
+
+    let config_delete =
+        format!("<delete_config config_id=\"{DEFAULT_CONFIG_ID}\" ultimate=\"0\"/>");
+    let response = send_recv(&mut stream, config_delete.as_bytes()).await;
+    assert_eq!(response.status_code(), Some(400), "{config_delete}");
 
     let wrong_typed_delete = send_recv(
         &mut stream,

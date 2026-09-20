@@ -89,6 +89,7 @@ fn published_matrix_counts_are_registry_derived() {
         (MockSupport::Stateful, "Stateful mock behavior"),
         (MockSupport::Fixture, "Fixture mock behavior"),
         (MockSupport::EchoOnly, "Echo-only mock behavior"),
+        (MockSupport::Rejected, "Explicitly rejected mock behavior"),
     ] {
         let count = COMMAND_CAPABILITIES
             .iter()
