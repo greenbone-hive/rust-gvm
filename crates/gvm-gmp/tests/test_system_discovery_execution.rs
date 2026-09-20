@@ -14,25 +14,24 @@ use gvm_gmp::commands::help::{
     HelpWithModeRequest,
 };
 use gvm_gmp::commands::system::{
-    describe_auth, get_aggregates, get_feeds as get_system_feeds, get_info, get_license,
-    get_preferences, get_resource_name, get_resource_names, get_settings, get_timezones, get_vuln,
-    get_vulnerability, get_vulns, DescribeAuthRequest, FilteredGetOpts,
-    GetAggregatesOpts as SystemAggregatesOpts, GetInfoOpts, GetLicenseRequest,
-    GetResourceNameRequest, GetResourceNamesOpts, GetResourceNamesRequest, GetSettingsRequest,
-    GetSystemAggregatesRequest, GetSystemFeedsRequest, GetSystemInfoRequest,
-    GetSystemPreferencesRequest, GetTimezonesRequest, GetVulnRequest, GetVulnerabilityRequest,
-    GetVulnsRequest, SystemHelpRequest,
+    describe_auth, get_aggregates, get_feeds as get_system_feeds, get_license, get_resource_name,
+    get_resource_names, get_settings, get_timezones, DescribeAuthRequest, FilteredGetOpts,
+    GetAggregatesOpts as SystemAggregatesOpts, GetLicenseRequest, GetResourceNameRequest,
+    GetResourceNamesOpts, GetResourceNamesRequest, GetSettingsRequest, GetSystemAggregatesRequest,
+    GetSystemFeedsRequest, GetTimezonesRequest, GetVulnerabilityRequest, GetVulnsRequest,
+    SystemHelpRequest,
 };
 use gvm_gmp::commands::system_reports::{
     get_system_reports, GetSystemReportsOpts, GetSystemReportsRequest,
 };
 use gvm_gmp::responses::{
     ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeaturesResponse,
-    GetFeedsResponse, GetInfoResponse, GetResourceNamesResponse, GetScanConfigPreferencesResponse,
-    GetSettingsResponse, GetSystemReportsResponse, GetTimezonesResponse,
-    GetVulnerabilitiesResponse, HelpResponse,
+    GetFeedsResponse, GetResourceNamesResponse, GetSettingsResponse, GetSystemReportsResponse,
+    GetTimezonesResponse, GetVulnerabilitiesResponse, HelpResponse,
 };
-use gvm_gmp::{FeedType, GmpRequest, GmpResponse, HelpFormat, InfoType, ResourceType};
+use gvm_gmp::{
+    FeedType, GmpRequest, GmpRequestCodec, GmpResponse, GmpVersion, HelpFormat, ResourceType,
+};
 use gvm_protocol::Request;
 
 fn assert_associated<R, T>(_: &R)
@@ -154,23 +153,6 @@ fn assert_system_inventory_requests() {
         get_aggregates(system_aggregate_opts),
         GetAggregatesResponse
     );
-
-    let info_opts = GetInfoOpts {
-        info_type: Some(InfoType::Cve),
-        info_id: Some(id("CVE-2026-0001")),
-        filter_string: Some("rows=1".into()),
-        ..Default::default()
-    };
-    assert_request!(
-        GetSystemInfoRequest::new(info_opts.clone()),
-        get_info(info_opts),
-        GetInfoResponse
-    );
-    assert_request!(
-        GetSystemPreferencesRequest::new(filtered.clone()),
-        get_preferences(filtered.clone()),
-        GetScanConfigPreferencesResponse
-    );
 }
 
 fn assert_system_resource_requests() {
@@ -195,25 +177,21 @@ fn assert_system_resource_requests() {
         GetResourceNamesResponse
     );
 
-    assert_request!(
-        GetVulnsRequest::new(filtered.clone()),
-        get_vulns(filtered),
-        GetVulnerabilitiesResponse
-    );
-    assert_request!(
-        GetVulnRequest::new("vuln-1"),
-        get_vuln("vuln-1"),
-        GetVulnerabilitiesResponse
-    );
-    assert_request!(
-        GetVulnerabilityRequest::new("vuln-1"),
-        get_vulnerability("vuln-1"),
-        GetVulnerabilitiesResponse
-    );
+    let request = GetVulnsRequest {
+        filter_string: filtered.filter_string,
+        filter_id: filtered.filter_id,
+    };
     assert_eq!(
-        GetVulnRequest::new("vuln-1").to_bytes(),
-        GetVulnerabilityRequest::new("vuln-1").to_bytes()
+        request.encode(GmpVersion(22, 4)).expect("valid request"),
+        b"<get_vulns filt_id=\"filter-1\" filter=\"name=example\"/>"
     );
+    assert_associated::<_, GetVulnerabilitiesResponse>(&request);
+    let detail = GetVulnerabilityRequest::new("vuln-1");
+    assert_eq!(
+        detail.encode(GmpVersion(22, 4)).expect("valid request"),
+        b"<get_vulns vuln_id=\"vuln-1\"/>"
+    );
+    assert_associated::<_, GetVulnerabilitiesResponse>(&detail);
 
     assert_request!(GetLicenseRequest::new(), get_license(), ActionResponse);
     assert_request!(
@@ -224,7 +202,7 @@ fn assert_system_resource_requests() {
 }
 
 #[test]
-fn all_twenty_two_semantic_requests_preserve_builder_bytes_and_responses() {
+fn remaining_system_requests_and_canonical_vulnerabilities_have_associations() {
     assert_discovery_requests();
     assert_system_inventory_requests();
     assert_system_resource_requests();

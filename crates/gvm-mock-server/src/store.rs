@@ -48,6 +48,238 @@ pub(crate) const REPORT_CONFIG_SAVED_FILTER_ID: Uuid =
 pub(crate) const REPORT_FORMAT_SAVED_FILTER_ID: Uuid =
     Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0203);
 
+/// NVT preference data used by the bounded discovery mock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveryPreference {
+    /// Stored preference key (`OID:id:type:name`).
+    pub key: String,
+    /// Seed value used when no explicit default is available.
+    pub value: String,
+    /// Scanner default value.
+    pub default: Option<String>,
+    /// Ordered alternatives for radio/select preferences.
+    pub alternatives: Vec<String>,
+}
+
+/// NVT data used by the bounded discovery mock.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiscoveryNvt {
+    /// NVT object identifier.
+    pub oid: String,
+    /// Display name.
+    pub name: String,
+    /// Family name.
+    pub family: String,
+    /// CVSS base score.
+    pub cvss_base: f64,
+    /// Severity string.
+    pub severity: String,
+    /// Raw NVT tags.
+    pub tags: String,
+    /// Solution type attribute.
+    pub solution_type: String,
+    /// Default timeout in seconds.
+    pub timeout: u32,
+    /// NVT and scanner preferences in stored-key order.
+    pub preferences: Vec<DiscoveryPreference>,
+}
+
+/// SecInfo record used by the bounded discovery mock.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiscoverySecInfo {
+    /// gvmd SecInfo type token.
+    pub info_type: String,
+    /// Type-specific identifier.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Optional severity used by bounded filters.
+    pub severity: Option<f64>,
+}
+
+/// Observed vulnerability summary used by `get_vulns`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiscoveryVulnerability {
+    /// Vulnerability identifier.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Vulnerability source/type.
+    pub type_: String,
+    /// Highest observed severity.
+    pub severity: f64,
+    /// Minimum quality of detection.
+    pub qod: u32,
+    /// Number of matching results.
+    pub result_count: u32,
+    /// Number of matching hosts.
+    pub host_count: u32,
+    /// Optional task context.
+    pub task_id: Option<String>,
+    /// Optional report context.
+    pub report_id: Option<String>,
+    /// Optional host context.
+    pub host: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DiscoverySnapshot {
+    pub nvts: BTreeMap<String, DiscoveryNvt>,
+    pub scanner_preferences: Vec<DiscoveryPreference>,
+    pub config_nvts: BTreeMap<String, BTreeSet<String>>,
+    pub config_preferences: BTreeMap<String, BTreeMap<String, String>>,
+    pub secinfo: Vec<DiscoverySecInfo>,
+    pub vulnerabilities: Vec<DiscoveryVulnerability>,
+    pub saved_filters: BTreeMap<String, String>,
+    pub user_default_filter: Option<String>,
+    pub nvt_feed_available: bool,
+    pub scap_available: bool,
+    pub cert_available: bool,
+    pub secinfo_permitted: bool,
+}
+
+fn default_discovery() -> DiscoverySnapshot {
+    let nvt_one = DiscoveryNvt {
+        oid: "1.3.6.1.4.1.25623.1".to_string(),
+        name: "Mock NVT one".to_string(),
+        family: "General".to_string(),
+        cvss_base: 9.8,
+        severity: "9.8".to_string(),
+        tags: "solution=Update the affected package|summary=Mock finding".to_string(),
+        solution_type: "VendorFix".to_string(),
+        timeout: 300,
+        preferences: vec![
+            DiscoveryPreference {
+                key: "1.3.6.1.4.1.25623.1:1:password:Password".to_string(),
+                value: "mock-secret".to_string(),
+                default: Some("default-secret".to_string()),
+                alternatives: Vec::new(),
+            },
+            DiscoveryPreference {
+                key: "1.3.6.1.4.1.25623.1:2:radio:Mode".to_string(),
+                value: "safe".to_string(),
+                default: Some("safe".to_string()),
+                alternatives: vec!["safe".to_string(), "fast".to_string()],
+            },
+            DiscoveryPreference {
+                key: "1.3.6.1.4.1.25623.1:3:entry:Retries:with:suffix".to_string(),
+                value: "2".to_string(),
+                default: Some("1".to_string()),
+                alternatives: Vec::new(),
+            },
+        ],
+    };
+    let nvt_two = DiscoveryNvt {
+        oid: "1.3.6.1.4.1.25623.2".to_string(),
+        name: "Mock NVT two".to_string(),
+        family: "Web application abuses".to_string(),
+        cvss_base: 5.3,
+        severity: "5.3".to_string(),
+        tags: "solution=Harden the service|summary=Secondary mock finding".to_string(),
+        solution_type: "Mitigation".to_string(),
+        timeout: 180,
+        preferences: Vec::new(),
+    };
+    let nvts = [nvt_one, nvt_two]
+        .into_iter()
+        .map(|nvt| (nvt.oid.clone(), nvt))
+        .collect();
+    let config_nvts = [(
+        DEFAULT_CONFIG_ID.to_string(),
+        BTreeSet::from(["1.3.6.1.4.1.25623.1".to_string()]),
+    )]
+    .into_iter()
+    .collect();
+    let config_preferences = [(
+        DEFAULT_CONFIG_ID.to_string(),
+        BTreeMap::from([
+            (
+                "1.3.6.1.4.1.25623.1:0:entry:timeout".to_string(),
+                "120".to_string(),
+            ),
+            (
+                "1.3.6.1.4.1.25623.1:2:radio:Mode".to_string(),
+                "fast".to_string(),
+            ),
+        ]),
+    )]
+    .into_iter()
+    .collect();
+    let secinfo = [
+        ("CPE", "cpe:/a:greenbone:gvm", "Greenbone GVM", None),
+        ("CPE", "cpe:/o:debian:debian_linux:12", "Debian 12", None),
+        ("CVE", "CVE-2026-1000", "Mock CVE one", Some(9.8)),
+        ("CVE", "CVE-2026-1001", "Mock CVE two", Some(5.3)),
+        (
+            "CERT_BUND_ADV",
+            "CB-K26/001",
+            "CERT-Bund advisory one",
+            Some(9.8),
+        ),
+        (
+            "DFN_CERT_ADV",
+            "DFN-2026-001",
+            "DFN-CERT advisory one",
+            Some(5.3),
+        ),
+        ("NVT", "1.3.6.1.4.1.25623.1", "Mock NVT one", Some(9.8)),
+        ("NVT", "1.3.6.1.4.1.25623.2", "Mock NVT two", Some(5.3)),
+    ]
+    .into_iter()
+    .map(|(info_type, id, name, severity)| DiscoverySecInfo {
+        info_type: info_type.to_string(),
+        id: id.to_string(),
+        name: name.to_string(),
+        severity,
+    })
+    .collect();
+    let vulnerabilities = vec![
+        DiscoveryVulnerability {
+            id: "vuln-1".to_string(),
+            name: "Outdated package".to_string(),
+            type_: "cve".to_string(),
+            severity: 9.8,
+            qod: 95,
+            result_count: 2,
+            host_count: 1,
+            task_id: Some("task-1".to_string()),
+            report_id: Some("report-1".to_string()),
+            host: Some("192.0.2.10".to_string()),
+        },
+        DiscoveryVulnerability {
+            id: "vuln-2".to_string(),
+            name: "Weak configuration".to_string(),
+            type_: "nvt".to_string(),
+            severity: 5.3,
+            qod: 70,
+            result_count: 1,
+            host_count: 1,
+            task_id: Some("task-2".to_string()),
+            report_id: Some("report-2".to_string()),
+            host: Some("192.0.2.20".to_string()),
+        },
+    ];
+    DiscoverySnapshot {
+        nvts,
+        scanner_preferences: vec![DiscoveryPreference {
+            key: ":4:entry:Scanner option".to_string(),
+            value: "enabled".to_string(),
+            default: Some("enabled".to_string()),
+            alternatives: Vec::new(),
+        }],
+        config_nvts,
+        config_preferences,
+        secinfo,
+        vulnerabilities,
+        saved_filters: BTreeMap::new(),
+        user_default_filter: None,
+        nvt_feed_available: true,
+        scap_available: true,
+        cert_available: true,
+        secinfo_permitted: true,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StoreError {
     NotFound(String),
@@ -951,6 +1183,7 @@ struct StoreInner {
     /// Configured credentials.
     username: String,
     password: String,
+    discovery: DiscoverySnapshot,
 }
 
 fn default_resources() -> HashMap<Uuid, Resource> {
@@ -1433,8 +1666,166 @@ impl ResourceStore {
                 authenticated_sessions: HashMap::new(),
                 username: username.to_string(),
                 password: password.to_string(),
+                discovery: default_discovery(),
             })),
         }
+    }
+
+    /// Add or replace a mock NVT by its textual OID.
+    pub fn seed_discovery_nvt(&self, nvt: DiscoveryNvt) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .discovery
+            .nvts
+            .insert(nvt.oid.clone(), nvt);
+    }
+
+    /// Add a non-NVT scanner preference with an empty OID component.
+    pub fn seed_discovery_scanner_preference(&self, preference: DiscoveryPreference) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .discovery
+            .scanner_preferences
+            .push(preference);
+    }
+
+    /// Add or replace a mock SecInfo record.
+    pub fn seed_discovery_secinfo(&self, info: DiscoverySecInfo) {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        inner
+            .discovery
+            .secinfo
+            .retain(|entry| entry.info_type != info.info_type || entry.id != info.id);
+        inner.discovery.secinfo.push(info);
+    }
+
+    /// Add or replace an observed vulnerability summary.
+    pub fn seed_discovery_vulnerability(&self, vulnerability: DiscoveryVulnerability) {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        inner
+            .discovery
+            .vulnerabilities
+            .retain(|entry| entry.id != vulnerability.id);
+        inner.discovery.vulnerabilities.push(vulnerability);
+    }
+
+    /// Set the NVT membership of a scan configuration.
+    pub fn seed_discovery_config_nvts(
+        &self,
+        config_id: impl Into<String>,
+        nvt_oids: impl IntoIterator<Item = String>,
+    ) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .discovery
+            .config_nvts
+            .insert(config_id.into(), nvt_oids.into_iter().collect());
+    }
+
+    /// Set one scan-config preference override by its full stored key.
+    pub fn seed_discovery_config_preference(
+        &self,
+        config_id: impl Into<String>,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .discovery
+            .config_preferences
+            .entry(config_id.into())
+            .or_default()
+            .insert(key.into(), value.into());
+    }
+
+    /// Seed a saved filter referenced by `filt_id`.
+    pub fn seed_discovery_filter(&self, id: impl Into<String>, term: impl Into<String>) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .discovery
+            .saved_filters
+            .insert(id.into(), term.into());
+    }
+
+    /// Set or clear the explicitly modeled user-default discovery filter (`filt_id=-2`).
+    pub fn set_discovery_user_default_filter(&self, term: Option<String>) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .discovery
+            .user_default_filter = term;
+    }
+
+    /// Configure discovery database/feed availability for negative-path tests.
+    pub fn set_discovery_availability(&self, nvt_feed: bool, scap: bool, cert: bool) {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        inner.discovery.nvt_feed_available = nvt_feed;
+        inner.discovery.scap_available = scap;
+        inner.discovery.cert_available = cert;
+    }
+
+    /// Configure whether the authenticated principal may read SecInfo.
+    pub fn set_secinfo_permitted(&self, permitted: bool) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .discovery
+            .secinfo_permitted = permitted;
+    }
+
+    pub(crate) fn discovery_snapshot(&self) -> DiscoverySnapshot {
+        let inner = self.inner.read().expect("store lock poisoned");
+        let mut discovery = inner.discovery.clone();
+        let seeded_nvts: Vec<_> = inner
+            .resources
+            .values()
+            .filter(|resource| resource.resource_type == "nvt" && !resource.trashed)
+            .collect();
+
+        // Keep the long-standing generic `Resource::new("nvt", ...)` seed path
+        // useful for MCP-style tests.  An explicitly seeded generic catalogue
+        // replaces the built-in discovery catalogue, just as it did before the
+        // bounded NVT handler was introduced.
+        if !seeded_nvts.is_empty() {
+            discovery.nvts = seeded_nvts
+                .into_iter()
+                .map(|resource| {
+                    let oid = resource
+                        .attr("oid")
+                        .or_else(|| resource.attr("nvt_oid"))
+                        .map_or_else(|| resource.id.to_string(), str::to_string);
+                    let severity = resource.attr("severity").unwrap_or("0.0").to_string();
+                    let nvt = DiscoveryNvt {
+                        oid: oid.clone(),
+                        name: resource.name.clone(),
+                        family: resource.attr("family").unwrap_or_default().to_string(),
+                        cvss_base: resource
+                            .attr("cvss_base")
+                            .or_else(|| resource.attr("severity"))
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0.0),
+                        severity,
+                        tags: resource.attr("tags").unwrap_or_default().to_string(),
+                        solution_type: resource
+                            .attr("solution_type")
+                            .unwrap_or("Unknown")
+                            .to_string(),
+                        timeout: resource
+                            .attr("timeout")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or_default(),
+                        preferences: Vec::new(),
+                    };
+                    (oid, nvt)
+                })
+                .collect();
+        }
+        discovery
     }
 
     /// Authenticate a session. Returns true if credentials are valid.

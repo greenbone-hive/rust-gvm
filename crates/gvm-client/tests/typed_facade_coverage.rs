@@ -52,7 +52,10 @@ use gvm_gmp::commands::notes::{
     CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesRequest,
     ModifyNoteRequest,
 };
-use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
+use gvm_gmp::commands::nvts::{
+    GetNvtFamiliesRequest, GetNvtPreferenceRequest, GetNvtPreferencesRequest, GetNvtRequest,
+    GetNvtsRequest, GetScanConfigNvtRequest, GetScanConfigNvtsRequest,
+};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
@@ -95,11 +98,15 @@ use gvm_gmp::commands::schedules::{
     CloneScheduleRequest, CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest,
     GetSchedulesRequest, ModifyScheduleRequest,
 };
-use gvm_gmp::commands::secinfo::{GenericInfoType, GetInfoListOpts, GetSecInfoOpts};
+use gvm_gmp::commands::secinfo::{
+    GenericInfoType, GetCertBundAdvisoriesRequest, GetCertBundAdvisoryRequest, GetCpeRequest,
+    GetCpesRequest, GetCveRequest, GetCvesRequest, GetDfnCertAdvisoriesRequest,
+    GetDfnCertAdvisoryRequest, GetInfoListRequest, GetInfoRequest,
+};
 use gvm_gmp::commands::system::{
-    FilteredGetOpts, ModifyAuthRequest, ModifyLicenseOpts, ModifyLicenseRequest,
-    ModifyLicenseWithOptsRequest, ModifySettingRequest, RunWizardOpts, RunWizardRequest,
-    RunWizardWithOptsRequest,
+    GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest, ModifyLicenseOpts,
+    ModifyLicenseRequest, ModifyLicenseWithOptsRequest, ModifySettingRequest, RunWizardOpts,
+    RunWizardRequest, RunWizardWithOptsRequest,
 };
 use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 use gvm_gmp::commands::tags::{
@@ -983,39 +990,38 @@ async fn nvt_and_secinfo_queries_execute_through_typed_facade() {
     let mut client = client(&server).await;
     server.clear_history();
 
-    assert_typed_success!(client.get_nvts(GetNvtsOpts::default()));
-    assert_typed_success!(client.get_nvt("1.3.6.1"));
-    assert_typed_success!(client.get_scan_config_nvts(GetNvtsOpts::default()));
-    assert_typed_success!(client.get_scan_config_nvt("1.3.6.1"));
-    assert_typed_success!(client.get_nvt_preferences(GetNvtPreferencesOpts::default()));
-    assert_typed_success!(client.get_nvt_preference(
-        "timeout",
-        GetNvtPreferencesOpts {
-            nvt_oid: Some("1.3.6.1".into()),
-        }
-    ));
-    assert_typed_success!(client.get_nvt_families());
+    assert_typed_success!(client.get_nvts(GetNvtsRequest::default()));
+    assert_typed_success!(client.get_nvt(GetNvtRequest::new("1.3.6.1")));
+    assert_typed_success!(
+        client.get_scan_config_nvts(GetScanConfigNvtsRequest::new(id("config-1"), "General"))
+    );
+    assert_typed_success!(client.get_scan_config_nvt(GetScanConfigNvtRequest::new("1.3.6.1")));
+    assert_typed_success!(client.get_nvt_preferences(GetNvtPreferencesRequest::default()));
+    let mut preference = GetNvtPreferenceRequest::new("entry:timeout");
+    preference.nvt_oid = Some("1.3.6.1".into());
+    assert_typed_success!(client.get_nvt_preference(preference));
+    assert_typed_success!(client.get_nvt_families(GetNvtFamiliesRequest::new()));
 
-    assert_typed_success!(client.get_info("oval:example:def:1", GenericInfoType::Ovaldef));
-    assert_typed_success!(client.get_info_list(GenericInfoType::Nvt, GetInfoListOpts::default()));
-    assert_typed_success!(client.get_cpes(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_cpe("cpe:/a:example"));
-    assert_typed_success!(client.get_cves(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_cve("CVE-2026-0001"));
-    assert_typed_success!(client.get_cert_bund_advisories(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_cert_bund_advisory("CB-1"));
-    assert_typed_success!(client.get_dfn_cert_advisories(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_dfn_cert_advisory("DFN-1"));
-    assert_typed_success!(client.get_secinfo_operating_systems(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_secinfo_vulnerabilities(GetSecInfoOpts::default()));
+    assert_typed_success!(
+        client.get_info(GetInfoRequest::new("CVE-2026-0001", GenericInfoType::Cve))
+    );
+    assert_typed_success!(client.get_info_list(GetInfoListRequest::new(GenericInfoType::Nvt)));
+    assert_typed_success!(client.get_cpes(GetCpesRequest::default()));
+    assert_typed_success!(client.get_cpe(GetCpeRequest::new("cpe:/a:example")));
+    assert_typed_success!(client.get_cves(GetCvesRequest::default()));
+    assert_typed_success!(client.get_cve(GetCveRequest::new("CVE-2026-0001")));
+    assert_typed_success!(client.get_cert_bund_advisories(GetCertBundAdvisoriesRequest::default()));
+    assert_typed_success!(client.get_cert_bund_advisory(GetCertBundAdvisoryRequest::new("CB-1")));
+    assert_typed_success!(client.get_dfn_cert_advisories(GetDfnCertAdvisoriesRequest::default()));
+    assert_typed_success!(client.get_dfn_cert_advisory(GetDfnCertAdvisoryRequest::new("DFN-1")));
 
     let history = server.command_history();
-    assert_eq!(history.len(), 19);
+    assert_eq!(history.len(), 17);
     for (command, expected_count) in [
         ("get_nvts", 4),
         ("get_preferences", 2),
         ("get_nvt_families", 1),
-        ("get_info", 12),
+        ("get_info", 10),
     ] {
         assert_eq!(
             history
@@ -1161,7 +1167,7 @@ async fn nvt_and_secinfo_queries_preserve_status_and_parse_context() {
     let mut status_client = client(&server).await;
 
     assert_server_error!(
-        status_client.get_scan_config_nvt("1.3.6.1"),
+        status_client.get_scan_config_nvt(GetScanConfigNvtRequest::new("1.3.6.1")),
         503,
         "feed unavailable"
     );
@@ -1181,7 +1187,7 @@ async fn nvt_and_secinfo_queries_preserve_status_and_parse_context() {
     };
     let mut parse_client = client(&server).await;
     let parse_error = parse_client
-        .get_nvt_preferences(GetNvtPreferencesOpts::default())
+        .get_nvt_preferences(GetNvtPreferencesRequest::default())
         .await
         .expect_err("missing NVT preference name should fail");
     assert!(matches!(
@@ -1422,8 +1428,8 @@ async fn system_discovery_queries_execute_through_typed_facade() {
     assert_typed_success!(client.get_help());
     assert_typed_success!(client.get_help_with_mode(HelpMode::BriefXml));
     assert_typed_success!(client.describe_auth());
-    assert_typed_success!(client.get_vulnerabilities(FilteredGetOpts::default()));
-    assert_typed_success!(client.get_vulnerability("vuln-1"));
+    assert_typed_success!(client.get_vulnerabilities(GetVulnsRequest::default()));
+    assert_typed_success!(client.get_vulnerability(GetVulnerabilityRequest::new("vuln-1")));
 
     let history = server.command_history();
     assert_eq!(history.len(), 12);
@@ -2901,12 +2907,12 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_task(&id("11111111-1111-1111-1111-111111111111")));
     assert_typed_success!(client.get_reports(GetReportsOpts::default()));
     assert_typed_success!(client.get_results(GetResultsRequest::default()));
-    assert_typed_success!(client.get_nvts(GetNvtsOpts::default()));
-    assert_typed_success!(client.get_nvt_families());
-    assert_typed_success!(client.get_cves(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_cpes(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_cert_bund_advisories(GetSecInfoOpts::default()));
-    assert_typed_success!(client.get_dfn_cert_advisories(GetSecInfoOpts::default()));
+    assert_typed_success!(client.get_nvts(GetNvtsRequest::default()));
+    assert_typed_success!(client.get_nvt_families(GetNvtFamiliesRequest::new()));
+    assert_typed_success!(client.get_cves(GetCvesRequest::default()));
+    assert_typed_success!(client.get_cpes(GetCpesRequest::default()));
+    assert_typed_success!(client.get_cert_bund_advisories(GetCertBundAdvisoriesRequest::default()));
+    assert_typed_success!(client.get_dfn_cert_advisories(GetDfnCertAdvisoriesRequest::default()));
     assert_typed_success!(client.get_alerts(GetAlertsRequest::default()));
     assert_typed_success!(client.get_credentials(GetCredentialsRequest::default()));
     assert_typed_success!(client.get_filters(GetFiltersRequest::default()));

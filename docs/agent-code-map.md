@@ -38,6 +38,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   canonical TLS-certificate lifecycle, original-byte encoding, ownership and
   fingerprint identity, clone/modify/delete semantics, query expansions, and
   bounded registered-fixture mock behavior.
+- `docs/nvt-secinfo-request-gvmd-evidence.md`: pinned gvmd evidence for the 19
+  canonical NVT/SecInfo requests, dispatch discrepancies, source-shaped
+  responses, preference boundaries/redaction, filters, and bounded stateful
+  discovery behavior.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -72,12 +76,15 @@ Adding or changing a GMP command:
   `docs/canonical-request-disposition.tsv`. Standard targets are the reference;
   alternate targets, agent groups, agents, integration configurations, port
   lists, credentials, filters, tags, alerts, schedules, scanners, notes,
-  overrides, users, groups, roles, permissions, assets, results, and report configurations show the same contract across their
+  overrides, users, groups, roles, permissions, assets, results, report
+  configurations, TLS certificates, and NVT/SecInfo discovery show the same contract across their
   applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.
 - If version-gated, update `crates/gvm-client/src/version.rs` and any typed version traits in `crates/gvm-client/src/lib.rs`.
 - If the mock server should understand it, update `crates/gvm-mock-server/src/handler.rs`, `response_gen.rs`, `store.rs`, or `fixtures.rs` as appropriate.
+  NVT/SecInfo discovery is isolated in `stateful_nvt_secinfo.rs`, with its
+  seed/test state owned by `ResourceStore`.
 
 Changing response parsing:
 

@@ -1014,7 +1014,7 @@ async fn stateful_system_reports_follow_gvmd_request_and_response_shapes() {
 }
 
 #[tokio::test]
-async fn stateful_secinfo_returns_typed_entries() {
+async fn stateful_secinfo_rejects_get_info_vulnerability_alias() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -1022,10 +1022,7 @@ async fn stateful_secinfo_returns_typed_entries() {
     auth_admin(&mut stream).await;
 
     let resp = send_recv(&mut stream, br#"<get_info type="vuln"/>"#).await;
-    assert_eq!(resp.status_code(), Some(200));
-    let text = resp.as_str().expect("utf8");
-    assert!(text.contains("<vuln id=\"vuln-1\">"));
-    assert!(text.contains("Outdated package"));
+    assert_eq!(resp.status_code(), Some(400));
 
     server.shutdown().await;
 }
@@ -1045,16 +1042,17 @@ async fn stateful_secinfo_accepts_uppercase_type_and_info_id() {
     .await;
     assert_eq!(resp.status_code(), Some(200));
     let text = resp.as_str().expect("utf8");
-    assert!(text.contains("<cve id=\"CVE-2026-1000\">"));
+    assert!(text.contains("<info id=\"CVE-2026-1000\">"));
+    assert!(text.contains("<cve><raw_data>"));
     assert!(text.contains("Mock CVE one"));
-    assert!(text.contains("<cve_count>1<filtered>1</filtered></cve_count>"));
+    assert!(text.contains("<info_count>2<filtered>1</filtered><page>1</page></info_count>"));
     assert!(!text.contains("CVE-2026-1001"));
 
     server.shutdown().await;
 }
 
 #[tokio::test]
-async fn stateful_secinfo_renders_nvt_and_ovaldef_entries() {
+async fn stateful_secinfo_renders_nvt_and_rejects_ovaldef() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -1068,9 +1066,9 @@ async fn stateful_secinfo_renders_nvt_and_ovaldef_entries() {
     .await;
     assert_eq!(nvt.status_code(), Some(200));
     let text = nvt.as_str().expect("utf8");
-    assert!(text.contains("<nvt id=\"1.3.6.1.4.1.25623.1\">"));
+    assert!(text.contains("<info id=\"1.3.6.1.4.1.25623.1\">"));
     assert!(text.contains("Mock NVT one"));
-    assert!(text.contains("<nvt_count>1<filtered>1</filtered></nvt_count>"));
+    assert!(text.contains("<info_count>2<filtered>1</filtered><page>1</page></info_count>"));
     assert!(!text.contains("Mock NVT two"));
 
     let oval = send_recv(
@@ -1078,12 +1076,7 @@ async fn stateful_secinfo_renders_nvt_and_ovaldef_entries() {
         br#"<get_info details="1" info_id="oval:org.example:def:1" type="OVALDEF"/>"#,
     )
     .await;
-    assert_eq!(oval.status_code(), Some(200));
-    let text = oval.as_str().expect("utf8");
-    assert!(text.contains("<ovaldef id=\"oval:org.example:def:1\">"));
-    assert!(text.contains("Mock OVAL definition one"));
-    assert!(text.contains("<ovaldef_count>1<filtered>1</filtered></ovaldef_count>"));
-    assert!(!text.contains("Mock OVAL definition two"));
+    assert_eq!(oval.status_code(), Some(400));
 
     server.shutdown().await;
 }

@@ -92,3 +92,11 @@ The same pattern works in GitLab CI, Buildkite, CircleCI, or local developer wor
   cryptographic verifier, ACL/filter engine, or live-gvmd conformance suite.
   Unregistered certificate payloads are deliberately rejected; see the
   [TLS evidence and limitations](tls-certificate-request-gvmd-evidence.md).
+- Stateful NVT/SecInfo discovery uses deterministic textual OIDs, configuration
+  membership and preference overlays, SecInfo entries, observed vulnerability
+  summaries, saved filters, and explicit availability/permission toggles. The
+  five discovery roots are immutable queries with a bounded filter language;
+  the mock is not a feed parser, SQL emulator, complete ACL implementation, or
+  real-gvmd conformance suite. Fixture mode shares supported-type validation
+  and authoritative response shapes. See the
+  [NVT/SecInfo evidence and limitations](nvt-secinfo-request-gvmd-evidence.md).

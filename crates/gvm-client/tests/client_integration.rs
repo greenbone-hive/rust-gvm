@@ -41,7 +41,10 @@ use gvm_gmp::commands::notes::{
     CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesRequest,
     ModifyNoteRequest,
 };
-use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
+use gvm_gmp::commands::nvts::{
+    GetNvtPreferenceRequest, GetNvtPreferencesRequest, GetScanConfigNvtRequest,
+    GetScanConfigNvtsRequest,
+};
 use gvm_gmp::commands::oci_image_targets::{
     CloneOciImageTargetRequest, CreateOciImageTargetRequest, DeleteOciImageTargetRequest,
     GetOciImageTargetRequest, ModifyOciImageTargetRequest,
@@ -75,10 +78,14 @@ use gvm_gmp::commands::schedules::{
     CreateScheduleRequest, DeleteScheduleRequest, GetScheduleRequest, GetSchedulesRequest,
     ModifyScheduleRequest,
 };
-use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
+use gvm_gmp::commands::secinfo::{
+    GenericInfoType, GetCertBundAdvisoryRequest, GetCpeRequest, GetCveRequest,
+    GetDfnCertAdvisoryRequest, GetInfoListRequest, GetInfoRequest,
+};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::system::ModifyLicenseOpts;
 use gvm_gmp::commands::system::RunWizardOpts;
+use gvm_gmp::commands::system::{GetVulnerabilityRequest, GetVulnsRequest};
 use gvm_gmp::commands::targets::{
     CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
     ModifyTargetRequest,
@@ -2835,16 +2842,16 @@ async fn typed_secinfo_singular_helpers_fetch_one_entry() {
         .expect("authenticate should succeed");
 
     let cve = client
-        .get_cve("CVE-2026-1000")
+        .get_cve(GetCveRequest::new("CVE-2026-1000"))
         .await
         .expect("single CVE should parse");
     assert_eq!(cve.items.len(), 1);
     assert_eq!(cve.items[0].id, "CVE-2026-1000");
     assert_eq!(cve.items[0].name, "Mock CVE one");
-    assert_eq!(cve.counts.total, Some(1));
+    assert_eq!(cve.counts.total, Some(2));
 
     let cpe = client
-        .get_cpe("cpe:/a:greenbone:gvm")
+        .get_cpe(GetCpeRequest::new("cpe:/a:greenbone:gvm"))
         .await
         .expect("single CPE should parse");
     assert_eq!(cpe.items.len(), 1);
@@ -2852,14 +2859,14 @@ async fn typed_secinfo_singular_helpers_fetch_one_entry() {
     assert_eq!(cpe.items[0].name, "Greenbone GVM");
 
     let cert = client
-        .get_cert_bund_advisory("CB-K26/001")
+        .get_cert_bund_advisory(GetCertBundAdvisoryRequest::new("CB-K26/001"))
         .await
         .expect("single CERT-Bund advisory should parse");
     assert_eq!(cert.items.len(), 1);
     assert_eq!(cert.items[0].id, "CB-K26/001");
 
     let dfn = client
-        .get_dfn_cert_advisory("DFN-2026-001")
+        .get_dfn_cert_advisory(GetDfnCertAdvisoryRequest::new("DFN-2026-001"))
         .await
         .expect("single DFN-CERT advisory should parse");
     assert_eq!(dfn.items.len(), 1);
@@ -2886,20 +2893,20 @@ async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
     server.clear_history();
 
     let vulnerabilities = client
-        .get_vulnerabilities(Default::default())
+        .get_vulnerabilities(GetVulnsRequest::default())
         .await
         .expect("vulnerabilities should parse");
     assert_eq!(vulnerabilities.items.len(), 2);
     assert_eq!(vulnerabilities.items[0].id, "vuln-1");
 
     let vulnerability = client
-        .get_vulnerability("vuln-1")
+        .get_vulnerability(GetVulnerabilityRequest::new("vuln-1"))
         .await
         .expect("single vulnerability should parse");
     assert_eq!(vulnerability.items.len(), 1);
     assert_eq!(vulnerability.items[0].id, "vuln-1");
     assert_eq!(vulnerability.items[0].name, "Outdated package");
-    assert_eq!(vulnerability.counts.total, Some(1));
+    assert_eq!(vulnerability.counts.total, Some(2));
 
     let history = server.command_history();
     assert_eq!(history.len(), 2);
@@ -2934,32 +2941,22 @@ async fn generic_secinfo_helpers_use_stateful_mock_server_path() {
 
     server.clear_history();
 
+    let mut nvt_request = GetInfoListRequest::new(GenericInfoType::Nvt);
+    nvt_request.name = Some("Mock NVT one".into());
+    nvt_request.details = Some(false);
     let nvt = client
-        .call(get_info_list(
-            GenericInfoType::Nvt,
-            GetInfoListOpts {
-                filter: Some("family=General".into()),
-                filter_id: Some("filter-1".into()),
-                name: Some("Mock NVT one".into()),
-                details: Some(false),
-            },
-        ))
+        .execute(nvt_request)
         .await
         .expect("NVT secinfo list should succeed");
-    let text = nvt.as_str().expect("response should be UTF-8");
-    assert!(text.contains("<nvt id=\"1.3.6.1.4.1.25623.1\">"));
-    assert!(text.contains("Mock NVT one"));
-    assert!(text.contains("<nvt_count>1<filtered>1</filtered></nvt_count>"));
-    assert!(!text.contains("Mock NVT two"));
+    assert_eq!(nvt.items.len(), 1);
+    assert_eq!(nvt.items[0].id, "1.3.6.1.4.1.25623.1");
+    assert_eq!(nvt.items[0].info_type, "NVT");
 
-    let oval = client
-        .call(get_info("oval:org.example:def:1", GenericInfoType::Ovaldef))
+    let cve = client
+        .execute(GetInfoRequest::new("CVE-2026-1000", GenericInfoType::Cve))
         .await
-        .expect("OVALDEF secinfo lookup should succeed");
-    let text = oval.as_str().expect("response should be UTF-8");
-    assert!(text.contains("<ovaldef id=\"oval:org.example:def:1\">"));
-    assert!(text.contains("Mock OVAL definition one"));
-    assert!(text.contains("<ovaldef_count>1<filtered>1</filtered></ovaldef_count>"));
+        .expect("CVE secinfo lookup should succeed");
+    assert_eq!(cve.items[0].id, "CVE-2026-1000");
 
     let history = server.command_history();
     assert_eq!(history.len(), 2);
@@ -2972,8 +2969,8 @@ async fn generic_secinfo_helpers_use_stateful_mock_server_path() {
     assert_eq!(
         commands,
         [
-            "<get_info details=\"0\" filt_id=\"filter-1\" filter=\"family=General\" name=\"Mock NVT one\" type=\"NVT\"/>",
-            "<get_info details=\"1\" info_id=\"oval:org.example:def:1\" type=\"OVALDEF\"/>",
+            "<get_info details=\"0\" name=\"Mock NVT one\" type=\"NVT\"/>",
+            "<get_info details=\"1\" info_id=\"CVE-2026-1000\" type=\"CVE\"/>",
         ]
     );
 
@@ -3089,8 +3086,8 @@ async fn preference_getters_send_expected_mock_server_commands() {
     server.clear_history();
 
     let opts = GetScanConfigPreferencesOpts {
-        nvt_oid: Some("1.3.6.1".into()),
-        config_id: Some(EntityId::new("config-1").expect("valid id")),
+        nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+        config_id: Some(EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("valid id")),
     };
     let responses = [
         client
@@ -3102,24 +3099,20 @@ async fn preference_getters_send_expected_mock_server_commands() {
             .await
             .expect("scan-config preference request should succeed"),
         client
-            .get_nvt_preferences(GetNvtPreferencesOpts {
-                nvt_oid: Some("1.3.6.1".into()),
+            .get_nvt_preferences(GetNvtPreferencesRequest {
+                nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
             })
             .await
             .expect("nvt preferences request should succeed"),
         client
-            .get_nvt_preference(
-                "timeout",
-                GetNvtPreferencesOpts {
-                    nvt_oid: Some("1.3.6.1".into()),
-                },
-            )
+            .get_nvt_preference(GetNvtPreferenceRequest {
+                preference: "timeout".into(),
+                nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+            })
             .await
             .expect("nvt preference request should succeed"),
     ];
-    assert!(responses
-        .iter()
-        .all(|response| response.status == 200 && response.items.is_empty()));
+    assert!(responses.iter().all(|response| response.status == 200));
 
     let history = server.command_history();
     assert_eq!(history.len(), 4);
@@ -3132,16 +3125,19 @@ async fn preference_getters_send_expected_mock_server_commands() {
         .collect::<Vec<_>>();
     assert_eq!(
         commands[0],
-        "<get_preferences config_id=\"config-1\" nvt_oid=\"1.3.6.1\"/>"
+        "<get_preferences config_id=\"daba56c8-73ec-11df-a475-002264764cea\" nvt_oid=\"1.3.6.1.4.1.25623.1\"/>"
     );
     assert_eq!(
         commands[1],
-        "<get_preferences config_id=\"config-1\" nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
+        "<get_preferences config_id=\"daba56c8-73ec-11df-a475-002264764cea\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"timeout\"/>"
     );
-    assert_eq!(commands[2], "<get_preferences nvt_oid=\"1.3.6.1\"/>");
+    assert_eq!(
+        commands[2],
+        "<get_preferences nvt_oid=\"1.3.6.1.4.1.25623.1\"/>"
+    );
     assert_eq!(
         commands[3],
-        "<get_preferences nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
+        "<get_preferences nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"timeout\"/>"
     );
 
     server.shutdown().await;
@@ -3149,27 +3145,12 @@ async fn preference_getters_send_expected_mock_server_commands() {
 
 #[tokio::test]
 async fn typed_scan_config_nvt_helpers_use_stateful_mock_server_filters() {
-    let wanted_oid = "1.3.6.1.4.1.25623.1.0.90001";
-    let other_oid = "1.3.6.1.4.1.25623.1.0.90002";
+    let wanted_oid = "1.3.6.1.4.1.25623.1";
+    let config_id = "daba56c8-73ec-11df-a475-002264764cea";
     let server = match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(MockVersion::V22_5)
         .unix_socket_auto()
-        .seed(move |store| {
-            let mut wanted = Resource::new("nvt", "Config-scoped NVT");
-            wanted.set_attr("oid", wanted_oid);
-            wanted.set_attr("config_id", "config-1");
-            wanted.set_attr("preferences_config_id", "prefs-1");
-            wanted.set_attr("family", "General");
-            store.seed(wanted);
-
-            let mut other = Resource::new("nvt", "Other NVT");
-            other.set_attr("oid", other_oid);
-            other.set_attr("config_id", "config-2");
-            other.set_attr("preferences_config_id", "prefs-2");
-            other.set_attr("family", "Other");
-            store.seed(other);
-        })
         .build()
         .await
     {
@@ -3189,27 +3170,28 @@ async fn typed_scan_config_nvt_helpers_use_stateful_mock_server_filters() {
     server.clear_history();
 
     let listed = client
-        .get_scan_config_nvts(GetNvtsOpts {
-            details: Some(true),
-            preferences: Some(true),
-            preference_count: Some(true),
-            timeout: Some(false),
-            config_id: Some(EntityId::new("config-1").expect("valid id")),
-            preferences_config_id: Some(EntityId::new("prefs-1").expect("valid id")),
-            family: Some("General".into()),
-            sort_order: Some("ascending".into()),
-            sort_field: Some("name".into()),
-            ..Default::default()
+        .get_scan_config_nvts({
+            let mut request = GetScanConfigNvtsRequest::new(
+                EntityId::new(config_id).expect("valid id"),
+                "General",
+            );
+            request.details = Some(true);
+            request.preferences = Some(true);
+            request.preference_count = Some(true);
+            request.timeout = Some(false);
+            request.sort_order = Some(SortOrder::Ascending);
+            request.sort_field = Some("name".into());
+            request
         })
         .await
         .expect("scan-config NVT list request should succeed");
     assert_eq!(listed.items.len(), 1);
     assert_eq!(listed.items[0].oid, wanted_oid);
-    assert_eq!(listed.items[0].name, "Config-scoped NVT");
+    assert_eq!(listed.items[0].name, "Mock NVT one");
     assert_eq!(listed.items[0].family.as_deref(), Some("General"));
 
     let single = client
-        .get_scan_config_nvt(wanted_oid)
+        .get_scan_config_nvt(GetScanConfigNvtRequest::new(wanted_oid))
         .await
         .expect("scan-config NVT request should succeed");
     assert_eq!(single.items.len(), 1);
@@ -3226,11 +3208,11 @@ async fn typed_scan_config_nvt_helpers_use_stateful_mock_server_filters() {
         .collect::<Vec<_>>();
     assert_eq!(
         commands[0],
-        "<get_nvts config_id=\"config-1\" details=\"1\" family=\"General\" preference_count=\"1\" preferences=\"1\" preferences_config_id=\"prefs-1\" sort_field=\"name\" sort_order=\"ascending\" timeout=\"0\"/>"
+        format!("<get_nvts config_id=\"{config_id}\" details=\"1\" family=\"General\" preference_count=\"1\" preferences=\"1\" sort_field=\"name\" sort_order=\"ascending\" timeout=\"0\"/>")
     );
     assert_eq!(
         commands[1],
-        "<get_nvts details=\"1\" nvt_oid=\"1.3.6.1.4.1.25623.1.0.90001\" preference_count=\"1\" preferences=\"1\"/>"
+        "<get_nvts details=\"1\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference_count=\"1\" preferences=\"1\"/>"
     );
 
     server.shutdown().await;
