@@ -655,11 +655,6 @@ gmp_enum!(HelpFormat {
     Text => "text",
     Xml => "xml"
 });
-gmp_enum!(HostsOrdering {
-    Sequential => "sequential",
-    Random => "random",
-    Reverse => "reverse"
-});
 gmp_enum!(InfoType {
     CertBundAdv => "CERT_BUND_ADV",
     Cpe => "CPE",

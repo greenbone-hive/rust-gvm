@@ -253,30 +253,30 @@ builder	crates/gvm-gmp/src/commands/targets.rs	get_target	removed	Removed by #60
 builder	crates/gvm-gmp/src/commands/targets.rs	get_targets	removed	Removed by #607; GetTargetsRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/targets.rs	modify_target	removed	Removed by #607; ModifyTargetRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	clone_audit	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	clone_task	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	clone_task	removed	Removed by #659; CloneTaskRequest directly owns clone overrides and encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_agent_group_task	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_audit	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_container_image_task	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_container_task	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_import_task	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_oci_image_target_task	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	create_task	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	create_task	removed	Removed by #659; CreateTaskRequest directly owns standard task creation values and encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	create_web_application_task	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	delete_audit	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	delete_task	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	delete_task	removed	Removed by #659; DeleteTaskRequest directly owns deletion permanence and encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	get_audit	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	get_audits	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	get_task	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	get_tasks	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	get_task	removed	Removed by #659; GetTaskRequest directly owns the detailed task selector and encoding.
+builder	crates/gvm-gmp/src/commands/tasks.rs	get_tasks	removed	Removed by #659; GetTasksRequest directly owns standard task query values and encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	modify_audit	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	modify_task	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	modify_task	removed	Removed by #659; ModifyTaskRequest directly owns task update decisions and encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	move_task	transitional	Pending bounded family migration under #602.
 builder	crates/gvm-gmp/src/commands/tasks.rs	resume_audit	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	resume_task	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	resume_task	removed	Removed by #659; ResumeTaskRequest directly owns the action identifier and encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	start_audit	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	start_task	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	start_task	removed	Removed by #659; StartTaskRequest directly owns the action identifier and encoding.
 builder	crates/gvm-gmp/src/commands/tasks.rs	stop_audit	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/tasks.rs	stop_task	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/tasks.rs	stop_task	removed	Removed by #659; StopTaskRequest directly owns the action identifier and encoding.
 builder	crates/gvm-gmp/src/commands/tickets.rs	clone_ticket	frozen-ticket	Ticket surface is frozen by product scope.
 builder	crates/gvm-gmp/src/commands/tickets.rs	create_ticket	frozen-ticket	Ticket surface is frozen by product scope.
 builder	crates/gvm-gmp/src/commands/tickets.rs	delete_ticket	frozen-ticket	Ticket surface is frozen by product scope.
@@ -460,7 +460,7 @@ facade	crates/gvm-client/src/typed/scan.rs	clone_audit	transitional	Pending boun
 facade	crates/gvm-client/src/typed/scan.rs	clone_scan_config	canonical-request	Retained by #649; accepts CloneScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	clone_scanner	retained-construction	Retained for discoverability; accepts the canonical CloneScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	clone_schedule	retained-construction	Retained for discoverability; accepts the canonical CloneScheduleRequest unchanged.
-facade	crates/gvm-client/src/typed/scan.rs	clone_task	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	clone_task	canonical-request	Accepts CloneTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	create_agent_group_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	create_container_image_task	transitional	Pending bounded family migration under #602.
@@ -470,14 +470,14 @@ facade	crates/gvm-client/src/typed/scan.rs	create_oci_image_target_task	transiti
 facade	crates/gvm-client/src/typed/scan.rs	create_scan_config	canonical-request	Retained by #649; accepts CreateScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	create_scanner	retained-construction	Retained for discoverability; accepts the canonical CreateScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	create_schedule	retained-construction	Retained for discoverability; accepts the canonical CreateScheduleRequest unchanged.
-facade	crates/gvm-client/src/typed/scan.rs	create_task	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	create_task	canonical-request	Accepts CreateTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	create_typed_schedule	removed	Removed by #629; typed input constructs CreateScheduleRequest and uses create_schedule.
 facade	crates/gvm-client/src/typed/scan.rs	create_web_application_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	delete_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	delete_scan_config	canonical-request	Retained by #649; accepts DeleteScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	delete_scanner	retained-construction	Retained for discoverability; accepts the canonical DeleteScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	delete_schedule	retained-construction	Retained for discoverability; accepts the canonical DeleteScheduleRequest unchanged.
-facade	crates/gvm-client/src/typed/scan.rs	delete_task	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	delete_task	canonical-request	Accepts DeleteTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	empty_trashcan	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_audit	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	get_audits	transitional	Pending bounded family migration under #602.
@@ -491,8 +491,8 @@ facade	crates/gvm-client/src/typed/scan.rs	get_scanner	retained-construction	Ret
 facade	crates/gvm-client/src/typed/scan.rs	get_scanners	retained-construction	Retained for discoverability; accepts the canonical GetScannersRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_schedule	retained-construction	Retained for discoverability; accepts the canonical GetScheduleRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_schedules	retained-construction	Retained for discoverability; accepts the canonical GetSchedulesRequest unchanged.
-facade	crates/gvm-client/src/typed/scan.rs	get_task	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_tasks	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	get_task	canonical-request	Accepts GetTaskRequest unchanged and delegates only to execute.
+facade	crates/gvm-client/src/typed/scan.rs	get_tasks	canonical-request	Accepts GetTasksRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	import_policy	canonical-request	Retained by #649; accepts ImportPolicyRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	import_scan_config	canonical-request	Retained by #649; accepts ImportScanConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	modify_audit	transitional	Pending bounded family migration under #602.
@@ -503,17 +503,17 @@ facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_comment	canoni
 facade	crates/gvm-client/src/typed/scan.rs	modify_scan_config_set_name	canonical-request	Retained by #649; accepts ModifyScanConfigSetNameRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	modify_scanner	retained-construction	Retained for discoverability; accepts the canonical ModifyScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	modify_schedule	retained-construction	Retained for discoverability; accepts the canonical ModifyScheduleRequest unchanged.
-facade	crates/gvm-client/src/typed/scan.rs	modify_task	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	modify_task	canonical-request	Accepts ModifyTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	modify_typed_schedule	removed	Removed by #629; typed input constructs ModifyScheduleRequest and uses modify_schedule.
 facade	crates/gvm-client/src/typed/scan.rs	move_task	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	restore	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	restore_from_trashcan	transitional	Pending bounded family migration under #602.
 facade	crates/gvm-client/src/typed/scan.rs	resume_audit	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	resume_task	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	resume_task	canonical-request	Accepts ResumeTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	start_audit	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	start_task	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	start_task	canonical-request	Accepts StartTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	stop_audit	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	stop_task	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	stop_task	canonical-request	Accepts StopTaskRequest unchanged and delegates only to execute.
 facade	crates/gvm-client/src/typed/scan.rs	sync_config	removed	Removed by #649; gvmd has no executable GMP dispatcher for sync_config.
 facade	crates/gvm-client/src/typed/scan.rs	sync_scan_config	removed	Removed by #649; the deprecated per-config delegate falsely implied supported synchronization.
 facade	crates/gvm-client/src/typed/scan.rs	verify_scanner	retained-construction	Retained for discoverability; accepts the canonical VerifyScannerRequest unchanged.
@@ -690,10 +690,10 @@ options	crates/gvm-gmp/src/commands/targets.rs	GetTargetsOpts	removed	Removed by
 options	crates/gvm-gmp/src/commands/targets.rs	ModifyTargetOpts	removed	Removed by #607; fields now belong to ModifyTargetRequest.
 options	crates/gvm-gmp/src/commands/tasks.rs	CreateAgentGroupTaskOpts	transitional	Pending bounded family migration under #602.
 options	crates/gvm-gmp/src/commands/tasks.rs	CreateOciImageTargetTaskOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/tasks.rs	CreateTaskOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/tasks.rs	CreateTaskOpts	retained-construction	Retained only for the deferred audit lifecycle in #660; standard task requests no longer accept it.
 options	crates/gvm-gmp/src/commands/tasks.rs	CreateWebApplicationTaskOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/tasks.rs	GetTasksOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/tasks.rs	ModifyTaskOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/tasks.rs	GetTasksOpts	retained-construction	Retained only for the deferred audit lifecycle in #660; standard task requests no longer accept it.
+options	crates/gvm-gmp/src/commands/tasks.rs	ModifyTaskOpts	retained-construction	Retained only for the deferred audit lifecycle in #660; standard task requests no longer accept it.
 options	crates/gvm-gmp/src/commands/tickets.rs	CreateTicketOpts	frozen-ticket	Ticket surface is frozen by product scope.
 options	crates/gvm-gmp/src/commands/tickets.rs	GetTicketsOpts	frozen-ticket	Ticket surface is frozen by product scope.
 options	crates/gvm-gmp/src/commands/tickets.rs	ModifyTicketOpts	frozen-ticket	Ticket surface is frozen by product scope.
@@ -949,22 +949,25 @@ request	crates/gvm-gmp/src/commands/targets.rs	DeleteTargetRequest	canonical-req
 request	crates/gvm-gmp/src/commands/targets.rs	GetTargetRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
 request	crates/gvm-gmp/src/commands/targets.rs	GetTargetsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/targets.rs	ModifyTargetRequest	canonical-request	Complete modify input with final-value validation, direct encoding, and typed response.
-request	crates/gvm-gmp/src/commands/tasks.rs	CloneTaskRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tasks.rs	CloneTaskRequest	canonical-request	Complete standard task clone value with direct encoding and fixed CreateTaskResponse.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateAgentGroupTaskRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateAuditRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateContainerImageTaskRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateContainerTaskRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateImportTaskRequest	transitional	Pending bounded family migration under #602.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateOciImageTargetTaskRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tasks.rs	CreateTaskRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tasks.rs	CreateTaskRequest	canonical-request	Complete standard task creation value with direct encoding and fixed CreateTaskResponse.
 request	crates/gvm-gmp/src/commands/tasks.rs	CreateWebApplicationTaskRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tasks.rs	DeleteTaskRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tasks.rs	DeleteTaskRequest	canonical-request	Complete standard task deletion value with direct encoding and fixed DeleteTaskResponse.
 request	crates/gvm-gmp/src/commands/tasks.rs	GetAuditsRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tasks.rs	GetTaskRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tasks.rs	GetTasksRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tasks.rs	GetTaskRequest	canonical-request	Complete detailed standard task query with direct encoding and fixed GetTasksResponse.
+request	crates/gvm-gmp/src/commands/tasks.rs	GetTasksRequest	canonical-request	Complete standard task list query with direct encoding and fixed GetTasksResponse.
 request	crates/gvm-gmp/src/commands/tasks.rs	ModifyAuditRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/tasks.rs	ModifyTaskRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tasks.rs	ModifyTaskRequest	canonical-request	Complete standard task mutation value with direct encoding and fixed ModifyTaskResponse.
 request	crates/gvm-gmp/src/commands/tasks.rs	MoveTaskRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/tasks.rs	ResumeTaskRequest	canonical-request	Complete standard task resume value with direct encoding and fixed ResumeTaskResponse.
+request	crates/gvm-gmp/src/commands/tasks.rs	StartTaskRequest	canonical-request	Complete standard task start value with direct encoding and fixed StartTaskResponse.
+request	crates/gvm-gmp/src/commands/tasks.rs	StopTaskRequest	canonical-request	Complete standard task stop value with direct encoding and fixed StopTaskResponse.
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	CloneTlsCertificateRequest	canonical-request	Complete clone input with source-shaped empty override semantics, semantic alias metadata, validation, and direct encoding.
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	CreateTlsCertificateRequest	canonical-request	Complete create input owns original certificate bytes, confidential diagnostics, final validation, base64 encoding, and typed response.
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	DeleteTlsCertificateRequest	canonical-request	Complete ID-only permanent deletion input with final validation and direct encoding.

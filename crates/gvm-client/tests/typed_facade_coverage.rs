@@ -1969,7 +1969,6 @@ async fn standard_task_requests_execute_on_the_oldest_supported_version() {
             id("config-1"),
             id("target-1"),
             id("scanner-1"),
-            CreateTaskOpts::default(),
         ))
         .await
         .expect("standard task creation should be supported");
@@ -1981,10 +1980,7 @@ async fn standard_task_requests_execute_on_the_oldest_supported_version() {
     assert_eq!(cloned.status, 201);
 
     let modified = client
-        .execute(
-            ModifyTaskRequest::new(task_id.clone(), ModifyTaskOpts::default())
-                .expect("valid task modification"),
-        )
+        .execute(ModifyTaskRequest::new(task_id.clone()))
         .await
         .expect("task modification should be supported");
     assert_eq!(modified.status, 200);
@@ -2901,8 +2897,10 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_scan_configs(GetScanConfigsRequest::default()));
     assert_typed_success!(client.get_scanners(GetScannersRequest::default()));
     assert_typed_success!(client.get_port_lists(GetPortListsRequest::default()));
-    assert_typed_success!(client.get_tasks(GetTasksOpts::default()));
-    assert_typed_success!(client.get_task(&id("11111111-1111-1111-1111-111111111111")));
+    assert_typed_success!(client.get_tasks(GetTasksRequest::default()));
+    assert_typed_success!(client.get_task(GetTaskRequest::new(id(
+        "11111111-1111-1111-1111-111111111111"
+    ))));
     assert_typed_success!(client.get_reports(GetReportsOpts::default()));
     assert_typed_success!(client.get_results(GetResultsRequest::default()));
     assert_typed_success!(client.get_nvts(GetNvtsRequest::default()));
@@ -3031,14 +3029,13 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     assert_create_success!(
         client.create_tls_certificate(CreateTlsCertificateRequest::new(b"certificate".to_vec()))
     );
-    assert_create_success!(client.create_task(
+    assert_create_success!(client.create_task(CreateTaskRequest::new(
         "scan",
-        &related_id,
-        &related_id,
-        &related_id,
-        CreateTaskOpts::default()
-    ));
-    assert_create_success!(client.clone_task(&related_id));
+        related_id.clone(),
+        related_id.clone(),
+        related_id.clone(),
+    )));
+    assert_create_success!(client.clone_task(CloneTaskRequest::new(related_id.clone())));
 
     let history = server.command_history();
     for (command, child) in [
@@ -3421,23 +3418,19 @@ async fn remaining_mutation_families_use_typed_facade_and_scalar_relationship_up
         client.delete_target(DeleteTargetRequest::new(resource_id.clone(), false))
     );
 
-    assert_typed_success!(client.modify_task(&resource_id, ModifyTaskOpts::default()));
-    assert_typed_success!(client.modify_task(
-        &resource_id,
-        ModifyTaskOpts {
-            schedule_id: ScalarUpdate::set(id("schedule-1")),
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.modify_task(
-        &resource_id,
-        ModifyTaskOpts {
-            schedule_id: ScalarUpdate::Clear,
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.stop_task(&resource_id));
-    assert_typed_success!(client.delete_task(&resource_id, true));
+    assert_typed_success!(client.modify_task(ModifyTaskRequest::new(resource_id.clone())));
+    assert_typed_success!(client.modify_task({
+        let mut request = ModifyTaskRequest::new(resource_id.clone());
+        request.schedule_id = ScalarUpdate::set(id("schedule-1"));
+        request
+    }));
+    assert_typed_success!(client.modify_task({
+        let mut request = ModifyTaskRequest::new(resource_id.clone());
+        request.schedule_id = ScalarUpdate::Clear;
+        request
+    }));
+    assert_typed_success!(client.stop_task(StopTaskRequest::new(resource_id.clone())));
+    assert_typed_success!(client.delete_task(DeleteTaskRequest::new(resource_id.clone(), true)));
 
     let history = server.command_history();
     let xml_for = |command: &str| {
@@ -3502,12 +3495,20 @@ async fn remaining_mutation_families_surface_non_success_responses() {
         "conflict"
     );
     assert_server_error!(
-        client.modify_task(&resource_id, ModifyTaskOpts::default()),
+        client.modify_task(ModifyTaskRequest::new(resource_id.clone())),
         409,
         "conflict"
     );
-    assert_server_error!(client.stop_task(&resource_id), 409, "conflict");
-    assert_server_error!(client.delete_task(&resource_id, false), 409, "conflict");
+    assert_server_error!(
+        client.stop_task(StopTaskRequest::new(resource_id.clone())),
+        409,
+        "conflict"
+    );
+    assert_server_error!(
+        client.delete_task(DeleteTaskRequest::new(resource_id, false)),
+        409,
+        "conflict"
+    );
 
     server.shutdown().await;
 }

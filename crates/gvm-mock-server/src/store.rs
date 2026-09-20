@@ -807,6 +807,18 @@ impl Resource {
             }
         }
         if self.resource_type == "task" {
+            if let Some(alterable) = self.attr("alterable") {
+                xml.push_str(&format!("<alterable>{}</alterable>", xml_escape(alterable)));
+            }
+            if let Some(alert_ids) = self.attr("alert_ids") {
+                for alert_id in alert_ids.split(',').filter(|id| !id.is_empty()) {
+                    xml.push_str(&format!(
+                        "<alert id=\"{}\"><name>{}</name></alert>",
+                        xml_escape_attr(alert_id),
+                        xml_escape(alert_id),
+                    ));
+                }
+            }
             if self.attr("observers").is_some() || self.attr("observer_group_ids").is_some() {
                 xml.push_str("<observers>");
                 if let Some(observers) = self.attr("observers") {
@@ -822,6 +834,25 @@ impl Resource {
                     }
                 }
                 xml.push_str("</observers>");
+            }
+            let preferences = self
+                .attrs
+                .iter()
+                .filter_map(|(key, value)| {
+                    key.strip_prefix("task_preference:")
+                        .map(|name| (name, value))
+                })
+                .collect::<Vec<_>>();
+            if !preferences.is_empty() {
+                xml.push_str("<preferences>");
+                for (name, value) in preferences {
+                    xml.push_str(&format!(
+                        "<preference><scanner_name>{}</scanner_name><value>{}</value></preference>",
+                        xml_escape(name),
+                        xml_escape(value),
+                    ));
+                }
+                xml.push_str("</preferences>");
             }
             if self.attr("target_id").is_none() {
                 xml.push_str("<target id=\"\"><name></name></target>");
@@ -1136,9 +1167,13 @@ impl Resource {
                 continue;
             }
             if self.resource_type == "task"
-                && matches!(
+                && (matches!(
                     k.as_str(),
-                    "target_id"
+                    "alterable"
+                        | "alert_ids"
+                        | "observers"
+                        | "observer_group_ids"
+                        | "target_id"
                         | "agent_group_id"
                         | "oci_image_target_id"
                         | "web_application_target_id"
@@ -1147,7 +1182,7 @@ impl Resource {
                         | "schedule_id"
                         | "schedule_periods"
                         | "report_id"
-                )
+                ) || k.starts_with("task_preference:"))
             {
                 continue;
             }
@@ -1586,6 +1621,50 @@ fn validate_task_reference(
     resource_type: &'static str,
 ) -> Result<(), StoreError> {
     active_typed_resource(inner, id, resource_type).map(|_| ())
+}
+
+fn validate_task_attributes(inner: &StoreInner, task: &Resource) -> Result<(), StoreError> {
+    for (attribute, resource_type) in [("alert_ids", "alert"), ("observer_group_ids", "group")] {
+        for id in task
+            .attr(attribute)
+            .unwrap_or_default()
+            .split(',')
+            .filter(|id| !id.is_empty())
+        {
+            // Older mock fixtures use readable non-UUID identifiers. Preserve
+            // those fixtures while enforcing real gvmd relationships whenever
+            // the command carries a production-shaped UUID.
+            if let Ok(id) = Uuid::parse_str(id) {
+                validate_task_reference(inner, &id, resource_type)?;
+            }
+        }
+    }
+    if task
+        .attr("alterable")
+        .is_some_and(|value| !matches!(value, "0" | "1"))
+    {
+        return Err(StoreError::InvalidArgument("Invalid task alterable value"));
+    }
+    for (key, value) in task
+        .attrs
+        .iter()
+        .filter(|(key, _)| key.starts_with("task_preference:"))
+    {
+        let name = key.trim_start_matches("task_preference:");
+        if name == "auto_delete" && !matches!(value.as_str(), "keep" | "no") {
+            return Err(StoreError::InvalidArgument("Invalid auto_delete value"));
+        }
+        if name == "auto_delete_data"
+            && value
+                .parse::<u32>()
+                .map_or(true, |value| !(2..=1200).contains(&value))
+        {
+            return Err(StoreError::InvalidArgument(
+                "Auto Delete count out of range",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn stored_task_reference(
@@ -2484,6 +2563,7 @@ impl ResourceStore {
         } else {
             task.set_attr("status", TaskStatus::New.as_str());
         }
+        validate_task_attributes(&inner, &task)?;
         task.modification_time = now_iso();
         Ok(insert_resource(&mut inner, task))
     }
@@ -3073,60 +3153,67 @@ impl ResourceStore {
             validate_task_reference(&inner, &schedule, "schedule")?;
         }
 
-        let task = inner
-            .resources
-            .get_mut(id)
-            .expect("validated task should remain present while locked");
+        let mut candidate = task.clone();
+        let original_alterable = candidate.attr("alterable").map(str::to_string);
         if let Some(target) = references.target {
-            task.set_attr("target_id", &target.to_string());
+            candidate.set_attr("target_id", &target.to_string());
             for key in [
                 "agent_group_id",
                 "oci_image_target_id",
                 "web_application_target_id",
             ] {
-                task.attrs.remove(key);
+                candidate.attrs.remove(key);
             }
         }
         if let Some(target) = references.specialized_target {
-            task.attrs.remove("target_id");
+            candidate.attrs.remove("target_id");
             for key in [
                 "agent_group_id",
                 "oci_image_target_id",
                 "web_application_target_id",
             ] {
-                task.attrs.remove(key);
+                candidate.attrs.remove(key);
             }
-            task.set_attr(target.attr_name(), &target.id().to_string());
+            candidate.set_attr(target.attr_name(), &target.id().to_string());
         }
         if let Some(config) = references.config {
-            task.set_attr("config_id", &config.to_string());
+            candidate.set_attr("config_id", &config.to_string());
         }
         if let Some(scanner) = references.scanner {
-            task.set_attr("scanner_id", &scanner.to_string());
+            candidate.set_attr("scanner_id", &scanner.to_string());
         }
         match references.schedule {
             TaskScheduleUpdate::Omitted => {
                 if let Some(schedule_periods) = references.schedule_periods {
-                    task.set_attr("schedule_periods", &schedule_periods.to_string());
+                    candidate.set_attr("schedule_periods", &schedule_periods.to_string());
                 }
             }
             TaskScheduleUpdate::Set(schedule) => {
-                task.set_attr("schedule_id", &schedule.to_string());
-                task.set_attr(
+                candidate.set_attr("schedule_id", &schedule.to_string());
+                candidate.set_attr(
                     "schedule_periods",
                     &references.schedule_periods.unwrap_or(0).to_string(),
                 );
             }
             TaskScheduleUpdate::Clear => {
-                task.attrs.remove("schedule_id");
-                task.set_attr(
+                candidate.attrs.remove("schedule_id");
+                candidate.set_attr(
                     "schedule_periods",
                     &references.schedule_periods.unwrap_or(0).to_string(),
                 );
             }
         }
-        f(task);
-        task.modification_time = now_iso();
+        f(&mut candidate);
+        if candidate.attr("alterable").map(str::to_string) != original_alterable
+            && status != TaskStatus::New.as_str()
+        {
+            return Err(StoreError::InvalidState(
+                "Task must be New to modify Alterable state",
+            ));
+        }
+        validate_task_attributes(&inner, &candidate)?;
+        candidate.modification_time = now_iso();
+        inner.resources.insert(*id, candidate);
         Ok(())
     }
 

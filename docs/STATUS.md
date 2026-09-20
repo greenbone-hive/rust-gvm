@@ -192,21 +192,24 @@ report-specific lean/delta behavior remain separately ordered families.
 The sections below retain the bounded delivery history for each migrated
 family.
 
-The first focused Phase 2 batch, tracked by
-[`#539`](https://github.com/greenbone-hive/rust-gvm/issues/539), migrated the
-standard scan-task list/get/create/clone/modify/delete/start/stop/resume
-lifecycle to the same typed execution contract.
+The bounded canonical standard-task batch, tracked by
+[`#659`](https://github.com/greenbone-hive/rust-gvm/issues/659), now gives
+list/detail/create/clone/modify/delete/start/stop/resume complete request
+values, direct codecs, fixed response associations, and request-by-value
+facades. Final mutated values validate before support checks or transport;
+observer users cannot be cleared implicitly by group updates; preference
+values are redacted; and the stateful mock applies compound updates
+transactionally while preserving report-producing action state. The removed
+`hosts_ordering` request input is source drift, not a compatibility omission:
+pinned gvmd neither parses it nor retains its task column. See the
+[task gvmd evidence](task-request-gvmd-evidence.md) and
+[v0.7 migration mapping](v0.7.0-migration.md#standard-tasks).
 
-The deferred task-variant Phase 2 batch, tracked by
-[`#553`](https://github.com/greenbone-hive/rust-gvm/issues/553), completes that
-task-family boundary with semantic requests for import/container, agent-group,
-OCI/container-image, web-application, and move operations plus the complete
-audit-scoped lifecycle. Each specialized request delegates to its existing
-builder, including compatibility aliases, and the typed facade delegates to
-generic execution without changing wire bytes or response models. Agent-group,
-OCI/container-image, and web-application task requests preserve their GMP 22.8
-semantic gate before the shared `create_task` wire command can be sent. Raw
-builder calls receive the same shape-based pre-send protection.
+Specialized import/container, agent-group, OCI/container-image,
+web-application creation and `move_task` remain separate transitional
+surfaces. Audit aliases and their lifecycle, including the task option bags
+retained solely for that purpose, are deferred to #660. This #659 slice does
+not canonicalize or otherwise alter either boundary.
 
 The earlier additive credential batches in #544 and #551 established typed
 execution while retaining their builders and options. The bounded canonical
@@ -803,13 +806,13 @@ matching gvmd's observation behavior.
 
 alerts, authentication, credentials, filters, groups, hosts, notes, nvts, overrides, permissions, port_lists, report_formats, reports, resource_names, results, roles, scan_configs, scanners, schedules, system, tags, targets, tasks, tickets, tls_certificates, trashcan, users, version
 
-### Enums (23)
+### Enums (22)
 
-AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType (34 variants), FeedType, FilterType (25 variants), HelpFormat, HostsOrdering, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SeverityLevel, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus, UserAuthType
+AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType (34 variants), FeedType, FilterType (25 variants), HelpFormat, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SeverityLevel, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus, UserAuthType
 
 ### Tests
 
-`cargo test -p gvm-gmp --all-features -- --list` currently discovers 650 tests.
+`cargo test -p gvm-gmp --all-features -- --list` currently discovers 701 tests.
 The categories below are a tracked subset of that complete inventory.
 
 | Tracked category | Count |

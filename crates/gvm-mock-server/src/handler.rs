@@ -869,8 +869,35 @@ impl SessionHandler {
                 let name = (resource_type != "permission")
                     .then(|| parse_element_text(raw_xml, "name"))
                     .flatten();
+                let task_comment = (resource_type == "task")
+                    .then(|| parse_element_text(raw_xml, "comment"))
+                    .flatten()
+                    .filter(|comment| !comment.is_empty());
+                let task_alterable = if resource_type == "task" {
+                    match parse_element_text(raw_xml, "alterable") {
+                        Some(value) if matches!(value.as_str(), "0" | "1") => Some(value),
+                        Some(_) => {
+                            return error_response(&cmd.name, 400, "Invalid task alterable value");
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
                 match store.clone_typed(&uuid, resource_type, name.as_deref()) {
                     Ok(new_id) => {
+                        if resource_type == "task"
+                            && (task_comment.is_some() || task_alterable.is_some())
+                        {
+                            store.modify_typed(&new_id, resource_type, |resource| {
+                                if let Some(comment) = task_comment {
+                                    resource.comment = comment;
+                                }
+                                if let Some(alterable) = task_alterable {
+                                    resource.set_attr("alterable", &alterable);
+                                }
+                            });
+                        }
                         if matches!(
                             resource_type,
                             "filter" | "scanner" | "tag" | "group" | "user" | "role" | "permission"
@@ -1331,6 +1358,29 @@ impl SessionHandler {
             }
         }
         if resource_type == "task" {
+            if cmd
+                .children
+                .iter()
+                .any(|child| child.name == "hosts_ordering")
+            {
+                return error_response(
+                    &cmd.name,
+                    400,
+                    "hosts_ordering is not supported by current gvmd task commands",
+                );
+            }
+            if let Some(alterable) = parse_element_text(raw_xml, "alterable") {
+                if !matches!(alterable.as_str(), "0" | "1") {
+                    return error_response(&cmd.name, 400, "Invalid task alterable value");
+                }
+                resource.set_attr("alterable", &alterable);
+            }
+            if let Some(alert_ids) = task_alert_ids(cmd) {
+                if alert_ids.iter().any(|id| id == "0") {
+                    return error_response(&cmd.name, 400, "Invalid alert identifier");
+                }
+                resource.set_attr("alert_ids", &alert_ids.join(","));
+            }
             if let Some(observers) = element_text_including_empty(cmd, raw_xml, "observers") {
                 resource.set_attr("observers", &observers);
             }
@@ -1340,6 +1390,9 @@ impl SessionHandler {
                 .collect::<Vec<_>>();
             if !observer_group_ids.is_empty() {
                 resource.set_attr("observer_group_ids", &observer_group_ids.join(","));
+            }
+            for (name, value) in task_preferences(cmd) {
+                resource.set_attr(&format!("task_preference:{name}"), &value);
             }
         }
         if resource_type == "credential" {
@@ -1772,6 +1825,18 @@ impl SessionHandler {
 
     fn handle_modify(&self, cmd: &ParsedCommand, raw_xml: &[u8], store: &ResourceStore) -> Vec<u8> {
         let resource_type = cmd.name.strip_prefix("modify_").unwrap_or("unknown");
+        if resource_type == "task"
+            && cmd
+                .children
+                .iter()
+                .any(|child| child.name == "hosts_ordering")
+        {
+            return error_response(
+                &cmd.name,
+                400,
+                "hosts_ordering is not supported by current gvmd task commands",
+            );
+        }
         let id_attr = format!("{resource_type}_id");
 
         let uuid = if resource_type == "user" && cmd.attr(&id_attr).is_none() {
@@ -2022,6 +2087,35 @@ impl SessionHandler {
             (!group_ids.is_empty()).then_some(group_ids)
         } else {
             None
+        };
+        let new_task_alterable = if resource_type == "task" {
+            match parse_element_text(raw_xml, "alterable") {
+                Some(value) if matches!(value.as_str(), "0" | "1") => Some(value),
+                Some(_) => {
+                    return error_response(&cmd.name, 400, "Invalid task alterable value");
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+        let new_task_alert_ids = (resource_type == "task")
+            .then(|| task_alert_ids(cmd))
+            .flatten();
+        if new_task_alert_ids
+            .as_ref()
+            .is_some_and(|ids| ids.iter().any(|id| id == "0") && ids.len() != 1)
+        {
+            return error_response(
+                &cmd.name,
+                400,
+                "Alert clear cannot be combined with replacements",
+            );
+        }
+        let new_task_preferences = if resource_type == "task" {
+            task_preferences(cmd)
+        } else {
+            Vec::new()
         };
         let new_value = if resource_type == "tag" {
             element_text_including_empty(cmd, raw_xml, "value")
@@ -2393,6 +2487,19 @@ impl SessionHandler {
                 } else {
                     r.set_attr("observer_group_ids", &group_ids.join(","));
                 }
+            }
+            if let Some(ref alterable) = new_task_alterable {
+                r.set_attr("alterable", alterable);
+            }
+            if let Some(ref alert_ids) = new_task_alert_ids {
+                if alert_ids == &["0"] {
+                    r.remove_attr("alert_ids");
+                } else {
+                    r.set_attr("alert_ids", &alert_ids.join(","));
+                }
+            }
+            for (name, value) in &new_task_preferences {
+                r.set_attr(&format!("task_preference:{name}"), value);
             }
             if let Some(ref value) = new_value {
                 r.set_attr("value", value);
@@ -5071,6 +5178,33 @@ fn task_observer_group_ids(cmd: &ParsedCommand) -> Vec<String> {
         .filter_map(|group| group.attributes.get("id"))
         .filter(|id| !id.is_empty())
         .cloned()
+        .collect()
+}
+
+fn task_alert_ids(cmd: &ParsedCommand) -> Option<Vec<String>> {
+    let alerts = cmd
+        .children
+        .iter()
+        .filter(|child| child.name == "alert")
+        .filter_map(|alert| alert.attributes.get("id"))
+        .filter(|id| !id.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    (!alerts.is_empty()).then_some(alerts)
+}
+
+fn task_preferences(cmd: &ParsedCommand) -> Vec<(String, String)> {
+    cmd.children
+        .iter()
+        .find(|child| child.name == "preferences")
+        .into_iter()
+        .flat_map(|preferences| &preferences.children)
+        .filter(|preference| preference.name == "preference")
+        .filter_map(|preference| {
+            let name = element_child_text(preference, "scanner_name")?;
+            let value = element_child_text(preference, "value").unwrap_or_default();
+            Some((name.to_string(), value.to_string()))
+        })
         .collect()
 }
 

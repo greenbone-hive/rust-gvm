@@ -58,7 +58,7 @@ The high-level client handles version negotiation automatically and exposes type
 use gvm_client::GmpClient;
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
 use gvm_gmp::commands::targets::{CreateTargetRequest, GetTargetsRequest};
-use gvm_gmp::commands::tasks::CreateTaskOpts;
+use gvm_gmp::commands::tasks::{CreateTaskRequest, StartTaskRequest};
 use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
 
 #[tokio::main]
@@ -88,11 +88,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 5. Create and start a scan task
     let config_id = "daba56c8-73ec-11df-a475-002264764cea".parse().unwrap();
     let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73".parse().unwrap();
-    let task = client.create_task(
-        "My Scan", &config_id, &target.id, &scanner_id,
-        CreateTaskOpts::default(),
-    ).await?;
-    client.start_task(&task.id).await?;
+    let task = client.create_task(CreateTaskRequest::new(
+        "My Scan", config_id, target.id, scanner_id,
+    )).await?;
+    client.start_task(StartTaskRequest::new(task.id.clone())).await?;
     println!("Started task: {}", task.id);
 
     client.disconnect().await?;
