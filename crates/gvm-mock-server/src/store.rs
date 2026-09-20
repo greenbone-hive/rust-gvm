@@ -323,6 +323,46 @@ pub(crate) enum StoreError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigPreferenceUpdate {
+    pub nvt_oid: Option<String>,
+    pub name: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigNvtSelectionUpdate {
+    pub family: String,
+    pub nvt_oids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigFamilySelectionEntry {
+    pub name: String,
+    pub growing: bool,
+    pub all: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigFamilySelectionUpdate {
+    pub families: Vec<ConfigFamilySelectionEntry>,
+    pub auto_add_new_families: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ConfigMutationAction {
+    Preference(ConfigPreferenceUpdate),
+    NvtSelection(ConfigNvtSelectionUpdate),
+    FamilySelection(ConfigFamilySelectionUpdate),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ConfigMutation {
+    pub name: Option<String>,
+    pub comment: Option<String>,
+    pub actions: Vec<ConfigMutationAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReportConfigParamUpdate {
     Value { name: String, value: String },
     UseDefault { name: String },
@@ -1398,6 +1438,30 @@ fn active_name_exists(
             && resource.name == name
             && except != Some(&resource.id)
     })
+}
+
+fn config_preference_type(name: &str) -> Option<&str> {
+    let mut parts = name.splitn(4, ':');
+    let _oid = parts.next()?;
+    let _id = parts.next()?;
+    parts.next()
+}
+
+fn add_config_family_order(config: &mut Resource, family: &str) {
+    let mut order = config
+        .attr("config_family_order")
+        .map(|value| {
+            value
+                .split('\u{1f}')
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !order.iter().any(|name| name == family) {
+        order.push(family.to_string());
+    }
+    config.set_attr("config_family_order", &order.join("\u{1f}"));
 }
 
 fn tls_visible_to(resource: &Resource, principal: &str) -> bool {
@@ -2560,14 +2624,13 @@ impl ResourceStore {
         Ok(id)
     }
 
-    pub(crate) fn modify_config_metadata(
+    pub(crate) fn modify_config_atomic(
         &self,
         id: &Uuid,
-        name: Option<&str>,
-        comment: Option<&str>,
+        mutation: ConfigMutation,
     ) -> Result<(), StoreError> {
         let mut inner = self.inner.write().expect("store lock poisoned");
-        let config = inner
+        let mut config = inner
             .resources
             .get(id)
             .filter(|resource| resource.resource_type == "config" && !resource.trashed)
@@ -2578,24 +2641,165 @@ impl ResourceStore {
                 "Predefined configuration cannot be modified",
             ));
         }
-        if let Some(name) = name.filter(|name| !name.is_empty()) {
+        if let Some(name) = mutation.name.as_deref().filter(|name| !name.is_empty()) {
             if active_name_exists(&inner, "config", name, Some(id)) {
                 return Err(StoreError::InvalidArgument(
                     "Configuration name exists already",
                 ));
             }
         }
-        let config = inner
-            .resources
-            .get_mut(id)
-            .expect("configuration remained present while locked");
-        if let Some(name) = name.filter(|name| !name.is_empty()) {
+
+        let config_key = id.to_string();
+        if !mutation.actions.is_empty()
+            && inner.resources.values().any(|task| {
+                task.resource_type == "task"
+                    && !task.trashed
+                    && task.attr("config_id") == Some(config_key.as_str())
+                    && task.attr("config_location").unwrap_or("active") == "active"
+                    && task.attr("visible") != Some("0")
+            })
+        {
+            return Err(StoreError::InUse("config"));
+        }
+
+        if let Some(name) = mutation.name.as_deref().filter(|name| !name.is_empty()) {
             config.name = name.to_string();
         }
-        if let Some(comment) = comment.filter(|comment| !comment.is_empty()) {
+        if let Some(comment) = mutation
+            .comment
+            .as_deref()
+            .filter(|comment| !comment.is_empty())
+        {
             config.comment = comment.to_string();
         }
+
+        let mut nvts = inner
+            .discovery
+            .config_nvts
+            .get(&config_key)
+            .cloned()
+            .unwrap_or_default();
+        let mut preferences = inner
+            .discovery
+            .config_preferences
+            .get(&config_key)
+            .cloned()
+            .unwrap_or_default();
+        let known_families = inner
+            .discovery
+            .nvts
+            .values()
+            .map(|nvt| nvt.family.clone())
+            .collect::<BTreeSet<_>>();
+
+        for action in mutation.actions {
+            match action {
+                ConfigMutationAction::Preference(update) => {
+                    if let Some(nvt_oid) = update.nvt_oid.as_deref() {
+                        if !inner.discovery.nvts.contains_key(nvt_oid) {
+                            return Err(StoreError::InvalidArgument(
+                                "Mock limitation: preference references an unseeded NVT",
+                            ));
+                        }
+                    }
+                    if update.value.as_deref() == Some("")
+                        && config_preference_type(&update.name) == Some("radio")
+                    {
+                        return Err(StoreError::InvalidArgument(
+                            "Empty radio preference values are invalid",
+                        ));
+                    }
+                    if let Some(value) = update.value {
+                        preferences.insert(update.name, value);
+                    } else {
+                        preferences.remove(&update.name);
+                    }
+                }
+                ConfigMutationAction::NvtSelection(update) => {
+                    if !known_families.contains(&update.family) {
+                        return Err(StoreError::InvalidArgument(
+                            "Mock limitation: selection references an unseeded family",
+                        ));
+                    }
+                    for oid in &update.nvt_oids {
+                        if inner
+                            .discovery
+                            .nvts
+                            .get(oid)
+                            .is_none_or(|nvt| nvt.family != update.family)
+                        {
+                            return Err(StoreError::InvalidArgument(
+                                "Mock limitation: selection references an unseeded family NVT",
+                            ));
+                        }
+                    }
+                    nvts.retain(|oid| {
+                        inner
+                            .discovery
+                            .nvts
+                            .get(oid)
+                            .is_none_or(|nvt| nvt.family != update.family)
+                    });
+                    nvts.extend(update.nvt_oids);
+                    add_config_family_order(&mut config, &update.family);
+                }
+                ConfigMutationAction::FamilySelection(update) => {
+                    for family in &update.families {
+                        if !known_families.contains(&family.name) {
+                            return Err(StoreError::InvalidArgument(
+                                "Mock limitation: selection references an unseeded family",
+                            ));
+                        }
+                    }
+                    nvts.clear();
+                    config.attrs.retain(|key, _| {
+                        !key.starts_with("config_family_growing:")
+                            && key != "config_family_order"
+                            && key != "config_families_growing"
+                    });
+                    let mut ordered_families = Vec::new();
+                    for family in update.families {
+                        if !ordered_families.contains(&family.name) {
+                            ordered_families.push(family.name.clone());
+                        }
+                        config.set_attr(
+                            &format!("config_family_growing:{}", family.name),
+                            if family.growing { "1" } else { "0" },
+                        );
+                        if family.all {
+                            nvts.extend(
+                                inner
+                                    .discovery
+                                    .nvts
+                                    .values()
+                                    .filter(|nvt| nvt.family == family.name)
+                                    .map(|nvt| nvt.oid.clone()),
+                            );
+                        }
+                    }
+                    config.set_attr("config_family_order", &ordered_families.join("\u{1f}"));
+                    config.set_attr(
+                        "config_families_growing",
+                        if update.auto_add_new_families {
+                            "1"
+                        } else {
+                            "0"
+                        },
+                    );
+                }
+            }
+        }
+
         config.modification_time = now_iso();
+        *inner
+            .resources
+            .get_mut(id)
+            .expect("configuration remained present while locked") = config;
+        inner.discovery.config_nvts.insert(config_key.clone(), nvts);
+        inner
+            .discovery
+            .config_preferences
+            .insert(config_key, preferences);
         Ok(())
     }
 

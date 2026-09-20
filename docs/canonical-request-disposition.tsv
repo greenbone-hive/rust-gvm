@@ -172,25 +172,25 @@ builder	crates/gvm-gmp/src/commands/scan_configs.rs	delete_scan_config	removed	R
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_policies	removed	Removed by #649; GetPoliciesRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_policy	removed	Removed by #649; GetPolicyRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config	removed	Removed by #649; GetScanConfigRequest owns canonical encoding.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config_preference	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config_preferences	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config_preference	removed	Removed by #658; GetScanConfigPreferenceRequest owns the canonical selector and response association.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_config_preferences	removed	Removed by #658; GetScanConfigPreferencesRequest owns all list selectors and direct encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	get_scan_configs	removed	Removed by #649; GetScanConfigsRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	import_policy	removed	Removed by #649; ImportPolicyRequest validates and preserves its XML carrier.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	import_scan_config	removed	Removed by #649; ImportScanConfigRequest validates and preserves its XML carrier.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy	removed	Removed by #649; ModifyPolicyRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_comment	removed	Removed by #649; ModifyPolicySetCommentRequest owns canonical encoding.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_family_selection	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_family_selection	removed	Removed by #658; ModifyPolicySetFamilySelectionRequest owns ordered complete replacement.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_name	removed	Removed by #649; ModifyPolicySetNameRequest owns canonical encoding.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_nvt_preference	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_nvt_selection	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_scanner_preference	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_nvt_preference	removed	Removed by #658; the canonical policy request owns validated secret-safe preference mutation.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_nvt_selection	removed	Removed by #658; the canonical policy request owns ordered family-local replacement.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_policy_set_scanner_preference	removed	Removed by #658; the canonical policy request owns secret-safe scanner preference mutation.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config	removed	Removed by #649; ModifyScanConfigRequest owns canonical encoding.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_comment	removed	Removed by #649; ModifyScanConfigSetCommentRequest owns canonical encoding.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_family_selection	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_family_selection	removed	Removed by #658; ModifyScanConfigSetFamilySelectionRequest owns ordered complete replacement.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_name	removed	Removed by #649; ModifyScanConfigSetNameRequest owns canonical encoding.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_nvt_preference	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_nvt_selection	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_scanner_preference	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_nvt_preference	removed	Removed by #658; the canonical scan-config request owns validated secret-safe preference mutation.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_nvt_selection	removed	Removed by #658; the canonical scan-config request owns ordered family-local replacement.
+builder	crates/gvm-gmp/src/commands/scan_configs.rs	modify_scan_config_set_scanner_preference	removed	Removed by #658; the canonical scan-config request owns secret-safe scanner preference mutation.
 builder	crates/gvm-gmp/src/commands/scan_configs.rs	sync_config	removed	Removed by #649; pinned and current gvmd have no GMP dispatcher for this schema-only name.
 builder	crates/gvm-gmp/src/commands/scanners.rs	clone_scanner	removed	Removed by #631; CloneScannerRequest is the canonical encoder.
 builder	crates/gvm-gmp/src/commands/scanners.rs	create_scanner	removed	Removed by #631; CreateScannerRequest is the canonical encoder.
@@ -484,8 +484,8 @@ facade	crates/gvm-client/src/typed/scan.rs	get_audits	transitional	Pending bound
 facade	crates/gvm-client/src/typed/scan.rs	get_policies	canonical-request	Retained by #649; accepts GetPoliciesRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_policy	canonical-request	Retained by #649; accepts GetPolicyRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_scan_config	canonical-request	Retained by #649; accepts GetScanConfigRequest unchanged and delegates to execute.
-facade	crates/gvm-client/src/typed/scan.rs	get_scan_config_preference	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/scan.rs	get_scan_config_preferences	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/scan.rs	get_scan_config_preference	removed	Removed by #658; direct execute preserves the distinct optional single-result response.
+facade	crates/gvm-client/src/typed/scan.rs	get_scan_config_preferences	removed	Removed by #658; direct execute is the sole canonical preference-read path.
 facade	crates/gvm-client/src/typed/scan.rs	get_scan_configs	canonical-request	Retained by #649; accepts GetScanConfigsRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/scan.rs	get_scanner	retained-construction	Retained for discoverability; accepts the canonical GetScannerRequest unchanged.
 facade	crates/gvm-client/src/typed/scan.rs	get_scanners	retained-construction	Retained for discoverability; accepts the canonical GetScannersRequest unchanged.
@@ -667,7 +667,7 @@ options	crates/gvm-gmp/src/commands/roles.rs	GetRolesOpts	removed	Removed transi
 options	crates/gvm-gmp/src/commands/roles.rs	RoleOpts	removed	Removed transitional forwarding surface in the bounded roles/permissions migration; use the complete request.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	ConfigOpts	removed	Removed by #649; lifecycle inputs moved onto complete requests.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	GetPolicyOpts	removed	Removed by #649; query fields moved onto GetPolicyRequest.
-options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesOpts	removed	Removed by #658; preference selectors live on complete request values.
 options	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigsOpts	removed	Removed by #649; query fields moved onto complete list/detail requests.
 options	crates/gvm-gmp/src/commands/scanners.rs	GetScannersOpts	removed	Removed by #631; fields now belong to GetScannersRequest.
 options	crates/gvm-gmp/src/commands/scanners.rs	ScannerOpts	removed	Removed by #631; create and modify requests own operation-specific fields.
@@ -868,19 +868,27 @@ request	crates/gvm-gmp/src/commands/scan_configs.rs	DeletePolicyRequest	canonica
 request	crates/gvm-gmp/src/commands/scan_configs.rs	DeleteScanConfigRequest	canonical-request	Canonical direct codec since #649; owns scan-config deletion inputs.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	GetPoliciesRequest	canonical-request	Canonical direct codec since #649; owns policy query inputs.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	GetPolicyRequest	canonical-request	Canonical direct codec since #649; owns policy detail inputs.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferenceRequest	transitional	Pending bounded family migration under #602.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferenceRequest	canonical-request	Canonical direct codec since #658; owns the opaque selector and optional single-result response.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigPreferencesRequest	canonical-request	Canonical direct codec since #658; owns all list selectors and source-faithful typed response.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigRequest	canonical-request	Canonical direct codec since #649; owns scan-config detail inputs.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	GetScanConfigsRequest	canonical-request	Canonical direct codec since #649; owns scan-config query inputs.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ImportPolicyRequest	canonical-request	Canonical direct codec since #649; validates one export and adds an outer policy override.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ImportScanConfigRequest	canonical-request	Canonical direct codec since #649; validates and preserves one export carrier.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicyRequest	canonical-request	Canonical direct codec since #649; owns policy metadata-only modification.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigRequest	canonical-request	Canonical direct codec since #649; owns scan-config metadata-only modification.
-request	crates/gvm-gmp/src/commands/scan_configs.rs	SyncConfigRequest	removed	Removed by #649; pinned and current gvmd reject the schema-only command.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetCommentRequest	canonical-request	Canonical direct codec since #649; explicit empty comment is a server no-op.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetFamilySelectionRequest	canonical-request	Canonical direct codec since #658; owns ordered complete policy family replacement.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetNameRequest	canonical-request	Canonical direct codec since #649; explicit empty name is a server no-op.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetNvtPreferenceRequest	canonical-request	Canonical direct codec since #658; validates and base64-encodes the secret value exactly once.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetNvtSelectionRequest	canonical-request	Canonical direct codec since #658; owns ordered family-local policy replacement.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyPolicySetScannerPreferenceRequest	canonical-request	Canonical direct codec since #658; owns secret-safe policy scanner preference mutation.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigRequest	canonical-request	Canonical direct codec since #649; owns scan-config metadata-only modification.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetCommentRequest	canonical-request	Canonical direct codec since #649; explicit empty comment is a server no-op.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetFamilySelectionRequest	canonical-request	Canonical direct codec since #658; owns ordered complete scan-config family replacement.
 request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetNameRequest	canonical-request	Canonical direct codec since #649; explicit empty name is a server no-op.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetNvtPreferenceRequest	canonical-request	Canonical direct codec since #658; validates and base64-encodes the secret value exactly once.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetNvtSelectionRequest	canonical-request	Canonical direct codec since #658; owns ordered family-local scan-config replacement.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	ModifyScanConfigSetScannerPreferenceRequest	canonical-request	Canonical direct codec since #658; owns secret-safe scan-config scanner preference mutation.
+request	crates/gvm-gmp/src/commands/scan_configs.rs	SyncConfigRequest	removed	Removed by #649; pinned and current gvmd reject the schema-only command.
 request	crates/gvm-gmp/src/commands/scanners.rs	CloneScannerRequest	canonical-request	Complete clone input; direct encoder with semantic clone identity and response association.
 request	crates/gvm-gmp/src/commands/scanners.rs	CreateScannerRequest	canonical-request	Complete create input; direct encoder with required connection data and relay fields.
 request	crates/gvm-gmp/src/commands/scanners.rs	DeleteScannerRequest	canonical-request	Complete delete input; direct encoder and response association.

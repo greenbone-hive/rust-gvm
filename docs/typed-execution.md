@@ -651,7 +651,8 @@ shape and action response. The `import_report` convenience method is a thin
 
 Generic configurations, scan configurations, and policies share the
 `get_configs`, `create_config`, `modify_config`, and `delete_config` wire roots.
-Their 24 lifecycle requests now own complete inputs and direct encoding. Named
+Their lifecycle, preference, and selection requests own complete inputs and
+direct encoding. Named
 creation requires a source; clone may omit its name to request server-generated
 naming. Import embeds one validated export document without reserialization:
 
@@ -679,11 +680,16 @@ carrier bytes, and require one direct config with a name plus selector and
 preference containers. Their Debug/errors/traces redact the carrier and
 preference value/default/alternative data.
 
-`GetScanConfigPreferencesRequest`, its options/builders/facades, and the eight
-configured preference/NVT/family mutation helpers remain transitional and
-unchanged. They are the next ordered migration slice. There is no canonical or
-facade `sync_config`: the public schema names it, but pinned/current gvmd have no
-GMP dispatcher and built-in mock modes return the source-shaped 400 response.
+Preference list and single reads have distinct source-faithful typed responses;
+a missing single match is `item: None`, and absent preference values remain
+distinct from empty values. The eight scan-config/policy mutations encode
+decoded preference values exactly once, distinguish delete from explicit empty,
+and preserve ordered replacement/empty-clear semantics for NVTs and families.
+Secret values are redacted from request diagnostics and wire traces. Use
+`execute` for these operations; the redundant builders, options bag, and two
+preference facades are removed. There is no canonical or facade `sync_config`:
+the public schema names it, but pinned/current gvmd have no GMP dispatcher and
+built-in mock modes return the source-shaped 400 response.
 
 The compact response types tolerate rich expansion subtrees but are not export
 models. Use raw `send`/`call` or a custom codec for complete exports and

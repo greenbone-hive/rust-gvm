@@ -1207,7 +1207,7 @@ traces redact configured/default/alternate values, but raw response and serde
 access remain data-bearing. See the
 [pinned evidence](nvt-secinfo-request-gvmd-evidence.md).
 
-## Configuration, scan-configuration, and policy lifecycle
+## Configuration, scan-configuration, policy, and preferences
 
 Lifecycle calls now take one of 24 complete requests. Six generic and fourteen
 scoped facade methods accept their request unchanged; the four policy
@@ -1251,9 +1251,14 @@ Remove uses of `SyncConfigRequest`, `scan_configs::sync_config`,
 no pinned/current gvmd dispatcher and is explicitly rejected in built-in mock
 modes. This is not feed synchronization.
 
-Preference query options/builders/facades and all eight configured
-preference/NVT/family mutation APIs remain unchanged for the next ordered
-child. See the
+Preference list/single requests and all eight configured preference/NVT/family
+mutation requests are canonical direct codecs. Use generic `execute`; the two
+preference facades, the preference options bag, and the ten old builders are
+removed. `None` deletes a preference override while `Some("")` sends an
+explicit empty value; decoded values are base64-encoded exactly once. NVT and
+family inputs are ordered replacements, with empty vectors clearing their
+scope. List/single response types preserve absent values and missing matches,
+and secret values are redacted from Debug, errors, and traces. See the
 [pinned evidence](scan-config-policy-request-gvmd-evidence.md).
 
 ## Compatibility boundary
@@ -1269,7 +1274,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 259 current public async methods: 256 delegate
+The facade inventory locks all 257 current public async methods: 254 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path. Unsupported `sync_config` and its deprecated per-config
 delegate are absent.

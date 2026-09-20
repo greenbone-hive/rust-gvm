@@ -304,7 +304,11 @@ CERT-Bund, CPE, CVE, DFN-CERT, and NVT, while observed vulnerabilities use
 Configuration lifecycle calls likewise use complete request values. Named
 creation requires an explicit base; import validates and embeds one exported
 configuration; metadata modification cannot change usage or clear fields with
-empty text. Canonical configuration usage is `scan` or `policy`, while raw XML
+empty text. Preference list/single reads and the eight scan-config/policy
+preference and ordered selection mutations are complete request values executed
+through `client.execute`; decoded secret values are encoded exactly once and
+delete remains distinct from explicit empty. Canonical configuration usage is
+`scan` or `policy`, while raw XML
 remains available for server-defined custom queries. The schema-only
 `sync_config` API is not exposed because pinned and current gvmd have no GMP
 dispatcher for it. See the

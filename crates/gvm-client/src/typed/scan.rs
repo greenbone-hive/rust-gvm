@@ -5,11 +5,9 @@ use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::scan_configs::{
     CloneScanConfigRequest, CreateScanConfigRequest, DeleteScanConfigRequest, GetPoliciesRequest,
-    GetPolicyRequest, GetScanConfigPreferenceRequest, GetScanConfigPreferencesOpts,
-    GetScanConfigPreferencesRequest, GetScanConfigRequest, GetScanConfigsRequest,
-    ImportPolicyRequest, ImportScanConfigRequest, ModifyPolicySetCommentRequest,
-    ModifyPolicySetNameRequest, ModifyScanConfigRequest, ModifyScanConfigSetCommentRequest,
-    ModifyScanConfigSetNameRequest,
+    GetPolicyRequest, GetScanConfigRequest, GetScanConfigsRequest, ImportPolicyRequest,
+    ImportScanConfigRequest, ModifyPolicySetCommentRequest, ModifyPolicySetNameRequest,
+    ModifyScanConfigRequest, ModifyScanConfigSetCommentRequest, ModifyScanConfigSetNameRequest,
 };
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
@@ -35,10 +33,10 @@ use gvm_gmp::commands::trashcan::{
 use gvm_gmp::responses::{
     CreateScanConfigResponse, CreateScannerResponse, CreateScheduleResponse, CreateTaskResponse,
     DeleteScanConfigResponse, DeleteScannerResponse, DeleteScheduleResponse, DeleteTaskResponse,
-    EmptyTrashcanResponse, GetPreferencesResponse, GetScanConfigsResponse, GetScannersResponse,
-    GetSchedulesResponse, GetTasksResponse, ModifyScanConfigResponse, ModifyScannerResponse,
-    ModifyScheduleResponse, ModifyTaskResponse, MoveTaskResponse, RestoreResponse,
-    ResumeTaskResponse, StartTaskResponse, StopTaskResponse, VerifyScannerResponse,
+    EmptyTrashcanResponse, GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse,
+    GetTasksResponse, ModifyScanConfigResponse, ModifyScannerResponse, ModifyScheduleResponse,
+    ModifyTaskResponse, MoveTaskResponse, RestoreResponse, ResumeTaskResponse, StartTaskResponse,
+    StopTaskResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -89,31 +87,6 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         request: GetScanConfigRequest,
     ) -> Result<GetScanConfigsResponse, GvmError> {
         self.execute(request).await
-    }
-
-    /// Send a scan-config scoped `get_preferences` request and return a typed response.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_scan_config_preferences(
-        &mut self,
-        opts: GetScanConfigPreferencesOpts,
-    ) -> Result<GetPreferencesResponse, GvmError> {
-        self.execute(GetScanConfigPreferencesRequest::new(opts))
-            .await
-    }
-
-    /// Send a scan-config scoped `get_preferences` request for one preference.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_scan_config_preference(
-        &mut self,
-        name: &str,
-        opts: GetScanConfigPreferencesOpts,
-    ) -> Result<GetPreferencesResponse, GvmError> {
-        self.execute(GetScanConfigPreferenceRequest::new(name, opts))
-            .await
     }
 
     /// Send a policy-scoped `get_configs` request and return a typed

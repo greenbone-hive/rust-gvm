@@ -1,14 +1,17 @@
-# Scan-configuration and policy lifecycle evidence
+# Scan-configuration, policy, preference, and selection evidence
 
-This document records the public gvmd evidence used by issue
-[#649](https://github.com/greenbone-hive/rust-gvm/issues/649). It covers only
-generic configuration, scan-configuration, and policy lifecycle requests. The
-configured-preference and NVT/family-selection mutation family remains deferred.
+This document records the public gvmd evidence used by issues
+[#649](https://github.com/greenbone-hive/rust-gvm/issues/649) and
+[#658](https://github.com/greenbone-hive/rust-gvm/issues/658). It covers generic
+configuration, scan-configuration, and policy lifecycle requests together with
+preference reads/mutations and NVT/family-selection replacement.
 
 ## Revisions and independent comparison
 
 - Reviewed Rust surface:
   [`ebfdb93`](https://github.com/greenbone-hive/rust-gvm/tree/ebfdb93dab53f1748d68df5d4e831d89fbf2b71d).
+- #658 stack base:
+  [`b925b17`](https://github.com/greenbone-hive/rust-gvm/tree/b925b1791f996a453eebcf65e68208828aef9778).
 - Existing schema snapshot:
   [`55e5d4c`](https://github.com/greenbone/gvmd/tree/55e5d4c657c48ce52ee340c2439680418bfe1a4d).
 - Behavioral source pin:
@@ -116,6 +119,45 @@ from deferred preference/selection mutations.
 [P2:3796](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_configs.c#L3796),
 [P2:3350](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_configs.c#L3350))
 
+## Source-derived preference and selection decisions
+
+`get_preferences` treats `nvt_oid`, `config_id`, and `preference` as independent
+selectors. The single selector is the opaque suffix following the stored key's
+second colon (`TYPE:NAME`). A valid selector with no match is a successful 200
+response containing no `<preference>`, not a not-found error. The canonical
+single response therefore exposes `item: Option<_>`, while both response models
+preserve independently absent versus empty `value`, `default`, and alternate
+content.
+([P6:15882](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp.c#L15882))
+
+`modify_config` passes preference `<value>` text as base64 to the management
+layer, which decodes it once before storing it. An absent value deletes the
+override; an explicitly empty encoded value sets empty, except that radio
+preferences reject empty. Canonical inputs consequently own decoded strings,
+encode once, and retain `None` versus `Some("")`. Request Debug, validation
+diagnostics, and wire traces do not expose those values.
+([P1:931](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp_configs.c#L931),
+[P2:3573](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_configs.c#L3573),
+[P2:3718](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_configs.c#L3718))
+
+An NVT selection replaces one family's selection; a family selection replaces
+the complete family selection. Caller order is retained in the request, and an
+empty list clears the corresponding replacement scope. Visible task use blocks
+preference/selection mutations, while metadata-only changes are not given that
+restriction. Predefined configurations are rejected before mutation begins.
+([P1:793](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp_configs.c#L793),
+[P1:887](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp_configs.c#L887),
+[P2:918](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_configs.c#L918),
+[P2:3883](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_configs.c#L3883))
+
+The management layer starts one immediate transaction before processing basic
+fields and child mutations. Every failure cancels the same transaction, and
+the command commits only after all children succeed. The bounded stateful mock
+therefore stages metadata, preferences, and selections and publishes them only
+as one atomic mutation.
+([P2:860](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_configs.c#L860),
+[P1:1015](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp_configs.c#L1015))
+
 Nonultimate deletion trashes active configurations and succeeds again for an
 already trashed item. Visible active task references block trashing; hidden
 references move to the trash location. Ultimate deletion is blocked by any
@@ -145,8 +187,9 @@ full export. Mixed count elements retain the outer numeric text rather than
 concatenating nested `<growing>` values. Callers needing a complete export use
 raw responses.
 
-Import request `Debug`, validation diagnostics, and wire traces do not expose
-the embedded document. Trace redaction also covers preference `value`,
+Import and preference request `Debug`, validation diagnostics, and wire traces
+do not expose embedded documents or preference values. Trace redaction covers
+preference `value`,
 `default`, and `alt` content in configuration responses and nested imported
 envelopes. Raw response access remains intentionally data-bearing.
 
@@ -158,13 +201,15 @@ hidden, and trash-location task references. The mock covers creation branch
 precedence, deep copy, first-item raw import, name uniquification, a bounded
 all/family/NVT include/exclude selector subset, known preference reconciliation,
 literal filtering/paging/counts, independent expansions, metadata rollback,
-and reference-sensitive deletion.
+reference-sensitive deletion, source-shaped preference reads, once-only base64
+decoding, ordered NVT/family replacement and empty clearing, in-use/predefined
+rejection, and compound mutation rollback.
 
 Unknown feed-dependent selectors/preferences, expanded trash reads, full ACLs,
 the complete GMP filter language, feed maintenance, and internal SQL cleanup
-are explicit mock limitations. Deferred preference/NVT/family mutation actions
-return a limitation error before metadata changes. Echo and scenario modes
-remain programmable synthetic tools; they are not protocol conformance.
+are explicit mock limitations. Feed-wide family constraints and arbitrary
+unseeded NVT reconciliation remain bounded validation errors. Echo and scenario
+modes remain programmable synthetic tools; they are not protocol conformance.
 
 No live gvmd instance was exercised for this change. Source/schema review,
 bounded mock conformance, and live-server evidence are deliberately separate.

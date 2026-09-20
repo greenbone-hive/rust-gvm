@@ -231,8 +231,12 @@ import validates one exported config and policy import adds an outer policy
 override. Metadata changes only nonempty names/comments, and canonical usage
 is restricted to scan/policy. The unsupported schema-only `sync_config`
 request and both sync facades are removed. Preference retrieval and the eight
-configured preference/NVT/family mutation requests remain transitional for the
-next ordered child. Raw `send`, `call`, and custom codecs remain available.
+configured preference/NVT/family mutation requests are completed by
+[#658](https://github.com/greenbone-hive/rust-gvm/issues/658) as ten canonical
+direct codecs with distinct scan-config/policy metadata, source-faithful
+list/single responses, secret-safe diagnostics/traces, and atomic bounded mock
+behavior. Their redundant builders, preference options bag, and two preference
+facades are removed. Raw `send`, `call`, and custom codecs remain available.
 
 The earlier additive alert-and-schedule Phase 2 batch, tracked by
 [`#555`](https://github.com/greenbone-hive/rust-gvm/issues/555), migrates every
@@ -879,7 +883,7 @@ its explicit raw-send compatibility path.
 | version | ✅ | — | `get_version()` |
 | auth | — | — | `authenticate()` |
 | target | ✅ | ✅ | |
-| scan_config | ✅ | ✅ | Complete request values cover generic/scan/policy lifecycle aliases; creation requires copy/import, and unsupported GMP sync is removed |
+| scan_config | ✅ | ✅ | Complete requests cover lifecycle aliases plus preference reads/mutations and ordered NVT/family replacement; creation requires copy/import, and unsupported GMP sync is removed |
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
 | port_list | ✅ | ✅ | |
 | task | ✅ | ✅ | Also: `start_task()` |

@@ -44,8 +44,8 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   discovery behavior.
 - `docs/scan-config-policy-request-gvmd-evidence.md`: pinned/current gvmd
   evidence for generic configuration, scan-configuration, and policy
-  lifecycle creation, queries, metadata, deletion, sync rejection,
-  confidentiality, and bounded stateful behavior.
+  lifecycle plus preference reads/mutations, NVT/family replacement,
+  confidentiality, atomic rollback, and bounded stateful behavior.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -89,9 +89,9 @@ Adding or changing a GMP command:
 - If the mock server should understand it, update `crates/gvm-mock-server/src/handler.rs`, `response_gen.rs`, `store.rs`, or `fixtures.rs` as appropriate.
   NVT/SecInfo discovery is isolated in `stateful_nvt_secinfo.rs`, with its
   seed/test state owned by `ResourceStore`.
-  Scan-configuration and policy lifecycle behavior is isolated in
-  `stateful_scan_configs.rs`; configured preference/selection mutation is
-  deliberately not implemented there.
+  Scan-configuration and policy lifecycle, preference, and selection behavior
+  is isolated in `stateful_scan_configs.rs`; atomic store application lives in
+  `store.rs`.
 
 Changing response parsing:
 
