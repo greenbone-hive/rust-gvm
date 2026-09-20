@@ -43,7 +43,7 @@ UPDATE_CANONICAL_REQUEST_DISPOSITION=1 \
 The update command deliberately preserves stale active rows so removal remains
 an explicit reviewed decision rather than a generated side effect.
 
-After the bounded report-format migration in #646, the ledger contains exactly
-965 rows: 396 `transitional`, 191 `canonical-request`, 255 `removed`, 111
+After the bounded TLS-certificate migration in #647, the ledger contains exactly
+967 rows: 378 `transitional`, 203 `canonical-request`, 263 `removed`, 111
 `retained-construction`, and 12 `frozen-ticket`. The inventory test protects
 both these counts and the source-to-ledger correspondence.

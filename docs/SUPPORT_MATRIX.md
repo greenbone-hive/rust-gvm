@@ -58,8 +58,8 @@ The registry contains 158 wire command names:
 | Fixture mock behavior | 10 | Deterministic built-in fixture response |
 | Echo-only mock behavior | 5 | Intentionally limited to a generic success response |
 | Current pinned `GMP.xml.in` | 155 | Present in the public schema snapshot |
-| Public gvmd source only | 2 | Implemented publicly but omitted from that schema |
-| Legacy compatibility | 1 | Retained for public legacy-client compatibility |
+| Public gvmd source only | 3 | Implemented publicly but omitted from that schema |
+| Legacy compatibility | 0 | Retained for public legacy-client compatibility |
 
 Mock support is test support, not proof of real-gvmd conformance. In particular,
 generic CRUD does not imply that every field and side effect matches gvmd.
@@ -78,10 +78,9 @@ The three commands outside the pinned schema are explicitly qualified:
   gvmd source, but is absent from the pinned `GMP.xml.in`.
 - `verify_credential_store` is likewise feature-gated and implemented in the
   public credential-store source while absent from the pinned schema.
-- `delete_tls_certificate` is retained for compatibility with the public
-  python-gvm GMP 22.4 API. It is absent from the pinned current gvmd schema and
-  implementation, so applications must not infer current-gvmd support from the
-  builder alone.
+- `delete_tls_certificate` is absent from the schema but is dispatched by
+  pinned `gmp.c`, handled by the common delete path, and implemented as
+  permanent deletion in `manage_sql_tls_certificates.c`.
 
 ## Pinned public evidence and drift audit
 
@@ -101,9 +100,14 @@ backed by the same commit's
 and
 [`GMP_VERSION` selection](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/CMakeLists.txt).
 The source-only qualification is backed by the same commit's
-[credential-store implementation](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_credential_stores.c).
-The legacy qualification is backed by public python-gvm commit
-[`2bb100fd03f02e598f046e2032e12550b5b14751`](https://github.com/greenbone/python-gvm/blob/2bb100fd03f02e598f046e2032e12550b5b14751/gvm/protocols/gmp/requests/v224/_tls_certificates.py).
+[credential-store implementation](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_credential_stores.c),
+plus the TLS-certificate
+[parser dispatch](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp.c#L5462),
+[common delete handler](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp_delete.c#L99),
+and [SQL deletion](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/manage_sql_tls_certificates.c#L846).
+The complete TLS source/schema comparison and bounded mock qualifications are
+recorded in the
+[TLS-certificate evidence](tls-certificate-request-gvmd-evidence.md).
 
 To audit another public `GMP.xml.in` checkout:
 

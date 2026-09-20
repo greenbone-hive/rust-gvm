@@ -946,8 +946,8 @@ struct StoreInner {
     next_insertion_order: u64,
     /// Stateful asset request parsing profile.
     asset_input_profile: AssetInputProfile,
-    /// Authenticated sessions.
-    authenticated_sessions: std::collections::HashSet<u64>,
+    /// Authenticated session principals.
+    authenticated_sessions: HashMap<u64, String>,
     /// Configured credentials.
     username: String,
     password: String,
@@ -1099,6 +1099,25 @@ fn active_name_exists(
             && resource.resource_type == resource_type
             && resource.name == name
             && except != Some(&resource.id)
+    })
+}
+
+fn tls_visible_to(resource: &Resource, principal: &str) -> bool {
+    resource.attr("owner") == Some(principal)
+        || resource
+            .attr("visible_to")
+            .is_some_and(|principals| principals.split(',').any(|value| value == principal))
+}
+
+fn tls_fingerprint_collision(inner: &StoreInner, owner: &str, candidate: &Resource) -> bool {
+    let sha256 = candidate.attr("sha256_fingerprint").unwrap_or_default();
+    let md5 = candidate.attr("md5_fingerprint").unwrap_or_default();
+    inner.resources.values().any(|resource| {
+        !resource.trashed
+            && resource.resource_type == "tls_certificate"
+            && resource.attr("owner") == Some(owner)
+            && ((!sha256.is_empty() && resource.attr("sha256_fingerprint") == Some(sha256))
+                || (!md5.is_empty() && resource.attr("md5_fingerprint") == Some(md5)))
     })
 }
 
@@ -1411,7 +1430,7 @@ impl ResourceStore {
                 insertion_order,
                 next_insertion_order,
                 asset_input_profile: AssetInputProfile::GvmdStrict,
-                authenticated_sessions: std::collections::HashSet::new(),
+                authenticated_sessions: HashMap::new(),
                 username: username.to_string(),
                 password: password.to_string(),
             })),
@@ -1422,7 +1441,9 @@ impl ResourceStore {
     pub fn authenticate(&self, session_id: u64, username: &str, password: &str) -> bool {
         let mut inner = self.inner.write().expect("store lock poisoned");
         if inner.username == username && inner.password == password {
-            inner.authenticated_sessions.insert(session_id);
+            inner
+                .authenticated_sessions
+                .insert(session_id, username.to_string());
             true
         } else {
             false
@@ -1432,7 +1453,13 @@ impl ResourceStore {
     /// Check if a session is authenticated.
     pub fn is_authenticated(&self, session_id: u64) -> bool {
         let inner = self.inner.read().expect("store lock poisoned");
-        inner.authenticated_sessions.contains(&session_id)
+        inner.authenticated_sessions.contains_key(&session_id)
+    }
+
+    /// Return the principal recorded for an authenticated session.
+    pub(crate) fn authenticated_principal(&self, session_id: u64) -> Option<String> {
+        let inner = self.inner.read().expect("store lock poisoned");
+        inner.authenticated_sessions.get(&session_id).cloned()
     }
 
     /// Set the asset request parsing profile before the server starts.
@@ -1459,6 +1486,125 @@ impl ResourceStore {
         resource.modification_time = now_iso();
         let mut inner = self.inner.write().expect("store lock poisoned");
         insert_resource(&mut inner, resource)
+    }
+
+    pub(crate) fn create_tls_certificate(
+        &self,
+        mut resource: Resource,
+        owner: &str,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        if tls_fingerprint_collision(&inner, owner, &resource) {
+            return Err(StoreError::InvalidArgument(
+                "TLS certificate exists already",
+            ));
+        }
+        resource.set_attr("owner", owner);
+        resource.modification_time = now_iso();
+        Ok(insert_resource(&mut inner, resource))
+    }
+
+    pub(crate) fn clone_tls_certificate(
+        &self,
+        id: &Uuid,
+        owner: &str,
+        requested_name: Option<&str>,
+        requested_comment: Option<&str>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let source = inner
+            .resources
+            .get(id)
+            .filter(|resource| {
+                !resource.trashed
+                    && resource.resource_type == "tls_certificate"
+                    && tls_visible_to(resource, owner)
+            })
+            .cloned()
+            .ok_or_else(|| StoreError::NotFound("TLS certificate".to_string()))?;
+        if tls_fingerprint_collision(&inner, owner, &source) {
+            return Err(StoreError::InvalidArgument(
+                "TLS certificate exists already",
+            ));
+        }
+
+        if let Some(name) = requested_name.filter(|name| !name.is_empty()) {
+            if inner.resources.values().any(|resource| {
+                !resource.trashed
+                    && resource.resource_type == "tls_certificate"
+                    && resource.attr("owner") == Some(owner)
+                    && resource.name == name
+            }) {
+                return Err(StoreError::InvalidArgument(
+                    "TLS certificate name exists already",
+                ));
+            }
+        }
+
+        let mut copy = source;
+        copy.id = Uuid::new_v4();
+        if let Some(name) = requested_name.filter(|name| !name.is_empty()) {
+            copy.name = name.to_string();
+        }
+        if let Some(comment) = requested_comment.filter(|comment| !comment.is_empty()) {
+            copy.comment = comment.to_string();
+        }
+        copy.attrs.retain(|key, _| {
+            !key.starts_with("source_") && !matches!(key.as_str(), "last_seen" | "visible_to")
+        });
+        copy.set_attr("owner", owner);
+        let now = now_iso();
+        copy.creation_time = now.clone();
+        copy.modification_time = now;
+        Ok(insert_resource(&mut inner, copy))
+    }
+
+    pub(crate) fn modify_tls_certificate(
+        &self,
+        id: &Uuid,
+        owner: &str,
+        name: Option<&str>,
+        comment: Option<&str>,
+        trust: Option<bool>,
+    ) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let resource = inner
+            .resources
+            .get_mut(id)
+            .filter(|resource| {
+                !resource.trashed
+                    && resource.resource_type == "tls_certificate"
+                    && resource.attr("owner") == Some(owner)
+            })
+            .ok_or_else(|| StoreError::NotFound("TLS certificate".to_string()))?;
+        let changed = name.is_some() || comment.is_some() || trust.is_some();
+        if let Some(name) = name {
+            resource.name = name.to_string();
+        }
+        if let Some(comment) = comment {
+            resource.comment = comment.to_string();
+        }
+        if let Some(trust) = trust {
+            resource.set_attr("trust", if trust { "1" } else { "0" });
+        }
+        if changed {
+            resource.modification_time = now_iso();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn delete_tls_certificate(&self, id: &Uuid, owner: &str) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let exists = inner.resources.get(id).is_some_and(|resource| {
+            !resource.trashed
+                && resource.resource_type == "tls_certificate"
+                && resource.attr("owner") == Some(owner)
+        });
+        if !exists {
+            return Err(StoreError::NotFound("TLS certificate".to_string()));
+        }
+        remove_resource(&mut inner, id);
+        Ok(())
     }
 
     pub(crate) fn import_report_format(
