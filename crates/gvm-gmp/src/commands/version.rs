@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Version command builders.
+//! Canonical version discovery request.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
 use crate::responses::GetVersionResponse;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Semantic `get_version` request.
+/// Canonical pre-authentication `get_version` request.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetVersionRequest;
 
@@ -20,9 +20,13 @@ impl GetVersionRequest {
     }
 }
 
-impl Request for GetVersionRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_version().to_bytes()
+impl GmpRequestCodec for GetVersionRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_version"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("get_version").to_bytes())
     }
 }
 
@@ -30,27 +34,17 @@ impl GmpRequest for GetVersionRequest {
     type Response = GetVersionResponse;
 }
 
-/// Build a `get_version` command.
-#[must_use]
-pub fn get_version() -> impl Request {
-    XmlCommand::new("get_version")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
 
     #[test]
-    fn get_version_builds_xml() {
-        assert_eq!(xml(get_version()), "<get_version/>");
-    }
-
-    #[test]
-    fn semantic_request_matches_builder_bytes() {
+    fn canonical_version_request_builds_xml() {
         assert_eq!(
-            GetVersionRequest::new().to_bytes(),
-            get_version().to_bytes()
+            GetVersionRequest::new()
+                .encode(GmpVersion(22, 4))
+                .expect("version request encodes"),
+            b"<get_version/>"
         );
     }
 }

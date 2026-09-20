@@ -127,6 +127,36 @@ async fn stateful_auth_success() {
 }
 
 #[tokio::test]
+async fn stateful_auth_issues_and_accepts_token() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let path = server.socket_path().expect("should have socket path");
+    let mut password_stream = UnixStream::connect(path).await.expect("connect failed");
+
+    let issued = send_recv(
+        &mut password_stream,
+        b"<authenticate token=\"1\"><credentials><username>admin</username><password>secret</password></credentials></authenticate>",
+    )
+    .await;
+    assert_eq!(issued.status_code(), Some(200));
+    assert_eq!(issued.child_text("token").as_deref(), Some("mock-token"));
+
+    let mut token_stream = UnixStream::connect(path).await.expect("connect failed");
+    let authenticated = send_recv(
+        &mut token_stream,
+        b"<authenticate><credentials><token>mock-token</token></credentials></authenticate>",
+    )
+    .await;
+    assert_eq!(authenticated.status_code(), Some(200));
+
+    let authorized = send_recv(&mut token_stream, b"<get_tasks/>").await;
+    assert_eq!(authorized.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn stateful_rejects_unknown_prefixed_commands() {
     let Some(server) = stateful_server().await else {
         return;

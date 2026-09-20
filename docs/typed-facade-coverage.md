@@ -14,7 +14,7 @@ directory, extracts every `pub async fn`, rejects duplicate and unknown entries,
 and fails when a new helper is not classified.
 It additionally requires every integration-covered name to appear as a direct
 method call in the client/mock integration suite.
-The enforced surface currently contains 260 names: 257 direct `execute`
+The enforced surface currently contains 263 names: 260 direct `execute`
 delegates and three frozen ticket raw paths. Unsupported configuration sync and
 operating-system asset modification helpers are not part of the inventory.
 
@@ -22,9 +22,13 @@ Coverage is organized by behavior family:
 
 - discovery/list and administration helpers use table-driven fixture
   responses and assert typed results plus command history;
-- system authentication, license, and wizard helpers execute through their
-  semantic requests, while the complete nine-request administration and
-  user-setting inventory is exercised over a live Unix transport;
+- core and read-only system discovery helpers accept canonical request values
+  unchanged and execute through their concrete response associations; current
+  and legacy aggregates, help modes, feeds, settings, resource names, license,
+  authentication description, and version-gated features/timezones are
+  exercised over live or scripted transports;
+- system authentication mutations, license mutation, and wizard helpers remain
+  in the nine-request administration/user-setting inventory deferred to #664;
 - create helpers use a shared response table and assert typed create IDs;
 - all nine report drill-downs and both export styles exercise complete
   request-by-value facades, exact wire controls, explicit irregular parsers,

@@ -11,12 +11,10 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_gmp::commands::agent_groups::{CreateAgentGroupRequest, GetAgentGroupsRequest};
-use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
     CreateCredentialStoreCredentialRequest, ModifyCredentialStoreCredentialRequest,
     VerifyCredentialStoreRequest,
 };
-use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -87,7 +85,7 @@ fn encode(request: &impl GmpRequestCodec, version: GmpVersion) -> Vec<u8> {
 }
 
 async fn authenticate_admin(stream: &mut UnixStream) {
-    let response = send_recv(stream, authenticate("admin", "admin")).await;
+    let response = send_recv(stream, b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice()).await;
     assert_eq!(response.status_code(), Some(200));
 }
 
@@ -148,7 +146,7 @@ async fn assert_version_gated_rejected(version: GmpVersion) {
         );
     }
 
-    let features_response = send_recv(&mut stream, get_features()).await;
+    let features_response = send_recv(&mut stream, b"<get_features/>".as_slice()).await;
     assert_eq!(features_response.status_code(), Some(400));
     let features_text = features_response.status_text().unwrap();
     assert!(
@@ -213,7 +211,7 @@ async fn assert_version_gated_accepted(version: GmpVersion) {
     .await;
     assert_eq!(delete_response.status_code(), Some(200));
 
-    let features_response = send_recv(&mut stream, get_features()).await;
+    let features_response = send_recv(&mut stream, b"<get_features/>".as_slice()).await;
     assert_eq!(features_response.status_code(), Some(200));
     let features_text = features_response.as_str().expect("valid UTF-8");
     assert!(features_text.contains(

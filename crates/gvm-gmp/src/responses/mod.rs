@@ -22,6 +22,7 @@ pub mod filter;
 pub mod group;
 pub mod host;
 pub mod integration_config;
+pub mod license;
 pub mod note;
 pub mod nvt;
 pub mod oci_image_target;
@@ -112,6 +113,9 @@ pub use integration_config::{
     GetIntegrationConfigsResponse, IntegrationConfig, IntegrationConfigOidc,
     IntegrationConfigService, ModifyIntegrationConfigResponse,
 };
+pub use license::{
+    GetLicenseResponse, License, LicenseAppliance, LicenseContent, LicenseMeta, LicenseNamedValue,
+};
 pub use note::{
     CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse, Note,
 };
@@ -175,9 +179,9 @@ pub use secinfo::{
     GetOperatingSystemsResponse, GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
 };
 pub use system::{
-    AuthConfSetting, AuthGroup, DescribeAuthResponse, GetSettingsResponse, GetTimezonesResponse,
-    HelpCommand, HelpResponse, HelpSchema, ModifyAuthResponse, ModifyLicenseResponse,
-    RunWizardResponse, Setting, Timezone,
+    AuthConfSetting, AuthGroup, CertificateInfo, DescribeAuthResponse, GetSettingsResponse,
+    GetTimezonesResponse, HelpCommand, HelpResponse, HelpSchema, ModifyAuthResponse,
+    ModifyLicenseResponse, RunWizardResponse, Setting, Timezone,
 };
 pub use system_reports::{GetSystemReportsResponse, SystemReport};
 pub use tag::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse, Tag};

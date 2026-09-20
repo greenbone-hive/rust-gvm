@@ -7,6 +7,7 @@
 
 use gvm_client::GmpClient;
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
+use gvm_gmp::commands::authentication::AuthenticateRequest;
 use gvm_gmp::commands::targets::{CreateTargetRequest, GetTargetsRequest};
 use gvm_gmp::commands::tasks::{CreateTaskRequest, StartTaskRequest};
 use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
@@ -16,7 +17,9 @@ async fn quick_start_compiles() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = GmpClient::connect(conn).await?;
     println!("Connected, GMP version: {}", client.version());
 
-    client.authenticate("admin", "admin").await?;
+    client
+        .authenticate(AuthenticateRequest::new("admin", "admin"))
+        .await?;
 
     let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
     let ports = TargetPortSelection::PortRange("T:1-65535".parse()?);

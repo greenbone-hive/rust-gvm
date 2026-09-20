@@ -635,17 +635,32 @@ impl SessionHandler {
         raw_xml: &[u8],
         store: &ResourceStore,
     ) -> Vec<u8> {
-        // Extract username/password from nested XML
-        let username = parse_element_text(raw_xml, "username").unwrap_or_default();
-        let password = parse_element_text(raw_xml, "password").unwrap_or_default();
+        let authenticated_with_password = parse_element_text(raw_xml, "token").is_none();
+        let authenticated = if authenticated_with_password {
+            let username = parse_element_text(raw_xml, "username").unwrap_or_default();
+            let password = parse_element_text(raw_xml, "password").unwrap_or_default();
+            store.authenticate(self.session_id, &username, &password)
+        } else {
+            let token = parse_element_text(raw_xml, "token").unwrap_or_default();
+            store.authenticate_token(self.session_id, &token)
+        };
 
-        if store.authenticate(self.session_id, &username, &password) {
-            "<authenticate_response status=\"200\" status_text=\"OK\">\
-             <role>Admin</role>\
-             <timezone>UTC</timezone>\
-             </authenticate_response>"
-                .as_bytes()
-                .to_vec()
+        if authenticated {
+            let issued_token = if authenticated_with_password
+                && cmd.attr("token").is_some_and(|value| value != "0")
+            {
+                format!("<token>{}</token>", ResourceStore::authentication_token())
+            } else {
+                String::new()
+            };
+            format!(
+                "<authenticate_response status=\"200\" status_text=\"OK\">\
+                 <role>Admin</role>\
+                 <timezone>UTC</timezone>\
+                 {issued_token}\
+                 </authenticate_response>"
+            )
+            .into_bytes()
         } else {
             error_response(&cmd.name, 400, "Authentication failed")
         }

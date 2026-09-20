@@ -45,7 +45,9 @@ impl GetResourceNamesResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
         let root = parse_document(response.data())?;
-        let resource_type = root.attr("type").map(String::from);
+        let resource_type = root
+            .optional_child_text("type")
+            .or_else(|| root.attr("type").map(String::from));
         let items = root
             .children_named("resource")
             .map(ResourceName::from_node)
@@ -74,7 +76,7 @@ mod tests {
     #[test]
     fn parses_resource_names_response() {
         let response = Response::from(
-            r#"<get_resource_names_response status="200" status_text="OK" type="target">
+            r#"<get_resource_names_response status="200" status_text="OK"><type>target</type>
                 <resource id="t1"><name>Target One</name></resource>
                 <resource id="t2"><name>Target Two</name></resource>
             </get_resource_names_response>"#,
@@ -92,12 +94,21 @@ mod tests {
     #[test]
     fn parses_empty_resource_names() {
         let response = Response::from(
-            r#"<get_resource_names_response status="200" status_text="OK" type="filter"/>"#,
+            r#"<get_resource_names_response status="200" status_text="OK"><type>filter</type></get_resource_names_response>"#,
         );
 
         let parsed = GetResourceNamesResponse::from_response(&response).expect("parse");
 
         assert!(parsed.items.is_empty());
         assert_eq!(parsed.resource_type.as_deref(), Some("filter"));
+    }
+
+    #[test]
+    fn accepts_legacy_type_attribute() {
+        let response = Response::from(
+            r#"<get_resource_names_response status="200" status_text="OK" type="task"/>"#,
+        );
+        let parsed = GetResourceNamesResponse::from_response(&response).expect("parse");
+        assert_eq!(parsed.resource_type.as_deref(), Some("task"));
     }
 }

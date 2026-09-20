@@ -94,7 +94,7 @@ async fn structured_audit_facade_is_exposed_on_gmp227_and_gmpnext() {
             .await
             .expect("versioned client connects");
         client
-            .call(gvm_gmp::commands::authentication::authenticate(
+            .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
                 "admin", "admin",
             ))
             .await
@@ -154,7 +154,9 @@ async fn generic_client_rejects_structured_audit_commands_before_22_7() {
         .await
         .expect("client connects");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication succeeds");
     server.clear_history();

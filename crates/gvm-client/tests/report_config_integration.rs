@@ -6,7 +6,6 @@
 
 use gvm_client::GmpVersioned;
 use gvm_connection::UnixSocketConnection;
-use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::report_configs::{
     CloneReportConfigRequest, CreateReportConfigRequest, GetReportConfigsRequest,
 };
@@ -43,10 +42,12 @@ async fn clone_report_config_round_trips_through_stateful_mock() {
         .expect("client should connect");
 
     let auth_response = client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
-    assert_eq!(auth_response.status_code(), Some(200));
+    assert_eq!(auth_response.status, 200);
 
     let create_response = client
         .execute(CreateReportConfigRequest::new(

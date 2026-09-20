@@ -1942,6 +1942,8 @@ fn resolve_current_report_id(inner: &StoreInner, task: &Resource) -> Result<Uuid
 }
 
 impl ResourceStore {
+    const AUTH_TOKEN: &'static str = "mock-token";
+
     /// Create a new empty store with default credentials.
     pub fn new() -> Self {
         Self::with_credentials("admin", "admin")
@@ -2139,6 +2141,24 @@ impl ResourceStore {
         } else {
             false
         }
+    }
+
+    /// Authenticate a session with the deterministic token issued by the mock.
+    pub fn authenticate_token(&self, session_id: u64, token: &str) -> bool {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        if token == Self::AUTH_TOKEN {
+            let username = inner.username.clone();
+            inner.authenticated_sessions.insert(session_id, username);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Return the deterministic token used by stateful authentication.
+    #[must_use]
+    pub fn authentication_token() -> &'static str {
+        Self::AUTH_TOKEN
     }
 
     /// Check if a session is authenticated.
@@ -4166,6 +4186,10 @@ mod tests {
         assert!(store.is_authenticated(1));
         assert!(!store.authenticate(2, "user", "wrong"));
         assert!(!store.is_authenticated(2));
+        assert!(store.authenticate_token(3, ResourceStore::authentication_token()));
+        assert!(store.is_authenticated(3));
+        assert!(!store.authenticate_token(4, "wrong-token"));
+        assert!(!store.is_authenticated(4));
     }
 
     #[test]

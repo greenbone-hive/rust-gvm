@@ -59,6 +59,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   scan/audit retrieval, audit host summaries, all nine drill-downs, synchronous
   and asynchronous exports, irregular response carriers, source defaults, and
   capability gates.
+- `docs/system-discovery-request-gvmd-evidence.md`: pinned gvmd and python-gvm
+  evidence for pre-authentication version/authentication, help, features,
+  feeds/timezones, aggregate shapes, settings, system reports, resource names,
+  license retrieval, and authentication description.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -94,8 +98,8 @@ Adding or changing a GMP command:
   alternate targets, agent groups, agents, integration configurations, port
   lists, credentials, filters, tags, alerts, schedules, scanners, notes,
   overrides, users, groups, roles, permissions, assets, results, report
-  configurations, TLS certificates, and NVT/SecInfo discovery show the same contract across their
-  applicable GMP versions.
+  configurations, TLS certificates, NVT/SecInfo discovery, and core/system
+  discovery show the same contract across their applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.
 - If version-gated, update `crates/gvm-client/src/version.rs` and any typed version traits in `crates/gvm-client/src/lib.rs`.

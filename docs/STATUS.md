@@ -400,18 +400,22 @@ All six named TLS helpers accept complete requests and delegate to `execute`.
 The [pinned evidence](tls-certificate-request-gvmd-evidence.md) records source,
 schema, bounded response, and mock limits.
 
-The system-discovery Phase 3 batch, tracked by
-[`#574`](https://github.com/greenbone-hive/rust-gvm/issues/574), migrates all 22
-public read-only builders across the aggregates, features, feed, help,
-system-report, and system compatibility modules. Current and legacy aggregate
-shapes, both feed and help representations, generic information and preference
-queries, resource-name list/detail requests, and both vulnerability aliases
-were initially byte-identical delegations. #648 removes the duplicate system
-`get_info`/`get_preferences` wrappers and the `get_vuln` wrapper; the two
-observed-vulnerability requests now own `get_vulns` directly. Remaining
-typed-returning facade helpers delegate through `execute`; `get_features`
-retains its GMP 22.6 gate and `get_timezones` its GMP 22.8 gate before
-transmission.
+Issue #663 completes core and read-only system discovery. Pre-authentication
+version/authentication, help, features, feeds/timezones, current and legacy
+aggregates, settings, system reports, resource names, license retrieval, and
+authentication description now have one authoritative encoder each. Complete
+request values own every supported selector and query control; named facades
+accept them unchanged and delegate only to `execute`. Authentication supports
+password and token credentials plus requested-token responses while Debug,
+errors, diagnostics, and wire traces redact credentials. `get_features`
+retains its GMP 22.6 pre-transport gate and `get_timezones` its GMP 22.8 gate.
+Responses preserve optional feed/system metadata, setting counts and
+certificate information, resource-name response type, session metadata, and
+structured license content. Duplicate builders, system wrappers, and
+byte-identical facade aliases are removed with zero transitional ledger rows
+in scope. See the
+[pinned evidence](system-discovery-request-gvmd-evidence.md). Mutations, user
+settings, wizard execution, and trashcan cleanup remain deferred to #664.
 
 The system-administration Phase 3 batch, tracked by
 [`#575`](https://github.com/greenbone-hive/rust-gvm/issues/575), migrates all
@@ -889,8 +893,8 @@ its explicit raw-send compatibility path.
 
 | Domain | Get | Create | Notes |
 |--------|-----|--------|-------|
-| version | ✅ | — | `get_version()` |
-| auth | — | — | `authenticate()` |
+| version | ✅ | — | `get_version(GetVersionRequest)` |
+| auth | — | — | `authenticate(AuthenticateRequest)` |
 | target | ✅ | ✅ | |
 | scan_config | ✅ | ✅ | Complete requests cover lifecycle aliases plus preference reads/mutations and ordered NVT/family replacement; creation requires copy/import, and unsupported GMP sync is removed |
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
@@ -917,7 +921,7 @@ its explicit raw-send compatibility path.
 | tls_certificate | ✅ | ✅ | |
 | report_format | ✅ | ✅ | Seven canonical lifecycle facades; direct creation means explicit import or clone |
 | report_config | ✅ | ✅ | Six canonical lifecycle facades; list is `get_report_configs(request)` |
-| system | ✅ | — | `get_settings()`, `get_help()`, `describe_auth()`, `get_timezones()` |
+| system | ✅ | — | Canonical request values cover settings, help, features, aggregates, system reports, resource names, license, authentication description, feeds, and timezones |
 
 ### Features
 
@@ -938,7 +942,7 @@ its explicit raw-send compatibility path.
 
 ## Test Coverage
 
-**Line coverage: 92.2%** (via `cargo-llvm-cov`)
+**Line coverage: 95.4%** (via `cargo-llvm-cov`)
 
 | Test Category | Count | Notes |
 |---------------|-------|-------|

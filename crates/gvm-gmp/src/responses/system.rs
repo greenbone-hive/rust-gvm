@@ -8,7 +8,8 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::responses::common::{
-    parse_document, parse_entity_id, status_from_response, ActionResponse, ParseError,
+    count_info, parse_document, parse_entity_id, parse_i32, parse_u32, status_from_response,
+    ActionResponse, CountInfo, ParseError, XmlNode,
 };
 use crate::{EntityId, GmpResponse, GmpVersion};
 
@@ -20,6 +21,7 @@ pub struct Setting {
     pub name: String,
     pub comment: Option<String>,
     pub value: Option<String>,
+    pub certificate_info: Option<CertificateInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +31,10 @@ pub struct GetSettingsResponse {
     pub status: u16,
     pub status_text: String,
     pub items: Vec<Setting>,
+    pub filter: Option<String>,
+    pub start: Option<u32>,
+    pub max: Option<i32>,
+    pub counts: CountInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +106,18 @@ pub struct AuthGroup {
 pub struct AuthConfSetting {
     pub key: Option<String>,
     pub value: Option<String>,
+    pub certificate_info: Option<CertificateInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CertificateInfo {
+    pub time_status: Option<String>,
+    pub activation_time: Option<String>,
+    pub expiration_time: Option<String>,
+    pub md5_fingerprint: Option<String>,
+    pub issuer: Option<String>,
 }
 
 /// Response returned after modifying authentication configuration.
@@ -130,7 +148,22 @@ impl Setting {
             name: node.required_child_text("name")?,
             comment: node.optional_child_text("comment"),
             value: node.optional_child_text("value"),
+            certificate_info: node
+                .child("certificate_info")
+                .map(CertificateInfo::from_node),
         })
+    }
+}
+
+impl CertificateInfo {
+    fn from_node(node: &XmlNode) -> Self {
+        Self {
+            time_status: node.optional_child_text("time_status"),
+            activation_time: node.optional_child_text("activation_time"),
+            expiration_time: node.optional_child_text("expiration_time"),
+            md5_fingerprint: node.optional_child_text("md5_fingerprint"),
+            issuer: node.optional_child_text("issuer"),
+        }
     }
 }
 
@@ -142,10 +175,23 @@ impl GetSettingsResponse {
             .children_named("setting")
             .map(Setting::from_node)
             .collect::<Result<Vec<_>, _>>()?;
+        let settings = root.child("settings");
         Ok(Self {
             status,
             status_text,
             items,
+            filter: root
+                .child("filters")
+                .and_then(|node| node.optional_child_text("term")),
+            start: settings
+                .and_then(|node| node.attr("start"))
+                .map(|value| parse_u32(value, "settings.start"))
+                .transpose()?,
+            max: settings
+                .and_then(|node| node.attr("max"))
+                .map(|value| parse_i32(value, "settings.max"))
+                .transpose()?,
+            counts: count_info(&root, "setting_count")?,
         })
     }
 }
@@ -255,6 +301,9 @@ impl DescribeAuthResponse {
                     .map(|s| AuthConfSetting {
                         key: s.optional_child_text("key"),
                         value: s.optional_child_text("value"),
+                        certificate_info: s
+                            .child("certificate_info")
+                            .map(CertificateInfo::from_node),
                     })
                     .collect();
                 Ok(AuthGroup { name, settings })
@@ -348,15 +397,25 @@ mod tests {
     fn parses_multiple_settings() {
         let response = Response::from(
             r#"<get_settings_response status="200" status_text="OK">
+                <filters><term>name=certificate</term></filters>
+                <settings start="2" max="10"/>
                 <setting id="s-1">
                     <name>Setting One</name>
                     <comment>first setting</comment>
                     <value>value1</value>
+                    <certificate_info>
+                        <time_status>valid</time_status>
+                        <activation_time>2026-01-01T00:00:00Z</activation_time>
+                        <expiration_time>2027-01-01T00:00:00Z</expiration_time>
+                        <md5_fingerprint>AA:BB</md5_fingerprint>
+                        <issuer>Example CA</issuer>
+                    </certificate_info>
                 </setting>
                 <setting id="s-2">
                     <name>Setting Two</name>
                     <value>value2</value>
                 </setting>
+                <setting_count><filtered>4</filtered><page>2</page></setting_count>
             </get_settings_response>"#,
         );
 
@@ -367,8 +426,20 @@ mod tests {
         assert_eq!(parsed.items[0].name, "Setting One");
         assert_eq!(parsed.items[0].comment.as_deref(), Some("first setting"));
         assert_eq!(parsed.items[0].value.as_deref(), Some("value1"));
+        let certificate = parsed.items[0]
+            .certificate_info
+            .as_ref()
+            .expect("certificate metadata");
+        assert_eq!(certificate.time_status.as_deref(), Some("valid"));
+        assert_eq!(certificate.md5_fingerprint.as_deref(), Some("AA:BB"));
+        assert_eq!(certificate.issuer.as_deref(), Some("Example CA"));
         assert_eq!(parsed.items[1].name, "Setting Two");
         assert_eq!(parsed.items[1].comment, None);
+        assert_eq!(parsed.filter.as_deref(), Some("name=certificate"));
+        assert_eq!(parsed.start, Some(2));
+        assert_eq!(parsed.max, Some(10));
+        assert_eq!(parsed.counts.filtered, Some(4));
+        assert_eq!(parsed.counts.page, Some(2));
     }
 
     #[test]
@@ -472,6 +543,13 @@ mod tests {
                     <auth_conf_setting>
                         <key>ldaphost</key>
                         <value>ldap.example.com</value>
+                        <certificate_info>
+                            <time_status>valid</time_status>
+                            <activation_time>2026-01-01T00:00:00Z</activation_time>
+                            <expiration_time>2027-01-01T00:00:00Z</expiration_time>
+                            <md5_fingerprint>CC:DD</md5_fingerprint>
+                            <issuer>LDAP CA</issuer>
+                        </certificate_info>
                     </auth_conf_setting>
                     <auth_conf_setting>
                         <key>enable</key>
@@ -500,6 +578,12 @@ mod tests {
             parsed.groups[0].settings[0].value.as_deref(),
             Some("ldap.example.com")
         );
+        let certificate = parsed.groups[0].settings[0]
+            .certificate_info
+            .as_ref()
+            .expect("certificate metadata");
+        assert_eq!(certificate.time_status.as_deref(), Some("valid"));
+        assert_eq!(certificate.issuer.as_deref(), Some("LDAP CA"));
         assert_eq!(parsed.groups[1].name, "method:radius_connect");
         assert_eq!(parsed.groups[1].settings.len(), 1);
     }
