@@ -245,7 +245,7 @@ command_capabilities! {
     ("sync_config", EchoOnly, None, PinnedSchema),
     ("test_alert", EchoOnly, None, PinnedSchema),
     ("verify_credential_store", Stateful, Some(GmpVersion(22, 8)), PublicSourceOnly),
-    ("verify_report_format", EchoOnly, None, PinnedSchema),
+    ("verify_report_format", Stateful, None, PinnedSchema),
     ("verify_scanner", EchoOnly, None, PinnedSchema),
 }
 

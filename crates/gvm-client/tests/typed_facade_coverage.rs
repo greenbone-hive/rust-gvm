@@ -74,7 +74,11 @@ use gvm_gmp::commands::report_configs::{
     CloneReportConfigRequest, CreateReportConfigRequest, DeleteReportConfigRequest,
     GetReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
 };
-use gvm_gmp::commands::report_formats::{GetReportFormatsOpts, ReportFormatOpts};
+use gvm_gmp::commands::report_formats::{
+    CloneReportFormatRequest, DeleteReportFormatRequest, GetReportFormatRequest,
+    GetReportFormatsRequest, ImportReportFormatRequest, ModifyReportFormatRequest,
+    VerifyReportFormatRequest,
+};
 use gvm_gmp::commands::reports::{
     CreateReportOpts, CreateReportRequest, DeleteAuditReportRequest, DeleteReportRequest,
     GetReportDetailsOpts, GetReportExportRequest, GetReportVulnsRequest, GetReportsOpts,
@@ -1564,15 +1568,25 @@ async fn report_config_format_and_tls_facades_cover_all_semantic_requests() {
     delete.ultimate = Some(true);
     assert_typed_success!(client.delete_report_config(delete));
 
-    assert_typed_success!(client.get_report_formats(GetReportFormatsOpts::default()));
-    assert_typed_success!(client.get_report_format(&resource_id));
-    assert_create_success!(client.create_report_format("format", ReportFormatOpts::default()));
-    assert_create_success!(client.clone_report_format(&resource_id));
-    assert_create_success!(client
-        .import_report_format(r#"<get_report_formats_response status="200" status_text="OK"/>"#,));
-    assert_typed_success!(client.modify_report_format(&resource_id, ReportFormatOpts::default()));
-    assert_typed_success!(client.delete_report_format(&resource_id, true));
-    assert_typed_success!(client.verify_report_format(&resource_id));
+    assert_typed_success!(client.get_report_formats(GetReportFormatsRequest::default()));
+    assert_typed_success!(
+        client.get_report_format(GetReportFormatRequest::new(resource_id.clone()))
+    );
+    assert_create_success!(
+        client.clone_report_format(CloneReportFormatRequest::new(resource_id.clone()))
+    );
+    assert_create_success!(client.import_report_format(ImportReportFormatRequest::new(
+        r#"<get_report_formats_response status="200" status_text="OK"><report_format id="11111111-1111-1111-1111-111111111111"><name>Imported</name></report_format></get_report_formats_response>"#,
+    )));
+    assert_typed_success!(
+        client.modify_report_format(ModifyReportFormatRequest::new(resource_id.clone()))
+    );
+    let mut delete_format = DeleteReportFormatRequest::new(resource_id.clone());
+    delete_format.ultimate = Some(true);
+    assert_typed_success!(client.delete_report_format(delete_format));
+    assert_typed_success!(
+        client.verify_report_format(VerifyReportFormatRequest::new(resource_id.clone()))
+    );
 
     assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
     assert_typed_success!(client.get_tls_certificate(&resource_id));
@@ -1586,13 +1600,13 @@ async fn report_config_format_and_tls_facades_cover_all_semantic_requests() {
     assert_typed_success!(client.delete_tls_certificate(&resource_id, true));
 
     let history = server.command_history();
-    assert_eq!(history.len(), 20);
+    assert_eq!(history.len(), 19);
     for (command, expected_count) in [
         ("create_report_config", 2),
         ("delete_report_config", 1),
         ("get_report_configs", 2),
         ("modify_report_config", 1),
-        ("create_report_format", 3),
+        ("create_report_format", 2),
         ("delete_report_format", 1),
         ("get_report_formats", 2),
         ("modify_report_format", 1),
@@ -2898,7 +2912,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_permissions(GetPermissionsRequest::default()));
     assert_typed_success!(client.get_hosts(GetHostsRequest::default()));
     assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
-    assert_typed_success!(client.get_report_formats(GetReportFormatsOpts::default()));
+    assert_typed_success!(client.get_report_formats(GetReportFormatsRequest::default()));
     assert_typed_success!(client.get_report_configs(GetReportConfigsRequest::default()));
     assert_typed_success!(client.get_settings());
     assert_typed_success!(client.get_help());
@@ -3004,7 +3018,6 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     assert_create_success!(
         client.create_tls_certificate("certificate", TlsCertificateOpts::default())
     );
-    assert_create_success!(client.create_report_format("format", ReportFormatOpts::default()));
     assert_create_success!(client.create_task(
         "scan",
         &related_id,
@@ -3020,7 +3033,6 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
         ("create_note", r#"<nvt oid="1.3.6.1.4.1.25623.1.0.1"/>"#),
         ("create_schedule", "<timezone>UTC</timezone>"),
         ("create_asset", "<name>192.0.2.10</name>"),
-        ("create_report_format", "<name>format</name>"),
     ] {
         let record = history
             .iter()

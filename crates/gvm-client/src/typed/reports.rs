@@ -8,9 +8,8 @@ use gvm_gmp::commands::report_configs::{
     GetReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
 };
 use gvm_gmp::commands::report_formats::{
-    CloneReportFormatRequest, CreateReportFormatRequest, DeleteReportFormatRequest,
-    GetReportFormatRequest, GetReportFormatsOpts, GetReportFormatsRequest,
-    ImportReportFormatRequest, ModifyReportFormatRequest, ReportFormatOpts,
+    CloneReportFormatRequest, DeleteReportFormatRequest, GetReportFormatRequest,
+    GetReportFormatsRequest, ImportReportFormatRequest, ModifyReportFormatRequest,
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
@@ -403,9 +402,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_formats(
         &mut self,
-        opts: GetReportFormatsOpts,
+        request: GetReportFormatsRequest,
     ) -> Result<GetReportFormatsResponse, GvmError> {
-        self.execute(GetReportFormatsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a detailed `get_report_formats` request for one report format.
@@ -414,24 +413,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_format(
         &mut self,
-        report_format_id: &EntityId,
+        request: GetReportFormatRequest,
     ) -> Result<GetReportFormatsResponse, GvmError> {
-        self.execute(GetReportFormatRequest::new(report_format_id.clone()))
-            .await
-    }
-
-    /// Send a `create_report_format` request and return a typed
-    /// [`CreateReportFormatResponse`].
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn create_report_format(
-        &mut self,
-        name: &str,
-        opts: ReportFormatOpts,
-    ) -> Result<CreateReportFormatResponse, GvmError> {
-        self.execute(CreateReportFormatRequest::new(name, opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_report_format` request that clones an existing report
@@ -441,10 +425,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn clone_report_format(
         &mut self,
-        report_format_id: &EntityId,
+        request: CloneReportFormatRequest,
     ) -> Result<CreateReportFormatResponse, GvmError> {
-        self.execute(CloneReportFormatRequest::new(report_format_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `create_report_format` request that imports report-format XML and
@@ -454,10 +437,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn import_report_format(
         &mut self,
-        report_format_xml: &str,
+        request: ImportReportFormatRequest,
     ) -> Result<CreateReportFormatResponse, GvmError> {
-        self.execute(ImportReportFormatRequest::new(report_format_xml)?)
-            .await
+        self.execute(request).await
     }
 
     /// Modify a report format.
@@ -466,14 +448,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_report_format(
         &mut self,
-        report_format_id: &EntityId,
-        opts: ReportFormatOpts,
+        request: ModifyReportFormatRequest,
     ) -> Result<ModifyReportFormatResponse, GvmError> {
-        self.execute(ModifyReportFormatRequest::new(
-            report_format_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Delete a report format.
@@ -482,14 +459,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn delete_report_format(
         &mut self,
-        report_format_id: &EntityId,
-        ultimate: bool,
+        request: DeleteReportFormatRequest,
     ) -> Result<DeleteReportFormatResponse, GvmError> {
-        self.execute(DeleteReportFormatRequest::new(
-            report_format_id.clone(),
-            ultimate,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Verify a report format.
@@ -498,10 +470,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn verify_report_format(
         &mut self,
-        report_format_id: &EntityId,
+        request: VerifyReportFormatRequest,
     ) -> Result<VerifyReportFormatResponse, GvmError> {
-        self.execute(VerifyReportFormatRequest::new(report_format_id.clone()))
-            .await
+        self.execute(request).await
     }
 
     // ── Reports ───────────────────────────────────────────────────────────────

@@ -164,7 +164,6 @@ fn echo_only_commands_are_intentionally_listed() {
         "move_task",
         "sync_config",
         "test_alert",
-        "verify_report_format",
         "verify_scanner",
     ] {
         assert!(
@@ -181,6 +180,7 @@ fn echo_only_commands_are_intentionally_listed() {
         "run_wizard",
         "get_timezones",
         "get_credential_stores",
+        "verify_report_format",
     ] {
         let coverage = COMMAND_COVERAGE
             .iter()

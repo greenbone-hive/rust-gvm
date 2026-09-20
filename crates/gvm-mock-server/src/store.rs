@@ -45,6 +45,8 @@ pub(crate) const NONCONFIGURABLE_REPORT_FORMAT_ID: Uuid =
     Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0201);
 pub(crate) const REPORT_CONFIG_SAVED_FILTER_ID: Uuid =
     Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0202);
+pub(crate) const REPORT_FORMAT_SAVED_FILTER_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0203);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StoreError {
@@ -1005,6 +1007,23 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     configurable_format.set_attr("report_config_default:Label", "Default label");
     configurable_format.set_attr("report_config_param:Graph Type", "selection:bar,line");
     configurable_format.set_attr("report_config_default:Graph Type", "bar");
+    configurable_format.set_attr("content_type", "text/plain");
+    configurable_format.set_attr("extension", "txt");
+    configurable_format.set_attr("summary", "Mock configurable report format");
+    configurable_format.set_attr("active", "1");
+    configurable_format.set_attr("predefined", "0");
+    configurable_format.set_attr("trust", "unknown");
+    configurable_format.set_attr("report_type", "all");
+    configurable_format.set_attr("report_format_param_type:Label", "string");
+    configurable_format.set_attr("report_format_param_value:Label", "Default label");
+    configurable_format.set_attr("report_format_param_default:Label", "Default label");
+    configurable_format.set_attr("report_format_param_max:Label", "12");
+    configurable_format.set_attr("report_format_param_type:Graph Type", "selection");
+    configurable_format.set_attr("report_format_param_value:Graph Type", "bar");
+    configurable_format.set_attr("report_format_param_default:Graph Type", "bar");
+    configurable_format.set_attr("report_format_param_option:Graph Type\u{1f}0", "bar");
+    configurable_format.set_attr("report_format_param_option:Graph Type\u{1f}1", "line");
+    configurable_format.set_attr("report_format_file:template.txt", "bW9jayB0ZW1wbGF0ZQ==");
     resources.insert(configurable_format.id, configurable_format);
 
     let mut nonconfigurable_format = Resource::with_id(
@@ -1013,6 +1032,13 @@ fn default_resources() -> HashMap<Uuid, Resource> {
         NONCONFIGURABLE_REPORT_FORMAT_ID,
     );
     nonconfigurable_format.set_attr("configurable", "0");
+    nonconfigurable_format.set_attr("content_type", "application/pdf");
+    nonconfigurable_format.set_attr("extension", "pdf");
+    nonconfigurable_format.set_attr("summary", "Mock predefined report format");
+    nonconfigurable_format.set_attr("active", "1");
+    nonconfigurable_format.set_attr("predefined", "1");
+    nonconfigurable_format.set_attr("trust", "yes");
+    nonconfigurable_format.set_attr("report_type", "all");
     resources.insert(nonconfigurable_format.id, nonconfigurable_format);
 
     let mut report_config_filter = Resource::with_id(
@@ -1022,6 +1048,14 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     );
     report_config_filter.set_attr("term", "name~Saved sort=name rows=1");
     resources.insert(report_config_filter.id, report_config_filter);
+
+    let mut report_format_filter = Resource::with_id(
+        "filter",
+        "Mock report format filter",
+        REPORT_FORMAT_SAVED_FILTER_ID,
+    );
+    report_format_filter.set_attr("term", "name~Mock sort=name rows=1");
+    resources.insert(report_format_filter.id, report_format_filter);
 
     resources
 }
@@ -1115,6 +1149,54 @@ fn validate_seeded_report_config_value(definition: &str, value: &str) -> Result<
     Err(StoreError::InvalidArgument(
         "Invalid report configuration parameter value",
     ))
+}
+
+pub(crate) fn validate_seeded_report_format_value(
+    report_format: &Resource,
+    name: &str,
+    value: &str,
+) -> Result<(), StoreError> {
+    let parameter_type = report_format
+        .attr(&format!("report_format_param_type:{name}"))
+        .ok_or(StoreError::InvalidArgument(
+            "Unknown report format parameter",
+        ))?;
+    let minimum = report_format
+        .attr(&format!("report_format_param_min:{name}"))
+        .and_then(|value| value.parse::<i64>().ok());
+    let maximum = report_format
+        .attr(&format!("report_format_param_max:{name}"))
+        .and_then(|value| value.parse::<i64>().ok());
+
+    let valid = match parameter_type {
+        "string" => {
+            let length = value.len() as i64;
+            minimum.is_none_or(|minimum| length >= minimum)
+                && maximum.is_none_or(|maximum| length <= maximum)
+        }
+        "integer" => value.parse::<i64>().is_ok_and(|value| {
+            minimum.is_none_or(|minimum| value >= minimum)
+                && maximum.is_none_or(|maximum| value <= maximum)
+        }),
+        "selection" => report_format.attrs.iter().any(|(key, option)| {
+            key.starts_with(&format!("report_format_param_option:{name}\u{1f}")) && option == value
+        }),
+        "multi_selection" => value.starts_with('[') && value.ends_with(']'),
+        "report_format_list" => value
+            .split(',')
+            .filter(|item| !item.is_empty())
+            .all(|item| Uuid::parse_str(item).is_ok()),
+        // The pinned validator has no separate boolean validation branch.
+        "boolean" => true,
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(StoreError::InvalidArgument(
+            "Invalid report format parameter value",
+        ))
+    }
 }
 
 fn validate_task_reference(
@@ -1377,6 +1459,218 @@ impl ResourceStore {
         resource.modification_time = now_iso();
         let mut inner = self.inner.write().expect("store lock poisoned");
         insert_resource(&mut inner, resource)
+    }
+
+    pub(crate) fn import_report_format(
+        &self,
+        mut resource: Resource,
+        exported_id: Uuid,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let id_collision = inner.resources.values().any(|candidate| {
+            candidate.id == exported_id
+                || candidate.attr("original_uuid") == Some(exported_id.to_string().as_str())
+        });
+        resource.id = if id_collision {
+            Uuid::new_v4()
+        } else {
+            exported_id
+        };
+        if id_collision {
+            resource.set_attr("original_uuid", &exported_id.to_string());
+        }
+
+        if active_name_exists(&inner, "report_format", &resource.name, None) {
+            let original_name = resource.name.clone();
+            let mut number = 2_u64;
+            loop {
+                let candidate = format!("{original_name} {number}");
+                if !active_name_exists(&inner, "report_format", &candidate, None) {
+                    resource.name = candidate;
+                    break;
+                }
+                number += 1;
+            }
+        }
+        resource.trashed = false;
+        resource.set_attr("active", "0");
+        resource.set_attr("predefined", "0");
+        resource.set_attr("trust", "unknown");
+        let now = now_iso();
+        resource.creation_time = now.clone();
+        resource.modification_time = now;
+        Ok(insert_resource(&mut inner, resource))
+    }
+
+    pub(crate) fn clone_report_format(
+        &self,
+        id: &Uuid,
+        requested_name: Option<&str>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let original = active_typed_resource(&inner, id, "report_format")?.clone();
+        let name = requested_name.filter(|name| !name.is_empty()).map_or_else(
+            || unique_clone_name(&inner, "report_format", &original.name),
+            str::to_string,
+        );
+        if active_name_exists(&inner, "report_format", &name, None) {
+            return Err(StoreError::InvalidArgument("Report format exists already"));
+        }
+
+        let source_predefined = original.attr("predefined") == Some("1");
+        let mut copy = original;
+        copy.id = Uuid::new_v4();
+        copy.name = name;
+        copy.trashed = false;
+        copy.set_attr("predefined", "0");
+        if source_predefined {
+            copy.set_attr("trust", "yes");
+        }
+        copy.attrs
+            .retain(|key, _| !key.starts_with("report_format_param_option:"));
+        let now = now_iso();
+        copy.creation_time = now.clone();
+        copy.modification_time = now;
+        Ok(insert_resource(&mut inner, copy))
+    }
+
+    pub(crate) fn modify_report_format(
+        &self,
+        id: &Uuid,
+        name: Option<&str>,
+        summary: Option<&str>,
+        active: Option<bool>,
+        param: Option<(&str, &str)>,
+    ) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let original = active_typed_resource(&inner, id, "report_format")?.clone();
+        if original.attr("predefined") == Some("1") {
+            return Err(StoreError::InvalidArgument(
+                "Predefined report formats cannot be modified",
+            ));
+        }
+        if let Some(name) = name {
+            if active_name_exists(&inner, "report_format", name, Some(id)) {
+                return Err(StoreError::InvalidArgument("Report format exists already"));
+            }
+        }
+
+        // The pinned implementation commits metadata before attempting the
+        // parameter update. Keep this intentionally non-atomic ordering.
+        let resource = inner
+            .resources
+            .get_mut(id)
+            .expect("validated report format remains present while locked");
+        if let Some(name) = name {
+            resource.name = name.to_string();
+        }
+        if let Some(summary) = summary {
+            resource.set_attr("summary", summary);
+        }
+        if let Some(active) = active {
+            resource.set_attr("active", if active { "1" } else { "0" });
+        }
+        resource.modification_time = now_iso();
+
+        if let Some((name, value)) = param {
+            let resource = inner
+                .resources
+                .get(id)
+                .expect("validated report format remains present while locked");
+            validate_seeded_report_format_value(resource, name, value)?;
+            let resource = inner
+                .resources
+                .get_mut(id)
+                .expect("validated report format remains present while locked");
+            resource.set_attr(&format!("report_format_param_value:{name}"), value);
+            resource.modification_time = now_iso();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn delete_report_format(&self, id: &Uuid, ultimate: bool) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let resource = inner
+            .resources
+            .get(id)
+            .filter(|resource| resource.resource_type == "report_format")
+            .cloned()
+            .ok_or_else(|| StoreError::NotFound("report format".to_string()))?;
+
+        let fields = [
+            "notice_attach_format",
+            "notice_report_format",
+            "scp_report_format",
+            "send_report_format",
+            "smb_report_format",
+            "verinice_server_report_format",
+        ];
+        let notice_fields = ["notice_attach_format", "notice_report_format"];
+        let id_text = id.to_string();
+        let used_by = |candidate: &Resource, fields: &[&str]| {
+            fields
+                .iter()
+                .any(|field| candidate.attr(field) == Some(id_text.as_str()))
+        };
+        let referenced = inner.resources.values().any(|candidate| {
+            candidate.resource_type == "alert"
+                && if resource.trashed {
+                    candidate.trashed && used_by(candidate, &fields)
+                } else if candidate.trashed {
+                    ultimate && used_by(candidate, &notice_fields)
+                } else {
+                    used_by(candidate, &fields)
+                }
+        });
+        if referenced {
+            return Err(StoreError::InUse("report format"));
+        }
+
+        if ultimate {
+            remove_resource(&mut inner, id);
+            return Ok(());
+        }
+        if resource.trashed {
+            return Ok(());
+        }
+        if resource.attr("predefined") == Some("1") {
+            let stored = inner
+                .resources
+                .get_mut(id)
+                .expect("validated report format remains present while locked");
+            stored.trashed = true;
+            stored.modification_time = now_iso();
+            return Ok(());
+        }
+
+        let mut trashed = remove_resource(&mut inner, id)
+            .expect("validated report format remains present while locked");
+        trashed.set_attr("original_uuid", &id_text);
+        trashed.id = Uuid::new_v4();
+        trashed.trashed = true;
+        trashed.modification_time = now_iso();
+        insert_resource(&mut inner, trashed);
+        Ok(())
+    }
+
+    pub(crate) fn verify_report_format(&self, id: &Uuid) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let resource = inner
+            .resources
+            .get_mut(id)
+            .filter(|resource| !resource.trashed && resource.resource_type == "report_format")
+            .ok_or_else(|| StoreError::NotFound("report format".to_string()))?;
+        let trust = if resource.attr("signature").is_none_or(str::is_empty) {
+            "unknown"
+        } else {
+            resource.attr("verification_outcome").unwrap_or("unknown")
+        }
+        .to_string();
+        resource.set_attr("trust", &trust);
+        let now = now_iso();
+        resource.set_attr("trust_time", &now);
+        resource.modification_time = now;
+        Ok(())
     }
 
     pub(crate) fn create_report_config(
@@ -2466,6 +2760,50 @@ mod tests {
         let inner = store.inner.read().expect("store lock");
         assert!(!inner.insertion_order.contains_key(&id1));
         assert!(!inner.insertion_order.contains_key(&id2));
+    }
+
+    #[test]
+    fn report_format_trash_preserves_definitions_and_options_until_ultimate_delete() {
+        let store = ResourceStore::new();
+        let mut format = Resource::new("report_format", "Trash option fixture");
+        format.set_attr("active", "1");
+        format.set_attr("predefined", "0");
+        format.set_attr("report_format_param_type:Choice", "selection");
+        format.set_attr("report_format_param_value:Choice", "red");
+        format.set_attr("report_format_param_default:Choice", "blue");
+        format.set_attr("report_format_param_option:Choice\u{1f}0", "red");
+        format.set_attr("report_format_param_option:Choice\u{1f}1", "blue");
+        let active_id = store.create(format);
+
+        store
+            .delete_report_format(&active_id, false)
+            .expect("move to trash");
+        let trashed = store
+            .list_trashed("report_format")
+            .into_iter()
+            .find(|resource| resource.name == "Trash option fixture")
+            .expect("trashed format remains stored");
+        assert_ne!(trashed.id, active_id);
+        assert_eq!(
+            trashed.attr("report_format_param_type:Choice"),
+            Some("selection")
+        );
+        assert_eq!(
+            trashed.attr("report_format_param_option:Choice\u{1f}0"),
+            Some("red")
+        );
+        assert_eq!(
+            trashed.attr("report_format_param_option:Choice\u{1f}1"),
+            Some("blue")
+        );
+
+        store
+            .delete_report_format(&trashed.id, true)
+            .expect("ultimate deletion");
+        assert!(store
+            .list_trashed("report_format")
+            .into_iter()
+            .all(|resource| resource.name != "Trash option fixture"));
     }
 
     #[test]
