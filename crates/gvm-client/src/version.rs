@@ -292,6 +292,29 @@ mod tests {
     }
 
     #[test]
+    fn every_report_projection_requires_22_8() {
+        for command in [
+            "get_report_hosts",
+            "get_report_ports",
+            "get_report_applications",
+            "get_report_operating_systems",
+            "get_report_cves",
+            "get_report_vulns",
+            "get_report_tls_certificates",
+            "get_report_errors",
+            "get_report_closed_cves",
+        ] {
+            assert_eq!(
+                minimum_version_for_command(command),
+                Some(GmpVersion(22, 8)),
+                "{command} floor"
+            );
+            assert!(!command_supported(command, GmpVersion(22, 7)));
+            assert!(command_supported(command, GmpVersion(22, 8)));
+        }
+    }
+
+    #[test]
     fn structured_audit_commands_require_22_7() {
         assert!(!command_supported("get_audit_report", GmpVersion(22, 6)));
         assert!(command_supported("get_audit_report", GmpVersion(22, 7)));

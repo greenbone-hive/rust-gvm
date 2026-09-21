@@ -5,15 +5,26 @@
 
 mod common;
 
-use common::{id, xml};
-use gvm_gmp::commands::trashcan::{empty_trashcan, restore};
+use common::id;
+use gvm_gmp::commands::trashcan::{EmptyTrashcanRequest, RestoreRequest};
+use gvm_gmp::{GmpRequestCodec, GmpVersion};
 
 #[test]
 fn test_empty_trashcan_basic() {
-    assert_eq!(xml(empty_trashcan()), "<empty_trashcan/>");
+    assert_eq!(
+        EmptyTrashcanRequest::new()
+            .encode(GmpVersion(22, 4))
+            .unwrap(),
+        b"<empty_trashcan/>"
+    );
 }
 
 #[test]
 fn test_restore_basic() {
-    assert_eq!(xml(restore(&id("r1"))), "<restore id=\"r1\"/>");
+    assert_eq!(
+        RestoreRequest::new(id("r1"))
+            .encode(GmpVersion(22, 4))
+            .unwrap(),
+        b"<restore id=\"r1\"/>"
+    );
 }

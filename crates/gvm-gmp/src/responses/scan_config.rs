@@ -63,6 +63,8 @@ pub struct ScanConfigPreference {
     pub nvt: Option<ScanConfigPreferenceNvt>,
     /// Preference name.
     pub name: String,
+    /// Optional human-readable name emitted by gvmd.
+    pub hr_name: Option<String>,
     /// Optional preference identifier.
     pub id: Option<String>,
     /// Optional preference type.
@@ -81,6 +83,7 @@ impl fmt::Debug for ScanConfigPreference {
             .debug_struct("ScanConfigPreference")
             .field("nvt", &self.nvt)
             .field("name", &self.name)
+            .field("hr_name", &self.hr_name)
             .field("id", &self.id)
             .field("type_", &self.type_)
             .field("value", &self.value.as_ref().map(|_| "<redacted>"))
@@ -104,6 +107,19 @@ pub struct GetScanConfigPreferencesResponse {
     pub status_text: String,
     /// Returned preferences in wire order.
     pub items: Vec<ScanConfigPreference>,
+}
+
+/// Typed response for one `get_preferences` selector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetScanConfigPreferenceResponse {
+    /// GMP response status.
+    pub status: u16,
+    /// GMP response status text.
+    pub status_text: String,
+    /// First matching preference, or `None` when gvmd found no match.
+    pub item: Option<ScanConfigPreference>,
 }
 
 impl ScanConfig {
@@ -176,6 +192,7 @@ impl ScanConfigPreference {
             name: node
                 .required_child_text("name")
                 .map_err(|_| ParseError::MissingElement("preference.name".to_string()))?,
+            hr_name: node.optional_child_text("hr_name"),
             id: node.optional_child_text("id"),
             type_: node.optional_child_text("type"),
             value: node.child("value").map(|value| value.text.clone()),
@@ -231,6 +248,40 @@ impl GetScanConfigPreferencesResponse {
 }
 
 impl GmpResponse for GetScanConfigPreferencesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
+impl GetScanConfigPreferenceResponse {
+    /// Parse a single-preference response, preserving a successful absent match.
+    ///
+    /// # Errors
+    /// Returns an error for non-success status, malformed preference XML, or a
+    /// server response that violates the single-result contract.
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let mut preferences = root.children_named("preference");
+        let item = preferences
+            .next()
+            .map(ScanConfigPreference::from_node)
+            .transpose()?;
+        if preferences.next().is_some() {
+            return Err(ParseError::InvalidValue {
+                field: "preference_count".to_string(),
+                value: "more than one".to_string(),
+            });
+        }
+        Ok(Self {
+            status,
+            status_text,
+            item,
+        })
+    }
+}
+
+impl GmpResponse for GetScanConfigPreferenceResponse {
     fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
         Self::from_response(response)
     }
@@ -346,6 +397,39 @@ mod tests {
     }
 
     #[test]
+    fn single_preference_preserves_absent_match_and_absent_value() {
+        let missing =
+            Response::from(r#"<get_preferences_response status="200" status_text="OK"/>"#);
+        let parsed = GetScanConfigPreferenceResponse::from_response(&missing)
+            .expect("an absent match is successful");
+        assert_eq!(parsed.item, None);
+
+        let present = Response::from(
+            r#"<get_preferences_response status="200" status_text="OK">
+                <preference><hr_name>Readable</hr_name><name>Entry</name></preference>
+            </get_preferences_response>"#,
+        );
+        let parsed =
+            GetScanConfigPreferenceResponse::from_response(&present).expect("preference parses");
+        let item = parsed.item.expect("one match");
+        assert_eq!(item.hr_name.as_deref(), Some("Readable"));
+        assert_eq!(item.value, None);
+        assert_eq!(item.default, None);
+        assert!(item.alternatives.is_empty());
+    }
+
+    #[test]
+    fn single_preference_rejects_multiple_matches() {
+        let response = Response::from(
+            r#"<get_preferences_response status="200" status_text="OK">
+                <preference><name>First</name></preference>
+                <preference><name>Second</name></preference>
+            </get_preferences_response>"#,
+        );
+        assert!(GetScanConfigPreferenceResponse::from_response(&response).is_err());
+    }
+
+    #[test]
     fn rejects_preference_nvt_without_oid() {
         let response = Response::from(
             r#"<get_preferences_response status="200" status_text="OK">
@@ -383,6 +467,7 @@ mod tests {
                 name: Some("Services".to_string()),
             }),
             name: "Password".to_string(),
+            hr_name: Some("Password preference".to_string()),
             id: Some("1".to_string()),
             type_: Some("password".to_string()),
             value: Some("configured-secret".to_string()),

@@ -298,7 +298,7 @@ async fn list_detail_expansion_filtering_and_counts_are_bounded_and_deterministi
 }
 
 #[tokio::test]
-async fn metadata_is_atomic_and_deferred_actions_never_claim_false_success() {
+async fn metadata_and_preference_failures_roll_back_atomically() {
     let server = server_with_task_references().await;
     let mut stream = connect(&server).await;
     authenticate(&mut stream).await;
@@ -369,7 +369,7 @@ async fn metadata_is_atomic_and_deferred_actions_never_claim_false_success() {
     assert_eq!(
         send(
             &mut stream,
-            format!("<modify_config config_id=\"{SECOND_SCAN}\"><name>discarded</name><preference><name>x</name></preference></modify_config>")
+            format!("<modify_config config_id=\"{SECOND_SCAN}\"><name>discarded</name><preference><name>x</name><value>not-base64!</value></preference></modify_config>")
         )
         .await
         .status_code(),
@@ -383,6 +383,251 @@ async fn metadata_is_atomic_and_deferred_actions_never_claim_false_success() {
     .as_str()
     .unwrap()
     .contains("discarded"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn preferences_and_selections_set_replace_clear_read_and_roll_back() {
+    let server = server_with_task_references().await;
+    let mut stream = connect(&server).await;
+    authenticate(&mut stream).await;
+
+    let initial = send(
+        &mut stream,
+        format!(
+            "<get_preferences config_id=\"{DEFAULT_CONFIG}\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
+        ),
+    )
+    .await;
+    assert!(initial.as_str().unwrap().contains("<value>fast</value>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{DEFAULT_CONFIG}\"><preference><nvt oid=\"1.3.6.1.4.1.25623.1\"/><name>1.3.6.1.4.1.25623.1:2:radio:Mode</name><value>c2FmZQ==</value></preference></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let set = send(
+        &mut stream,
+        format!(
+            "<get_preferences config_id=\"{DEFAULT_CONFIG}\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
+        ),
+    )
+    .await;
+    assert!(set.as_str().unwrap().contains("<value>safe</value>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{DEFAULT_CONFIG}\"><preference><nvt oid=\"1.3.6.1.4.1.25623.1\"/><name>1.3.6.1.4.1.25623.1:3:entry:Retries:with:suffix</name><value></value></preference></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200),
+        "an explicit empty value is a set, not a delete"
+    );
+    let empty = send(
+        &mut stream,
+        format!(
+            "<get_preferences config_id=\"{DEFAULT_CONFIG}\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"entry:Retries:with:suffix\"/>"
+        ),
+    )
+    .await;
+    assert!(empty.as_str().unwrap().contains("<value></value>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{DEFAULT_CONFIG}\"><preference><nvt oid=\"1.3.6.1.4.1.25623.1\"/><name>1.3.6.1.4.1.25623.1:2:radio:Mode</name></preference></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let deleted = send(
+        &mut stream,
+        format!(
+            "<get_preferences config_id=\"{DEFAULT_CONFIG}\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
+        ),
+    )
+    .await;
+    assert!(deleted.as_str().unwrap().contains("<value>safe</value>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{FIRST_POLICY}\"><preference><name>:4:entry:Scanner option</name><value>ZGlzYWJsZWQ=</value></preference></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let scanner = send(
+        &mut stream,
+        format!(
+            "<get_preferences config_id=\"{FIRST_POLICY}\" preference=\"entry:Scanner option\"/>"
+        ),
+    )
+    .await;
+    assert!(scanner
+        .as_str()
+        .unwrap()
+        .contains("<value>disabled</value>"));
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{FIRST_POLICY}\"><preference><name>:4:entry:Scanner option</name></preference></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{SECOND_POLICY}\"><nvt_selection><family>General</family><nvt oid=\"1.3.6.1.4.1.25623.1\"/></nvt_selection></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let selected = send(
+        &mut stream,
+        format!("<get_configs config_id=\"{SECOND_POLICY}\" details=\"1\"/>"),
+    )
+    .await;
+    let selected = selected.as_str().unwrap();
+    assert!(selected.contains("<family_or_nvt>1.3.6.1.4.1.25623.1</family_or_nvt>"));
+    assert!(selected.contains("<nvt_count>1<growing>0</growing></nvt_count>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{SECOND_POLICY}\"><nvt_selection><family>General</family></nvt_selection></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let cleared = send(
+        &mut stream,
+        format!("<get_configs config_id=\"{SECOND_POLICY}\" details=\"1\"/>"),
+    )
+    .await;
+    assert!(cleared
+        .as_str()
+        .unwrap()
+        .contains("<nvt_count>0<growing>0</growing></nvt_count>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{SECOND_POLICY}\"><family_selection><growing>1</growing><family><name>Web application abuses</name><all>1</all><growing>0</growing></family><family><name>General</name><all>1</all><growing>1</growing></family></family_selection></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let families = send(
+        &mut stream,
+        format!("<get_configs config_id=\"{SECOND_POLICY}\" families=\"1\"/>"),
+    )
+    .await;
+    let families = families.as_str().unwrap();
+    assert!(families.contains("<family_count>2<growing>1</growing></family_count>"));
+    assert!(
+        families.find("Web application abuses").unwrap() < families.find("General").unwrap(),
+        "replacement family order must remain observable"
+    );
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{SECOND_POLICY}\"><family_selection><growing>0</growing></family_selection></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let empty_families = send(
+        &mut stream,
+        format!("<get_configs config_id=\"{SECOND_POLICY}\" families=\"1\"/>"),
+    )
+    .await;
+    assert!(empty_families
+        .as_str()
+        .unwrap()
+        .contains("<family_count>0<growing>0</growing></family_count>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{DEFAULT_CONFIG}\"><preference><nvt oid=\"1.3.6.1.4.1.25623.1\"/><name>1.3.6.1.4.1.25623.1:2:radio:Mode</name><value>ZmFzdA==</value></preference><nvt_selection><family>General</family><nvt oid=\"unknown\"/></nvt_selection></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(400)
+    );
+    let rolled_back = send(
+        &mut stream,
+        format!(
+            "<get_preferences config_id=\"{DEFAULT_CONFIG}\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
+        ),
+    )
+    .await;
+    assert!(rolled_back
+        .as_str()
+        .unwrap()
+        .contains("<value>safe</value>"));
+
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{SECOND_SCAN}\"><nvt_selection><family>General</family></nvt_selection></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(400),
+        "visible in-use configurations reject selection mutations"
+    );
+    assert_eq!(
+        send(
+            &mut stream,
+            format!(
+                "<modify_config config_id=\"{PREDEFINED}\"><preference><name>:4:entry:Scanner option</name></preference></modify_config>"
+            ),
+        )
+        .await
+        .status_code(),
+        Some(400)
+    );
 
     server.shutdown().await;
 }

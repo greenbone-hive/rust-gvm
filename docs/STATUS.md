@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-19
+Last updated: 2026-09-20
 
 ## Support Direction
 
@@ -192,21 +192,31 @@ report-specific lean/delta behavior remain separately ordered families.
 The sections below retain the bounded delivery history for each migrated
 family.
 
-The first focused Phase 2 batch, tracked by
-[`#539`](https://github.com/greenbone-hive/rust-gvm/issues/539), migrated the
-standard scan-task list/get/create/clone/modify/delete/start/stop/resume
-lifecycle to the same typed execution contract.
+The bounded canonical standard-task batch, tracked by
+[`#659`](https://github.com/greenbone-hive/rust-gvm/issues/659), now gives
+list/detail/create/clone/modify/delete/start/stop/resume complete request
+values, direct codecs, fixed response associations, and request-by-value
+facades. Final mutated values validate before support checks or transport;
+observer users cannot be cleared implicitly by group updates; preference
+values are redacted; and the stateful mock applies compound updates
+transactionally while preserving report-producing action state. The removed
+`hosts_ordering` request input is source drift, not a compatibility omission:
+pinned gvmd neither parses it nor retains its task column. See the
+[task gvmd evidence](task-request-gvmd-evidence.md) and
+[v0.7 migration mapping](v0.7.0-migration.md#standard-tasks).
 
-The deferred task-variant Phase 2 batch, tracked by
-[`#553`](https://github.com/greenbone-hive/rust-gvm/issues/553), completes that
-task-family boundary with semantic requests for import/container, agent-group,
-OCI/container-image, web-application, and move operations plus the complete
-audit-scoped lifecycle. Each specialized request delegates to its existing
-builder, including compatibility aliases, and the typed facade delegates to
-generic execution without changing wire bytes or response models. Agent-group,
-OCI/container-image, and web-application task requests preserve their GMP 22.8
-semantic gate before the shared `create_task` wire command can be sent. Raw
-builder calls receive the same shape-based pre-send protection.
+Issue #660 completes the remaining 16 task-family semantic operations:
+import/container, agent-group, OCI/container-image, and web-application task
+creation; `move_task`; and the audit list/detail/create/clone/modify/delete/
+start/stop/resume lifecycle. Complete request values directly encode each
+variant's actual shape, the GMP 22.8 gates remain attached to agent/OCI/web
+semantic identities, move destinations are explicit, and audit usage identity
+is preserved without emitting an unsupported modify child. All remaining task
+option bags and forwarding builders are removed. The stateful mock covers each
+creation shape, scanner/target relationships, move semantics, audit state,
+observer coupling, and atomic rollback. See the
+[specialized task/audit gvmd evidence](specialized-task-audit-request-gvmd-evidence.md)
+and [v0.7 migration mapping](v0.7.0-migration.md#specialized-tasks-and-audits).
 
 The earlier additive credential batches in #544 and #551 established typed
 execution while retaining their builders and options. The bounded canonical
@@ -231,8 +241,12 @@ import validates one exported config and policy import adds an outer policy
 override. Metadata changes only nonempty names/comments, and canonical usage
 is restricted to scan/policy. The unsupported schema-only `sync_config`
 request and both sync facades are removed. Preference retrieval and the eight
-configured preference/NVT/family mutation requests remain transitional for the
-next ordered child. Raw `send`, `call`, and custom codecs remain available.
+configured preference/NVT/family mutation requests are completed by
+[#658](https://github.com/greenbone-hive/rust-gvm/issues/658) as ten canonical
+direct codecs with distinct scan-config/policy metadata, source-faithful
+list/single responses, secret-safe diagnostics/traces, and atomic bounded mock
+behavior. Their redundant builders, preference options bag, and two preference
+facades are removed. Raw `send`, `call`, and custom codecs remain available.
 
 The earlier additive alert-and-schedule Phase 2 batch, tracked by
 [`#555`](https://github.com/greenbone-hive/rust-gvm/issues/555), migrates every
@@ -248,10 +262,11 @@ supersede both transitional construction models.
 The supporting-resource Phase 2 batch, tracked by
 [`#557`](https://github.com/greenbone-hive/rust-gvm/issues/557), migrates the
 complete filter and tag list/detail/create/clone/modify/delete lifecycles plus
-trashcan empty and restore operations. Existing builders remain the sole wire
-encoders, both restore builder names retain byte-identical behavior through
-distinct semantic request values, and all facade helpers delegate to generic
-typed execution without changing response or version policy.
+trashcan empty and restore operations. The filter/tag construction model was
+superseded by their bounded canonical migrations. Issue #664 supersedes the
+trashcan construction model with direct `EmptyTrashcanRequest` and
+`RestoreRequest` codecs and removes the byte-identical
+`restore_from_trashcan` alias.
 
 The note-and-override Phase 2 batch, tracked by
 [`#559`](https://github.com/greenbone-hive/rust-gvm/issues/559), migrates both
@@ -386,49 +401,57 @@ All six named TLS helpers accept complete requests and delegate to `execute`.
 The [pinned evidence](tls-certificate-request-gvmd-evidence.md) records source,
 schema, bounded response, and mock limits.
 
-The system-discovery Phase 3 batch, tracked by
-[`#574`](https://github.com/greenbone-hive/rust-gvm/issues/574), migrates all 22
-public read-only builders across the aggregates, features, feed, help,
-system-report, and system compatibility modules. Current and legacy aggregate
-shapes, both feed and help representations, generic information and preference
-queries, resource-name list/detail requests, and both vulnerability aliases
-were initially byte-identical delegations. #648 removes the duplicate system
-`get_info`/`get_preferences` wrappers and the `get_vuln` wrapper; the two
-observed-vulnerability requests now own `get_vulns` directly. Remaining
-typed-returning facade helpers delegate through `execute`; `get_features`
-retains its GMP 22.6 gate and `get_timezones` its GMP 22.8 gate before
-transmission.
+Issue #663 completes core and read-only system discovery. Pre-authentication
+version/authentication, help, features, feeds/timezones, current and legacy
+aggregates, settings, system reports, resource names, license retrieval, and
+authentication description now have one authoritative encoder each. Complete
+request values own every supported selector and query control; named facades
+accept them unchanged and delegate only to `execute`. Authentication supports
+password and token credentials plus requested-token responses while Debug,
+errors, diagnostics, and wire traces redact credentials. `get_features`
+retains its GMP 22.6 pre-transport gate and `get_timezones` its GMP 22.8 gate.
+Responses preserve optional feed/system metadata, setting counts and
+certificate information, resource-name response type, session metadata, and
+structured license content. Duplicate builders, system wrappers, and
+byte-identical facade aliases are removed with zero transitional ledger rows
+in scope. See the
+[pinned evidence](system-discovery-request-gvmd-evidence.md).
 
-The system-administration Phase 3 batch, tracked by
+The earlier system-administration Phase 3 batch, tracked by
 [`#575`](https://github.com/greenbone-hive/rust-gvm/issues/575), migrates all
 nine public authentication, license, wizard, and user-setting builder shapes to
-semantic typed execution. The default and option-bearing compatibility forms
-remain distinct request types over the existing byte-identical encoders, and
-the system-module `modify_setting` wrapper continues to share the canonical
-user-setting encoding. Existing authentication, license, and wizard typed
-helpers now delegate to `execute`. Semantic request diagnostics redact auth
-configuration values, license payloads, wizard parameter values, and
-user-setting values; raw builders and custom execution remain supported.
+semantic typed execution. Issue #664 now supersedes that transitional model.
+Complete authentication, license, generic-setting, wizard, user-setting, empty,
+and restore request values own all fields and directly encode their commands.
+The option-bearing license/wizard variants and the second restore name were
+redundant aliases and are removed. Generic and user-setting modification share
+one encoder only because pinned gvmd gives them identical selector, value, and
+response semantics. Named helpers accept canonical values unchanged and
+delegate only to `execute`; raw `send`, `call`, and custom codecs remain.
+Confidential values stay out of `Debug`, errors, diagnostics, and wire traces.
+The bounded mock persists mutations, validates before state changes, and
+preserves atomic cleanup/dependency rollback. See the
+[pinned evidence](system-admin-cleanup-request-gvmd-evidence.md) and
+[v0.7 migration mapping](v0.7.0-migration.md#system-administration-user-settings-and-cleanup).
+This final #658–#664 family leaves zero transitional rows in the enforced
+disposition inventory; the retained-surface/removal audit remains separate.
 
-The irregular-report Phase 3 batch, tracked by
-[`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
-list/detail, structured scan and audit reports, audit hosts, nine structured
-report drill-downs, and synchronous report-format export. Existing explicit
-parsers remain authoritative for binary/base64 exports, nested XML exports,
-mixed/repeated response elements, and large bounded responses. Existing typed
-helpers delegate to generic execution, while raw builders and versioned/raw
-helpers remain supported. Version policy stays explicit: audit operations are
-22.7+, scan/drill-down/synchronous-export operations are 22.8+, and
-`export_scan_report` still requires positive help discovery.
+Issues #661 and #662 complete the report lifecycle, structured-report,
+drill-down, and export request migration. The lifecycle operations plus all
+nine projections, synchronous report-format export, and asynchronous export
+creation/reuse now own complete canonical values. Pinned gvmd has no empty
+report-creation form, so validated report import remains the sole creation
+operation.
 
-The report-mutation Phase 3 batch, tracked by
-[`#576`](https://github.com/greenbone-hive/rust-gvm/issues/576), adds semantic
-requests for report creation, XML import, deletion, and audit-report deletion.
-Create and import retain distinct Rust request types over their shared
-`create_report` wire root, while both deletion forms preserve the established
-`delete_report` encoding. The existing typed import helper now delegates to
-generic execution without changing validation, base64 payload handling,
-response parsing, or raw compatibility APIs.
+Ordinary, audit-list, structured scan, structured audit, and audit-host
+responses retain separate associations and explicit parsers for nested,
+mixed, repeated, binary/base64, absent-field, and large bounded report data.
+Projection and synchronous-export operations require GMP 22.8;
+`export_scan_report` requires positive XML-help discovery. Duplicate
+vulnerability names, `_parsed` suffixes, raw projection facades, and forwarding
+option variants are removed. Delta/alert-selected generation and streaming
+redesign remain separate work. See the
+[pinned evidence](report-request-gvmd-evidence.md).
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
@@ -582,9 +605,10 @@ de-duplication without rewriting otherwise valid host spellings.
 |---------|--------|-------|
 | get_version (pre-auth) | ✅ | Always allowed without authentication |
 | authenticate (credential validation) | ✅ | Per-session state |
-| direct-host asset lifecycle and canonical `get_assets` | ✅ | Strict gvmd behavior by default; legacy flat inputs are explicit opt-in; report-import/bulk-delete paths are not modeled |
+| direct-host asset lifecycle and canonical `get_assets` | ✅ | Strict gvmd behavior by default; legacy flat inputs are explicit opt-in; report import creates or updates host assets only when requested |
 | result list/detail conformance | ✅ | Bounded saved/inline filter, effective task context, resolved pagination/counts, ID-tied sorting, task-restricted expansions, and effective seeded override behavior; unsupported or malformed terms are explicit and the full gvmd filter/permission/CVSS engine is not modeled |
-| get_report (nested results XML) | ✅ | Proper `<report><report><results>` nesting |
+| report lifecycle | ✅ | Import-task validation, XML/result/asset persistence, scan/audit selection, list/detail filters, pagination/counts, dependency-safe permanent deletion, and atomic rollback |
+| get_report (nested results XML) | ✅ | Proper `<report><report><results>` nesting with explicit parser preservation |
 | structured audit reports (22.7+) | ✅ | Typed summaries and hosts with compliance filtering, pagination, details, and lean output |
 | create_note/override (text + nvt_oid) | ✅ | Non-standard element parsing |
 | create_ticket (result_id + comment) | ✅ | Non-standard element parsing |
@@ -643,7 +667,8 @@ de-duplication without rewriting otherwise valid host spellings.
 | `report_config` commands (22.6+) | ✅ | create, get, modify, delete |
 | `features` command (22.6+) | ✅ | get_features |
 | structured audit-report commands (22.7+) | ✅ | get_audit_report and get_audit_report_hosts |
-| REST-support GMP helpers (22.8+) | ✅ | raw structured scan report, report drill-downs, get_timezones, get_credential_stores |
+| REST-support GMP helpers (22.8+) | ✅ | structured scan report, typed report drill-downs and synchronous export, get_timezones, get_credential_stores |
+| Discoverable asynchronous report export | ✅ | `export_scan_report` requires positive XML-help discovery after its 22.7 lower bound |
 | Version range metadata in responses | ✅ | Status text includes version requirement |
 
 ### CLI (Standalone Binary)
@@ -799,13 +824,13 @@ matching gvmd's observation behavior.
 
 alerts, authentication, credentials, filters, groups, hosts, notes, nvts, overrides, permissions, port_lists, report_formats, reports, resource_names, results, roles, scan_configs, scanners, schedules, system, tags, targets, tasks, tickets, tls_certificates, trashcan, users, version
 
-### Enums (23)
+### Enums (22)
 
-AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType (34 variants), FeedType, FilterType (25 variants), HelpFormat, HostsOrdering, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SeverityLevel, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus, UserAuthType
+AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType (34 variants), FeedType, FilterType (25 variants), HelpFormat, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SeverityLevel, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus, UserAuthType
 
 ### Tests
 
-`cargo test -p gvm-gmp --all-features -- --list` currently discovers 650 tests.
+`cargo test -p gvm-gmp --all-features -- --list` currently discovers 701 tests.
 The categories below are a tracked subset of that complete inventory.
 
 | Tracked category | Count |
@@ -876,14 +901,14 @@ its explicit raw-send compatibility path.
 
 | Domain | Get | Create | Notes |
 |--------|-----|--------|-------|
-| version | ✅ | — | `get_version()` |
-| auth | — | — | `authenticate()` |
+| version | ✅ | — | `get_version(GetVersionRequest)` |
+| auth | — | — | `authenticate(AuthenticateRequest)` |
 | target | ✅ | ✅ | |
-| scan_config | ✅ | ✅ | Complete request values cover generic/scan/policy lifecycle aliases; creation requires copy/import, and unsupported GMP sync is removed |
+| scan_config | ✅ | ✅ | Complete requests cover lifecycle aliases plus preference reads/mutations and ordered NVT/family replacement; creation requires copy/import, and unsupported GMP sync is removed |
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
 | port_list | ✅ | ✅ | |
 | task | ✅ | ✅ | Also: `start_task()` |
-| report | ✅ | — | Also: typed report drill-down helpers for vulns, TLS certificates, errors, closed CVEs |
+| report | ✅ | ✅ | Canonical lifecycle/structured operations, nine drill-downs, synchronous export, and discoverable asynchronous export; import is gvmd's report creation form |
 | result | ✅ | — | |
 | feed | ✅ | — | |
 | nvt | ✅ | — | Also: `get_nvt_families()` |
@@ -904,7 +929,7 @@ its explicit raw-send compatibility path.
 | tls_certificate | ✅ | ✅ | |
 | report_format | ✅ | ✅ | Seven canonical lifecycle facades; direct creation means explicit import or clone |
 | report_config | ✅ | ✅ | Six canonical lifecycle facades; list is `get_report_configs(request)` |
-| system | ✅ | — | `get_settings()`, `get_help()`, `describe_auth()`, `get_timezones()` |
+| system | ✅ | — | Canonical request values cover settings, help, features, aggregates, system reports, resource names, license, authentication description, feeds, and timezones |
 
 ### Features
 
@@ -925,7 +950,7 @@ its explicit raw-send compatibility path.
 
 ## Test Coverage
 
-**Line coverage: 92.2%** (via `cargo-llvm-cov`)
+**Line coverage: 95.4%** (via `cargo-llvm-cov`)
 
 | Test Category | Count | Notes |
 |---------------|-------|-------|

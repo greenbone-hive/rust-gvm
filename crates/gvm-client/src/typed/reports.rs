@@ -13,13 +13,13 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    ExportScanReportOpts, ExportScanReportRequest, GetAuditReportHostsOpts,
-    GetAuditReportHostsRequest, GetAuditReportOpts, GetAuditReportRequest,
+    DeleteAuditReportRequest, DeleteReportRequest, ExportScanReportRequest,
+    GetAuditReportHostsRequest, GetAuditReportRequest, GetAuditReportsRequest,
     GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
-    GetReportDetailsOpts, GetReportErrorsRequest, GetReportExportOpts, GetReportExportRequest,
-    GetReportHostsRequest, GetReportOperatingSystemsRequest, GetReportPortsRequest,
-    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsOpts, GetReportsRequest,
-    ImportReportOpts, ImportReportRequest,
+    GetReportErrorsRequest, GetReportExportRequest, GetReportHostsRequest,
+    GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportRequest,
+    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsRequest,
+    GetScanReportRequest, ImportReportRequest,
 };
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::tls_certificates::{
@@ -29,16 +29,16 @@ use gvm_gmp::commands::tls_certificates::{
 use gvm_gmp::responses::{
     CreateReportConfigResponse, CreateReportFormatResponse, CreateReportResponse,
     CreateTlsCertificateResponse, DeleteReportConfigResponse, DeleteReportFormatResponse,
-    DeleteTlsCertificateResponse, ExportScanReportResponse, GetAuditReportHostsResponse,
-    GetAuditReportResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
-    GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
-    GetReportFormatsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetResultsResponse, GetTlsCertificatesResponse, ModifyReportConfigResponse,
-    ModifyReportFormatResponse, ModifyTlsCertificateResponse, ReportExport,
-    VerifyReportFormatResponse,
+    DeleteReportResponse, DeleteTlsCertificateResponse, ExportScanReportResponse,
+    GetAuditReportHostsResponse, GetAuditReportResponse, GetAuditReportsResponse,
+    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
+    GetReportCvesResponse, GetReportErrorsResponse, GetReportFormatsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
+    GetResultsResponse, GetScanReportResponse, GetTlsCertificatesResponse,
+    ModifyReportConfigResponse, ModifyReportFormatResponse, ModifyTlsCertificateResponse,
+    ReportExport, VerifyReportFormatResponse,
 };
-use gvm_gmp::types::EntityId;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Reports ───────────────────────────────────────────────────────────────
@@ -49,11 +49,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_audit_report(
         &mut self,
-        audit_report_id: &EntityId,
-        opts: GetAuditReportOpts,
+        request: GetAuditReportRequest,
     ) -> Result<GetAuditReportResponse, GvmError> {
-        self.execute(GetAuditReportRequest::new(audit_report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_audit_report_hosts` request and return typed host summaries.
@@ -62,11 +60,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_audit_report_hosts(
         &mut self,
-        report_id: &EntityId,
-        opts: GetAuditReportHostsOpts,
+        request: GetAuditReportHostsRequest,
     ) -> Result<GetAuditReportHostsResponse, GvmError> {
-        self.execute(GetAuditReportHostsRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_reports` request and return a typed [`GetReportsResponse`].
@@ -75,9 +71,64 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_reports(
         &mut self,
-        opts: GetReportsOpts,
+        request: GetReportsRequest,
     ) -> Result<GetReportsResponse, GvmError> {
-        self.execute(GetReportsRequest::new(opts)).await
+        self.execute(request).await
+    }
+
+    /// Retrieve one detailed ordinary scan report.
+    ///
+    /// # Errors
+    /// Returns an error if validation, support checks, transport, or parsing fails.
+    pub async fn get_report(
+        &mut self,
+        request: GetReportRequest,
+    ) -> Result<GetReportsResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// List audit reports through the audit-scoped `get_reports` operation.
+    ///
+    /// # Errors
+    /// Returns an error if validation, support checks, transport, or parsing fails.
+    pub async fn get_audit_reports(
+        &mut self,
+        request: GetAuditReportsRequest,
+    ) -> Result<GetAuditReportsResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Retrieve one structured vulnerability report.
+    ///
+    /// # Errors
+    /// Returns an error if validation, support checks, transport, or parsing fails.
+    pub async fn get_scan_report(
+        &mut self,
+        request: GetScanReportRequest,
+    ) -> Result<GetScanReportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Permanently delete one ordinary scan report.
+    ///
+    /// # Errors
+    /// Returns an error if support checks, transport, or parsing fails.
+    pub async fn delete_report(
+        &mut self,
+        request: DeleteReportRequest,
+    ) -> Result<DeleteReportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Delete one audit report through the non-ultimate audit semantic alias.
+    ///
+    /// # Errors
+    /// Returns an error if support checks, transport, or parsing fails.
+    pub async fn delete_audit_report(
+        &mut self,
+        request: DeleteAuditReportRequest,
+    ) -> Result<DeleteReportResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Queue or reuse an asynchronous scan-report export and return its typed
@@ -92,11 +143,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// command, or a request/response error after it is attempted.
     pub async fn export_scan_report(
         &mut self,
-        report_id: &EntityId,
-        opts: ExportScanReportOpts,
+        request: ExportScanReportRequest,
     ) -> Result<ExportScanReportResponse, GvmError> {
-        self.execute(ExportScanReportRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_vulns` request and return a typed [`GetReportVulnsResponse`].
@@ -105,25 +154,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_vulns(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportVulnsRequest,
     ) -> Result<GetReportVulnsResponse, GvmError> {
-        self.execute(GetReportVulnsRequest::new(report_id.clone(), opts))
-            .await
-    }
-
-    /// Send a `get_report_vulns` request using python-gvm's descriptive helper
-    /// name and return a typed [`GetReportVulnsResponse`].
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_vulnerabilities(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<GetReportVulnsResponse, GvmError> {
-        self.execute(GetReportVulnsRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_tls_certificates` request and return a typed [`GetReportTlsCertificatesResponse`].
@@ -132,102 +165,69 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_tls_certificates(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportTlsCertificatesRequest,
     ) -> Result<GetReportTlsCertificatesResponse, GvmError> {
-        self.execute(GetReportTlsCertificatesRequest::new(
-            report_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_hosts` request and return a typed
     /// [`GetReportHostsResponse`].
     ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::get_report_hosts`] method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_hosts_parsed(
+    pub async fn get_report_hosts(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportHostsRequest,
     ) -> Result<GetReportHostsResponse, GvmError> {
-        self.execute(GetReportHostsRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_ports` request and return a typed
     /// [`GetReportPortsResponse`].
     ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::get_report_ports`] method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_ports_parsed(
+    pub async fn get_report_ports(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportPortsRequest,
     ) -> Result<GetReportPortsResponse, GvmError> {
-        self.execute(GetReportPortsRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_applications` request and return a typed
     /// [`GetReportApplicationsResponse`].
     ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::get_report_applications`] method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_applications_parsed(
+    pub async fn get_report_applications(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportApplicationsRequest,
     ) -> Result<GetReportApplicationsResponse, GvmError> {
-        self.execute(GetReportApplicationsRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_operating_systems` request and return a typed
     /// [`GetReportOperatingSystemsResponse`].
     ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::get_report_operating_systems`] method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_operating_systems_parsed(
+    pub async fn get_report_operating_systems(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportOperatingSystemsRequest,
     ) -> Result<GetReportOperatingSystemsResponse, GvmError> {
-        self.execute(GetReportOperatingSystemsRequest::new(
-            report_id.clone(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_cves` request and return a typed
     /// [`GetReportCvesResponse`].
     ///
-    /// The `_parsed` suffix distinguishes this helper from the raw
-    /// [`GmpClient::get_report_cves`] method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_cves_parsed(
+    pub async fn get_report_cves(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportCvesRequest,
     ) -> Result<GetReportCvesResponse, GvmError> {
-        self.execute(GetReportCvesRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_errors` request and return a typed [`GetReportErrorsResponse`].
@@ -236,11 +236,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_errors(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportErrorsRequest,
     ) -> Result<GetReportErrorsResponse, GvmError> {
-        self.execute(GetReportErrorsRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_report_closed_cves` request and return a typed [`GetReportClosedCvesResponse`].
@@ -249,11 +247,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_closed_cves(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
+        request: GetReportClosedCvesRequest,
     ) -> Result<GetReportClosedCvesResponse, GvmError> {
-        self.execute(GetReportClosedCvesRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     /// Send a `get_reports` export request and return a typed [`ReportExport`].
@@ -262,27 +258,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_export(
         &mut self,
-        report_id: &EntityId,
-        report_format_id: &EntityId,
+        request: GetReportExportRequest,
     ) -> Result<ReportExport, GvmError> {
-        self.execute(GetReportExportRequest::new(
-            report_id.clone(),
-            GetReportExportOpts::new(report_format_id.clone()),
-        ))
-        .await
-    }
-
-    /// Send a `get_reports` export request with export options and return a typed [`ReportExport`].
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_report_export_with_opts(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportExportOpts,
-    ) -> Result<ReportExport, GvmError> {
-        self.execute(GetReportExportRequest::new(report_id.clone(), opts))
-            .await
+        self.execute(request).await
     }
 
     // ── Results ───────────────────────────────────────────────────────────────
@@ -470,12 +448,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// response parsing fails.
     pub async fn import_report(
         &mut self,
-        report_xml: &str,
-        task_id: &EntityId,
-        opts: ImportReportOpts,
+        request: ImportReportRequest,
     ) -> Result<CreateReportResponse, GvmError> {
-        self.execute(ImportReportRequest::new(report_xml, task_id, opts)?)
-            .await
+        self.execute(request).await
     }
 
     // ── Report Configs ────────────────────────────────────────────────────────

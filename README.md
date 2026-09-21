@@ -57,8 +57,9 @@ The high-level client handles version negotiation automatically and exposes type
 ```rust
 use gvm_client::GmpClient;
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
+use gvm_gmp::commands::authentication::AuthenticateRequest;
 use gvm_gmp::commands::targets::{CreateTargetRequest, GetTargetsRequest};
-use gvm_gmp::commands::tasks::CreateTaskOpts;
+use gvm_gmp::commands::tasks::{CreateTaskRequest, StartTaskRequest};
 use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
 
 #[tokio::main]
@@ -69,7 +70,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Connected, GMP version: {}", client.version());
 
     // 2. Authenticate
-    client.authenticate("admin", "admin").await?;
+    client
+        .authenticate(AuthenticateRequest::new("admin", "admin"))
+        .await?;
 
     // 3. Create a target — typed response, no manual XML parsing
     let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
@@ -88,11 +91,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 5. Create and start a scan task
     let config_id = "daba56c8-73ec-11df-a475-002264764cea".parse().unwrap();
     let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73".parse().unwrap();
-    let task = client.create_task(
-        "My Scan", &config_id, &target.id, &scanner_id,
-        CreateTaskOpts::default(),
-    ).await?;
-    client.start_task(&task.id).await?;
+    let task = client.create_task(CreateTaskRequest::new(
+        "My Scan", config_id, target.id, scanner_id,
+    )).await?;
+    client.start_task(StartTaskRequest::new(task.id.clone())).await?;
     println!("Started task: {}", task.id);
 
     client.disconnect().await?;
@@ -273,10 +275,10 @@ with a raw request value. Canonical families intentionally do not keep parallel
 public builders:
 
 ```rust
-use gvm_gmp::commands::authentication;
-
 // call() raises GvmError::Server on non-2xx; send() returns the raw Response
-client.call(authentication::authenticate("admin", "admin")).await?;
+client
+    .call(b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice())
+    .await?;
 let response = client.call(b"<get_targets/>".as_slice()).await?;
 println!("Raw XML: {} bytes", response.data().len());
 ```
@@ -304,7 +306,11 @@ CERT-Bund, CPE, CVE, DFN-CERT, and NVT, while observed vulnerabilities use
 Configuration lifecycle calls likewise use complete request values. Named
 creation requires an explicit base; import validates and embeds one exported
 configuration; metadata modification cannot change usage or clear fields with
-empty text. Canonical configuration usage is `scan` or `policy`, while raw XML
+empty text. Preference list/single reads and the eight scan-config/policy
+preference and ordered selection mutations are complete request values executed
+through `client.execute`; decoded secret values are encoded exactly once and
+delete remains distinct from explicit empty. Canonical configuration usage is
+`scan` or `policy`, while raw XML
 remains available for server-defined custom queries. The schema-only
 `sync_config` API is not exposed because pinned and current gvmd have no GMP
 dispatcher for it. See the
@@ -318,8 +324,10 @@ covered as well, including aggregates, features, feeds, settings, timezones,
 help, system reports, generic information, preferences, resource names,
 vulnerabilities, license status, and authentication description. System
 authentication, license, and wizard mutations plus user-setting list, detail,
-and modification operations are also statically associated while retaining
-their existing builders and redaction guarantees:
+and modification operations are also complete direct-codec requests. Trashcan
+cleanup has one canonical restore operation, matching gvmd; the former
+`restore_from_trashcan` alias is removed. Confidential administration and
+setting values retain their diagnostic and wire-trace redaction guarantees:
 
 ```rust
 use gvm_gmp::commands::targets::GetTargetsRequest;
@@ -534,8 +542,10 @@ match &client {
     _ => println!("Other version: {}", client.version()),
 }
 
-// All versions share the same send/call API
-client.call(authentication::authenticate("admin", "admin")).await?;
+// All versions share the same send/call API.
+client
+    .call(b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice())
+    .await?;
 ```
 
 `GmpClient::command_support` and `GmpVersioned::command_support` distinguish

@@ -44,8 +44,28 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   discovery behavior.
 - `docs/scan-config-policy-request-gvmd-evidence.md`: pinned/current gvmd
   evidence for generic configuration, scan-configuration, and policy
-  lifecycle creation, queries, metadata, deletion, sync rejection,
-  confidentiality, and bounded stateful behavior.
+  lifecycle plus preference reads/mutations, NVT/family replacement,
+  confidentiality, atomic rollback, and bounded stateful behavior.
+- `docs/task-request-gvmd-evidence.md`: pinned/current gvmd evidence for the
+  nine canonical standard-task operations, including clone overrides,
+  observer/alert/schedule/preference semantics, removed host ordering,
+  transactional mock updates, and report-producing state actions.
+- `docs/specialized-task-audit-request-gvmd-evidence.md`: pinned/current gvmd
+  evidence for specialized/import task creation, scanner-specific preferences,
+  move destinations, audit usage identity, lifecycle actions, and bounded
+  transactional mock behavior.
+- `docs/report-request-gvmd-evidence.md`: pinned/current gvmd evidence for
+  ordinary report import/list/detail/delete, audit list/delete, structured
+  scan/audit retrieval, audit host summaries, all nine drill-downs, synchronous
+  and asynchronous exports, irregular response carriers, source defaults, and
+  capability gates.
+- `docs/system-discovery-request-gvmd-evidence.md`: pinned gvmd and python-gvm
+  evidence for pre-authentication version/authentication, help, features,
+  feeds/timezones, aggregate shapes, settings, system reports, resource names,
+  license retrieval, and authentication description.
+- `docs/system-admin-cleanup-request-gvmd-evidence.md`: pinned gvmd and
+  python-gvm evidence for authentication/license/setting/wizard mutations,
+  user-setting queries, and transactional trashcan empty/restore behavior.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -81,17 +101,29 @@ Adding or changing a GMP command:
   alternate targets, agent groups, agents, integration configurations, port
   lists, credentials, filters, tags, alerts, schedules, scanners, notes,
   overrides, users, groups, roles, permissions, assets, results, report
-  configurations, TLS certificates, and NVT/SecInfo discovery show the same contract across their
-  applicable GMP versions.
+  configurations, TLS certificates, NVT/SecInfo discovery, and core/system
+  discovery show the same contract across their applicable GMP versions.
 - If exposed by the high-level client, update the matching private resource-family
   module under `crates/gvm-client/src/typed/`.
 - If version-gated, update `crates/gvm-client/src/version.rs` and any typed version traits in `crates/gvm-client/src/lib.rs`.
 - If the mock server should understand it, update `crates/gvm-mock-server/src/handler.rs`, `response_gen.rs`, `store.rs`, or `fixtures.rs` as appropriate.
   NVT/SecInfo discovery is isolated in `stateful_nvt_secinfo.rs`, with its
   seed/test state owned by `ResourceStore`.
-  Scan-configuration and policy lifecycle behavior is isolated in
-  `stateful_scan_configs.rs`; configured preference/selection mutation is
-  deliberately not implemented there.
+  Scan-configuration and policy lifecycle, preference, and selection behavior
+  is isolated in `stateful_scan_configs.rs`; atomic store application lives in
+  `store.rs`.
+  Task parsing/rendering lives in `handler.rs`; relationship and candidate-copy
+  rollback plus move/start/stop/resume state live in `store.rs`, with bounded
+  coverage in `stateful_task_lifecycle.rs`, `stateful_task_graph.rs`, and
+  `stateful_specialized_task_audit.rs`.
+  Report import/query/delete behavior is isolated in `stateful_reports.rs`;
+  atomic report/result/host-asset insertion and deletion dependencies live in
+  `store.rs`, with bounded coverage in `stateful_report_lifecycle.rs`,
+  `stateful_scan_report.rs`, and `stateful_audit_report.rs`.
+  System-administration dispatch and bounded setting query/rendering live in
+  `handler.rs`; confidential persisted auth/license/wizard and setting state,
+  plus atomic restore/empty behavior, live in `store.rs`, with focused coverage
+  in `stateful_command_surface_gaps.rs` and `stateful_task_graph.rs`.
 
 Changing response parsing:
 

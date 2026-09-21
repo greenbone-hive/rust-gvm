@@ -23,14 +23,17 @@ use gvm_gmp::commands::credentials::{
     VerifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::hosts::{CreateHostRequest, GetHostRequest, GetHostsRequest};
-use gvm_gmp::commands::system::{
-    modify_auth, modify_license, modify_license_with_opts, run_wizard_with_opts, ModifyLicenseOpts,
-    RunWizardOpts,
+use gvm_gmp::commands::system::{ModifyAuthRequest, ModifyLicenseRequest, RunWizardRequest};
+use gvm_gmp::commands::tasks::DeleteTaskRequest;
+use gvm_gmp::commands::trashcan::{EmptyTrashcanRequest, RestoreRequest};
+use gvm_gmp::commands::user_settings::{
+    GetUserSettingRequest, GetUserSettingsRequest, ModifyUserSettingRequest,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, GmpRequestCodec};
-use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
-use gvm_protocol::{Request, Response};
+use gvm_mock_server::{GmpVersion, MockGmpServer, ResourceStore, ServerMode};
+use gvm_protocol::Response;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -41,10 +44,6 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
     let n = stream.read(&mut buf).await.expect("read failed");
     buf.truncate(n);
     Response::new(buf)
-}
-
-async fn send_request(stream: &mut UnixStream, request: impl Request) -> Response {
-    send_recv(stream, &request.to_bytes()).await
 }
 
 async fn send_typed_request(stream: &mut UnixStream, request: impl GmpRequestCodec) -> Response {
@@ -71,6 +70,32 @@ async fn stateful_server_with_version(version: GmpVersion) -> Option<MockGmpServ
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
         Err(error) => panic!("server start failed: {error}"),
     }
+}
+
+async fn stateful_server_with_store() -> Option<(MockGmpServer, ResourceStore)> {
+    let observed_store = Arc::new(Mutex::new(None));
+    let seed_store = Arc::clone(&observed_store);
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(GmpVersion::V22_6)
+        .credentials("admin", "admin")
+        .seed(move |store| {
+            *seed_store.lock().expect("store slot") = Some(store.clone());
+        })
+        .unix_socket_auto()
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+        Err(error) => panic!("server start failed: {error}"),
+    };
+    let store = observed_store
+        .lock()
+        .expect("store slot")
+        .clone()
+        .expect("seed closure ran");
+    Some((server, store))
 }
 
 async fn connect(server: &MockGmpServer) -> UnixStream {
@@ -107,6 +132,15 @@ async fn create_task(stream: &mut UnixStream, name: &str, usage_type: &str) -> S
             "<create_task><name>{name}</name><usage_type>{usage_type}</usage_type><target id=\"{target_id}\"/></create_task>"
         )
         .as_bytes(),
+    )
+    .await;
+    extract_id(&task)
+}
+
+async fn create_import_task(stream: &mut UnixStream, name: &str) -> String {
+    let task = send_recv(
+        stream,
+        format!("<create_task><name>{name}</name><target id=\"0\"/></create_task>").as_bytes(),
     )
     .await;
     extract_id(&task)
@@ -470,46 +504,95 @@ async fn stateful_host_asset_uses_canonical_request_shape() {
 }
 
 #[tokio::test]
-async fn stateful_auth_and_license_modifiers_use_gmp_builder_shape() {
+async fn stateful_auth_and_license_modifiers_use_canonical_request_shapes() {
     let Some(server) = stateful_server().await else {
         return;
     };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let auth = send_request(
+    let auth = send_typed_request(
         &mut stream,
-        modify_auth("method:ldap_connect", &[("enable".into(), "true".into())]),
+        ModifyAuthRequest::new(
+            "method:ldap_connect",
+            [
+                ("enable".into(), "true".into()),
+                ("ldaphost".into(), "ldap.example".into()),
+            ],
+        ),
     )
     .await;
     assert_eq!(auth.status_code(), Some(200));
+    let clear_host = send_typed_request(
+        &mut stream,
+        ModifyAuthRequest::new("method:ldap_connect", [("ldaphost".into(), String::new())]),
+    )
+    .await;
+    assert_eq!(clear_host.status_code(), Some(200));
+    let described = send_recv(&mut stream, b"<describe_auth/>").await;
+    assert_eq!(described.status_code(), Some(200));
+    assert!(described
+        .as_str()
+        .expect("utf8")
+        .contains("<key>enable</key><value>true</value>"));
+    assert!(described
+        .as_str()
+        .expect("utf8")
+        .contains("<key>ldaphost</key><value></value>"));
+    let no_op = send_typed_request(
+        &mut stream,
+        ModifyAuthRequest::new(
+            "method:ldap_connect",
+            std::iter::empty::<(String, String)>(),
+        ),
+    )
+    .await;
+    assert_eq!(no_op.status_code(), Some(200));
 
     for invalid in [
         br#"<modify_auth enabled="1"/>"#.as_slice(),
         br#"<modify_auth><group name="method:ldap_connect"/><group name="method:radius_connect"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting></group></modify_auth>"#.as_slice(),
         br#"<modify_auth><group><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting></group></modify_auth>"#.as_slice(),
-        br#"<modify_auth><group name="method:ldap_connect"/></modify_auth>"#.as_slice(),
         br#"<modify_auth><group name="method:ldap_connect"><auth_conf_setting><value>true</value></auth_conf_setting></group></modify_auth>"#.as_slice(),
         br#"<modify_auth><group name="method:ldap_connect"><auth_conf_setting><key>enable</key></auth_conf_setting></group></modify_auth>"#.as_slice(),
     ] {
         let response = send_recv(&mut stream, invalid).await;
         assert_eq!(response.status_code(), Some(400));
     }
+    let unchanged = send_recv(&mut stream, b"<describe_auth/>").await;
+    assert!(unchanged
+        .as_str()
+        .expect("utf8")
+        .contains("<key>enable</key><value>true</value>"));
 
-    let license = send_request(&mut stream, modify_license("YWJj")).await;
+    let license = send_typed_request(&mut stream, ModifyLicenseRequest::new("YWJj")).await;
     assert_eq!(license.status_code(), Some(200));
-
-    let empty_license = send_request(
+    let installed = send_recv(&mut stream, b"<get_license/>").await;
+    assert!(installed
+        .as_str()
+        .expect("utf8")
+        .contains("<status>active</status>"));
+    let invalid_license = send_recv(
         &mut stream,
-        modify_license_with_opts(
-            "",
-            ModifyLicenseOpts {
-                allow_empty: Some(true),
-            },
-        ),
+        b"<modify_license><file>not-base64!</file></modify_license>",
     )
     .await;
+    assert_eq!(invalid_license.status_code(), Some(400));
+    let still_installed = send_recv(&mut stream, b"<get_license/>").await;
+    assert!(still_installed
+        .as_str()
+        .expect("utf8")
+        .contains("<status>active</status>"));
+
+    let mut clear_license = ModifyLicenseRequest::new("");
+    clear_license.allow_empty = Some(true);
+    let empty_license = send_typed_request(&mut stream, clear_license).await;
     assert_eq!(empty_license.status_code(), Some(200));
+    let cleared = send_recv(&mut stream, b"<get_license/>").await;
+    assert!(cleared
+        .as_str()
+        .expect("utf8")
+        .contains("<status>none</status>"));
 
     for invalid in [
         br#"<modify_license><key>legacy</key></modify_license>"#.as_slice(),
@@ -526,25 +609,19 @@ async fn stateful_auth_and_license_modifiers_use_gmp_builder_shape() {
 
 #[tokio::test]
 async fn stateful_run_wizard_validates_current_gvmd_shape() {
-    let Some(server) = stateful_server().await else {
+    let Some((server, store)) = stateful_server_with_store().await else {
         return;
     };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let response = send_request(
-        &mut stream,
-        run_wizard_with_opts(
-            "quick_first_scan",
-            &[("hosts".into(), "localhost".into())],
-            RunWizardOpts {
-                mode: Some("step".into()),
-                read_only: Some(false),
-            },
-        ),
-    )
-    .await;
+    let mut wizard =
+        RunWizardRequest::new("quick_first_scan", [("hosts".into(), "localhost".into())]);
+    wizard.mode = Some("step".into());
+    wizard.read_only = Some(false);
+    let response = send_typed_request(&mut stream, wizard).await;
     assert_eq!(response.status_code(), Some(202));
+    assert_eq!(store.wizard_run_count(), 1);
     assert!(response
         .as_str()
         .expect("utf8")
@@ -559,6 +636,7 @@ async fn stateful_run_wizard_validates_current_gvmd_shape() {
     ] {
         let response = send_recv(&mut stream, invalid).await;
         assert_eq!(response.status_code(), Some(400));
+        assert_eq!(store.wizard_run_count(), 1, "invalid request must roll back");
     }
 
     server.shutdown().await;
@@ -875,28 +953,31 @@ async fn stateful_user_settings_get_and_modify() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let list = send_recv(&mut stream, b"<get_settings/>").await;
+    let list = send_typed_request(
+        &mut stream,
+        GetUserSettingsRequest {
+            filter_string: Some("name=timezone".into()),
+            first: Some(1),
+            max: Some(1),
+            sort_field: Some("name".into()),
+            sort_order: None,
+        },
+    )
+    .await;
     assert_eq!(list.status_code(), Some(200));
     let list_text = list.as_str().expect("utf8");
     assert!(list_text.contains("timezone"));
     assert!(list_text.contains("<value>UTC</value>"));
 
     let setting_id = "00000000-0000-0000-0000-000000000001";
-    let modify = send_recv(
+    let modify = send_typed_request(
         &mut stream,
-        format!(
-            "<modify_setting setting_id=\"{setting_id}\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
-        )
-        .as_bytes(),
+        ModifyUserSettingRequest::new(id(setting_id), "Europe/Berlin"),
     )
     .await;
     assert_eq!(modify.status_code(), Some(200));
 
-    let get_one = send_recv(
-        &mut stream,
-        format!("<get_settings setting_id=\"{setting_id}\"/>").as_bytes(),
-    )
-    .await;
+    let get_one = send_typed_request(&mut stream, GetUserSettingRequest::new(id(setting_id))).await;
     let get_one_text = get_one.as_str().expect("utf8");
     assert!(get_one_text.contains("<value>Europe/Berlin</value>"));
 
@@ -925,6 +1006,59 @@ async fn stateful_user_settings_get_and_modify() {
         .as_str()
         .expect("utf8")
         .contains("<value>Europe/Berlin</value>"));
+
+    let clear = send_typed_request(
+        &mut stream,
+        ModifyUserSettingRequest::by_name("Timezone", ""),
+    )
+    .await;
+    assert_eq!(clear.status_code(), Some(200));
+    let cleared = send_typed_request(&mut stream, GetUserSettingRequest::new(id(setting_id))).await;
+    assert!(cleared.as_str().expect("utf8").contains("<value></value>"));
+
+    let missing = send_typed_request(
+        &mut stream,
+        ModifyUserSettingRequest::new(id("00000000-0000-0000-0000-000000000099"), "unapplied"),
+    )
+    .await;
+    assert_eq!(missing.status_code(), Some(400));
+    let precedence = send_recv(
+        &mut stream,
+        b"<modify_setting setting_id=\"00000000-0000-0000-0000-000000000099\"><value>not-base64!</value></modify_setting>",
+    )
+    .await;
+    assert_eq!(precedence.status_code(), Some(400));
+    assert!(precedence
+        .status_text()
+        .expect("status text")
+        .contains("Failed to find setting"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_canonical_cleanup_restores_then_permanently_empties_trash() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let task_id = create_task(&mut stream, "Canonical cleanup", "scan").await;
+    let delete = send_typed_request(&mut stream, DeleteTaskRequest::new(id(&task_id), false)).await;
+    assert_eq!(delete.status_code(), Some(200));
+
+    let restore = send_typed_request(&mut stream, RestoreRequest::new(id(&task_id))).await;
+    assert_eq!(restore.status_code(), Some(200));
+
+    let delete_again =
+        send_typed_request(&mut stream, DeleteTaskRequest::new(id(&task_id), false)).await;
+    assert_eq!(delete_again.status_code(), Some(200));
+    let empty = send_typed_request(&mut stream, EmptyTrashcanRequest::new()).await;
+    assert_eq!(empty.status_code(), Some(200));
+
+    let missing = send_typed_request(&mut stream, RestoreRequest::new(id(&task_id))).await;
+    assert_eq!(missing.status_code(), Some(404));
 
     server.shutdown().await;
 }
@@ -1098,15 +1232,17 @@ async fn stateful_audit_reports_filter_by_usage_type() {
 
     let audit_report = send_recv(
         &mut stream,
-        format!("<create_report><task id=\"{audit_task_id}\"/></create_report>").as_bytes(),
+        format!("<start_task task_id=\"{audit_task_id}\"/>").as_bytes(),
     )
     .await;
     let _scan_report = send_recv(
         &mut stream,
-        format!("<create_report><task id=\"{scan_task_id}\"/></create_report>").as_bytes(),
+        format!("<start_task task_id=\"{scan_task_id}\"/>").as_bytes(),
     )
     .await;
-    let audit_report_id = extract_id(&audit_report);
+    let audit_report_id = audit_report
+        .child_text("report_id")
+        .expect("start response should contain report_id");
 
     let reports = send_recv(&mut stream, br#"<get_reports usage_type="audit"/>"#).await;
     let reports_text = reports.as_str().expect("utf8");
@@ -1114,9 +1250,16 @@ async fn stateful_audit_reports_filter_by_usage_type() {
     assert!(reports_text.contains("<usage_type>audit</usage_type>"));
     assert!(!reports_text.contains("Scan Task"));
 
+    let stopped = send_recv(
+        &mut stream,
+        format!("<stop_task task_id=\"{audit_task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(stopped.status_code(), Some(200));
+
     let delete = send_recv(
         &mut stream,
-        format!("<delete_report report_id=\"{audit_report_id}\" ultimate=\"0\"/>").as_bytes(),
+        format!("<delete_report report_id=\"{audit_report_id}\"/>").as_bytes(),
     )
     .await;
     assert_eq!(delete.status_code(), Some(200));
@@ -1133,12 +1276,12 @@ async fn stateful_import_report_persists_task_and_in_assets() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_task(&mut stream, "Imported Report Task", "scan").await;
+    let task_id = create_import_task(&mut stream, "Imported Report Task").await;
 
     let create = send_recv(
         &mut stream,
         format!(
-            "<create_report><task id=\"{task_id}\"/><report id=\"imported-report\"><name>Imported</name><in_assets>0</in_assets></report><in_assets>1</in_assets></create_report>"
+            "<create_report><report id=\"imported-report\"><name>Imported</name><results><result><name>Finding</name><host>192.0.2.10</host></result></results></report><task id=\"{task_id}\"/><in_assets>1</in_assets></create_report>"
         )
         .as_bytes(),
     )
@@ -1151,7 +1294,7 @@ async fn stateful_import_report_persists_task_and_in_assets() {
     let listed_text = listed.as_str().expect("response XML should be UTF-8");
 
     assert!(
-        listed_text.contains(&format!("<task_id>{task_id}</task_id>")),
+        listed_text.contains(&format!("<task id=\"{task_id}\"")),
         "{listed_text}"
     );
     assert!(
@@ -1162,6 +1305,12 @@ async fn stateful_import_report_persists_task_and_in_assets() {
         listed_text.contains("<in_assets>1</in_assets>"),
         "{listed_text}"
     );
+
+    let assets = send_recv(&mut stream, br#"<get_assets type="host"/>"#).await;
+    assert!(assets
+        .as_str()
+        .expect("asset response should be UTF-8")
+        .contains("192.0.2.10"));
 
     server.shutdown().await;
 }

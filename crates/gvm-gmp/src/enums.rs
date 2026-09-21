@@ -483,9 +483,9 @@ gmp_enum!(EntityType {
 pub enum ResourceType {
     /// Alert resources.
     Alert,
-    /// Audit resources are represented as tasks in GMP.
+    /// Audit resources.
     Audit,
-    /// Audit report resources are represented as reports in GMP.
+    /// Audit report resources.
     AuditReport,
     /// CERT-Bund advisory resources.
     CertBundAdv,
@@ -515,6 +515,8 @@ pub enum ResourceType {
     Override,
     /// Permission resources.
     Permission,
+    /// Policy resources.
+    Policy,
     /// Port list resources.
     PortList,
     /// Report format resources.
@@ -547,8 +549,8 @@ impl ResourceType {
     pub const fn as_gmp_str(self) -> &'static str {
         match self {
             Self::Alert => "ALERT",
-            Self::Audit | Self::Task => "TASK",
-            Self::AuditReport | Self::Report => "REPORT",
+            Self::Audit => "AUDIT",
+            Self::AuditReport => "AUDIT_REPORT",
             Self::CertBundAdv => "CERT_BUND_ADV",
             Self::Config => "CONFIG",
             Self::Cpe => "CPE",
@@ -563,14 +565,17 @@ impl ResourceType {
             Self::OperatingSystem => "OS",
             Self::Override => "OVERRIDE",
             Self::Permission => "PERMISSION",
+            Self::Policy => "POLICY",
             Self::PortList => "PORT_LIST",
             Self::ReportFormat => "REPORT_FORMAT",
+            Self::Report => "REPORT",
             Self::ReportConfig => "REPORT_CONFIG",
             Self::Result => "RESULT",
             Self::Role => "ROLE",
             Self::Scanner => "SCANNER",
             Self::Schedule => "SCHEDULE",
             Self::Target => "TARGET",
+            Self::Task => "TASK",
             Self::TlsCertificate => "TLS_CERTIFICATE",
             Self::User => "USER",
         }
@@ -583,6 +588,8 @@ impl FromStr for ResourceType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ALERT" => Ok(Self::Alert),
+            "AUDIT" => Ok(Self::Audit),
+            "AUDIT_REPORT" => Ok(Self::AuditReport),
             "TASK" => Ok(Self::Task),
             "REPORT" => Ok(Self::Report),
             "CERT_BUND_ADV" => Ok(Self::CertBundAdv),
@@ -599,6 +606,7 @@ impl FromStr for ResourceType {
             "OS" => Ok(Self::OperatingSystem),
             "OVERRIDE" => Ok(Self::Override),
             "PERMISSION" => Ok(Self::Permission),
+            "POLICY" => Ok(Self::Policy),
             "PORT_LIST" => Ok(Self::PortList),
             "REPORT_FORMAT" => Ok(Self::ReportFormat),
             "REPORT_CONFIG" => Ok(Self::ReportConfig),
@@ -654,11 +662,6 @@ gmp_enum!(HelpFormat {
     Rnc => "rnc",
     Text => "text",
     Xml => "xml"
-});
-gmp_enum!(HostsOrdering {
-    Sequential => "sequential",
-    Random => "random",
-    Reverse => "reverse"
 });
 gmp_enum!(InfoType {
     CertBundAdv => "CERT_BUND_ADV",

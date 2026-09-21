@@ -65,8 +65,12 @@ The registry contains 158 wire command names:
 Mock support is test support, not proof of real-gvmd conformance. In particular,
 generic CRUD does not imply that every field and side effect matches gvmd.
 The `run_wizard` handler validates the current request shape and returns a
-deterministic nested response for client tests; it does not execute a real
-wizard or populate the mock resource store from wizard steps.
+deterministic nested response for client tests. It records an accepted bounded
+run without exposing parameter values, but does not execute a real wizard or
+populate ordinary mock resources from wizard steps. Authentication groups,
+license presence, and user-setting values are stateful; their bounded behavior
+does not claim licensing-service, full setting-catalogue, ACL, or wizard-file
+conformance.
 
 Report-format verification is stateful rather than echo-only. Signed cases use
 injected deterministic yes/no/unknown outcomes; the mock does not run GPG.

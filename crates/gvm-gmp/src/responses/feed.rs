@@ -31,9 +31,9 @@ pub struct GetFeedsResponse {
     pub status_text: String,
     pub items: Vec<Feed>,
     pub counts: CountInfo,
-    pub feed_owner_set: bool,
-    pub feed_roles_set: bool,
-    pub feed_resources_access: bool,
+    pub feed_owner_set: Option<bool>,
+    pub feed_roles_set: Option<bool>,
+    pub feed_resources_access: Option<bool>,
 }
 
 impl Feed {
@@ -66,9 +66,10 @@ impl Feed {
     }
 }
 
-fn optional_bool_child(root: &XmlNode, name: &str) -> Result<bool, ParseError> {
+fn optional_bool_child(root: &XmlNode, name: &str) -> Result<Option<bool>, ParseError> {
     root.child_text(name)
-        .map_or(Ok(false), |value| parse_bool(&value, name))
+        .map(|value| parse_bool(&value, name))
+        .transpose()
 }
 
 impl GetFeedsResponse {
@@ -131,9 +132,9 @@ mod tests {
 
         assert_eq!(parsed.items.len(), 2);
         assert_eq!(parsed.counts, CountInfo::default());
-        assert!(parsed.feed_owner_set);
-        assert!(!parsed.feed_roles_set);
-        assert!(parsed.feed_resources_access);
+        assert_eq!(parsed.feed_owner_set, Some(true));
+        assert_eq!(parsed.feed_roles_set, Some(false));
+        assert_eq!(parsed.feed_resources_access, Some(true));
         assert_eq!(parsed.items[0].type_, "NVT");
         assert_eq!(parsed.items[0].currently_syncing.as_deref(), Some(""));
         assert_eq!(
@@ -201,6 +202,17 @@ mod tests {
     }
 
     #[test]
+    fn preserves_absent_response_metadata() {
+        let response = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK"><feed_count>0</feed_count></get_feeds_response>"#,
+        );
+        let parsed = GetFeedsResponse::from_response(&response).expect("feeds parse");
+        assert_eq!(parsed.feed_owner_set, None);
+        assert_eq!(parsed.feed_roles_set, None);
+        assert_eq!(parsed.feed_resources_access, None);
+    }
+
+    #[test]
     fn preserves_legacy_direct_sync_value() {
         let response = Response::from(
             r#"<get_feeds_response status="200" status_text="OK">
@@ -216,9 +228,9 @@ mod tests {
         let parsed = GetFeedsResponse::from_response(&response).expect("legacy sync value parses");
 
         assert_eq!(parsed.items[0].currently_syncing.as_deref(), Some("0"));
-        assert!(!parsed.feed_owner_set);
-        assert!(!parsed.feed_roles_set);
-        assert!(!parsed.feed_resources_access);
+        assert_eq!(parsed.feed_owner_set, None);
+        assert_eq!(parsed.feed_roles_set, None);
+        assert_eq!(parsed.feed_resources_access, None);
     }
 
     #[test]
@@ -272,10 +284,11 @@ mod tests {
                 <feed_roles_set>1</feed_roles_set>
             </get_feeds_response>"#,
         );
-        let parsed = GetFeedsResponse::from_response(&missing_flag).expect("missing flag defaults");
-        assert!(parsed.feed_owner_set);
-        assert!(parsed.feed_roles_set);
-        assert!(!parsed.feed_resources_access);
+        let parsed =
+            GetFeedsResponse::from_response(&missing_flag).expect("missing flag preserved");
+        assert_eq!(parsed.feed_owner_set, Some(true));
+        assert_eq!(parsed.feed_roles_set, Some(true));
+        assert_eq!(parsed.feed_resources_access, None);
 
         let missing_timestamp = Response::from(
             r#"<get_feeds_response status="200" status_text="OK">

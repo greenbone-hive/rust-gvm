@@ -3,31 +3,33 @@
 
 #![allow(missing_docs, clippy::unwrap_used)]
 
-mod common;
+use gvm_gmp::commands::authentication::AuthenticateRequest;
+use gvm_gmp::{GmpRequestCodec, GmpVersion};
 
-use common::xml;
-use gvm_gmp::commands::authentication::authenticate;
+fn xml(request: &AuthenticateRequest) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap()
+}
 
 #[test]
 fn test_authenticate_basic() {
     assert_eq!(
-        xml(authenticate("foo", "bar")),
+        xml(&AuthenticateRequest::new("foo", "bar")),
         "<authenticate><credentials><username>foo</username><password>bar</password></credentials></authenticate>"
     );
 }
 
 #[test]
-fn test_authenticate_preserves_empty_values() {
-    assert_eq!(
-        xml(authenticate("", "")),
-        "<authenticate><credentials><username></username><password></password></credentials></authenticate>"
-    );
+fn test_authenticate_rejects_empty_values_without_disclosure() {
+    let error = AuthenticateRequest::new("", "secret")
+        .validate()
+        .unwrap_err();
+    assert!(!error.to_string().contains("secret"));
 }
 
 #[test]
 fn test_authenticate_escapes_xml_special_chars() {
     assert_eq!(
-        xml(authenticate(r#"<>&"'"#, r#""'&<>"#)),
+        xml(&AuthenticateRequest::new(r#"<>&"'"#, r#""'&<>"#)),
         "<authenticate><credentials><username>&lt;&gt;&amp;&quot;&apos;</username><password>&quot;&apos;&amp;&lt;&gt;</password></credentials></authenticate>"
     );
 }

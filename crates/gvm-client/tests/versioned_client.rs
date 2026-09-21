@@ -5,9 +5,8 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AgentInstallerLanguage, CommandSupport, CreateAgentGroupTaskOpts, CreateOciImageTargetTaskOpts,
-    CreateWebApplicationTaskOpts, CredentialStoreCredentialType, ExportScanReportOpts,
-    Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError,
+    AgentInstallerLanguage, CommandSupport, CredentialStoreCredentialType, Gmp226Commands,
+    GmpNextCommands, GmpVersioned, GvmError,
 };
 use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
@@ -30,14 +29,17 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::report_configs::CreateReportConfigRequest;
-use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
+use gvm_gmp::commands::reports::{ExportScanReportRequest, GetScanReportRequest};
 use gvm_gmp::commands::targets::GetTargetsRequest;
+use gvm_gmp::commands::tasks::{
+    CreateAgentGroupTaskRequest, CreateContainerImageTaskRequest, CreateWebApplicationTaskRequest,
+};
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
     GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
-use gvm_gmp::{EntityId, GmpVersion};
+use gvm_gmp::{EntityId, GmpRequestCodec, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 async fn stateful_server(version: MockVersion) -> Option<MockGmpServer> {
@@ -72,7 +74,7 @@ async fn authenticated_next_client(server: &MockGmpServer) -> GmpNext<UnixSocket
         .await
         .expect("client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -88,7 +90,9 @@ async fn typed_task_by_id(server: &MockGmpServer, task_id: &EntityId) -> gvm_gmp
         .await
         .expect("typed task client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("typed task authentication should succeed");
     client
@@ -106,13 +110,16 @@ async fn delete_task(server: &MockGmpServer, task_id: &EntityId) {
         .await
         .expect("task cleanup client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
         .expect("task cleanup authentication should succeed");
+    let request = gvm_gmp::commands::tasks::DeleteTaskRequest::new(task_id.clone(), true)
+        .encode(GmpVersion(22, 8))
+        .expect("valid task deletion");
     client
-        .call(gvm_gmp::commands::tasks::delete_task(task_id, true))
+        .call(request.as_slice())
         .await
         .expect("delete referencing task should succeed");
 }
@@ -127,21 +134,17 @@ where
 {
     server.clear_history();
 
-    let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id");
+    let mut request =
+        CreateAgentGroupTaskRequest::new("Client Agent Group Task", agent_group_id.clone());
+    request.scanner_id =
+        Some(EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id"));
+    request.comment = Some("task through client".into());
+    request.alterable = Some(true);
     let task_response = client
-        .create_agent_group_task(
-            "Client Agent Group Task",
-            agent_group_id,
-            &scanner_id,
-            CreateAgentGroupTaskOpts {
-                comment: Some("task through client".into()),
-                alterable: Some(true),
-                ..Default::default()
-            },
-        )
+        .create_agent_group_task(request)
         .await
         .expect("create_agent_group_task should succeed");
-    assert_eq!(task_response.status_code(), Some(201));
+    assert_eq!(task_response.status, 201);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -154,8 +157,7 @@ where
             agent_group_id.as_str()
         )
     );
-    let task_id =
-        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task_id = task_response.id;
     let task = typed_task_by_id(server, &task_id).await;
     assert_eq!(
         task.agent_group.as_ref().map(|target| &target.id),
@@ -175,21 +177,18 @@ where
 {
     server.clear_history();
 
-    let scanner_id = id("08b69003-5fc2-4037-a479-93b440211c73");
+    let mut request = CreateContainerImageTaskRequest::new(
+        "Client OCI Target Task",
+        oci_image_target_id.clone(),
+        id("00000000-0000-4000-8000-000000000010"),
+    );
+    request.comment = Some("task through client".into());
+    request.alterable = Some(true);
     let task_response = client
-        .create_container_image_task(
-            "Client OCI Target Task",
-            oci_image_target_id,
-            &scanner_id,
-            CreateOciImageTargetTaskOpts {
-                comment: Some("task through client".into()),
-                alterable: Some(true),
-                ..Default::default()
-            },
-        )
+        .create_container_image_task(request)
         .await
         .expect("create_container_image_task should succeed");
-    assert_eq!(task_response.status_code(), Some(201));
+    assert_eq!(task_response.status, 201);
 
     let history = server.command_history();
     assert_eq!(history.len(), 1);
@@ -198,12 +197,11 @@ where
     assert_eq!(
         String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8"),
         format!(
-            "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
+            "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"00000000-0000-4000-8000-000000000010\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
             oci_image_target_id.as_str()
         )
     );
-    let task_id =
-        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task_id = task_response.id;
     let task = typed_task_by_id(server, &task_id).await;
     assert_eq!(
         task.oci_image_target.as_ref().map(|target| &target.id),
@@ -219,20 +217,17 @@ async fn assert_create_web_application_task_round_trip(
     target_id: &EntityId,
 ) -> EntityId {
     server.clear_history();
-    let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id");
+    let mut request = CreateWebApplicationTaskRequest::new(
+        "Client Web Task",
+        target_id.clone(),
+        EntityId::new("00000000-0000-4000-8000-000000000011").expect("valid id"),
+    );
+    request.comment = Some("created from versioned client".into());
     let task_response = client
-        .create_web_application_task(
-            "Client Web Task",
-            target_id,
-            &scanner_id,
-            CreateWebApplicationTaskOpts {
-                comment: Some("created from versioned client".into()),
-                ..Default::default()
-            },
-        )
+        .create_web_application_task(request)
         .await
         .expect("create_web_application_task should succeed");
-    assert_eq!(task_response.status_code(), Some(201));
+    assert_eq!(task_response.status, 201);
     let history = server.command_history();
     let command = history.last().expect("create task command recorded");
     assert_eq!(command.command_name(), "create_task");
@@ -240,11 +235,10 @@ async fn assert_create_web_application_task_round_trip(
     assert_eq!(
         raw_xml,
         format!(
-            "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>created from versioned client</comment></create_task>"
+            "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"00000000-0000-4000-8000-000000000011\"/><comment>created from versioned client</comment></create_task>"
         )
     );
-    let task_id =
-        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task_id = task_response.id;
     let task = typed_task_by_id(server, &task_id).await;
     assert_eq!(
         task.web_application_target
@@ -297,7 +291,7 @@ async fn next_client_exposes_next_trait_methods() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -328,7 +322,7 @@ async fn next_client_verify_credential_store_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -369,7 +363,7 @@ async fn next_client_credential_store_helpers_send_expected_commands() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -437,7 +431,7 @@ async fn next_client_create_credential_store_credential_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -489,7 +483,7 @@ async fn next_client_modify_credential_store_credential_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -550,7 +544,7 @@ async fn next_client_agent_groups_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -653,7 +647,7 @@ async fn versioned_client_rejects_oci_image_targets_before_next() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -702,7 +696,7 @@ async fn versioned_client_rejects_agent_commands_before_next() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -734,7 +728,7 @@ async fn versioned_client_rejects_get_scan_report_before_next() {
         .await
         .expect("client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -742,7 +736,7 @@ async fn versioned_client_rejects_get_scan_report_before_next() {
 
     let report_id = EntityId::new("10000000-0000-4000-8000-000000000001").expect("valid report ID");
     let error = client
-        .call(get_scan_report(&report_id, GetScanReportOpts::default()))
+        .execute(GetScanReportRequest::new(report_id))
         .await
         .expect_err("22.7 should reject get_scan_report");
 
@@ -767,7 +761,7 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
         .await
         .expect("client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -775,7 +769,7 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
     let report_id = EntityId::new("11111111-1111-1111-1111-111111111111").expect("valid report ID");
 
     let error = client
-        .export_scan_report(&report_id, ExportScanReportOpts::default())
+        .export_scan_report(ExportScanReportRequest::new(report_id.clone()))
         .await
         .expect_err("undiscovered export should fail");
     assert!(matches!(
@@ -795,7 +789,7 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
         CommandSupport::Supported
     );
     let error = client
-        .export_scan_report(&report_id, ExportScanReportOpts::default())
+        .export_scan_report(ExportScanReportRequest::new(report_id))
         .await
         .expect_err("missing report should reach the mock");
     assert!(matches!(error, GvmError::Server { status: 404, .. }));
@@ -813,7 +807,7 @@ async fn versioned_execute_forwards_and_decodes_the_associated_response() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -839,7 +833,7 @@ async fn next_client_agent_commands_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -1144,12 +1138,12 @@ async fn gmp226_commands_work_on_v226() {
         .expect("client should connect");
 
     let auth_response = client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
         .expect("authenticate should succeed");
-    assert_eq!(auth_response.status_code(), Some(200));
+    assert_eq!(auth_response.status, 200);
 
     let create_response = client
         .execute(CreateReportConfigRequest::new(
@@ -1166,10 +1160,10 @@ async fn gmp226_commands_work_on_v226() {
         other => panic!("expected V226 client, got {other:?}"),
     };
     let features_response = client
-        .get_features()
+        .get_features(gvm_gmp::commands::features::GetFeaturesRequest::new())
         .await
         .expect("get_features should succeed");
-    assert_eq!(features_response.status_code(), Some(200));
+    assert_eq!(features_response.status, 200);
 
     server.shutdown().await;
 }
