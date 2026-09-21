@@ -63,8 +63,10 @@ use gvm_gmp::commands::port_lists::{
 };
 use gvm_gmp::commands::report_formats::{CloneReportFormatRequest, ImportReportFormatRequest};
 use gvm_gmp::commands::reports::{
-    get_report_export, get_report_hosts, get_report_vulnerabilities, GetReportsRequest,
-    GetScanReportRequest, ImportReportRequest,
+    GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
+    GetReportErrorsRequest, GetReportExportRequest, GetReportHostsRequest,
+    GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportTlsCertificatesRequest,
+    GetReportVulnsRequest, GetReportsRequest, GetScanReportRequest, ImportReportRequest,
 };
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::{
@@ -1967,9 +1969,8 @@ async fn unsupported_next_command_rejected_before_send() {
         .expect("authenticate should succeed");
 
     let error = client
-        .call(get_report_hosts(
-            &EntityId::new("report-1").expect("valid id"),
-            Default::default(),
+        .execute(GetReportHostsRequest::new(
+            EntityId::new("report-1").expect("valid id"),
         ))
         .await
         .expect_err("22.7 should reject next-only command");
@@ -1988,12 +1989,11 @@ async fn unsupported_next_command_rejected_before_send() {
     }
 
     let error = client
-        .call(get_report_vulnerabilities(
-            &EntityId::new("report-1").expect("valid id"),
-            Default::default(),
+        .execute(GetReportVulnsRequest::new(
+            EntityId::new("report-1").expect("valid id"),
         ))
         .await
-        .expect_err("22.7 should reject report vulnerabilities alias");
+        .expect_err("22.7 should reject report vulnerabilities");
     assert!(matches!(
         error,
         GvmError::UnsupportedCommand {
@@ -2017,9 +2017,9 @@ async fn unsupported_next_command_rejected_before_send() {
     ));
 
     let error = client
-        .call(get_report_export(
-            &EntityId::new("report-1").expect("valid id"),
-            &EntityId::new("format-1").expect("valid id"),
+        .execute(GetReportExportRequest::new(
+            EntityId::new("report-1").expect("valid id"),
+            EntityId::new("format-1").expect("valid id"),
         ))
         .await
         .expect_err("22.7 should reject the report export semantic operation");
@@ -2206,16 +2206,16 @@ async fn next_commands_work_on_v22_8() {
 
     let report_id = EntityId::new("00000000-0000-0000-0000-000000000200").expect("valid id");
     let helper_error = client
-        .get_report_hosts(&report_id, Default::default())
+        .get_report_hosts(GetReportHostsRequest::new(report_id.clone()))
         .await
         .expect_err("missing report should return server error");
     assert!(matches!(helper_error, GvmError::Server { status: 404, .. }));
 
-    let alias_error = client
-        .get_report_vulnerabilities(&report_id, Default::default())
+    let vuln_error = client
+        .get_report_vulns(GetReportVulnsRequest::new(report_id))
         .await
-        .expect_err("missing report should return server error through alias");
-    assert!(matches!(alias_error, GvmError::Server { status: 404, .. }));
+        .expect_err("missing report should return server error");
+    assert!(matches!(vuln_error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }
@@ -2301,7 +2301,7 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     let report_id = EntityId::new("report-1").expect("valid id");
 
     let vulns = client
-        .get_report_vulns(&report_id, Default::default())
+        .get_report_vulns(GetReportVulnsRequest::new(report_id.clone()))
         .await
         .expect("report vulns should parse");
     assert_eq!(vulns.items.len(), 1);
@@ -2314,27 +2314,20 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     assert_eq!(vulns.items[0].hosts_count, Some(2));
     assert_eq!(vulns.items[0].occurrences, Some(3));
 
-    let vulnerabilities = client
-        .get_report_vulnerabilities(&report_id, Default::default())
-        .await
-        .expect("report vulnerabilities alias should parse");
-    assert_eq!(vulnerabilities.items.len(), 1);
-    assert_eq!(vulnerabilities.items[0].threat.as_deref(), Some("Medium"));
-
     let tls = client
-        .get_report_tls_certificates(&report_id, Default::default())
+        .get_report_tls_certificates(GetReportTlsCertificatesRequest::new(report_id.clone()))
         .await
         .expect("report tls certs should parse");
     assert_eq!(tls.items[0].issuer.as_deref(), Some("CN=Example CA"));
 
     let errors = client
-        .get_report_errors(&report_id, Default::default())
+        .get_report_errors(GetReportErrorsRequest::new(report_id.clone()))
         .await
         .expect("report errors should parse");
     assert_eq!(errors.items[0].nvt_name.as_deref(), Some("Ping Host"));
 
     let closed_cves = client
-        .get_report_closed_cves(&report_id, Default::default())
+        .get_report_closed_cves(GetReportClosedCvesRequest::new(report_id))
         .await
         .expect("closed cves should parse");
     let closed_cve = &closed_cves.items[0];
@@ -4647,32 +4640,32 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .expect("report import should succeed");
 
     let hosts = client
-        .get_report_hosts_parsed(&created.id, Default::default())
+        .get_report_hosts(GetReportHostsRequest::new(created.id.clone()))
         .await
         .expect("report hosts should parse");
     assert_eq!(hosts.items.len(), 2);
     assert_eq!(hosts.items[0].name.as_deref(), Some("192.0.2.10"));
 
     let ports = client
-        .get_report_ports_parsed(&created.id, Default::default())
+        .get_report_ports(GetReportPortsRequest::new(created.id.clone()))
         .await
         .expect("report ports should parse");
     assert_eq!(ports.items[0].name.as_deref(), Some("22/tcp"));
 
     let applications = client
-        .get_report_applications_parsed(&created.id, Default::default())
+        .get_report_applications(GetReportApplicationsRequest::new(created.id.clone()))
         .await
         .expect("report applications should parse");
     assert_eq!(applications.items[0].name.as_deref(), Some("OpenSSH"));
 
     let operating_systems = client
-        .get_report_operating_systems_parsed(&created.id, Default::default())
+        .get_report_operating_systems(GetReportOperatingSystemsRequest::new(created.id.clone()))
         .await
         .expect("report operating systems should parse");
     assert_eq!(operating_systems.items[0].name.as_deref(), Some("Debian"));
 
     let cves = client
-        .get_report_cves_parsed(&created.id, Default::default())
+        .get_report_cves(GetReportCvesRequest::new(created.id.clone()))
         .await
         .expect("report cves should parse");
     assert_eq!(cves.items[0].name.as_deref(), Some("CVE-2026-0001"));

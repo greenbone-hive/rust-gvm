@@ -5,7 +5,6 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{CommandSupport, GmpClient, GvmError};
-use gvm_client::{ExportScanReportOpts, GetReportExportOpts};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::agent_groups::{
     CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
@@ -83,8 +82,11 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    DeleteAuditReportRequest, DeleteReportRequest, GetAuditReportsRequest, GetReportDetailsOpts,
-    GetReportExportRequest, GetReportRequest, GetReportVulnsRequest, GetReportsRequest,
+    DeleteAuditReportRequest, DeleteReportRequest, ExportScanReportRequest, GetAuditReportsRequest,
+    GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
+    GetReportErrorsRequest, GetReportExportRequest, GetReportHostsRequest,
+    GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportRequest,
+    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsRequest,
     GetScanReportRequest, ImportReportRequest,
 };
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
@@ -1766,10 +1768,7 @@ async fn semantic_report_export_executes_binary_and_nested_xml_codecs() {
         server.clear_history();
 
         let export = client
-            .execute(GetReportExportRequest::new(
-                id("report-1"),
-                GetReportExportOpts::new(id("format-1")),
-            ))
+            .execute(GetReportExportRequest::new(id("report-1"), id("format-1")))
             .await
             .expect("associated irregular export response decodes");
 
@@ -1813,15 +1812,12 @@ async fn semantic_report_requests_execute_large_and_mixed_repeated_responses() {
     let mut mixed_client = client(&server).await;
 
     let vulnerabilities = mixed_client
-        .execute(GetReportVulnsRequest::new(
-            id("report-1"),
-            GetReportDetailsOpts::default(),
-        ))
+        .execute(GetReportVulnsRequest::new(id("report-1")))
         .await
         .expect("mixed repeated response decodes");
     assert_eq!(vulnerabilities.items.len(), 3);
-    assert_eq!(vulnerabilities.items[1].id.as_deref(), Some("three"));
-    assert_eq!(vulnerabilities.items[2].id.as_deref(), Some("two"));
+    assert_eq!(vulnerabilities.items[1].id.as_deref(), Some("two"));
+    assert_eq!(vulnerabilities.items[2].id.as_deref(), Some("three"));
     server.shutdown().await;
 }
 
@@ -3549,7 +3545,7 @@ async fn remaining_mutation_families_surface_non_success_responses() {
 }
 
 #[tokio::test]
-async fn report_export_simple_and_options_paths_preserve_distinct_xml() {
+async fn report_export_omitted_and_selected_fields_preserve_distinct_xml() {
     let response = r#"<get_reports_response status="200" status_text="OK"><report id="11111111-1111-1111-1111-111111111111" format_id="33333333-3333-3333-3333-333333333333" extension="txt" content_type="text/plain">aGVsbG8=</report></get_reports_response>"#;
     let Some(server) = fixture_server(MockVersion::V22_8, &[("get_reports", response)]).await
     else {
@@ -3560,20 +3556,24 @@ async fn report_export_simple_and_options_paths_preserve_distinct_xml() {
 
     let report_id = id(CREATED_ID);
     let format_id = id("33333333-3333-3333-3333-333333333333");
-    let simple = client
-        .get_report_export(&report_id, &format_id)
-        .await
-        .expect("simple report export should parse");
-    assert_eq!(simple.bytes, b"hello");
 
-    let mut options = GetReportExportOpts::new(format_id);
-    options.report_config_id = Some(id("44444444-4444-4444-4444-444444444444"));
-    options.filter_string = Some("severity>5".into());
-    options.ignore_pagination = Some(false);
-    let configured = client
-        .get_report_export_with_opts(&report_id, options)
+    let omitted = client
+        .get_report_export(GetReportExportRequest::new(
+            report_id.clone(),
+            format_id.clone(),
+        ))
         .await
-        .expect("options report export should parse");
+        .expect("report export with omitted optional fields should parse");
+    assert_eq!(omitted.bytes, b"hello");
+
+    let mut configured_request = GetReportExportRequest::new(report_id, format_id);
+    configured_request.report_config_id = Some(id("44444444-4444-4444-4444-444444444444"));
+    configured_request.filter_string = Some("severity>5".into());
+    configured_request.ignore_pagination = Some(false);
+    let configured = client
+        .get_report_export(configured_request)
+        .await
+        .expect("report export with selected optional fields should parse");
     assert_eq!(configured.content_type.as_deref(), Some("text/plain"));
 
     let requests: Vec<_> = server
@@ -3616,6 +3616,26 @@ async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
         client.command_support("export_scan_report"),
         CommandSupport::RequiresDiscovery
     );
+    server.clear_history();
+    let undiscovered = client
+        .export_scan_report(ExportScanReportRequest::new(id(
+            "22222222-2222-2222-2222-222222222222",
+        )))
+        .await
+        .expect_err("valid request must require discovery before encoding and sending");
+    assert!(matches!(
+        undiscovered,
+        GvmError::CommandDiscoveryRequired { command }
+            if command == "export_scan_report"
+    ));
+    let mut invalid = ExportScanReportRequest::new(id("22222222-2222-2222-2222-222222222222"));
+    invalid.filter_string = Some("rows=10\0secret".into());
+    let invalid_error = client
+        .export_scan_report(invalid)
+        .await
+        .expect_err("validation must precede discovery policy");
+    assert!(matches!(invalid_error, GvmError::Request(_)));
+    assert!(server.command_history().is_empty());
     client
         .discover_commands()
         .await
@@ -3626,10 +3646,9 @@ async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
     );
 
     let response = client
-        .export_scan_report(
-            &id("22222222-2222-2222-2222-222222222222"),
-            ExportScanReportOpts::default(),
-        )
+        .export_scan_report(ExportScanReportRequest::new(id(
+            "22222222-2222-2222-2222-222222222222",
+        )))
         .await
         .expect("asynchronous export should parse");
 
@@ -3663,10 +3682,9 @@ async fn asynchronous_scan_report_export_rejects_negative_help_discovery_on_22_8
     server.clear_history();
 
     let error = client
-        .export_scan_report(
-            &id("22222222-2222-2222-2222-222222222222"),
-            ExportScanReportOpts::default(),
-        )
+        .export_scan_report(ExportScanReportRequest::new(id(
+            "22222222-2222-2222-2222-222222222222",
+        )))
         .await
         .expect_err("22.8 alone must not unlock the command");
 
@@ -3887,8 +3905,71 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         "22.8"
     );
 
+    assert_unsupported_command!(
+        v227_client.execute(GetReportHostsRequest::new(report_id.clone())),
+        "get_report_hosts",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportPortsRequest::new(report_id.clone())),
+        "get_report_ports",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportApplicationsRequest::new(report_id.clone())),
+        "get_report_applications",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportOperatingSystemsRequest::new(report_id.clone())),
+        "get_report_operating_systems",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportCvesRequest::new(report_id.clone())),
+        "get_report_cves",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportVulnsRequest::new(report_id.clone())),
+        "get_report_vulns",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportTlsCertificatesRequest::new(report_id.clone())),
+        "get_report_tls_certificates",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportErrorsRequest::new(report_id.clone())),
+        "get_report_errors",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportClosedCvesRequest::new(report_id.clone())),
+        "get_report_closed_cves",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+
+    let mut invalid_projection = GetReportHostsRequest::new(report_id.clone());
+    invalid_projection.filter_string = Some("rows=10\0secret".into());
+    let invalid_error = v227_client
+        .execute(invalid_projection)
+        .await
+        .expect_err("request validation must precede the 22.8 capability check");
+    assert!(matches!(invalid_error, GvmError::Request(_)));
+
     let export_error = v227_client
-        .get_report_export(&report_id, &format_id)
+        .get_report_export(GetReportExportRequest::new(report_id, format_id))
         .await
         .expect_err("22.8 semantic export gate should reject 22.7");
     assert!(matches!(

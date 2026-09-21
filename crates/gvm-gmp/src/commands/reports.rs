@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Canonical report lifecycle requests and transitional report projections.
+//! Canonical report lifecycle, projection, and export requests.
 
 use std::fmt;
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
@@ -448,65 +448,85 @@ impl GmpRequest for GetAuditReportHostsRequest {
     type Response = GetAuditReportHostsResponse;
 }
 
-/// Options for `get_reports` report-format export requests.
+/// Request for a synchronous report-format export through `get_reports`.
 #[derive(Debug, Clone)]
-pub struct GetReportExportOpts {
-    /// Required report format identifier.
+pub struct GetReportExportRequest {
+    /// Report identifier to export.
+    pub report_id: EntityId,
+    /// Report format to apply.
     pub report_format_id: EntityId,
-    /// Optional report configuration identifier.
+    /// Optional report configuration. It must belong to the selected format.
     pub report_config_id: Option<EntityId>,
-    /// Optional inline result filter expression.
+    /// Optional inline result filter.
     pub filter_string: Option<String>,
-    /// Optional saved result filter identifier.
+    /// Optional saved result-filter identifier.
     pub filter_id: Option<EntityId>,
-    /// Whether pagination should be ignored. Defaults to true when omitted.
+    /// Whether report details are included. Omission leaves gvmd's false default.
+    pub details: Option<bool>,
+    /// Whether pagination terms in the result filter are ignored.
     pub ignore_pagination: Option<bool>,
-}
-
-/// Options for asynchronous `export_scan_report` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ExportScanReportOpts {
-    /// Optional report format identifier. gvmd defaults to the XML report
-    /// format when this is omitted.
-    pub format_id: Option<EntityId>,
-    /// Optional report configuration identifier.
-    pub config_id: Option<EntityId>,
-    /// Optional inline result filter expression.
-    pub filter_string: Option<String>,
-    /// Whether pagination settings in the filter are ignored.
-    pub ignore_pagination: Option<bool>,
-    /// Whether lean report data is generated.
+    /// Whether gvmd may omit selected redundant report fields.
     pub lean: Option<bool>,
-    /// Whether note details are included.
+    /// Whether included notes use detailed output.
     pub notes_details: Option<bool>,
-    /// Whether override details are included.
+    /// Whether included overrides use detailed output.
     pub overrides_details: Option<bool>,
     /// Whether result tags are included.
     pub result_tags: Option<bool>,
 }
 
-/// Semantic request for a synchronous report-format export.
-#[derive(Debug, Clone)]
-pub struct GetReportExportRequest {
-    report_id: EntityId,
-    opts: GetReportExportOpts,
-}
-
 impl GetReportExportRequest {
-    /// Create a synchronous report-format export request.
+    /// Create an export request with gvmd's Boolean omission defaults.
     #[must_use]
-    pub fn new(report_id: EntityId, opts: GetReportExportOpts) -> Self {
-        Self { report_id, opts }
+    pub fn new(report_id: EntityId, report_format_id: EntityId) -> Self {
+        Self {
+            report_id,
+            report_format_id,
+            report_config_id: None,
+            filter_string: None,
+            filter_id: None,
+            details: None,
+            ignore_pagination: None,
+            lean: None,
+            notes_details: None,
+            overrides_details: None,
+            result_tags: None,
+        }
     }
 }
 
-impl Request for GetReportExportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_report_export_with_opts(&self.report_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetReportExportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
     }
 
-    fn semantic_command_name(&self) -> Option<&'static str> {
-        Some("get_report_export")
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_reports",
+            "get_report_export",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("get_reports")
+            .attribute("report_id", self.report_id.as_str())
+            .attribute("format_id", self.report_format_id.as_str());
+        if let Some(report_config_id) = &self.report_config_id {
+            command.set_attribute("config_id", report_config_id.as_str());
+        }
+        add_filter_attrs(
+            &mut command,
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        );
+        set_optional_bool_attr(&mut command, "details", self.details);
+        set_optional_bool_attr(&mut command, "ignore_pagination", self.ignore_pagination);
+        set_optional_bool_attr(&mut command, "lean", self.lean);
+        set_optional_bool_attr(&mut command, "notes_details", self.notes_details);
+        set_optional_bool_attr(&mut command, "overrides_details", self.overrides_details);
+        set_optional_bool_attr(&mut command, "result_tags", self.result_tags);
+        Ok(command.to_bytes())
     }
 }
 
@@ -514,26 +534,118 @@ impl GmpRequest for GetReportExportRequest {
     type Response = ReportExport;
 }
 
-macro_rules! report_detail_request {
-    ($request:ident, $response:ty, $builder:ident, $doc:literal) => {
+/// Request for report host summaries.
+#[derive(Debug, Clone)]
+pub struct GetReportHostsRequest {
+    /// Report identifier whose hosts are projected.
+    pub report_id: EntityId,
+    /// Optional inline filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether pagination terms in the filter are ignored.
+    pub ignore_pagination: Option<bool>,
+    /// Whether host rows are included. Omission returns count metadata only.
+    pub details: Option<bool>,
+    /// Whether selected redundant host fields are omitted.
+    pub lean: Option<bool>,
+}
+
+impl GetReportHostsRequest {
+    /// Create a host projection with gvmd's omission defaults.
+    #[must_use]
+    pub fn new(report_id: EntityId) -> Self {
+        Self {
+            report_id,
+            filter_string: None,
+            filter_id: None,
+            ignore_pagination: None,
+            details: None,
+            lean: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for GetReportHostsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_report_hosts"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(report_projection_command(
+            "get_report_hosts",
+            &self.report_id,
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+            self.ignore_pagination,
+            self.details,
+            self.lean,
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for GetReportHostsRequest {
+    type Response = GetReportHostsResponse;
+}
+
+macro_rules! report_projection_request {
+    ($request:ident, $response:ty, $command:literal, $doc:literal) => {
         #[doc = $doc]
         #[derive(Debug, Clone)]
         pub struct $request {
-            report_id: EntityId,
-            opts: GetReportDetailsOpts,
+            /// Report identifier whose data is projected.
+            pub report_id: EntityId,
+            /// Optional inline filter expression.
+            pub filter_string: Option<String>,
+            /// Optional saved filter identifier.
+            pub filter_id: Option<EntityId>,
+            /// Whether pagination terms in the filter are ignored.
+            pub ignore_pagination: Option<bool>,
+            /// Whether projection rows are included. Omission returns summary data.
+            pub details: Option<bool>,
         }
 
         impl $request {
-            /// Create the structured report-subresource request.
+            /// Create a projection request with gvmd's omission defaults.
             #[must_use]
-            pub fn new(report_id: EntityId, opts: GetReportDetailsOpts) -> Self {
-                Self { report_id, opts }
+            pub fn new(report_id: EntityId) -> Self {
+                Self {
+                    report_id,
+                    filter_string: None,
+                    filter_id: None,
+                    ignore_pagination: None,
+                    details: None,
+                }
             }
         }
 
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.report_id, self.opts.clone()).to_bytes()
+        impl GmpRequestCodec for $request {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_filter(self.filter_string.as_deref())
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::new($command))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(report_projection_command(
+                    $command,
+                    &self.report_id,
+                    self.filter_string.as_deref(),
+                    self.filter_id.as_ref(),
+                    self.ignore_pagination,
+                    self.details,
+                    None,
+                )
+                .to_bytes())
             }
         }
 
@@ -543,123 +655,129 @@ macro_rules! report_detail_request {
     };
 }
 
-report_detail_request!(
-    GetReportHostsRequest,
-    GetReportHostsResponse,
-    get_report_hosts,
-    "Semantic request for report host summaries."
-);
-report_detail_request!(
+report_projection_request!(
     GetReportPortsRequest,
     GetReportPortsResponse,
-    get_report_ports,
-    "Semantic request for report port summaries."
+    "get_report_ports",
+    "Request for report port summaries."
 );
-report_detail_request!(
+report_projection_request!(
     GetReportApplicationsRequest,
     GetReportApplicationsResponse,
-    get_report_applications,
-    "Semantic request for report application summaries."
+    "get_report_applications",
+    "Request for report application summaries."
 );
-report_detail_request!(
+report_projection_request!(
     GetReportOperatingSystemsRequest,
     GetReportOperatingSystemsResponse,
-    get_report_operating_systems,
-    "Semantic request for report operating-system summaries."
+    "get_report_operating_systems",
+    "Request for report operating-system summaries."
 );
-report_detail_request!(
+report_projection_request!(
     GetReportCvesRequest,
     GetReportCvesResponse,
-    get_report_cves,
-    "Semantic request for report CVE summaries."
+    "get_report_cves",
+    "Request for report CVE summaries."
 );
-report_detail_request!(
+report_projection_request!(
     GetReportVulnsRequest,
     GetReportVulnsResponse,
-    get_report_vulns,
-    "Semantic request for report vulnerability summaries."
+    "get_report_vulns",
+    "Request for report vulnerability summaries."
 );
-report_detail_request!(
+report_projection_request!(
     GetReportTlsCertificatesRequest,
     GetReportTlsCertificatesResponse,
-    get_report_tls_certificates,
-    "Semantic request for report TLS-certificate summaries."
+    "get_report_tls_certificates",
+    "Request for report TLS-certificate summaries."
 );
-report_detail_request!(
+report_projection_request!(
     GetReportErrorsRequest,
     GetReportErrorsResponse,
-    get_report_errors,
-    "Semantic request for report errors."
+    "get_report_errors",
+    "Request for report errors."
 );
-report_detail_request!(
+report_projection_request!(
     GetReportClosedCvesRequest,
     GetReportClosedCvesResponse,
-    get_report_closed_cves,
-    "Semantic request for report closed-CVE summaries."
+    "get_report_closed_cves",
+    "Request for report closed-CVE summaries."
 );
 
-/// Semantic request for queuing or reusing an asynchronous report export.
+/// Request for queuing or reusing an asynchronous scan-report export.
 #[derive(Debug, Clone)]
 pub struct ExportScanReportRequest {
-    report_id: EntityId,
-    opts: ExportScanReportOpts,
+    /// Scan-report identifier to export.
+    pub report_id: EntityId,
+    /// Optional report format. Omission selects gvmd's XML format default.
+    pub report_format_id: Option<EntityId>,
+    /// Optional report configuration.
+    pub report_config_id: Option<EntityId>,
+    /// Optional inline result filter. Saved filter IDs are not accepted by gvmd.
+    pub filter_string: Option<String>,
+    /// Whether pagination terms in the filter are ignored.
+    pub ignore_pagination: Option<bool>,
+    /// Whether gvmd may omit selected redundant report fields.
+    pub lean: Option<bool>,
+    /// Whether included notes use detailed output.
+    pub notes_details: Option<bool>,
+    /// Whether included overrides use detailed output.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
 }
 
 impl ExportScanReportRequest {
-    /// Create an asynchronous scan-report export request.
+    /// Create an asynchronous export with gvmd's omission defaults.
     #[must_use]
-    pub fn new(report_id: EntityId, opts: ExportScanReportOpts) -> Self {
-        Self { report_id, opts }
+    pub fn new(report_id: EntityId) -> Self {
+        Self {
+            report_id,
+            report_format_id: None,
+            report_config_id: None,
+            filter_string: None,
+            ignore_pagination: None,
+            lean: None,
+            notes_details: None,
+            overrides_details: None,
+            result_tags: None,
+        }
     }
 }
 
-impl Request for ExportScanReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        export_scan_report(&self.report_id, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for ExportScanReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("export_scan_report"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command =
+            XmlCommand::new("export_scan_report").attribute("report_id", self.report_id.as_str());
+        if let Some(report_format_id) = &self.report_format_id {
+            command.set_attribute("format_id", report_format_id.as_str());
+        }
+        if let Some(report_config_id) = &self.report_config_id {
+            command.set_attribute("config_id", report_config_id.as_str());
+        }
+        if let Some(filter_string) = &self.filter_string {
+            command.set_attribute("filter", filter_string);
+        }
+        set_optional_bool_attr(&mut command, "ignore_pagination", self.ignore_pagination);
+        set_optional_bool_attr(&mut command, "lean", self.lean);
+        set_optional_bool_attr(&mut command, "notes_details", self.notes_details);
+        set_optional_bool_attr(&mut command, "overrides_details", self.overrides_details);
+        set_optional_bool_attr(&mut command, "result_tags", self.result_tags);
+        Ok(command.to_bytes())
     }
 }
 
 impl GmpRequest for ExportScanReportRequest {
     type Response = ExportScanReportResponse;
-}
-
-impl GetReportExportOpts {
-    /// Create export options for a report format.
-    #[must_use]
-    pub fn new(report_format_id: EntityId) -> Self {
-        Self {
-            report_format_id,
-            report_config_id: None,
-            filter_string: None,
-            filter_id: None,
-            ignore_pagination: None,
-        }
-    }
-}
-
-struct ReportExportCommand(XmlCommand);
-
-impl Request for ReportExportCommand {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.0.to_bytes()
-    }
-
-    fn semantic_command_name(&self) -> Option<&'static str> {
-        Some("get_report_export")
-    }
-}
-
-/// Shared options for `get_report_*` helper requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetReportDetailsOpts {
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-    /// Whether pagination should be ignored.
-    pub ignore_pagination: Option<bool>,
-    /// Whether to request detailed output. Defaults to true when omitted.
-    pub details: Option<bool>,
 }
 
 fn import_report_bytes(request: &ImportReportRequest) -> Vec<u8> {
@@ -765,148 +883,21 @@ fn structured_report_command(
     command
 }
 
-/// Build a `get_reports` export request for a specific report format.
-#[must_use]
-pub fn get_report_export(report_id: &EntityId, report_format_id: &EntityId) -> impl Request {
-    get_report_export_with_opts(
-        report_id,
-        GetReportExportOpts::new(report_format_id.clone()),
-    )
-}
-
-/// Build a `get_reports` export request with report format export options.
-#[must_use]
-pub fn get_report_export_with_opts(
-    report_id: &EntityId,
-    opts: GetReportExportOpts,
-) -> impl Request {
-    let mut cmd = XmlCommand::new("get_reports")
-        .attribute("report_id", report_id.as_str())
-        .attribute("format_id", opts.report_format_id.as_str())
-        .attribute("details", "1")
-        .attribute(
-            "ignore_pagination",
-            bool_str(opts.ignore_pagination.unwrap_or(true)),
-        );
-    if let Some(report_config_id) = opts.report_config_id {
-        cmd.set_attribute("config_id", report_config_id.as_str());
-    }
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    ReportExportCommand(cmd)
-}
-
-/// Build an asynchronous `export_scan_report` request.
-///
-/// The command was added without a distinct GMP version. Callers using the
-/// high-level client must first confirm it through the server's XML `help`
-/// command listing.
-#[must_use]
-pub fn export_scan_report(report_id: &EntityId, opts: ExportScanReportOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("export_scan_report").attribute("report_id", report_id.as_str());
-    if let Some(format_id) = opts.format_id {
-        cmd.set_attribute("format_id", format_id.as_str());
-    }
-    if let Some(config_id) = opts.config_id {
-        cmd.set_attribute("config_id", config_id.as_str());
-    }
-    if let Some(filter_string) = opts.filter_string {
-        cmd.set_attribute("filter", &filter_string);
-    }
-    set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
-    set_optional_bool_attr(&mut cmd, "lean", opts.lean);
-    set_optional_bool_attr(&mut cmd, "notes_details", opts.notes_details);
-    set_optional_bool_attr(&mut cmd, "overrides_details", opts.overrides_details);
-    set_optional_bool_attr(&mut cmd, "result_tags", opts.result_tags);
-    cmd
-}
-
-fn get_report_detail_command(
+fn report_projection_command(
     command_name: &str,
     report_id: &EntityId,
-    opts: GetReportDetailsOpts,
+    filter_string: Option<&str>,
+    filter_id: Option<&EntityId>,
+    ignore_pagination: Option<bool>,
+    details: Option<bool>,
+    lean: Option<bool>,
 ) -> XmlCommand {
-    let mut cmd = XmlCommand::new(command_name).attribute("report_id", report_id.as_str());
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
-    set_optional_bool_attr(&mut cmd, "details", Some(opts.details.unwrap_or(true)));
-    cmd
-}
-
-/// Build a `get_report_hosts` request.
-#[must_use]
-pub fn get_report_hosts(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
-    get_report_detail_command("get_report_hosts", report_id, opts)
-}
-
-/// Build a `get_report_ports` request.
-#[must_use]
-pub fn get_report_ports(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
-    get_report_detail_command("get_report_ports", report_id, opts)
-}
-
-/// Build a `get_report_applications` request.
-#[must_use]
-pub fn get_report_applications(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
-    get_report_detail_command("get_report_applications", report_id, opts)
-}
-
-/// Build a `get_report_operating_systems` request.
-#[must_use]
-pub fn get_report_operating_systems(
-    report_id: &EntityId,
-    opts: GetReportDetailsOpts,
-) -> impl Request {
-    get_report_detail_command("get_report_operating_systems", report_id, opts)
-}
-
-/// Build a `get_report_cves` request.
-#[must_use]
-pub fn get_report_cves(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
-    get_report_detail_command("get_report_cves", report_id, opts)
-}
-
-/// Build a `get_report_vulns` request.
-#[must_use]
-pub fn get_report_vulns(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
-    get_report_detail_command("get_report_vulns", report_id, opts)
-}
-
-/// Build a `get_report_vulns` request using python-gvm's descriptive helper name.
-#[must_use]
-pub fn get_report_vulnerabilities(
-    report_id: &EntityId,
-    opts: GetReportDetailsOpts,
-) -> impl Request {
-    get_report_vulns(report_id, opts)
-}
-
-/// Build a `get_report_tls_certificates` request.
-#[must_use]
-pub fn get_report_tls_certificates(
-    report_id: &EntityId,
-    opts: GetReportDetailsOpts,
-) -> impl Request {
-    get_report_detail_command("get_report_tls_certificates", report_id, opts)
-}
-
-/// Build a `get_report_errors` request.
-#[must_use]
-pub fn get_report_errors(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
-    get_report_detail_command("get_report_errors", report_id, opts)
-}
-
-/// Build a `get_report_closed_cves` request.
-#[must_use]
-pub fn get_report_closed_cves(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
-    get_report_detail_command("get_report_closed_cves", report_id, opts)
+    let mut command = XmlCommand::new(command_name).attribute("report_id", report_id.as_str());
+    add_filter_attrs(&mut command, filter_string, filter_id);
+    set_optional_bool_attr(&mut command, "ignore_pagination", ignore_pagination);
+    set_optional_bool_attr(&mut command, "details", details);
+    set_optional_bool_attr(&mut command, "lean", lean);
+    command
 }
 
 fn validate_filter(filter: Option<&str>) -> Result<(), GmpRequestError> {
@@ -994,7 +985,6 @@ fn validate_report_envelope(report_xml: &[u8]) -> Result<(), GmpRequestError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
     use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
@@ -1010,12 +1000,15 @@ mod tests {
     }
 
     #[test]
-    fn report_commands_build_xml() {
-        let export = get_report_export(&id("r1"), &id("rf1"));
-        assert_eq!(export.semantic_command_name(), Some("get_report_export"));
+    fn canonical_sync_export_encodes_source_defaults() {
+        let export = GetReportExportRequest::new(id("r1"), id("rf1"));
         assert_eq!(
-            xml(export),
-            "<get_reports details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+            export.command().and_then(GmpCommand::semantic_name),
+            Some("get_report_export")
+        );
+        assert_eq!(
+            encode_text(&export, GmpVersion(22, 8)),
+            "<get_reports format_id=\"rf1\" report_id=\"r1\"/>"
         );
     }
 
@@ -1037,11 +1030,11 @@ mod tests {
     }
 
     #[test]
-    fn semantic_scan_report_export_matches_legacy_builder_bytes() {
-        let report_id = id("report-1");
-        let opts = ExportScanReportOpts {
-            format_id: Some(id("format-1")),
-            config_id: Some(id("config-1")),
+    fn asynchronous_scan_report_export_encodes_all_source_attributes() {
+        let request = ExportScanReportRequest {
+            report_id: id("report-1"),
+            report_format_id: Some(id("format-1")),
+            report_config_id: Some(id("config-1")),
             filter_string: Some("severity>5".into()),
             ignore_pagination: Some(true),
             lean: Some(false),
@@ -1050,13 +1043,17 @@ mod tests {
             result_tags: Some(true),
         };
 
-        let semantic = ExportScanReportRequest::new(report_id.clone(), opts.clone());
-        let legacy = export_scan_report(&report_id, opts);
-
-        assert_eq!(semantic.to_bytes(), legacy.to_bytes());
         assert_eq!(
-            semantic.to_bytes(),
+            encode(&request, GmpVersion(22, 8)),
             br#"<export_scan_report config_id="config-1" filter="severity&gt;5" format_id="format-1" ignore_pagination="1" lean="0" notes_details="1" overrides_details="0" report_id="report-1" result_tags="1"/>"#
+        );
+
+        assert_eq!(
+            encode(
+                &ExportScanReportRequest::new(id("report-1")),
+                GmpVersion(22, 8),
+            ),
+            br#"<export_scan_report report_id="report-1"/>"#
         );
     }
 
@@ -1126,7 +1123,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_report_queries_encode_source_shapes() {
+    fn canonical_lifecycle_queries_encode_source_shapes() {
         let report_id = id("report-1");
         let list = GetReportsRequest {
             filter_string: Some("severity>5".into()),
@@ -1173,43 +1170,74 @@ mod tests {
             encode(&hosts, GmpVersion(22, 7)),
             br#"<get_audit_report_hosts details="0" filter="rows=25" lean="1" report_id="report-1"/>"#
         );
+    }
 
-        let mut export_opts = GetReportExportOpts::new(id("format-1"));
-        export_opts.report_config_id = Some(id("config-1"));
-        export_opts.ignore_pagination = Some(false);
-        let export = GetReportExportRequest::new(report_id.clone(), export_opts.clone());
+    #[test]
+    fn canonical_projection_and_export_queries_encode_source_shapes() {
+        let report_id = id("report-1");
+        let mut export = GetReportExportRequest::new(report_id.clone(), id("format-1"));
+        export.report_config_id = Some(id("config-1"));
+        export.filter_string = Some("severity>5".into());
+        export.filter_id = Some(id("filter-3"));
+        export.details = Some(true);
+        export.ignore_pagination = Some(false);
+        export.lean = Some(true);
+        export.notes_details = Some(false);
+        export.overrides_details = Some(true);
+        export.result_tags = Some(false);
         assert_eq!(
-            export.to_bytes(),
-            get_report_export_with_opts(&report_id, export_opts).to_bytes()
+            encode(&export, GmpVersion(22, 8)),
+            br#"<get_reports config_id="config-1" details="1" filt_id="filter-3" filter="severity&gt;5" format_id="format-1" ignore_pagination="0" lean="1" notes_details="0" overrides_details="1" report_id="report-1" result_tags="0"/>"#
         );
-        assert_eq!(export.semantic_command_name(), Some("get_report_export"));
+        assert_eq!(
+            export.command().and_then(GmpCommand::semantic_name),
+            Some("get_report_export")
+        );
 
-        let detail_opts = GetReportDetailsOpts {
-            filter_string: Some("rows=10".into()),
-            filter_id: Some(id("filter-3")),
-            ignore_pagination: Some(true),
-            details: Some(false),
-        };
-        macro_rules! assert_detail_bytes {
-            ($request:ident, $builder:ident) => {
-                assert_eq!(
-                    $request::new(report_id.clone(), detail_opts.clone()).to_bytes(),
-                    $builder(&report_id, detail_opts.clone()).to_bytes()
-                );
-            };
-        }
-        assert_detail_bytes!(GetReportHostsRequest, get_report_hosts);
-        assert_detail_bytes!(GetReportPortsRequest, get_report_ports);
-        assert_detail_bytes!(GetReportApplicationsRequest, get_report_applications);
-        assert_detail_bytes!(
-            GetReportOperatingSystemsRequest,
-            get_report_operating_systems
+        let mut hosts = GetReportHostsRequest::new(report_id.clone());
+        hosts.filter_string = Some("rows=10".into());
+        hosts.filter_id = Some(id("filter-4"));
+        hosts.ignore_pagination = Some(true);
+        hosts.details = Some(false);
+        hosts.lean = Some(true);
+        assert_eq!(
+            encode(&hosts, GmpVersion(22, 8)),
+            br#"<get_report_hosts details="0" filt_id="filter-4" filter="rows=10" ignore_pagination="1" lean="1" report_id="report-1"/>"#
         );
-        assert_detail_bytes!(GetReportCvesRequest, get_report_cves);
-        assert_detail_bytes!(GetReportVulnsRequest, get_report_vulns);
-        assert_detail_bytes!(GetReportTlsCertificatesRequest, get_report_tls_certificates);
-        assert_detail_bytes!(GetReportErrorsRequest, get_report_errors);
-        assert_detail_bytes!(GetReportClosedCvesRequest, get_report_closed_cves);
+
+        macro_rules! assert_projection {
+            ($request:ident, $command:literal) => {{
+                let mut request = $request::new(report_id.clone());
+                request.filter_string = Some("rows=10".into());
+                request.filter_id = Some(id("filter-5"));
+                request.ignore_pagination = Some(false);
+                request.details = Some(true);
+                assert_eq!(
+                    encode(&request, GmpVersion(22, 8)),
+                    format!(concat!(
+                        "<",
+                        $command,
+                        " details=\"1\" filt_id=\"filter-5\" filter=\"rows=10\" ",
+                        "ignore_pagination=\"0\" report_id=\"report-1\"/>"
+                    ))
+                    .as_bytes()
+                );
+            }};
+        }
+        assert_projection!(GetReportPortsRequest, "get_report_ports");
+        assert_projection!(GetReportApplicationsRequest, "get_report_applications");
+        assert_projection!(
+            GetReportOperatingSystemsRequest,
+            "get_report_operating_systems"
+        );
+        assert_projection!(GetReportCvesRequest, "get_report_cves");
+        assert_projection!(GetReportVulnsRequest, "get_report_vulns");
+        assert_projection!(
+            GetReportTlsCertificatesRequest,
+            "get_report_tls_certificates"
+        );
+        assert_projection!(GetReportErrorsRequest, "get_report_errors");
+        assert_projection!(GetReportClosedCvesRequest, "get_report_closed_cves");
     }
 
     #[test]
@@ -1238,77 +1266,6 @@ mod tests {
         assert_eq!(
             encode_text(&hosts, GmpVersion(22, 7)),
             "<get_audit_report_hosts details=\"0\" filter=\"levels=yniu rows=10 first=1\" lean=\"1\" report_id=\"r1\"/>"
-        );
-    }
-
-    #[test]
-    fn report_helper_commands_build_xml() {
-        let opts = GetReportDetailsOpts {
-            filter_string: Some("severity>5".into()),
-            filter_id: Some(id("f1")),
-            ignore_pagination: Some(true),
-            details: Some(false),
-        };
-        assert_eq!(
-            xml(get_report_hosts(&id("r1"), opts.clone())),
-            "<get_report_hosts details=\"0\" filt_id=\"f1\" filter=\"severity&gt;5\" ignore_pagination=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_ports(&id("r1"), GetReportDetailsOpts::default())),
-            "<get_report_ports details=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_applications(
-                &id("r1"),
-                GetReportDetailsOpts::default()
-            )),
-            "<get_report_applications details=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_operating_systems(
-                &id("r1"),
-                GetReportDetailsOpts::default()
-            )),
-            "<get_report_operating_systems details=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_cves(&id("r1"), GetReportDetailsOpts::default())),
-            "<get_report_cves details=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_vulns(&id("r1"), GetReportDetailsOpts::default())),
-            "<get_report_vulns details=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_vulnerabilities(
-                &id("r1"),
-                GetReportDetailsOpts {
-                    filter_string: Some("name=foo".into()),
-                    ..Default::default()
-                },
-            )),
-            "<get_report_vulns details=\"1\" filter=\"name=foo\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_tls_certificates(
-                &id("r1"),
-                GetReportDetailsOpts::default()
-            )),
-            "<get_report_tls_certificates details=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_errors(
-                &id("r1"),
-                GetReportDetailsOpts::default()
-            )),
-            "<get_report_errors details=\"1\" report_id=\"r1\"/>"
-        );
-        assert_eq!(
-            xml(get_report_closed_cves(
-                &id("r1"),
-                GetReportDetailsOpts::default()
-            )),
-            "<get_report_closed_cves details=\"1\" report_id=\"r1\"/>"
         );
     }
 }

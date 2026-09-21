@@ -583,11 +583,22 @@ fn report_detail_count_info(
     root: &crate::responses::common::XmlNode,
     current_name: &str,
     legacy_name: &str,
+    container: Option<&crate::responses::common::XmlNode>,
+    container_field: &str,
 ) -> Result<CountInfo, ParseError> {
     if root.child(current_name).is_some() {
         count_info(root, current_name)
-    } else {
+    } else if root.child(legacy_name).is_some() {
         count_info(root, legacy_name)
+    } else {
+        Ok(CountInfo {
+            total: container
+                .map(|node| optional_u32(node, "count", container_field))
+                .transpose()?
+                .flatten(),
+            filtered: None,
+            page: None,
+        })
     }
 }
 
@@ -597,15 +608,22 @@ impl GetReportVulnsResponse {
         let root = parse_document(response.data())?;
         let container = root.child("vulns").unwrap_or(&root);
         let items = container
-            .children_named("vuln")
-            .chain(container.children_named("vulnerability"))
+            .children
+            .iter()
+            .filter(|node| matches!(node.name.as_str(), "vuln" | "vulnerability"))
             .map(ReportVulnerability::from_node)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             status,
             status_text,
             items,
-            counts: report_detail_count_info(&root, "report_vuln_count", "vuln_count")?,
+            counts: report_detail_count_info(
+                &root,
+                "report_vuln_count",
+                "vuln_count",
+                root.child("vulns"),
+                "vulns.count",
+            )?,
         })
     }
 }
@@ -616,34 +634,55 @@ impl GetReportClosedCvesResponse {
         let root = parse_document(response.data())?;
         let container = root.child("closed_cves").unwrap_or(&root);
         let items = container
-            .children_named("closed_cve")
-            .chain(container.children_named("cve"))
+            .children
+            .iter()
+            .filter(|node| matches!(node.name.as_str(), "closed_cve" | "cve"))
             .map(ReportClosedCve::from_node)
             .collect();
         Ok(Self {
             status,
             status_text,
             items,
-            counts: report_detail_count_info(&root, "report_closed_cve_count", "closed_cve_count")?,
+            counts: report_detail_count_info(
+                &root,
+                "report_closed_cve_count",
+                "closed_cve_count",
+                root.child("closed_cves"),
+                "closed_cves.count",
+            )?,
         })
     }
 }
 
 macro_rules! impl_report_detail_response {
-    ($response:ident, $item:ident, [$($item_name:literal),+], $count_name:literal) => {
+    (
+        $response:ident,
+        $item:ident,
+        $item_name:literal,
+        $container_name:literal,
+        $count_name:literal,
+        $legacy_count_name:literal
+    ) => {
         impl $response {
             pub fn from_response(response: &Response) -> Result<Self, ParseError> {
                 let (status, status_text) = status_from_response(response)?;
                 let root = parse_document(response.data())?;
-                let mut items = Vec::new();
-                $(
-                    items.extend(root.children_named($item_name).map($item::from_node));
-                )+
+                let container = root.child($container_name).unwrap_or(&root);
+                let items = container
+                    .children_named($item_name)
+                    .map($item::from_node)
+                    .collect();
                 Ok(Self {
                     status,
                     status_text,
                     items,
-                    counts: count_info(&root, $count_name)?,
+                    counts: report_detail_count_info(
+                        &root,
+                        $count_name,
+                        $legacy_count_name,
+                        root.child($container_name),
+                        concat!($container_name, ".count"),
+                    )?,
                 })
             }
         }
@@ -653,37 +692,49 @@ macro_rules! impl_report_detail_response {
 impl_report_detail_response!(
     GetReportErrorsResponse,
     ReportError,
-    ["error"],
+    "error",
+    "errors",
+    "report_error_count",
     "error_count"
 );
 impl_report_detail_response!(
     GetReportHostsResponse,
     ReportHostSummary,
-    ["host"],
+    "host",
+    "hosts",
+    "report_host_count",
     "host_count"
 );
 impl_report_detail_response!(
     GetReportPortsResponse,
     ReportPortSummary,
-    ["port"],
+    "port",
+    "ports",
+    "report_port_count",
     "port_count"
 );
 impl_report_detail_response!(
     GetReportApplicationsResponse,
     ReportApplicationSummary,
-    ["application"],
+    "application",
+    "applications",
+    "report_application_count",
     "application_count"
 );
 impl_report_detail_response!(
     GetReportOperatingSystemsResponse,
     ReportOperatingSystemSummary,
-    ["operating_system"],
+    "operating_system",
+    "operating_systems",
+    "report_operating_system_count",
     "operating_system_count"
 );
 impl_report_detail_response!(
     GetReportCvesResponse,
     ReportCveSummary,
-    ["cve"],
+    "cve",
+    "cves",
+    "report_cve_count",
     "cve_count"
 );
 
@@ -718,9 +769,10 @@ fn report_tls_certificate_count_info(
     root: &crate::responses::common::XmlNode,
     container: Option<&crate::responses::common::XmlNode>,
 ) -> Result<CountInfo, ParseError> {
-    let legacy_counts = count_info(root, "tls_certificate_count")?;
-    if legacy_counts != CountInfo::default() {
-        return Ok(legacy_counts);
+    for count_name in ["report_tls_certificate_count", "tls_certificate_count"] {
+        if root.child(count_name).is_some() {
+            return count_info(root, count_name);
+        }
     }
 
     Ok(CountInfo {
@@ -1321,7 +1373,7 @@ mod tests {
         let hosts = GetReportHostsResponse::from_response(&Response::from(
             r#"<get_report_hosts_response status="200" status_text="OK">
                 <host id="host-1"><name>192.0.2.10</name><severity>7.5</severity></host>
-                <host_count>1<filtered>1</filtered><page>1</page></host_count>
+                <report_host_count>1<filtered>1</filtered><page>1</page></report_host_count>
             </get_report_hosts_response>"#,
         ))
         .expect("hosts parse");
@@ -1331,8 +1383,8 @@ mod tests {
 
         let ports = GetReportPortsResponse::from_response(&Response::from(
             r#"<get_report_ports_response status="200" status_text="OK">
-                <port id="port-1"><name>443/tcp</name><severity>4.2</severity></port>
-                <port_count>1<filtered>1</filtered></port_count>
+                <ports><count>1</count><port id="port-1"><name>443/tcp</name><severity>4.2</severity></port></ports>
+                <report_port_count>1<filtered>1</filtered></report_port_count>
             </get_report_ports_response>"#,
         ))
         .expect("ports parse");
@@ -1340,8 +1392,8 @@ mod tests {
 
         let applications = GetReportApplicationsResponse::from_response(&Response::from(
             r#"<get_report_applications_response status="200" status_text="OK">
-                <application id="app-1"><name>OpenSSH</name><severity>6.5</severity></application>
-                <application_count>1<filtered>1</filtered></application_count>
+                <applications><application id="app-1"><name>OpenSSH</name><severity>6.5</severity></application></applications>
+                <report_application_count>1<filtered>1</filtered></report_application_count>
             </get_report_applications_response>"#,
         ))
         .expect("applications parse");
@@ -1350,8 +1402,8 @@ mod tests {
         let operating_systems =
             GetReportOperatingSystemsResponse::from_response(&Response::from(
                 r#"<get_report_operating_systems_response status="200" status_text="OK">
-                    <operating_system id="os-1"><name>Debian</name><severity>5.5</severity></operating_system>
-                    <operating_system_count>1<filtered>1</filtered></operating_system_count>
+                    <operating_systems><operating_system id="os-1"><name>Debian</name><severity>5.5</severity></operating_system></operating_systems>
+                    <report_operating_system_count>1<filtered>1</filtered></report_operating_system_count>
                 </get_report_operating_systems_response>"#,
             ))
             .expect("operating systems parse");
@@ -1359,8 +1411,8 @@ mod tests {
 
         let cves = GetReportCvesResponse::from_response(&Response::from(
             r#"<get_report_cves_response status="200" status_text="OK">
-                <cve id="cve-1"><name>CVE-2026-0001</name><severity>8.0</severity></cve>
-                <cve_count>1<filtered>1</filtered></cve_count>
+                <cves><cve id="cve-1"><name>CVE-2026-0001</name><severity>8.0</severity></cve></cves>
+                <report_cve_count>1<filtered>1</filtered></report_cve_count>
             </get_report_cves_response>"#,
         ))
         .expect("cves parse");
@@ -1370,7 +1422,7 @@ mod tests {
     #[test]
     fn parses_empty_report_summary_drilldown() {
         let response = Response::from(
-            r#"<get_report_hosts_response status="200" status_text="OK"><host_count>0<filtered>0</filtered></host_count></get_report_hosts_response>"#,
+            r#"<get_report_hosts_response status="200" status_text="OK"><hosts><count>0</count></hosts><report_host_count>0<filtered>0</filtered></report_host_count></get_report_hosts_response>"#,
         );
 
         let parsed = GetReportHostsResponse::from_response(&response).expect("hosts parse");
@@ -1421,8 +1473,24 @@ mod tests {
             .expect("mixed repeated vulnerability elements decode");
 
         assert_eq!(parsed.items.len(), 3);
-        assert_eq!(parsed.items[1].id.as_deref(), Some("three"));
-        assert_eq!(parsed.items[2].name.as_deref(), Some("Second"));
+        assert_eq!(parsed.items[1].id.as_deref(), Some("two"));
+        assert_eq!(parsed.items[2].name.as_deref(), Some("Third"));
+    }
+
+    #[test]
+    fn associated_decoder_preserves_mixed_closed_cve_wire_order() {
+        let response = Response::from(
+            r#"<get_report_closed_cves_response status="200" status_text="OK"><closed_cves><closed_cve id="one"><cve>CVE-1</cve></closed_cve><cve id="two"><name>CVE-2</name></cve><closed_cve id="three"><cve>CVE-3</cve></closed_cve></closed_cves><report_closed_cve_count>3<filtered>3</filtered></report_closed_cve_count></get_report_closed_cves_response>"#,
+        );
+
+        let parsed =
+            <GetReportClosedCvesResponse as GmpResponse>::decode(&response, GmpVersion(22, 8))
+                .expect("mixed repeated closed CVE elements decode");
+
+        assert_eq!(parsed.items.len(), 3);
+        assert_eq!(parsed.items[0].id.as_deref(), Some("one"));
+        assert_eq!(parsed.items[1].id.as_deref(), Some("two"));
+        assert_eq!(parsed.items[2].id.as_deref(), Some("three"));
     }
 
     #[test]
@@ -1489,6 +1557,19 @@ mod tests {
         assert!(export.bytes.starts_with(b"%PDF-1.7\n"));
         assert_eq!(export.content_type.as_deref(), Some("application/pdf"));
         assert_eq!(export.extension.as_deref(), Some("pdf"));
+    }
+
+    #[test]
+    fn parses_report_export_with_absent_optional_metadata() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK"><report>SGVsbG8=</report></get_reports_response>"#,
+        );
+
+        let export = ReportExport::from_response(&response).expect("export parse");
+
+        assert_eq!(export.bytes, b"Hello");
+        assert_eq!(export.content_type, None);
+        assert_eq!(export.extension, None);
     }
 
     #[test]

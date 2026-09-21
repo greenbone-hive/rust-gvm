@@ -56,8 +56,9 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   transactional mock behavior.
 - `docs/report-request-gvmd-evidence.md`: pinned/current gvmd evidence for
   ordinary report import/list/detail/delete, audit list/delete, structured
-  scan/audit retrieval, audit host summaries, source defaults, version gates,
-  and the #662 export/drill-down boundary.
+  scan/audit retrieval, audit host summaries, all nine drill-downs, synchronous
+  and asynchronous exports, irregular response carriers, source defaults, and
+  capability gates.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow

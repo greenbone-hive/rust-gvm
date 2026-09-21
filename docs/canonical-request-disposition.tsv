@@ -135,23 +135,23 @@ builder	crates/gvm-gmp/src/commands/report_formats.rs	verify_report_format	remov
 builder	crates/gvm-gmp/src/commands/reports.rs	create_report	removed	Removed unsupported empty report creation; pinned gvmd create_report is exclusively the canonical XML import operation.
 builder	crates/gvm-gmp/src/commands/reports.rs	delete_audit_report	removed	Replaced by DeleteAuditReportRequest with a distinct audit semantic identity and no unsupported permanence attribute.
 builder	crates/gvm-gmp/src/commands/reports.rs	delete_report	removed	Replaced by DeleteReportRequest, which directly encodes pinned gvmd permanent deletion.
-builder	crates/gvm-gmp/src/commands/reports.rs	export_scan_report	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/reports.rs	export_scan_report	removed	Removed by #662; ExportScanReportRequest owns asynchronous export creation and reuse encoding.
 builder	crates/gvm-gmp/src/commands/reports.rs	get_audit_report	removed	Replaced by complete version-gated GetAuditReportRequest direct encoding.
 builder	crates/gvm-gmp/src/commands/reports.rs	get_audit_report_hosts	removed	Replaced by complete GetAuditReportHostsRequest including filter, details, and lean controls.
 builder	crates/gvm-gmp/src/commands/reports.rs	get_audit_reports	removed	Replaced by GetAuditReportsRequest with fixed audit usage selection and response identity.
 builder	crates/gvm-gmp/src/commands/reports.rs	get_report	removed	Replaced by complete GetReportRequest with explicit detail and result-filter controls.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_applications	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_closed_cves	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_cves	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_errors	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_export	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_export_with_opts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_hosts	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_operating_systems	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_ports	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_tls_certificates	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_vulnerabilities	transitional	Pending bounded family migration under #602.
-builder	crates/gvm-gmp/src/commands/reports.rs	get_report_vulns	transitional	Pending bounded family migration under #602.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_applications	removed	Removed by #662; GetReportApplicationsRequest owns canonical projection encoding.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_closed_cves	removed	Removed by #662; GetReportClosedCvesRequest owns canonical projection encoding.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_cves	removed	Removed by #662; GetReportCvesRequest owns canonical projection encoding.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_errors	removed	Removed by #662; GetReportErrorsRequest owns canonical projection encoding.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_export	removed	Removed by #662; GetReportExportRequest owns the complete synchronous export request.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_export_with_opts	removed	Removed by #662; the canonical export request owns all configuration and inclusion controls.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_hosts	removed	Removed by #662; GetReportHostsRequest owns canonical projection encoding including lean.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_operating_systems	removed	Removed by #662; GetReportOperatingSystemsRequest owns canonical projection encoding.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_ports	removed	Removed by #662; GetReportPortsRequest owns canonical projection encoding.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_tls_certificates	removed	Removed by #662; GetReportTlsCertificatesRequest owns canonical projection encoding.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_vulnerabilities	removed	Removed by #662; it duplicated get_report_vulns without a distinct wire or response semantic.
+builder	crates/gvm-gmp/src/commands/reports.rs	get_report_vulns	removed	Removed by #662; GetReportVulnsRequest owns canonical projection encoding.
 builder	crates/gvm-gmp/src/commands/reports.rs	get_reports	removed	Replaced by complete GetReportsRequest with report-filter and query controls.
 builder	crates/gvm-gmp/src/commands/reports.rs	get_scan_report	removed	Replaced by version-gated GetScanReportRequest direct encoding.
 builder	crates/gvm-gmp/src/commands/reports.rs	import_report	removed	Replaced by ImportReportRequest, which owns and validates original report-envelope bytes.
@@ -399,28 +399,33 @@ facade	crates/gvm-client/src/typed/reports.rs	delete_report_config	canonical-req
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_config_with_opts	removed	Canonical delete facade accepts the complete request without an options variant.
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_format	canonical-request	Accepts DeleteReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	delete_tls_certificate	canonical-request	Accepts permanent DeleteTlsCertificateRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/reports.rs	export_scan_report	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	export_scan_report	canonical-request	Accepts ExportScanReportRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_report	canonical-request	Accepts GetAuditReportRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_report_hosts	canonical-request	Accepts GetAuditReportHostsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_reports	canonical-request	Accepts GetAuditReportsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report	canonical-request	Accepts GetReportRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_applications_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_closed_cves	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_applications	canonical-request	Accepts GetReportApplicationsRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_applications_parsed	removed	Removed by #662; get_report_applications is the sole typed projection facade.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_closed_cves	canonical-request	Accepts GetReportClosedCvesRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_config	canonical-request	Accepts GetReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_configs	canonical-request	Canonical list facade replaces the transitional parsed suffix.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_configs_parsed	removed	Replaced by get_report_configs accepting GetReportConfigsRequest.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_cves_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_errors	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_export	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_export_with_opts	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_cves	canonical-request	Accepts GetReportCvesRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_cves_parsed	removed	Removed by #662; get_report_cves is the sole typed projection facade.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_errors	canonical-request	Accepts GetReportErrorsRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_export	canonical-request	Accepts GetReportExportRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_export_with_opts	removed	Removed by #662; get_report_export accepts the complete canonical request.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_format	canonical-request	Accepts GetReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_formats	canonical-request	Accepts GetReportFormatsRequest unchanged and delegates directly to execute.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_hosts_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_operating_systems_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_ports_parsed	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_tls_certificates	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_vulnerabilities	transitional	Pending bounded family migration under #602.
-facade	crates/gvm-client/src/typed/reports.rs	get_report_vulns	transitional	Pending bounded family migration under #602.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_hosts	canonical-request	Accepts GetReportHostsRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_hosts_parsed	removed	Removed by #662; get_report_hosts is the sole typed projection facade.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_operating_systems	canonical-request	Accepts GetReportOperatingSystemsRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_operating_systems_parsed	removed	Removed by #662; get_report_operating_systems is the sole typed projection facade.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_ports	canonical-request	Accepts GetReportPortsRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_ports_parsed	removed	Removed by #662; get_report_ports is the sole typed projection facade.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_tls_certificates	canonical-request	Accepts GetReportTlsCertificatesRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_vulnerabilities	removed	Removed by #662; get_report_vulns is the sole facade for the concrete get_report_vulns wire operation.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_vulns	canonical-request	Accepts GetReportVulnsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_reports	canonical-request	Accepts GetReportsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_result	canonical-request	Accepts the complete canonical GetResultRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_results	canonical-request	Accepts the complete canonical GetResultsRequest unchanged and delegates directly to execute.
@@ -659,11 +664,11 @@ options	crates/gvm-gmp/src/commands/report_configs.rs	ModifyReportConfigOpts	rem
 options	crates/gvm-gmp/src/commands/report_formats.rs	GetReportFormatsOpts	removed	Supported GET controls moved onto the canonical list and detail requests.
 options	crates/gvm-gmp/src/commands/report_formats.rs	ReportFormatOpts	removed	Shared creation and mutation options were misleading and removed with name-only creation.
 options	crates/gvm-gmp/src/commands/reports.rs	CreateReportOpts	removed	Removed with unsupported empty create_report construction; report XML import is the only pinned gvmd creation shape.
-options	crates/gvm-gmp/src/commands/reports.rs	ExportScanReportOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/reports.rs	ExportScanReportOpts	removed	Removed by #662; all asynchronous export fields live on ExportScanReportRequest.
 options	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportHostsOpts	removed	Filter, details, and lean inputs moved onto GetAuditReportHostsRequest.
 options	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportOpts	removed	Structured audit filter inputs moved onto GetAuditReportRequest.
-options	crates/gvm-gmp/src/commands/reports.rs	GetReportDetailsOpts	transitional	Pending bounded family migration under #602.
-options	crates/gvm-gmp/src/commands/reports.rs	GetReportExportOpts	transitional	Pending bounded family migration under #602.
+options	crates/gvm-gmp/src/commands/reports.rs	GetReportDetailsOpts	removed	Removed by #662; every projection request owns its complete controls.
+options	crates/gvm-gmp/src/commands/reports.rs	GetReportExportOpts	removed	Removed by #662; GetReportExportRequest owns its complete controls.
 options	crates/gvm-gmp/src/commands/reports.rs	GetReportsOpts	removed	List and detail selection were split into complete GetReportsRequest and GetReportRequest values.
 options	crates/gvm-gmp/src/commands/reports.rs	GetScanReportOpts	removed	Structured scan filters moved onto GetScanReportRequest.
 options	crates/gvm-gmp/src/commands/reports.rs	ImportReportOpts	removed	Asset behavior moved onto byte-owning ImportReportRequest.
@@ -848,12 +853,21 @@ request	crates/gvm-gmp/src/commands/report_formats.rs	VerifyReportFormatRequest	
 request	crates/gvm-gmp/src/commands/reports.rs	CreateReportRequest	removed	Removed because its empty task/format/filter shape is rejected by pinned gvmd; use ImportReportRequest for create_report XML imports.
 request	crates/gvm-gmp/src/commands/reports.rs	DeleteAuditReportRequest	canonical-request	Complete audit semantic alias owns the report identifier, 22.6 floor, and source-faithful non-ultimate wire shape.
 request	crates/gvm-gmp/src/commands/reports.rs	DeleteReportRequest	canonical-request	Complete permanent report deletion request owns its identifier and directly encodes delete_report.
-request	crates/gvm-gmp/src/commands/reports.rs	ExportScanReportRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/reports.rs	ExportScanReportRequest	canonical-request	Owns report identity, format/configuration, result filter, pagination, lean, and inclusion controls with help-discovery gating.
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportHostsRequest	canonical-request	Complete 22.7 host-summary request owns audit identity, structured filters, details, lean behavior, and typed response.
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportRequest	canonical-request	Complete 22.7 structured audit request owns identity and filters with its distinct typed response.
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportsRequest	canonical-request	Complete 22.6 audit list request fixes usage_type=audit and has a distinct response association.
-request	crates/gvm-gmp/src/commands/reports.rs	GetReportExportRequest	transitional	Pending bounded family migration under #602.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportApplicationsRequest	canonical-request	Owns the complete application projection and its GMP 22.8 typed response association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportClosedCvesRequest	canonical-request	Owns the complete closed-CVE projection and its GMP 22.8 typed response association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportCvesRequest	canonical-request	Owns the complete CVE projection and its GMP 22.8 typed response association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportErrorsRequest	canonical-request	Owns the complete error projection and its GMP 22.8 typed response association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportExportRequest	canonical-request	Owns synchronous get_reports export identity, format/configuration, result filters, detail/pagination/lean, and inclusion controls with a GMP 22.8 semantic gate.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportHostsRequest	canonical-request	Owns the complete host projection including its source-specific lean control and GMP 22.8 association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportOperatingSystemsRequest	canonical-request	Owns the complete operating-system projection and its GMP 22.8 typed response association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportPortsRequest	canonical-request	Owns the complete port projection and its GMP 22.8 typed response association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportRequest	canonical-request	Complete ordinary detail request owns scan identity, result filters, details, pagination, lean, and inclusion controls.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportTlsCertificatesRequest	canonical-request	Owns the complete TLS-certificate projection and its GMP 22.8 typed response association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportVulnsRequest	canonical-request	Owns the concrete get_report_vulns projection and its GMP 22.8 typed response association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportsRequest	canonical-request	Complete ordinary list request owns scan identity, report filters, details, pagination, lean, and inclusion controls.
 request	crates/gvm-gmp/src/commands/reports.rs	GetScanReportRequest	canonical-request	Complete 22.8 structured scan request owns report identity and result-filter selection with its distinct response.
 request	crates/gvm-gmp/src/commands/reports.rs	ImportReportRequest	canonical-request	Owns task relation, original report bytes, safe envelope validation, asset behavior, direct encoding, and create response.

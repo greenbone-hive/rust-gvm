@@ -424,24 +424,22 @@ helpers now delegate to `execute`. Semantic request diagnostics redact auth
 configuration values, license payloads, wizard parameter values, and
 user-setting values; raw builders and custom execution remain supported.
 
-Issue #661 completes the report lifecycle and structured-report request
-migration. Ordinary list/detail, XML import, permanent ordinary deletion,
-audit list/non-ultimate deletion, structured scan/audit retrieval, and audit
-host summaries now own complete canonical values. Pinned gvmd has no empty
-report-creation form, so the incompatible `CreateReportRequest` is removed and
-validated report import is the sole creation operation. Imports accept exactly
-one `<report>` envelope, retain its original bytes, redact payload diagnostics,
-and model import-task and optional asset behavior explicitly.
+Issues #661 and #662 complete the report lifecycle, structured-report,
+drill-down, and export request migration. The lifecycle operations plus all
+nine projections, synchronous report-format export, and asynchronous export
+creation/reuse now own complete canonical values. Pinned gvmd has no empty
+report-creation form, so validated report import remains the sole creation
+operation.
 
 Ordinary, audit-list, structured scan, structured audit, and audit-host
 responses retain separate associations and explicit parsers for nested,
-mixed, repeated, and large report XML. Audit list/delete are gated at 22.6,
-structured audit/hosts at 22.7, and structured scan at 22.8. Stateful mock
-coverage includes task validation, result/asset import, report/result filters,
-pagination/counts/details/lean semantics, usage separation, dependencies,
-permanent deletion, and atomic rollback. Report exports, format/config and
-delta selection, and all drill-down projections remain explicitly assigned to
-issue #662. See the [pinned evidence](report-request-gvmd-evidence.md).
+mixed, repeated, binary/base64, absent-field, and large bounded report data.
+Projection and synchronous-export operations require GMP 22.8;
+`export_scan_report` requires positive XML-help discovery. Duplicate
+vulnerability names, `_parsed` suffixes, raw projection facades, and forwarding
+option variants are removed. Delta/alert-selected generation and streaming
+redesign remain separate work. See the
+[pinned evidence](report-request-gvmd-evidence.md).
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
@@ -657,7 +655,8 @@ de-duplication without rewriting otherwise valid host spellings.
 | `report_config` commands (22.6+) | ✅ | create, get, modify, delete |
 | `features` command (22.6+) | ✅ | get_features |
 | structured audit-report commands (22.7+) | ✅ | get_audit_report and get_audit_report_hosts |
-| REST-support GMP helpers (22.8+) | ✅ | raw structured scan report, report drill-downs, get_timezones, get_credential_stores |
+| REST-support GMP helpers (22.8+) | ✅ | structured scan report, typed report drill-downs and synchronous export, get_timezones, get_credential_stores |
+| Discoverable asynchronous report export | ✅ | `export_scan_report` requires positive XML-help discovery after its 22.7 lower bound |
 | Version range metadata in responses | ✅ | Status text includes version requirement |
 
 ### CLI (Standalone Binary)
@@ -897,7 +896,7 @@ its explicit raw-send compatibility path.
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
 | port_list | ✅ | ✅ | |
 | task | ✅ | ✅ | Also: `start_task()` |
-| report | ✅ | ✅ | Ten canonical lifecycle/structured operations; import is gvmd's report creation form, while drill-down/export helpers remain pending #662 |
+| report | ✅ | ✅ | Canonical lifecycle/structured operations, nine drill-downs, synchronous export, and discoverable asynchronous export; import is gvmd's report creation form |
 | result | ✅ | — | |
 | feed | ✅ | — | |
 | nvt | ✅ | — | Also: `get_nvt_families()` |

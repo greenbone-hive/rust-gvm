@@ -28,7 +28,7 @@ use gvm_gmp::commands::report_configs::{
     CloneReportConfigRequest, CreateReportConfigRequest, DeleteReportConfigRequest,
     GetReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
 };
-use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
+use gvm_gmp::commands::reports::{GetReportCvesRequest, GetReportHostsRequest};
 use gvm_gmp::commands::tasks::CreateWebApplicationTaskRequest;
 use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetRequest, GetWebApplicationTargetsRequest,
@@ -306,11 +306,11 @@ async fn version_22_7_rejects_next_commands() {
     assert_eq!(response.status_code(), Some(400));
     assert!(response.status_text().unwrap().contains("get_agent_groups"));
 
-    let response = send_recv(
+    let response = send_recv_bytes(
         &mut stream,
-        get_report_hosts(
-            &id("00000000-0000-0000-0000-000000000200"),
-            Default::default(),
+        &encode(
+            &GetReportHostsRequest::new(id("00000000-0000-0000-0000-000000000200")),
+            GmpVersion::V22_7,
         ),
     )
     .await;
@@ -514,11 +514,11 @@ async fn version_22_8_accepts_next_commands() {
         .expect("utf8")
         .contains("Version Gated Agent Group"));
 
-    let report_response = send_recv(
+    let report_response = send_recv_bytes(
         &mut stream,
-        get_report_cves(
-            &id("00000000-0000-0000-0000-000000000200"),
-            Default::default(),
+        &encode(
+            &GetReportCvesRequest::new(id("00000000-0000-0000-0000-000000000200")),
+            GmpVersion::V22_8,
         ),
     )
     .await;

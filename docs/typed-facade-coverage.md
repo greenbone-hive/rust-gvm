@@ -14,7 +14,7 @@ directory, extracts every `pub async fn`, rejects duplicate and unknown entries,
 and fails when a new helper is not classified.
 It additionally requires every integration-covered name to appear as a direct
 method call in the client/mock integration suite.
-The enforced surface currently contains 262 names: 259 direct `execute`
+The enforced surface currently contains 260 names: 257 direct `execute`
 delegates and three frozen ticket raw paths. Unsupported configuration sync and
 operating-system asset modification helpers are not part of the inventory.
 
@@ -26,7 +26,9 @@ Coverage is organized by behavior family:
   semantic requests, while the complete nine-request administration and
   user-setting inventory is exercised over a live Unix transport;
 - create helpers use a shared response table and assert typed create IDs;
-- report export exercises both the simple and options XML shapes;
+- all nine report drill-downs and both export styles exercise complete
+  request-by-value facades, exact wire controls, explicit irregular parsers,
+  and their distinct 22.8/help-discovery gates;
 - generic assets, host and operating-system aliases, and result queries assert
   every typed facade shape plus their shared wire-command inventory;
 - generic configuration, scan-config/policy lifecycle, and port-list coverage
@@ -36,7 +38,8 @@ Coverage is organized by behavior family:
 - report import exercises byte-preserving envelope validation, the semantic
   create response, and malformed-response context; ordinary/audit lists,
   deletion, structured scan/audit, and audit-host summaries use canonical
-  request-by-value facade calls;
+  request-by-value facade calls; report projection facades use their wire names
+  without `_parsed` or descriptive forwarding aliases;
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.
