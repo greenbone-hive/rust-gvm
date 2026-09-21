@@ -5,7 +5,6 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{CommandSupport, GmpClient, GvmError};
-use gvm_client::{ExportScanReportOpts, GetReportExportOpts};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::agent_groups::{
     CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
@@ -16,7 +15,7 @@ use gvm_gmp::commands::agents::{
     GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
-use gvm_gmp::commands::aggregates::GetAggregatesRequestOpts;
+use gvm_gmp::commands::aggregates::{GetAggregatesRequest, GetLegacyAggregatesRequest};
 use gvm_gmp::commands::alerts::{
     CloneAlertRequest, CreateAlertRequest, DeleteAlertRequest, GetAlertRequest, GetAlertsRequest,
     ModifyAlertRequest, TestAlertRequest, TriggerAlertRequest,
@@ -33,6 +32,8 @@ use gvm_gmp::commands::credentials::{
     CloneCredentialRequest, CreateCredentialRequest, DeleteCredentialRequest, GetCredentialRequest,
     GetCredentialsRequest, ModifyCredentialRequest,
 };
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
 use gvm_gmp::commands::filters::{
     CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, GetFilterRequest,
     GetFiltersRequest, ModifyFilterRequest,
@@ -41,7 +42,7 @@ use gvm_gmp::commands::groups::{
     CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsRequest,
     ModifyGroupRequest,
 };
-use gvm_gmp::commands::help::HelpMode;
+use gvm_gmp::commands::help::{HelpMode, HelpRequest};
 use gvm_gmp::commands::hosts::{
     CreateHostRequest, DeleteHostRequest, GetHostRequest, GetHostsRequest, ModifyHostRequest,
 };
@@ -83,10 +84,14 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    CreateReportOpts, CreateReportRequest, DeleteAuditReportRequest, DeleteReportRequest,
-    GetReportDetailsOpts, GetReportExportRequest, GetReportVulnsRequest, GetReportsOpts,
-    GetReportsRequest, ImportReportOpts, ImportReportRequest,
+    DeleteAuditReportRequest, DeleteReportRequest, ExportScanReportRequest, GetAuditReportsRequest,
+    GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
+    GetReportErrorsRequest, GetReportExportRequest, GetReportHostsRequest,
+    GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportRequest,
+    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsRequest,
+    GetScanReportRequest, ImportReportRequest,
 };
+use gvm_gmp::commands::resource_names::{GetResourceNameRequest, GetResourceNamesRequest};
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::GetScanConfigsRequest;
@@ -104,11 +109,11 @@ use gvm_gmp::commands::secinfo::{
     GetDfnCertAdvisoryRequest, GetInfoListRequest, GetInfoRequest,
 };
 use gvm_gmp::commands::system::{
-    GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest, ModifyLicenseOpts,
-    ModifyLicenseRequest, ModifyLicenseWithOptsRequest, ModifySettingRequest, RunWizardOpts,
-    RunWizardRequest, RunWizardWithOptsRequest,
+    DescribeAuthRequest, GetLicenseRequest, GetSettingsRequest, GetTimezonesRequest,
+    GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest, ModifyLicenseRequest,
+    ModifySettingRequest, RunWizardRequest,
 };
-use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
+use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::commands::tags::{
     CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsRequest,
     ModifyTagRequest, TagResources,
@@ -118,25 +123,28 @@ use gvm_gmp::commands::targets::{
     ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
-    create_agent_group_task, create_container_image_task, create_oci_image_target_task,
-    create_web_application_task, CloneTaskRequest, CreateAgentGroupTaskOpts,
-    CreateOciImageTargetTaskOpts, CreateTaskOpts, CreateTaskRequest, CreateWebApplicationTaskOpts,
-    DeleteTaskRequest, GetTaskRequest, GetTasksOpts, GetTasksRequest, ModifyTaskError,
-    ModifyTaskOpts, ModifyTaskRequest, ResumeTaskRequest, StartTaskRequest, StopTaskRequest,
+    CloneAuditRequest, CloneTaskRequest, CreateAgentGroupTaskRequest, CreateAuditRequest,
+    CreateContainerImageTaskRequest, CreateContainerTaskRequest, CreateImportTaskRequest,
+    CreateOciImageTargetTaskRequest, CreateTaskRequest, CreateWebApplicationTaskRequest,
+    DeleteAuditRequest, DeleteTaskRequest, GetAuditRequest, GetAuditsRequest, GetTaskRequest,
+    GetTasksRequest, ModifyAuditRequest, ModifyTaskRequest, MoveTaskRequest, ResumeAuditRequest,
+    ResumeTaskRequest, StartAuditRequest, StartTaskRequest, StopAuditRequest, StopTaskRequest,
+    TaskMoveDestination,
 };
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{
     CloneTlsCertificateRequest, CreateTlsCertificateRequest, DeleteTlsCertificateRequest,
     GetTlsCertificateRequest, GetTlsCertificatesRequest, ModifyTlsCertificateRequest,
 };
+use gvm_gmp::commands::trashcan::{EmptyTrashcanRequest, RestoreRequest};
 use gvm_gmp::commands::user_settings::{
-    GetUserSettingRequest, GetUserSettingsOpts, GetUserSettingsRequest, ModifyUserSettingOpts,
-    ModifyUserSettingRequest,
+    GetUserSettingRequest, GetUserSettingsRequest, ModifyUserSettingRequest,
 };
 use gvm_gmp::commands::users::{
     CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
     ModifyUserRequest, UserHostAccess,
 };
+use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
@@ -146,8 +154,8 @@ use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, EntityType, FeedType, GmpRequest, PortRangeType,
-    ScannerType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
-    ScheduleTimezone,
+    ResourceType, ScannerType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
+    ScheduleTimestamp, ScheduleTimezone,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
@@ -739,13 +747,9 @@ async fn system_admin_and_user_setting_requests_execute_over_unix_transport() {
     assert_typed_success!(
         client.execute(ModifyAuthRequest::new("method:ldap_connect", auth_settings))
     );
-    assert_typed_success!(client.execute(ModifyLicenseRequest::new("license-secret")));
-    assert_typed_success!(client.execute(ModifyLicenseWithOptsRequest::new(
-        "license-secret",
-        ModifyLicenseOpts {
-            allow_empty: Some(false),
-        }
-    )));
+    let mut license = ModifyLicenseRequest::new("bGljZW5zZS1zZWNyZXQ=");
+    license.allow_empty = Some(false);
+    assert_typed_success!(client.execute(license));
 
     let setting_id = id("setting-1");
     assert_typed_success!(client.execute(ModifySettingRequest::new(
@@ -761,34 +765,29 @@ async fn system_admin_and_user_setting_requests_execute_over_unix_transport() {
         .await
         .expect("default wizard request should parse");
     assert_eq!(wizard.status, 202);
+    let mut wizard_with_options =
+        RunWizardRequest::new("quick_first_scan", [("hosts".into(), "localhost".into())]);
+    wizard_with_options.mode = Some("step".into());
+    wizard_with_options.read_only = Some(false);
     let wizard_with_opts = client
-        .execute(RunWizardWithOptsRequest::new(
-            "quick_first_scan",
-            [("hosts".into(), "localhost".into())],
-            RunWizardOpts {
-                mode: Some("step".into()),
-                read_only: Some(false),
-            },
-        ))
+        .execute(wizard_with_options)
         .await
         .expect("option-bearing wizard request should parse");
     assert_eq!(wizard_with_opts.status, 202);
 
     let settings = client
-        .execute(GetUserSettingsRequest::new(GetUserSettingsOpts::default()))
+        .execute(GetUserSettingsRequest::new())
         .await
         .expect("user-setting list should parse");
-    assert_eq!(settings.settings.len(), 1);
+    assert_eq!(settings.items.len(), 1);
     let setting = client
         .execute(GetUserSettingRequest::new(setting_id.clone()))
         .await
         .expect("single user setting should parse");
-    assert_eq!(setting.settings[0].id, setting_id);
+    assert_eq!(setting.items[0].id, setting_id);
     assert_typed_success!(client.execute(ModifyUserSettingRequest::new(
         id("setting-1"),
-        ModifyUserSettingOpts {
-            value: "Europe/Berlin".into(),
-        }
+        "Europe/Berlin"
     )));
 
     let commands = server
@@ -800,7 +799,6 @@ async fn system_admin_and_user_setting_requests_execute_over_unix_transport() {
         commands,
         [
             "modify_auth",
-            "modify_license",
             "modify_license",
             "modify_setting",
             "run_wizard",
@@ -1416,30 +1414,40 @@ async fn system_discovery_queries_execute_through_typed_facade() {
     let mut client = client(&server).await;
     server.clear_history();
 
-    assert_typed_success!(client.get_aggregates("task", GetAggregatesRequestOpts::default()));
-    assert_typed_success!(client.get_features_parsed());
-    assert_typed_success!(client.get_feeds());
-    assert_typed_success!(client.get_feed(FeedType::Nvt));
-    assert_typed_success!(client.get_timezones());
-    assert_typed_success!(client.get_settings());
-    assert_typed_success!(client.get_system_reports(GetSystemReportsOpts::default()));
-    assert_typed_success!(client.get_help());
-    assert_typed_success!(client.get_help_with_mode(HelpMode::BriefXml));
-    assert_typed_success!(client.describe_auth());
+    assert_typed_success!(client.get_aggregates(GetAggregatesRequest::new("task")));
+    assert_typed_success!(client.get_legacy_aggregates(GetLegacyAggregatesRequest::new("task")));
+    assert_typed_success!(client.get_features(GetFeaturesRequest::new()));
+    assert_typed_success!(client.get_feeds(GetFeedsRequest::new()));
+    assert_typed_success!(client.get_feed(GetFeedRequest::new(FeedType::Nvt)));
+    assert_typed_success!(client.get_timezones(GetTimezonesRequest::new()));
+    assert_typed_success!(client.get_settings(GetSettingsRequest::new()));
+    assert_typed_success!(client.get_system_reports(GetSystemReportsRequest::new()));
+    assert_typed_success!(client.get_help(HelpRequest::new(HelpMode::BriefXml)));
+    assert_typed_success!(client.describe_auth(DescribeAuthRequest::new()));
+    assert_typed_success!(
+        client.get_resource_names(GetResourceNamesRequest::new(ResourceType::Task))
+    );
+    assert_typed_success!(client.get_resource_name(GetResourceNameRequest::new(
+        id("task-1"),
+        ResourceType::Task
+    )));
+    assert_typed_success!(client.get_license(GetLicenseRequest::new()));
     assert_typed_success!(client.get_vulnerabilities(GetVulnsRequest::default()));
     assert_typed_success!(client.get_vulnerability(GetVulnerabilityRequest::new("vuln-1")));
 
     let history = server.command_history();
-    assert_eq!(history.len(), 12);
+    assert_eq!(history.len(), 15);
     for (command, expected_count) in [
-        ("get_aggregates", 1),
+        ("get_aggregates", 2),
         ("get_features", 1),
         ("get_feeds", 2),
         ("get_timezones", 1),
         ("get_settings", 1),
         ("get_system_reports", 1),
-        ("help", 2),
+        ("help", 1),
         ("describe_auth", 1),
+        ("get_resource_names", 2),
+        ("get_license", 1),
         ("get_vulns", 2),
     ] {
         assert_eq!(
@@ -1515,7 +1523,7 @@ async fn system_discovery_facades_preserve_status_and_parse_context() {
     let mut status_client = client(&status_server).await;
 
     assert_server_error!(
-        status_client.get_system_reports(GetSystemReportsOpts::default()),
+        status_client.get_system_reports(GetSystemReportsRequest::new()),
         503,
         "metrics unavailable"
     );
@@ -1534,7 +1542,7 @@ async fn system_discovery_facades_preserve_status_and_parse_context() {
     };
     let mut parse_client = client(&parse_server).await;
     let parse_error = parse_client
-        .get_features_parsed()
+        .get_features(GetFeaturesRequest::new())
         .await
         .expect_err("missing feature compiled-in state should fail");
     assert!(matches!(
@@ -1764,10 +1772,7 @@ async fn semantic_report_export_executes_binary_and_nested_xml_codecs() {
         server.clear_history();
 
         let export = client
-            .execute(GetReportExportRequest::new(
-                id("report-1"),
-                GetReportExportOpts::new(id("format-1")),
-            ))
+            .execute(GetReportExportRequest::new(id("report-1"), id("format-1")))
             .await
             .expect("associated irregular export response decodes");
 
@@ -1811,15 +1816,12 @@ async fn semantic_report_requests_execute_large_and_mixed_repeated_responses() {
     let mut mixed_client = client(&server).await;
 
     let vulnerabilities = mixed_client
-        .execute(GetReportVulnsRequest::new(
-            id("report-1"),
-            GetReportDetailsOpts::default(),
-        ))
+        .execute(GetReportVulnsRequest::new(id("report-1")))
         .await
         .expect("mixed repeated response decodes");
     assert_eq!(vulnerabilities.items.len(), 3);
-    assert_eq!(vulnerabilities.items[1].id.as_deref(), Some("three"));
-    assert_eq!(vulnerabilities.items[2].id.as_deref(), Some("two"));
+    assert_eq!(vulnerabilities.items[1].id.as_deref(), Some("two"));
+    assert_eq!(vulnerabilities.items[2].id.as_deref(), Some("three"));
     server.shutdown().await;
 }
 
@@ -1835,7 +1837,7 @@ async fn remaining_report_mutations_execute_with_fixed_response_associations() {
             r#"<delete_report_response status="200" status_text="OK"/>"#,
         ),
     ];
-    let Some(server) = fixture_server(MockVersion::V22_4, &overrides).await else {
+    let Some(server) = fixture_server(MockVersion::V22_6, &overrides).await else {
         return;
     };
     let mut client = client(&server).await;
@@ -1844,31 +1846,27 @@ async fn remaining_report_mutations_execute_with_fixed_response_associations() {
     let report_id = id("33333333-3333-3333-3333-333333333333");
 
     let created = client
-        .execute(CreateReportRequest::new(
+        .execute(ImportReportRequest::new(
             task_id.clone(),
-            CreateReportOpts::default(),
+            br#"<report id="created"><name>Created</name></report>"#,
         ))
         .await
         .expect("report creation should decode");
     assert_eq!(created.status, 201);
 
+    let mut import_request = ImportReportRequest::new(
+        task_id,
+        br#"<report id="imported"><name>Imported</name></report>"#,
+    );
+    import_request.in_assets = Some(true);
     let imported = client
-        .execute(
-            ImportReportRequest::new(
-                r#"<report id="imported"><name>Imported</name></report>"#,
-                &task_id,
-                ImportReportOpts {
-                    in_assets: Some(true),
-                },
-            )
-            .expect("valid report XML"),
-        )
+        .execute(import_request)
         .await
         .expect("report import should decode");
     assert_eq!(imported.status, 201);
 
     let deleted = client
-        .execute(DeleteReportRequest::new(report_id.clone(), true))
+        .execute(DeleteReportRequest::new(report_id.clone()))
         .await
         .expect("report deletion should decode");
     assert_eq!(deleted.status, 200);
@@ -1889,6 +1887,60 @@ async fn remaining_report_mutations_execute_with_fixed_response_associations() {
 }
 
 #[tokio::test]
+async fn canonical_report_lifecycle_facades_accept_complete_requests_unchanged() {
+    let overrides = [
+        (
+            "get_reports",
+            r#"<get_reports_response status="200" status_text="OK"><report_count>0<filtered>0</filtered></report_count></get_reports_response>"#,
+        ),
+        (
+            "get_scan_report",
+            r#"<get_scan_report_response status="200" status_text="OK"><report id="33333333-3333-3333-3333-333333333333"><name>scan</name></report><scan_report_count>1<filtered>1</filtered></scan_report_count></get_scan_report_response>"#,
+        ),
+        (
+            "delete_report",
+            r#"<delete_report_response status="200" status_text="OK"/>"#,
+        ),
+    ];
+    let Some(server) = fixture_server(MockVersion::V22_8, &overrides).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let report_id = id("33333333-3333-3333-3333-333333333333");
+    server.clear_history();
+
+    client
+        .get_report(GetReportRequest::new(report_id.clone()))
+        .await
+        .expect("ordinary report detail facade");
+    client
+        .get_audit_reports(GetAuditReportsRequest::default())
+        .await
+        .expect("audit list facade");
+    client
+        .get_scan_report(GetScanReportRequest::new(report_id.clone()))
+        .await
+        .expect("structured scan facade");
+    client
+        .delete_report(DeleteReportRequest::new(report_id.clone()))
+        .await
+        .expect("ordinary delete facade");
+    client
+        .delete_audit_report(DeleteAuditReportRequest::new(report_id))
+        .await
+        .expect("audit delete facade");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 5);
+    assert_eq!(history[0].command_name(), "get_reports");
+    assert_eq!(history[1].command_name(), "get_reports");
+    assert_eq!(history[2].command_name(), "get_scan_report");
+    assert_eq!(history[3].command_name(), "delete_report");
+    assert_eq!(history[4].command_name(), "delete_report");
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn report_mutation_execution_preserves_server_status_and_parse_context() {
     let Some(status_server) = fixture_server(
         MockVersion::V22_4,
@@ -1903,9 +1955,9 @@ async fn report_mutation_execution_preserves_server_status_and_parse_context() {
     };
     let mut status_client = client(&status_server).await;
     let status_error = status_client
-        .execute(CreateReportRequest::new(
+        .execute(ImportReportRequest::new(
             id("22222222-2222-2222-2222-222222222222"),
-            CreateReportOpts::default(),
+            br#"<report id="status"><name>Status</name></report>"#,
         ))
         .await
         .expect_err("server status should fail");
@@ -1929,11 +1981,10 @@ async fn report_mutation_execution_preserves_server_status_and_parse_context() {
     };
     let mut malformed_client = client(&malformed_server).await;
     let malformed_error = malformed_client
-        .import_report(
-            r#"<report id="imported"><name>Imported</name></report>"#,
-            &id("22222222-2222-2222-2222-222222222222"),
-            ImportReportOpts::default(),
-        )
+        .import_report(ImportReportRequest::new(
+            id("22222222-2222-2222-2222-222222222222"),
+            br#"<report id="imported"><name>Imported</name></report>"#,
+        ))
         .await
         .expect_err("missing response id should retain parse context");
     assert!(matches!(
@@ -1969,7 +2020,6 @@ async fn standard_task_requests_execute_on_the_oldest_supported_version() {
             id("config-1"),
             id("target-1"),
             id("scanner-1"),
-            CreateTaskOpts::default(),
         ))
         .await
         .expect("standard task creation should be supported");
@@ -1981,10 +2031,7 @@ async fn standard_task_requests_execute_on_the_oldest_supported_version() {
     assert_eq!(cloned.status, 201);
 
     let modified = client
-        .execute(
-            ModifyTaskRequest::new(task_id.clone(), ModifyTaskOpts::default())
-                .expect("valid task modification"),
-        )
+        .execute(ModifyTaskRequest::new(task_id.clone()))
         .await
         .expect("task modification should be supported");
     assert_eq!(modified.status, 200);
@@ -2086,33 +2133,32 @@ async fn specialized_task_create_and_move_helpers_use_typed_execution() {
     let mut client = client(&server).await;
     server.clear_history();
 
-    assert_create_success!(client.create_import_task("import", Some("comment")));
-    assert_create_success!(client.create_container_task("container", None));
-    assert_create_success!(client.create_agent_group_task(
-        "agents",
-        &id("agent-group-1"),
-        &id("scanner-1"),
-        CreateAgentGroupTaskOpts::default(),
-    ));
+    let mut import = CreateImportTaskRequest::new("import");
+    import.comment = Some("comment".into());
+    assert_create_success!(client.create_import_task(import));
+    assert_create_success!(
+        client.create_container_task(CreateContainerTaskRequest::new("container"))
+    );
+    let mut agent = CreateAgentGroupTaskRequest::new("agents", id("agent-group-1"));
+    agent.scanner_id = Some(id("scanner-1"));
+    assert_create_success!(client.create_agent_group_task(agent));
     assert_create_success!(client.create_oci_image_target_task(
-        "oci",
-        &id("oci-target-1"),
-        &id("scanner-1"),
-        CreateOciImageTargetTaskOpts::default(),
+        CreateOciImageTargetTaskRequest::new("oci", id("oci-target-1"), id("scanner-1"))
     ));
     assert_create_success!(client.create_container_image_task(
-        "container image",
-        &id("oci-target-1"),
-        &id("scanner-1"),
-        CreateOciImageTargetTaskOpts::default(),
+        CreateContainerImageTaskRequest::new(
+            "container image",
+            id("oci-target-1"),
+            id("scanner-1"),
+        )
     ));
     assert_create_success!(client.create_web_application_task(
-        "web",
-        &id("web-target-1"),
-        &id("scanner-1"),
-        CreateWebApplicationTaskOpts::default(),
+        CreateWebApplicationTaskRequest::new("web", id("web-target-1"), id("scanner-1"))
     ));
-    assert_typed_success!(client.move_task(&id("task-1"), Some(&id("slave-1"))));
+    assert_typed_success!(client.move_task(MoveTaskRequest::new(
+        id("task-1"),
+        TaskMoveDestination::Slave(id("slave-1")),
+    )));
 
     let commands = server
         .command_history()
@@ -2143,44 +2189,39 @@ async fn next_only_specialized_task_helpers_reject_before_send() {
     server.clear_history();
 
     assert_unsupported_command!(
-        client.send(create_agent_group_task(
+        client.execute(CreateAgentGroupTaskRequest::new(
             "raw agents",
-            &id("agent-group-1"),
-            &id("scanner-1"),
-            CreateAgentGroupTaskOpts::default(),
+            id("agent-group-1"),
         )),
         "create_agent_group_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.send(create_oci_image_target_task(
+        client.execute(CreateOciImageTargetTaskRequest::new(
             "raw oci",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
+            id("oci-target-1"),
+            id("scanner-1"),
         )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.send(create_container_image_task(
+        client.execute(CreateContainerImageTaskRequest::new(
             "raw container image",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
+            id("oci-target-1"),
+            id("scanner-1"),
         )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.send(create_web_application_task(
+        client.execute(CreateWebApplicationTaskRequest::new(
             "raw web",
-            &id("web-target-1"),
-            &id("scanner-1"),
-            CreateWebApplicationTaskOpts::default(),
+            id("web-target-1"),
+            id("scanner-1"),
         )),
         "create_web_application_task",
         GmpVersion(22, 7),
@@ -2188,45 +2229,40 @@ async fn next_only_specialized_task_helpers_reject_before_send() {
     );
 
     assert_unsupported_command!(
-        client.create_agent_group_task(
+        client.create_agent_group_task(CreateAgentGroupTaskRequest::new(
             "agents",
-            &id("agent-group-1"),
-            &id("scanner-1"),
-            CreateAgentGroupTaskOpts::default(),
-        ),
+            id("agent-group-1"),
+        )),
         "create_agent_group_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.create_oci_image_target_task(
+        client.create_oci_image_target_task(CreateOciImageTargetTaskRequest::new(
             "oci",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        ),
+            id("oci-target-1"),
+            id("scanner-1"),
+        )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.create_container_image_task(
+        client.create_container_image_task(CreateContainerImageTaskRequest::new(
             "container image",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        ),
+            id("oci-target-1"),
+            id("scanner-1"),
+        )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.create_web_application_task(
+        client.create_web_application_task(CreateWebApplicationTaskRequest::new(
             "web",
-            &id("web-target-1"),
-            &id("scanner-1"),
-            CreateWebApplicationTaskOpts::default(),
-        ),
+            id("web-target-1"),
+            id("scanner-1"),
+        )),
         "create_web_application_task",
         GmpVersion(22, 7),
         "22.8"
@@ -2244,30 +2280,29 @@ async fn audit_variant_helpers_use_typed_execution_and_presend_validation() {
     let mut client = client(&server).await;
     server.clear_history();
 
-    assert_typed_success!(client.get_audits(GetTasksOpts::default()));
-    assert_typed_success!(client.get_audit(&id("audit-1")));
-    assert_create_success!(client.create_audit(
+    assert_typed_success!(client.get_audits(GetAuditsRequest::default()));
+    assert_typed_success!(client.get_audit(GetAuditRequest::new(id("audit-1"))));
+    assert_create_success!(client.create_audit(CreateAuditRequest::new(
         "audit",
-        &id("config-1"),
-        &id("target-1"),
-        &id("scanner-1"),
-        CreateTaskOpts::default(),
-    ));
-    assert_create_success!(client.clone_audit(&id("audit-1")));
-    assert_typed_success!(client.modify_audit(&id("audit-1"), ModifyTaskOpts::default()));
-    assert_typed_success!(client.delete_audit(&id("audit-1")));
+        id("config-1"),
+        id("target-1"),
+        id("scanner-1"),
+    )));
+    assert_create_success!(client.clone_audit(CloneAuditRequest::new(id("audit-1"))));
+    assert_typed_success!(client.modify_audit(ModifyAuditRequest::new(id("audit-1"))));
+    assert_typed_success!(client.delete_audit(DeleteAuditRequest::new(id("audit-1"), false)));
     assert_eq!(
         client
-            .start_audit(&id("audit-1"))
+            .start_audit(StartAuditRequest::new(id("audit-1")))
             .await
             .expect("audit start should parse")
             .status,
         202
     );
-    assert_typed_success!(client.stop_audit(&id("audit-1")));
+    assert_typed_success!(client.stop_audit(StopAuditRequest::new(id("audit-1"))));
     assert_eq!(
         client
-            .resume_audit(&id("audit-1"))
+            .resume_audit(ResumeAuditRequest::new(id("audit-1")))
             .await
             .expect("audit resume should parse")
             .status,
@@ -2295,19 +2330,15 @@ async fn audit_variant_helpers_use_typed_execution_and_presend_validation() {
     );
 
     server.clear_history();
+    let mut invalid = ModifyAuditRequest::new(id("audit-1"));
+    invalid.observer_group_ids = gvm_gmp::types::CollectionUpdate::replace([id("group-1")]);
     let error = client
-        .modify_audit(
-            &id("audit-1"),
-            ModifyTaskOpts {
-                observer_group_ids: gvm_gmp::types::CollectionUpdate::replace([id("group-1")]),
-                ..Default::default()
-            },
-        )
+        .modify_audit(invalid)
         .await
         .expect_err("invalid audit observer update should fail before sending");
     assert!(matches!(
         error,
-        GvmError::ModifyTask(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        GvmError::Request(gvm_gmp::GmpRequestError::InvalidCombination { .. })
     ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;
@@ -2887,7 +2918,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     };
     let mut client = client(&server).await;
 
-    let version = assert_typed_success!(client.get_version());
+    let version = assert_typed_success!(client.get_version(GetVersionRequest::new()));
     assert_eq!(version.version, "22.8");
 
     assert_typed_success!(client.get_targets(GetTargetsRequest::default()));
@@ -2901,9 +2932,11 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_scan_configs(GetScanConfigsRequest::default()));
     assert_typed_success!(client.get_scanners(GetScannersRequest::default()));
     assert_typed_success!(client.get_port_lists(GetPortListsRequest::default()));
-    assert_typed_success!(client.get_tasks(GetTasksOpts::default()));
-    assert_typed_success!(client.get_task(&id("11111111-1111-1111-1111-111111111111")));
-    assert_typed_success!(client.get_reports(GetReportsOpts::default()));
+    assert_typed_success!(client.get_tasks(GetTasksRequest::default()));
+    assert_typed_success!(client.get_task(GetTaskRequest::new(id(
+        "11111111-1111-1111-1111-111111111111"
+    ))));
+    assert_typed_success!(client.get_reports(GetReportsRequest::default()));
     assert_typed_success!(client.get_results(GetResultsRequest::default()));
     assert_typed_success!(client.get_nvts(GetNvtsRequest::default()));
     assert_typed_success!(client.get_nvt_families(GetNvtFamiliesRequest::new()));
@@ -2927,9 +2960,9 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesRequest::default()));
     assert_typed_success!(client.get_report_formats(GetReportFormatsRequest::default()));
     assert_typed_success!(client.get_report_configs(GetReportConfigsRequest::default()));
-    assert_typed_success!(client.get_settings());
-    assert_typed_success!(client.get_help());
-    assert_typed_success!(client.describe_auth());
+    assert_typed_success!(client.get_settings(GetSettingsRequest::new()));
+    assert_typed_success!(client.get_help(HelpRequest::new(HelpMode::Text)));
+    assert_typed_success!(client.describe_auth(DescribeAuthRequest::new()));
 
     let history = server.command_history();
     for expected in [
@@ -3031,14 +3064,13 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
     assert_create_success!(
         client.create_tls_certificate(CreateTlsCertificateRequest::new(b"certificate".to_vec()))
     );
-    assert_create_success!(client.create_task(
+    assert_create_success!(client.create_task(CreateTaskRequest::new(
         "scan",
-        &related_id,
-        &related_id,
-        &related_id,
-        CreateTaskOpts::default()
-    ));
-    assert_create_success!(client.clone_task(&related_id));
+        related_id.clone(),
+        related_id.clone(),
+        related_id.clone(),
+    )));
+    assert_create_success!(client.clone_task(CloneTaskRequest::new(related_id.clone())));
 
     let history = server.command_history();
     for (command, child) in [
@@ -3119,9 +3151,8 @@ async fn filters_tags_and_trashcan_execute_through_typed_facade() {
     assert_typed_success!(client.modify_tag(ModifyTagRequest::new(resource_id.clone())));
     assert_typed_success!(client.delete_tag(DeleteTagRequest::new(resource_id.clone(), true)));
 
-    assert_typed_success!(client.empty_trashcan());
-    assert_typed_success!(client.restore(&resource_id));
-    assert_typed_success!(client.restore_from_trashcan(&resource_id));
+    assert_typed_success!(client.empty_trashcan(EmptyTrashcanRequest::new()));
+    assert_typed_success!(client.restore(RestoreRequest::new(resource_id.clone())));
 
     let commands = server
         .command_history()
@@ -3144,7 +3175,6 @@ async fn filters_tags_and_trashcan_execute_through_typed_facade() {
             "modify_tag",
             "delete_tag",
             "empty_trashcan",
-            "restore",
             "restore",
         ]
     );
@@ -3196,7 +3226,7 @@ async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
     ));
 
     let trashcan_error = client
-        .empty_trashcan()
+        .empty_trashcan(EmptyTrashcanRequest::new())
         .await
         .expect_err("non-success empty-trashcan response should fail");
     assert!(matches!(
@@ -3421,23 +3451,19 @@ async fn remaining_mutation_families_use_typed_facade_and_scalar_relationship_up
         client.delete_target(DeleteTargetRequest::new(resource_id.clone(), false))
     );
 
-    assert_typed_success!(client.modify_task(&resource_id, ModifyTaskOpts::default()));
-    assert_typed_success!(client.modify_task(
-        &resource_id,
-        ModifyTaskOpts {
-            schedule_id: ScalarUpdate::set(id("schedule-1")),
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.modify_task(
-        &resource_id,
-        ModifyTaskOpts {
-            schedule_id: ScalarUpdate::Clear,
-            ..Default::default()
-        }
-    ));
-    assert_typed_success!(client.stop_task(&resource_id));
-    assert_typed_success!(client.delete_task(&resource_id, true));
+    assert_typed_success!(client.modify_task(ModifyTaskRequest::new(resource_id.clone())));
+    assert_typed_success!(client.modify_task({
+        let mut request = ModifyTaskRequest::new(resource_id.clone());
+        request.schedule_id = ScalarUpdate::set(id("schedule-1"));
+        request
+    }));
+    assert_typed_success!(client.modify_task({
+        let mut request = ModifyTaskRequest::new(resource_id.clone());
+        request.schedule_id = ScalarUpdate::Clear;
+        request
+    }));
+    assert_typed_success!(client.stop_task(StopTaskRequest::new(resource_id.clone())));
+    assert_typed_success!(client.delete_task(DeleteTaskRequest::new(resource_id.clone(), true)));
 
     let history = server.command_history();
     let xml_for = |command: &str| {
@@ -3502,18 +3528,26 @@ async fn remaining_mutation_families_surface_non_success_responses() {
         "conflict"
     );
     assert_server_error!(
-        client.modify_task(&resource_id, ModifyTaskOpts::default()),
+        client.modify_task(ModifyTaskRequest::new(resource_id.clone())),
         409,
         "conflict"
     );
-    assert_server_error!(client.stop_task(&resource_id), 409, "conflict");
-    assert_server_error!(client.delete_task(&resource_id, false), 409, "conflict");
+    assert_server_error!(
+        client.stop_task(StopTaskRequest::new(resource_id.clone())),
+        409,
+        "conflict"
+    );
+    assert_server_error!(
+        client.delete_task(DeleteTaskRequest::new(resource_id, false)),
+        409,
+        "conflict"
+    );
 
     server.shutdown().await;
 }
 
 #[tokio::test]
-async fn report_export_simple_and_options_paths_preserve_distinct_xml() {
+async fn report_export_omitted_and_selected_fields_preserve_distinct_xml() {
     let response = r#"<get_reports_response status="200" status_text="OK"><report id="11111111-1111-1111-1111-111111111111" format_id="33333333-3333-3333-3333-333333333333" extension="txt" content_type="text/plain">aGVsbG8=</report></get_reports_response>"#;
     let Some(server) = fixture_server(MockVersion::V22_8, &[("get_reports", response)]).await
     else {
@@ -3524,20 +3558,24 @@ async fn report_export_simple_and_options_paths_preserve_distinct_xml() {
 
     let report_id = id(CREATED_ID);
     let format_id = id("33333333-3333-3333-3333-333333333333");
-    let simple = client
-        .get_report_export(&report_id, &format_id)
-        .await
-        .expect("simple report export should parse");
-    assert_eq!(simple.bytes, b"hello");
 
-    let mut options = GetReportExportOpts::new(format_id);
-    options.report_config_id = Some(id("44444444-4444-4444-4444-444444444444"));
-    options.filter_string = Some("severity>5".into());
-    options.ignore_pagination = Some(false);
-    let configured = client
-        .get_report_export_with_opts(&report_id, options)
+    let omitted = client
+        .get_report_export(GetReportExportRequest::new(
+            report_id.clone(),
+            format_id.clone(),
+        ))
         .await
-        .expect("options report export should parse");
+        .expect("report export with omitted optional fields should parse");
+    assert_eq!(omitted.bytes, b"hello");
+
+    let mut configured_request = GetReportExportRequest::new(report_id, format_id);
+    configured_request.report_config_id = Some(id("44444444-4444-4444-4444-444444444444"));
+    configured_request.filter_string = Some("severity>5".into());
+    configured_request.ignore_pagination = Some(false);
+    let configured = client
+        .get_report_export(configured_request)
+        .await
+        .expect("report export with selected optional fields should parse");
     assert_eq!(configured.content_type.as_deref(), Some("text/plain"));
 
     let requests: Vec<_> = server
@@ -3580,6 +3618,26 @@ async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
         client.command_support("export_scan_report"),
         CommandSupport::RequiresDiscovery
     );
+    server.clear_history();
+    let undiscovered = client
+        .export_scan_report(ExportScanReportRequest::new(id(
+            "22222222-2222-2222-2222-222222222222",
+        )))
+        .await
+        .expect_err("valid request must require discovery before encoding and sending");
+    assert!(matches!(
+        undiscovered,
+        GvmError::CommandDiscoveryRequired { command }
+            if command == "export_scan_report"
+    ));
+    let mut invalid = ExportScanReportRequest::new(id("22222222-2222-2222-2222-222222222222"));
+    invalid.filter_string = Some("rows=10\0secret".into());
+    let invalid_error = client
+        .export_scan_report(invalid)
+        .await
+        .expect_err("validation must precede discovery policy");
+    assert!(matches!(invalid_error, GvmError::Request(_)));
+    assert!(server.command_history().is_empty());
     client
         .discover_commands()
         .await
@@ -3590,10 +3648,9 @@ async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
     );
 
     let response = client
-        .export_scan_report(
-            &id("22222222-2222-2222-2222-222222222222"),
-            ExportScanReportOpts::default(),
-        )
+        .export_scan_report(ExportScanReportRequest::new(id(
+            "22222222-2222-2222-2222-222222222222",
+        )))
         .await
         .expect("asynchronous export should parse");
 
@@ -3627,10 +3684,9 @@ async fn asynchronous_scan_report_export_rejects_negative_help_discovery_on_22_8
     server.clear_history();
 
     let error = client
-        .export_scan_report(
-            &id("22222222-2222-2222-2222-222222222222"),
-            ExportScanReportOpts::default(),
-        )
+        .export_scan_report(ExportScanReportRequest::new(id(
+            "22222222-2222-2222-2222-222222222222",
+        )))
         .await
         .expect_err("22.8 alone must not unlock the command");
 
@@ -3703,7 +3759,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
     v225_server.clear_history();
 
     let features_error = v225_client
-        .get_features_parsed()
+        .get_features(GetFeaturesRequest::new())
         .await
         .expect_err("22.6 registry gate should reject 22.5");
     assert!(matches!(
@@ -3851,8 +3907,71 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         "22.8"
     );
 
+    assert_unsupported_command!(
+        v227_client.execute(GetReportHostsRequest::new(report_id.clone())),
+        "get_report_hosts",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportPortsRequest::new(report_id.clone())),
+        "get_report_ports",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportApplicationsRequest::new(report_id.clone())),
+        "get_report_applications",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportOperatingSystemsRequest::new(report_id.clone())),
+        "get_report_operating_systems",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportCvesRequest::new(report_id.clone())),
+        "get_report_cves",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportVulnsRequest::new(report_id.clone())),
+        "get_report_vulns",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportTlsCertificatesRequest::new(report_id.clone())),
+        "get_report_tls_certificates",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportErrorsRequest::new(report_id.clone())),
+        "get_report_errors",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetReportClosedCvesRequest::new(report_id.clone())),
+        "get_report_closed_cves",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+
+    let mut invalid_projection = GetReportHostsRequest::new(report_id.clone());
+    invalid_projection.filter_string = Some("rows=10\0secret".into());
+    let invalid_error = v227_client
+        .execute(invalid_projection)
+        .await
+        .expect_err("request validation must precede the 22.8 capability check");
+    assert!(matches!(invalid_error, GvmError::Request(_)));
+
     let export_error = v227_client
-        .get_report_export(&report_id, &format_id)
+        .get_report_export(GetReportExportRequest::new(report_id, format_id))
         .await
         .expect_err("22.8 semantic export gate should reject 22.7");
     assert!(matches!(
@@ -3864,7 +3983,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         } if command == "get_report_export"
     ));
     let timezones_error = v227_client
-        .get_timezones()
+        .get_timezones(GetTimezonesRequest::new())
         .await
         .expect_err("22.8 timezone gate should reject 22.7");
     assert!(matches!(

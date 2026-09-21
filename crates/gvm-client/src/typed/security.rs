@@ -26,7 +26,6 @@ use gvm_gmp::responses::{
     GetNvtsResponse, GetPreferencesResponse, GetTimezonesResponse, GetVulnerabilitiesResponse,
     ModifyCredentialResponse, VerifyCredentialStoreResponse,
 };
-use gvm_gmp::FeedType;
 
 impl<C: GvmConnection + Send> GmpClient<C> {
     // ── Feeds ─────────────────────────────────────────────────────────────────
@@ -35,24 +34,33 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_feeds(&mut self) -> Result<GetFeedsResponse, GvmError> {
-        self.execute(GetFeedsRequest::new()).await
+    pub async fn get_feeds(
+        &mut self,
+        request: GetFeedsRequest,
+    ) -> Result<GetFeedsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a type-filtered `get_feeds` request and return a typed response.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_feed(&mut self, feed_type: FeedType) -> Result<GetFeedsResponse, GvmError> {
-        self.execute(GetFeedRequest::new(feed_type)).await
+    pub async fn get_feed(
+        &mut self,
+        request: GetFeedRequest,
+    ) -> Result<GetFeedsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_timezones` request and return a typed [`GetTimezonesResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_timezones(&mut self) -> Result<GetTimezonesResponse, GvmError> {
-        self.execute(GetTimezonesRequest::new()).await
+    pub async fn get_timezones(
+        &mut self,
+        request: GetTimezonesRequest,
+    ) -> Result<GetTimezonesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_credential_stores` request and return a typed [`GetCredentialStoresResponse`].

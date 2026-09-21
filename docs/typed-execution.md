@@ -199,21 +199,22 @@ tracing.
 
 ## System administration and user settings
 
-The system administration slice represents all six public mutation builders:
-authentication configuration, default and option-bearing license updates, the
-system-module setting compatibility wrapper, and default and option-bearing
-wizard execution. The three user-setting builders cover list, detail, and
-modification. Every request delegates to its established builder, so XML bytes,
-base64 setting encoding, option semantics, identifiers, status handling, and
-specialized wizard response parsing remain unchanged.
+The system administration slice uses complete direct-codec requests for
+authentication configuration, license updates, the system-module setting
+operation, and wizard execution. User-setting list, detail, and modification
+are complete requests as well. Former free builders and options bags are
+removed. License `allow_empty`, wizard mode/read-only, setting selectors,
+list filtering/paging/sorting, explicit clears, and response associations now
+belong to the request values.
 
 The system-module `ModifySettingRequest` and user-setting-module
 `ModifyUserSettingRequest` are distinct semantic values over the same canonical
 encoder. Authentication, license, and wizard convenience helpers use
 `execute`; the user-setting requests are available directly through generic
-execution without adding another facade. `Debug` output redacts authentication
-setting values, license files, wizard parameter values, and user-setting
-values, matching the wire-trace boundary's secret handling.
+execution without adding another facade. The default/option-bearing license and
+wizard types were redundant forwarding variants and are removed. `Debug`,
+validation/request errors, diagnostics, and wire traces redact authentication
+settings, license files, wizard parameter values, and user-setting values.
 
 Audit list, detail, create, clone, modify, delete, start, stop, and resume
 requests likewise remain audit-scoped types even where their wire command is a
@@ -339,12 +340,13 @@ severity, task, and result restrictions while preserving omitted NVT and
 activation. The unsupported note `orphan` child is no longer emitted.
 
 Trashcan operations follow the same rule. `EmptyTrashcanRequest` selects the
-existing empty-trashcan response, while `RestoreRequest` and
-`RestoreFromTrashcanRequest` preserve the two public builder names as distinct
-semantic values over the same byte-identical `<restore>` command and typed
-response. All of these baseline commands remain available on every supported
-GMP version, and retained facade helpers delegate through `execute` without
-changing raw `send` or `call` behavior.
+existing empty-trashcan response, while `RestoreRequest` owns the required ID
+and the sole `<restore>` command. Pinned gvmd has no second restore semantic
+operation, so the byte-identical `RestoreFromTrashcanRequest`, builder, and
+facade alias are removed. Both baseline commands remain available on every
+supported GMP version, and retained facade helpers accept canonical requests
+unchanged and delegate through `execute` without changing raw `send` or `call`
+behavior.
 
 ## Identity and authorization lifecycles
 
@@ -590,18 +592,15 @@ retaining their existing explicit parsers:
 
 ```rust
 use gvm_gmp::commands::reports::{
-    GetReportExportOpts, GetReportExportRequest, GetReportVulnsRequest,
+    GetReportExportRequest, GetReportVulnsRequest,
 };
 
 let export = client
-    .execute(GetReportExportRequest::new(
-        report_id.clone(),
-        GetReportExportOpts::new(report_format_id),
-    ))
+    .execute(GetReportExportRequest::new(report_id.clone(), report_format_id))
     .await?;
 
 let vulnerabilities = client
-    .execute(GetReportVulnsRequest::new(report_id, Default::default()))
+    .execute(GetReportVulnsRequest::new(report_id))
     .await?;
 ```
 
@@ -619,8 +618,8 @@ alone:
   export require GMP 22.8;
 - synchronous export uses `<get_reports ...>` on the wire but declares the
   semantic capability `get_report_export`;
-- asynchronous `export_scan_report` was added without a distinct GMP version
-  and therefore continues to require positive XML-help discovery.
+- asynchronous `export_scan_report` has a GMP 22.7 lower bound but version
+  alone is insufficient; it requires positive XML-help discovery.
 
 `GmpClient::command_support` exposes the execution gate's actionable state.
 It distinguishes a registered command that still needs discovery from an
@@ -633,9 +632,12 @@ server advertisement exists; authorization and command success are still
 determined when gvmd executes it. Unknown names retain the raw `send`/`call`
 escape hatch.
 
-These checks run before transmission through the same `send` path used by raw
-and ordinary typed requests. The retained raw builders and helpers remain
-available when callers need unmodeled report details.
+These checks run before canonical encoding and transmission. Named projection
+and export helpers accept complete request values and delegate only to
+`execute`. Forwarding builders, raw projection facades, `_parsed` suffixes, and
+the duplicate `get_report_vulnerabilities` name are removed. Generic
+`send`/`call`, `XmlCommand`, and custom codecs remain available when callers
+need intentionally unmodeled report XML.
 
 ## Report mutations
 
@@ -651,7 +653,8 @@ shape and action response. The `import_report` convenience method is a thin
 
 Generic configurations, scan configurations, and policies share the
 `get_configs`, `create_config`, `modify_config`, and `delete_config` wire roots.
-Their 24 lifecycle requests now own complete inputs and direct encoding. Named
+Their lifecycle, preference, and selection requests own complete inputs and
+direct encoding. Named
 creation requires a source; clone may omit its name to request server-generated
 naming. Import embeds one validated export document without reserialization:
 
@@ -679,11 +682,16 @@ carrier bytes, and require one direct config with a name plus selector and
 preference containers. Their Debug/errors/traces redact the carrier and
 preference value/default/alternative data.
 
-`GetScanConfigPreferencesRequest`, its options/builders/facades, and the eight
-configured preference/NVT/family mutation helpers remain transitional and
-unchanged. They are the next ordered migration slice. There is no canonical or
-facade `sync_config`: the public schema names it, but pinned/current gvmd have no
-GMP dispatcher and built-in mock modes return the source-shaped 400 response.
+Preference list and single reads have distinct source-faithful typed responses;
+a missing single match is `item: None`, and absent preference values remain
+distinct from empty values. The eight scan-config/policy mutations encode
+decoded preference values exactly once, distinguish delete from explicit empty,
+and preserve ordered replacement/empty-clear semantics for NVTs and families.
+Secret values are redacted from request diagnostics and wire traces. Use
+`execute` for these operations; the redundant builders, options bag, and two
+preference facades are removed. There is no canonical or facade `sync_config`:
+the public schema names it, but pinned/current gvmd have no GMP dispatcher and
+built-in mock modes return the source-shaped 400 response.
 
 The compact response types tolerate rich expansion subtrees but are not export
 models. Use raw `send`/`call` or a custom codec for complete exports and

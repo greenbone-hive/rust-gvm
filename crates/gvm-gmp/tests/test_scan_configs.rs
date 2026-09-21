@@ -5,12 +5,12 @@
 
 mod common;
 
-use common::{id, xml as raw_xml};
+use common::id;
 use gvm_gmp::commands::configs::ConfigUsageType;
 use gvm_gmp::commands::scan_configs::*;
 use gvm_gmp::responses::{
-    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigsResponse,
-    ModifyScanConfigResponse,
+    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferenceResponse,
+    GetScanConfigPreferencesResponse, GetScanConfigsResponse, ModifyScanConfigResponse,
 };
 use gvm_gmp::{GmpRequest, GmpRequestCodec, GmpResponse, GmpVersion};
 
@@ -338,6 +338,64 @@ fn all_lifecycle_requests_have_semantic_metadata_and_response_associations() {
                 .unwrap(),
             "modify_policy_set_comment",
         ),
+        (
+            GetScanConfigPreferencesRequest::new().command().unwrap(),
+            "get_scan_config_preferences",
+        ),
+        (
+            GetScanConfigPreferenceRequest::new("entry:Name")
+                .command()
+                .unwrap(),
+            "get_scan_config_preference",
+        ),
+        (
+            ModifyScanConfigSetNvtPreferenceRequest::new(id("c"), "name", "oid", None)
+                .command()
+                .unwrap(),
+            "modify_scan_config_set_nvt_preference",
+        ),
+        (
+            ModifyScanConfigSetScannerPreferenceRequest::new(id("c"), "name", None)
+                .command()
+                .unwrap(),
+            "modify_scan_config_set_scanner_preference",
+        ),
+        (
+            ModifyScanConfigSetNvtSelectionRequest::new(id("c"), "family", vec![])
+                .command()
+                .unwrap(),
+            "modify_scan_config_set_nvt_selection",
+        ),
+        (
+            ModifyScanConfigSetFamilySelectionRequest::new(id("c"), vec![], false)
+                .command()
+                .unwrap(),
+            "modify_scan_config_set_family_selection",
+        ),
+        (
+            ModifyPolicySetNvtPreferenceRequest::new(id("p"), "name", "oid", None)
+                .command()
+                .unwrap(),
+            "modify_policy_set_nvt_preference",
+        ),
+        (
+            ModifyPolicySetScannerPreferenceRequest::new(id("p"), "name", None)
+                .command()
+                .unwrap(),
+            "modify_policy_set_scanner_preference",
+        ),
+        (
+            ModifyPolicySetNvtSelectionRequest::new(id("p"), "family", vec![])
+                .command()
+                .unwrap(),
+            "modify_policy_set_nvt_selection",
+        ),
+        (
+            ModifyPolicySetFamilySelectionRequest::new(id("p"), vec![], false)
+                .command()
+                .unwrap(),
+            "modify_policy_set_family_selection",
+        ),
     ];
     for (command, semantic) in requests {
         assert_eq!(
@@ -345,6 +403,7 @@ fn all_lifecycle_requests_have_semantic_metadata_and_response_associations() {
             match semantic {
                 "get_scan_configs" | "get_scan_config" | "get_policies" | "get_policy" =>
                     "get_configs",
+                "get_scan_config_preferences" | "get_scan_config_preference" => "get_preferences",
                 "create_scan_config" | "create_policy" | "clone_scan_config" | "clone_policy"
                 | "import_scan_config" | "import_policy" => "create_config",
                 "modify_scan_config"
@@ -352,7 +411,15 @@ fn all_lifecycle_requests_have_semantic_metadata_and_response_associations() {
                 | "modify_scan_config_set_name"
                 | "modify_scan_config_set_comment"
                 | "modify_policy_set_name"
-                | "modify_policy_set_comment" => "modify_config",
+                | "modify_policy_set_comment"
+                | "modify_scan_config_set_nvt_preference"
+                | "modify_scan_config_set_scanner_preference"
+                | "modify_scan_config_set_nvt_selection"
+                | "modify_scan_config_set_family_selection"
+                | "modify_policy_set_nvt_preference"
+                | "modify_policy_set_scanner_preference"
+                | "modify_policy_set_nvt_selection"
+                | "modify_policy_set_family_selection" => "modify_config",
                 _ => "delete_config",
             }
         );
@@ -366,35 +433,160 @@ fn all_lifecycle_requests_have_semantic_metadata_and_response_associations() {
     assert_response::<_, CreateScanConfigResponse>(&ImportScanConfigRequest::new(import));
     assert_response::<_, ModifyScanConfigResponse>(&ModifyScanConfigRequest::new(id("c")));
     assert_response::<_, DeleteScanConfigResponse>(&DeleteScanConfigRequest::new(id("c")));
+    assert_response::<_, GetScanConfigPreferencesResponse>(&GetScanConfigPreferencesRequest::new());
+    assert_response::<_, GetScanConfigPreferenceResponse>(&GetScanConfigPreferenceRequest::new(
+        "entry:Name",
+    ));
+    assert_response::<_, ModifyScanConfigResponse>(&ModifyPolicySetFamilySelectionRequest::new(
+        id("p"),
+        vec![],
+        false,
+    ));
 }
 
 #[test]
-fn deferred_preference_and_selection_builders_remain_byte_compatible() {
+#[allow(clippy::too_many_lines)]
+fn preference_and_selection_requests_encode_exact_complete_values() {
+    let mut list = GetScanConfigPreferencesRequest::new();
+    list.nvt_oid = Some("1.3.6.1".into());
+    list.config_id = Some(id("c1"));
     assert_eq!(
-        raw_xml(get_scan_config_preferences(
-            GetScanConfigPreferencesOpts::default()
-        )),
-        "<get_preferences/>"
+        xml(&list),
+        "<get_preferences config_id=\"c1\" nvt_oid=\"1.3.6.1\"/>"
     );
+
+    let mut single = GetScanConfigPreferenceRequest::new("entry:Timeout & retries");
+    single.nvt_oid = Some("1.3.6.1".into());
+    single.config_id = Some(id("c1"));
     assert_eq!(
-        raw_xml(modify_scan_config_set_nvt_preference(
-            &id("c1"),
-            "timeout",
+        xml(&single),
+        "<get_preferences config_id=\"c1\" nvt_oid=\"1.3.6.1\" preference=\"entry:Timeout &amp; retries\"/>"
+    );
+
+    assert_eq!(
+        xml(&ModifyScanConfigSetNvtPreferenceRequest::new(
+            id("c1"),
+            "1.3.6.1:1:entry:timeout",
             "1.3.6.1",
-            Some("30"),
+            Some("30".into()),
         )),
-        "<modify_config config_id=\"c1\"><preference><nvt oid=\"1.3.6.1\"/><name>timeout</name><value>MzA=</value></preference></modify_config>"
+        "<modify_config config_id=\"c1\"><preference><nvt oid=\"1.3.6.1\"/><name>1.3.6.1:1:entry:timeout</name><value>MzA=</value></preference></modify_config>"
     );
     assert_eq!(
-        raw_xml(modify_policy_set_family_selection(
-            &id("p1"),
-            &[NvtFamilySelection {
-                name: "General".into(),
-                growing: true,
-                all: false,
-            }],
+        xml(&ModifyPolicySetNvtPreferenceRequest::new(
+            id("p1"),
+            "1.3.6.1:1:entry:timeout",
+            "1.3.6.1",
+            Some("MzA=".into()),
+        )),
+        "<modify_config config_id=\"p1\"><preference><nvt oid=\"1.3.6.1\"/><name>1.3.6.1:1:entry:timeout</name><value>TXpBPQ==</value></preference></modify_config>"
+    );
+    assert_eq!(
+        xml(&ModifyScanConfigSetScannerPreferenceRequest::new(
+            id("c1"),
+            "Scanner option",
+            Some(String::new()),
+        )),
+        "<modify_config config_id=\"c1\"><preference><name>Scanner option</name><value></value></preference></modify_config>"
+    );
+    assert_eq!(
+        xml(&ModifyPolicySetScannerPreferenceRequest::new(
+            id("p1"),
+            "Scanner option",
+            None,
+        )),
+        "<modify_config config_id=\"p1\"><preference><name>Scanner option</name></preference></modify_config>"
+    );
+    assert_eq!(
+        xml(&ModifyScanConfigSetNvtSelectionRequest::new(
+            id("c1"),
+            "General",
+            vec!["1.3.6.2".into(), "1.3.6.1".into()],
+        )),
+        "<modify_config config_id=\"c1\"><nvt_selection><family>General</family><nvt oid=\"1.3.6.2\"/><nvt oid=\"1.3.6.1\"/></nvt_selection></modify_config>"
+    );
+    assert_eq!(
+        xml(&ModifyPolicySetNvtSelectionRequest::new(
+            id("p1"),
+            "General",
+            vec![],
+        )),
+        "<modify_config config_id=\"p1\"><nvt_selection><family>General</family></nvt_selection></modify_config>"
+    );
+    let families = vec![
+        NvtFamilySelection {
+            name: "General".into(),
+            growing: true,
+            all: false,
+        },
+        NvtFamilySelection {
+            name: "Web & application".into(),
+            growing: false,
+            all: true,
+        },
+    ];
+    assert_eq!(
+        xml(&ModifyScanConfigSetFamilySelectionRequest::new(
+            id("c1"),
+            families.clone(),
+            true,
+        )),
+        "<modify_config config_id=\"c1\"><family_selection><growing>1</growing><family><name>General</name><all>0</all><growing>1</growing></family><family><name>Web &amp; application</name><all>1</all><growing>0</growing></family></family_selection></modify_config>"
+    );
+    assert_eq!(
+        xml(&ModifyPolicySetFamilySelectionRequest::new(
+            id("p1"),
+            vec![],
             false,
         )),
-        "<modify_config config_id=\"p1\"><family_selection><growing>0</growing><family><name>General</name><all>0</all><growing>1</growing></family></family_selection></modify_config>"
+        "<modify_config config_id=\"p1\"><family_selection><growing>0</growing></family_selection></modify_config>"
     );
+}
+
+#[test]
+fn final_mutated_values_are_validated_and_secret_diagnostics_are_redacted() {
+    let mut list = GetScanConfigPreferencesRequest::new();
+    list.nvt_oid = Some(String::new());
+    assert!(list.encode(GmpVersion(22, 4)).is_err());
+
+    let mut single = GetScanConfigPreferenceRequest::new("valid");
+    single.preference = "secret\u{0}".into();
+    let error = single.validate().expect_err("invalid XML must fail");
+    assert!(!error.to_string().contains("secret"));
+
+    let mut preference = ModifyScanConfigSetNvtPreferenceRequest::new(
+        id("c1"),
+        "1.3.6.1:1:password:Password",
+        "1.3.6.1",
+        Some("do-not-leak".into()),
+    );
+    assert!(!format!("{preference:?}").contains("do-not-leak"));
+    preference.nvt_oid.clear();
+    let error = preference.validate().expect_err("empty OID must fail");
+    assert!(!format!("{error:?} {error}").contains("do-not-leak"));
+
+    let empty_radio = ModifyPolicySetNvtPreferenceRequest::new(
+        id("p1"),
+        "1.3.6.1:2:radio:Mode",
+        "1.3.6.1",
+        Some(String::new()),
+    );
+    assert!(empty_radio.validate().is_err());
+
+    let mut selection =
+        ModifyScanConfigSetNvtSelectionRequest::new(id("c1"), "General", vec!["1.3.6.1".into()]);
+    selection.nvt_oids[0].clear();
+    assert!(selection.validate().is_err());
+
+    let mut families = ModifyPolicySetFamilySelectionRequest::new(
+        id("p1"),
+        vec![NvtFamilySelection {
+            name: "General".into(),
+            growing: false,
+            all: true,
+        }],
+        false,
+    );
+    families.families[0].name.clear();
+    assert!(families.validate().is_err());
 }

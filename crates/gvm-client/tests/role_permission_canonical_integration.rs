@@ -28,7 +28,9 @@ async fn setup(version: MockVersion) -> (MockGmpServer, GmpClient<UnixSocketConn
     .await
     .expect("connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     (server, client)

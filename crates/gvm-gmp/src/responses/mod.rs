@@ -22,6 +22,7 @@ pub mod filter;
 pub mod group;
 pub mod host;
 pub mod integration_config;
+pub mod license;
 pub mod note;
 pub mod nvt;
 pub mod oci_image_target;
@@ -112,6 +113,9 @@ pub use integration_config::{
     GetIntegrationConfigsResponse, IntegrationConfig, IntegrationConfigOidc,
     IntegrationConfigService, ModifyIntegrationConfigResponse,
 };
+pub use license::{
+    GetLicenseResponse, License, LicenseAppliance, LicenseContent, LicenseMeta, LicenseNamedValue,
+};
 pub use note::{
     CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse, Note,
 };
@@ -134,7 +138,7 @@ pub use port_list::{
 };
 pub use preference::{GetPreferencesResponse, Preference, PreferenceNvt};
 pub use report::{
-    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,
+    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse, GetAuditReportsResponse,
     GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
     GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
     GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
@@ -156,9 +160,9 @@ pub use role::{
     CreateRoleResponse, DeleteRoleResponse, GetRolesResponse, ModifyRoleResponse, Role,
 };
 pub use scan_config::{
-    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferencesResponse,
-    GetScanConfigsResponse, ModifyScanConfigResponse, ScanConfig, ScanConfigPreference,
-    ScanConfigPreferenceNvt, SyncConfigResponse,
+    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferenceResponse,
+    GetScanConfigPreferencesResponse, GetScanConfigsResponse, ModifyScanConfigResponse, ScanConfig,
+    ScanConfigPreference, ScanConfigPreferenceNvt, SyncConfigResponse,
 };
 pub use scan_report::{GetScanReportResponse, ScanReport, ScanReportResultCount};
 pub use scanner::{
@@ -175,9 +179,9 @@ pub use secinfo::{
     GetOperatingSystemsResponse, GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
 };
 pub use system::{
-    AuthConfSetting, AuthGroup, DescribeAuthResponse, GetSettingsResponse, GetTimezonesResponse,
-    HelpCommand, HelpResponse, HelpSchema, ModifyAuthResponse, ModifyLicenseResponse,
-    RunWizardResponse, Setting, Timezone,
+    AuthConfSetting, AuthGroup, CertificateInfo, DescribeAuthResponse, GetSettingsResponse,
+    GetTimezonesResponse, HelpCommand, HelpResponse, HelpSchema, ModifyAuthResponse,
+    ModifyLicenseResponse, RunWizardResponse, Setting, Timezone,
 };
 pub use system_reports::{GetSystemReportsResponse, SystemReport};
 pub use tag::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse, Tag};

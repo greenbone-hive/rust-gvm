@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Feature command builders.
+//! Canonical feature discovery request.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
 use crate::responses::GetFeaturesResponse;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Semantic request for discovering compiled and enabled gvmd features.
+/// Canonical request for discovering compiled and enabled gvmd features.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetFeaturesRequest;
 
@@ -20,18 +20,16 @@ impl GetFeaturesRequest {
     }
 }
 
-impl Request for GetFeaturesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_features().to_bytes()
+impl GmpRequestCodec for GetFeaturesRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_features"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("get_features").to_bytes())
     }
 }
 
 impl GmpRequest for GetFeaturesRequest {
     type Response = GetFeaturesResponse;
-}
-
-/// Build a `get_features` request.
-#[must_use]
-pub fn get_features() -> XmlCommand {
-    XmlCommand::new("get_features")
 }

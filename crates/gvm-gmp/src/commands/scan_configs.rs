@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Canonical scan-configuration and policy lifecycle requests plus deferred
-//! preference and selection mutation compatibility APIs.
+//! Canonical scan-configuration and policy requests.
 
 use std::fmt;
 
 use base64::Engine as _;
-use gvm_protocol::{xml_command::XmlElement, Request, XmlCommand};
+use gvm_protocol::{xml_command::XmlElement, Request as _, XmlCommand};
 use quick_xml::events::{BytesRef, BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 
 use crate::commands::configs::{
     config_copy_command, config_delete_command, config_modify_command, config_query_command,
     is_xml_1_0_character, validate_id, validate_metadata, validate_named_copy,
-    validate_optional_xml_text, validate_query, ConfigUsageType,
+    validate_optional_id, validate_optional_xml_text, validate_query, validate_xml_text,
+    ConfigUsageType,
 };
 use crate::common::bool_str;
 use crate::responses::{
-    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferencesResponse,
-    GetScanConfigsResponse, ModifyScanConfigResponse,
+    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferenceResponse,
+    GetScanConfigPreferencesResponse, GetScanConfigsResponse, ModifyScanConfigResponse,
 };
 use crate::types::EntityId;
 use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// NVT family selection entry for deferred scan-config and policy mutation requests.
+/// One ordered family entry in a complete family-selection replacement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NvtFamilySelection {
     /// NVT family name.
@@ -33,15 +33,6 @@ pub struct NvtFamilySelection {
     pub growing: bool,
     /// Whether all NVTs from this family should be selected.
     pub all: bool,
-}
-
-/// Options for deferred scan-config `get_preferences` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetScanConfigPreferencesOpts {
-    /// Optional NVT OID to restrict preference lookup.
-    pub nvt_oid: Option<String>,
-    /// Optional scan-config identifier to request configured values.
-    pub config_id: Option<EntityId>,
 }
 
 /// Request for listing scan configurations.
@@ -1288,23 +1279,45 @@ fn import_error(field: &'static str, reason: &'static str) -> GmpRequestError {
     GmpRequestError::invalid_field(field, reason)
 }
 
-/// Transitional request for scan-configuration preferences.
-#[derive(Debug, Clone, Default)]
+/// Complete list request for default or configured preferences.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GetScanConfigPreferencesRequest {
-    opts: GetScanConfigPreferencesOpts,
+    /// Optional NVT OID restriction.
+    pub nvt_oid: Option<String>,
+    /// Optional configuration whose effective values should be returned.
+    pub config_id: Option<EntityId>,
 }
 
 impl GetScanConfigPreferencesRequest {
-    /// Create a scan-configuration preference list request.
+    /// Create an unrestricted preference list request.
     #[must_use]
-    pub fn new(opts: GetScanConfigPreferencesOpts) -> Self {
-        Self { opts }
+    pub const fn new() -> Self {
+        Self {
+            nvt_oid: None,
+            config_id: None,
+        }
     }
 }
 
-impl Request for GetScanConfigPreferencesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_scan_config_preferences(self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetScanConfigPreferencesRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_optional_required_xml(self.nvt_oid.as_deref(), "nvt_oid")?;
+        validate_optional_id(self.config_id.as_ref(), "config_id")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_preferences",
+            "get_scan_config_preferences",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(
+            get_preferences_command(None, self.nvt_oid.as_deref(), self.config_id.as_ref())
+                .to_bytes(),
+        )
     }
 }
 
@@ -1312,72 +1325,313 @@ impl GmpRequest for GetScanConfigPreferencesRequest {
     type Response = GetScanConfigPreferencesResponse;
 }
 
-/// Transitional request for one scan-configuration preference.
-#[derive(Debug, Clone)]
+/// Complete request for the first preference matching an opaque `TYPE:NAME` selector.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetScanConfigPreferenceRequest {
-    name: String,
-    opts: GetScanConfigPreferencesOpts,
+    /// Required opaque suffix compared after a stored preference key's second colon.
+    pub preference: String,
+    /// Optional NVT OID restriction.
+    pub nvt_oid: Option<String>,
+    /// Optional configuration whose effective value should be returned.
+    pub config_id: Option<EntityId>,
 }
 
 impl GetScanConfigPreferenceRequest {
-    /// Create a single scan-configuration preference request.
+    /// Create a single-preference request without NVT or configuration restrictions.
     #[must_use]
-    pub fn new(name: impl Into<String>, opts: GetScanConfigPreferencesOpts) -> Self {
+    pub fn new(preference: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
-            opts,
+            preference: preference.into(),
+            nvt_oid: None,
+            config_id: None,
         }
     }
 }
 
-impl Request for GetScanConfigPreferenceRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_scan_config_preference(&self.name, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetScanConfigPreferenceRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_required_xml(&self.preference, "preference")?;
+        validate_optional_required_xml(self.nvt_oid.as_deref(), "nvt_oid")?;
+        validate_optional_id(self.config_id.as_ref(), "config_id")
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_preferences",
+            "get_scan_config_preference",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_preferences_command(
+            Some(&self.preference),
+            self.nvt_oid.as_deref(),
+            self.config_id.as_ref(),
+        )
+        .to_bytes())
     }
 }
 
 impl GmpRequest for GetScanConfigPreferenceRequest {
-    type Response = GetScanConfigPreferencesResponse;
+    type Response = GetScanConfigPreferenceResponse;
 }
 
-macro_rules! define_nvt_preference_request {
-    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
-        #[doc = $request_doc]
-        #[derive(Debug, Clone)]
-        pub struct $request {
-            resource_id: EntityId,
-            name: String,
-            nvt_oid: String,
-            value: Option<String>,
-        }
+/// Set or delete one scan-configuration NVT preference.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModifyScanConfigSetNvtPreferenceRequest {
+    /// Configuration to modify.
+    pub config_id: EntityId,
+    /// Stored preference name, normally `OID:ID:TYPE:NAME`.
+    pub name: String,
+    /// NVT OID associated with the preference.
+    pub nvt_oid: String,
+    /// Decoded value to encode exactly once, or `None` to delete the override.
+    pub value: Option<String>,
+}
 
-        impl $request {
-            #[doc = $new_doc]
-            #[must_use]
-            pub fn new(
-                resource_id: EntityId,
-                name: impl Into<String>,
-                nvt_oid: impl Into<String>,
-                value: Option<String>,
-            ) -> Self {
-                Self {
-                    resource_id,
-                    name: name.into(),
-                    nvt_oid: nvt_oid.into(),
-                    value,
-                }
+impl ModifyScanConfigSetNvtPreferenceRequest {
+    /// Create an NVT-preference mutation.
+    #[must_use]
+    pub fn new(
+        config_id: EntityId,
+        name: impl Into<String>,
+        nvt_oid: impl Into<String>,
+        value: Option<String>,
+    ) -> Self {
+        Self {
+            config_id,
+            name: name.into(),
+            nvt_oid: nvt_oid.into(),
+            value,
+        }
+    }
+}
+
+/// Set or delete one scan-configuration scanner preference.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModifyScanConfigSetScannerPreferenceRequest {
+    /// Configuration to modify.
+    pub config_id: EntityId,
+    /// Scanner preference name.
+    pub name: String,
+    /// Decoded value to encode exactly once, or `None` to delete the override.
+    pub value: Option<String>,
+}
+
+impl ModifyScanConfigSetScannerPreferenceRequest {
+    /// Create a scanner-preference mutation.
+    #[must_use]
+    pub fn new(config_id: EntityId, name: impl Into<String>, value: Option<String>) -> Self {
+        Self {
+            config_id,
+            name: name.into(),
+            value,
+        }
+    }
+}
+
+/// Replace one scan-configuration family's selected NVTs in caller order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModifyScanConfigSetNvtSelectionRequest {
+    /// Configuration to modify.
+    pub config_id: EntityId,
+    /// Family whose selection is replaced.
+    pub family: String,
+    /// Ordered replacement NVT OIDs. An empty vector clears this family.
+    pub nvt_oids: Vec<String>,
+}
+
+impl ModifyScanConfigSetNvtSelectionRequest {
+    /// Create a family-local NVT-selection replacement.
+    #[must_use]
+    pub fn new(config_id: EntityId, family: impl Into<String>, nvt_oids: Vec<String>) -> Self {
+        Self {
+            config_id,
+            family: family.into(),
+            nvt_oids,
+        }
+    }
+}
+
+/// Replace a scan configuration's complete family selection in caller order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModifyScanConfigSetFamilySelectionRequest {
+    /// Configuration to modify.
+    pub config_id: EntityId,
+    /// Ordered replacement families. An empty vector selects no families.
+    pub families: Vec<NvtFamilySelection>,
+    /// Whether newly discovered families should be added automatically.
+    pub auto_add_new_families: bool,
+}
+
+impl ModifyScanConfigSetFamilySelectionRequest {
+    /// Create a complete family-selection replacement.
+    #[must_use]
+    pub fn new(
+        config_id: EntityId,
+        families: Vec<NvtFamilySelection>,
+        auto_add_new_families: bool,
+    ) -> Self {
+        Self {
+            config_id,
+            families,
+            auto_add_new_families,
+        }
+    }
+}
+
+/// Set or delete one policy NVT preference.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModifyPolicySetNvtPreferenceRequest {
+    /// Policy to modify.
+    pub policy_id: EntityId,
+    /// Stored preference name, normally `OID:ID:TYPE:NAME`.
+    pub name: String,
+    /// NVT OID associated with the preference.
+    pub nvt_oid: String,
+    /// Decoded value to encode exactly once, or `None` to delete the override.
+    pub value: Option<String>,
+}
+
+impl ModifyPolicySetNvtPreferenceRequest {
+    /// Create a policy NVT-preference mutation.
+    #[must_use]
+    pub fn new(
+        policy_id: EntityId,
+        name: impl Into<String>,
+        nvt_oid: impl Into<String>,
+        value: Option<String>,
+    ) -> Self {
+        Self {
+            policy_id,
+            name: name.into(),
+            nvt_oid: nvt_oid.into(),
+            value,
+        }
+    }
+}
+
+/// Set or delete one policy scanner preference.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModifyPolicySetScannerPreferenceRequest {
+    /// Policy to modify.
+    pub policy_id: EntityId,
+    /// Scanner preference name.
+    pub name: String,
+    /// Decoded value to encode exactly once, or `None` to delete the override.
+    pub value: Option<String>,
+}
+
+impl ModifyPolicySetScannerPreferenceRequest {
+    /// Create a policy scanner-preference mutation.
+    #[must_use]
+    pub fn new(policy_id: EntityId, name: impl Into<String>, value: Option<String>) -> Self {
+        Self {
+            policy_id,
+            name: name.into(),
+            value,
+        }
+    }
+}
+
+/// Replace one policy family's selected NVTs in caller order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModifyPolicySetNvtSelectionRequest {
+    /// Policy to modify.
+    pub policy_id: EntityId,
+    /// Family whose selection is replaced.
+    pub family: String,
+    /// Ordered replacement NVT OIDs. An empty vector clears this family.
+    pub nvt_oids: Vec<String>,
+}
+
+impl ModifyPolicySetNvtSelectionRequest {
+    /// Create a policy family-local NVT-selection replacement.
+    #[must_use]
+    pub fn new(policy_id: EntityId, family: impl Into<String>, nvt_oids: Vec<String>) -> Self {
+        Self {
+            policy_id,
+            family: family.into(),
+            nvt_oids,
+        }
+    }
+}
+
+/// Replace a policy's complete family selection in caller order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModifyPolicySetFamilySelectionRequest {
+    /// Policy to modify.
+    pub policy_id: EntityId,
+    /// Ordered replacement families. An empty vector selects no families.
+    pub families: Vec<NvtFamilySelection>,
+    /// Whether newly discovered families should be added automatically.
+    pub auto_add_new_families: bool,
+}
+
+impl ModifyPolicySetFamilySelectionRequest {
+    /// Create a policy family-selection replacement.
+    #[must_use]
+    pub fn new(
+        policy_id: EntityId,
+        families: Vec<NvtFamilySelection>,
+        auto_add_new_families: bool,
+    ) -> Self {
+        Self {
+            policy_id,
+            families,
+            auto_add_new_families,
+        }
+    }
+}
+
+macro_rules! impl_preference_debug {
+    ($request:ident, $id_field:ident $(, $extra:ident)*) => {
+        impl fmt::Debug for $request {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter
+                    .debug_struct(stringify!($request))
+                    .field(stringify!($id_field), &self.$id_field)
+                    .field("name", &self.name)
+                    $(.field(stringify!($extra), &self.$extra))*
+                    .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+                    .finish()
             }
         }
+    };
+}
 
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(
-                    &self.resource_id,
+impl_preference_debug!(ModifyScanConfigSetNvtPreferenceRequest, config_id, nvt_oid);
+impl_preference_debug!(ModifyScanConfigSetScannerPreferenceRequest, config_id);
+impl_preference_debug!(ModifyPolicySetNvtPreferenceRequest, policy_id, nvt_oid);
+impl_preference_debug!(ModifyPolicySetScannerPreferenceRequest, policy_id);
+
+macro_rules! impl_nvt_preference_codec {
+    ($request:ident, $id_field:ident, $id_name:literal, $semantic:literal) => {
+        impl GmpRequestCodec for $request {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_preference_mutation(
+                    &self.$id_field,
+                    $id_name,
                     &self.name,
-                    &self.nvt_oid,
+                    Some(&self.nvt_oid),
                     self.value.as_deref(),
                 )
-                .to_bytes()
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("modify_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(modify_config_set_preference_command(
+                    &self.$id_field,
+                    &self.name,
+                    Some(&self.nvt_oid),
+                    self.value.as_deref(),
+                )
+                .to_bytes())
             }
         }
 
@@ -1387,73 +1641,32 @@ macro_rules! define_nvt_preference_request {
     };
 }
 
-macro_rules! define_scanner_preference_request {
-    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
-        #[doc = $request_doc]
-        #[derive(Debug, Clone)]
-        pub struct $request {
-            resource_id: EntityId,
-            name: String,
-            value: Option<String>,
-        }
-
-        impl $request {
-            #[doc = $new_doc]
-            #[must_use]
-            pub fn new(
-                resource_id: EntityId,
-                name: impl Into<String>,
-                value: Option<String>,
-            ) -> Self {
-                Self {
-                    resource_id,
-                    name: name.into(),
-                    value,
-                }
+macro_rules! impl_scanner_preference_codec {
+    ($request:ident, $id_field:ident, $id_name:literal, $semantic:literal) => {
+        impl GmpRequestCodec for $request {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_preference_mutation(
+                    &self.$id_field,
+                    $id_name,
+                    &self.name,
+                    None,
+                    self.value.as_deref(),
+                )
             }
-        }
 
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.resource_id, &self.name, self.value.as_deref()).to_bytes()
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("modify_config", $semantic))
             }
-        }
 
-        impl GmpRequest for $request {
-            type Response = ModifyScanConfigResponse;
-        }
-    };
-}
-
-macro_rules! define_nvt_selection_request {
-    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
-        #[doc = $request_doc]
-        #[derive(Debug, Clone)]
-        pub struct $request {
-            resource_id: EntityId,
-            family: String,
-            nvt_oids: Vec<String>,
-        }
-
-        impl $request {
-            #[doc = $new_doc]
-            #[must_use]
-            pub fn new(
-                resource_id: EntityId,
-                family: impl Into<String>,
-                nvt_oids: Vec<String>,
-            ) -> Self {
-                Self {
-                    resource_id,
-                    family: family.into(),
-                    nvt_oids,
-                }
-            }
-        }
-
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(&self.resource_id, &self.family, &self.nvt_oids).to_bytes()
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(modify_config_set_preference_command(
+                    &self.$id_field,
+                    &self.name,
+                    None,
+                    self.value.as_deref(),
+                )
+                .to_bytes())
             }
         }
 
@@ -1463,40 +1676,62 @@ macro_rules! define_nvt_selection_request {
     };
 }
 
-macro_rules! define_family_selection_request {
-    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
-        #[doc = $request_doc]
-        #[derive(Debug, Clone)]
-        pub struct $request {
-            resource_id: EntityId,
-            families: Vec<NvtFamilySelection>,
-            auto_add_new_families: bool,
-        }
-
-        impl $request {
-            #[doc = $new_doc]
-            #[must_use]
-            pub fn new(
-                resource_id: EntityId,
-                families: Vec<NvtFamilySelection>,
-                auto_add_new_families: bool,
-            ) -> Self {
-                Self {
-                    resource_id,
-                    families,
-                    auto_add_new_families,
+macro_rules! impl_nvt_selection_codec {
+    ($request:ident, $id_field:ident, $id_name:literal, $semantic:literal) => {
+        impl GmpRequestCodec for $request {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_id(&self.$id_field, $id_name)?;
+                validate_required_xml(&self.family, "family")?;
+                for nvt_oid in &self.nvt_oids {
+                    validate_required_xml(nvt_oid, "nvt_oids")?;
                 }
+                Ok(())
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("modify_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(modify_config_set_nvt_selection_command(
+                    &self.$id_field,
+                    &self.family,
+                    &self.nvt_oids,
+                )
+                .to_bytes())
             }
         }
 
-        impl Request for $request {
-            fn to_bytes(&self) -> Vec<u8> {
-                $builder(
-                    &self.resource_id,
+        impl GmpRequest for $request {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+macro_rules! impl_family_selection_codec {
+    ($request:ident, $id_field:ident, $id_name:literal, $semantic:literal) => {
+        impl GmpRequestCodec for $request {
+            fn validate(&self) -> Result<(), GmpRequestError> {
+                validate_id(&self.$id_field, $id_name)?;
+                for family in &self.families {
+                    validate_required_xml(&family.name, "families.name")?;
+                }
+                Ok(())
+            }
+
+            fn command(&self) -> Option<GmpCommand> {
+                Some(GmpCommand::with_semantic_name("modify_config", $semantic))
+            }
+
+            fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+                self.validate()?;
+                Ok(modify_config_set_family_selection_command(
+                    &self.$id_field,
                     &self.families,
                     self.auto_add_new_families,
                 )
-                .to_bytes()
+                .to_bytes())
             }
         }
 
@@ -1506,79 +1741,59 @@ macro_rules! define_family_selection_request {
     };
 }
 
-define_nvt_preference_request!(
+impl_nvt_preference_codec!(
     ModifyScanConfigSetNvtPreferenceRequest,
-    modify_scan_config_set_nvt_preference,
-    "Semantic request for setting or deleting a scan-config NVT preference.",
-    "Create a scan-config NVT-preference mutation request."
+    config_id,
+    "config_id",
+    "modify_scan_config_set_nvt_preference"
 );
-define_scanner_preference_request!(
+impl_scanner_preference_codec!(
     ModifyScanConfigSetScannerPreferenceRequest,
-    modify_scan_config_set_scanner_preference,
-    "Semantic request for setting or deleting a scan-config scanner preference.",
-    "Create a scan-config scanner-preference mutation request."
+    config_id,
+    "config_id",
+    "modify_scan_config_set_scanner_preference"
 );
-define_nvt_selection_request!(
+impl_nvt_selection_codec!(
     ModifyScanConfigSetNvtSelectionRequest,
-    modify_scan_config_set_nvt_selection,
-    "Semantic request for replacing a scan-config NVT selection.",
-    "Create a scan-config NVT-selection mutation request."
+    config_id,
+    "config_id",
+    "modify_scan_config_set_nvt_selection"
 );
-define_family_selection_request!(
+impl_family_selection_codec!(
     ModifyScanConfigSetFamilySelectionRequest,
-    modify_scan_config_set_family_selection,
-    "Semantic request for replacing a scan-config family selection.",
-    "Create a scan-config family-selection mutation request."
+    config_id,
+    "config_id",
+    "modify_scan_config_set_family_selection"
 );
-define_nvt_preference_request!(
+impl_nvt_preference_codec!(
     ModifyPolicySetNvtPreferenceRequest,
-    modify_policy_set_nvt_preference,
-    "Semantic request for setting or deleting a policy NVT preference.",
-    "Create a policy NVT-preference mutation request."
+    policy_id,
+    "policy_id",
+    "modify_policy_set_nvt_preference"
 );
-define_scanner_preference_request!(
+impl_scanner_preference_codec!(
     ModifyPolicySetScannerPreferenceRequest,
-    modify_policy_set_scanner_preference,
-    "Semantic request for setting or deleting a policy scanner preference.",
-    "Create a policy scanner-preference mutation request."
+    policy_id,
+    "policy_id",
+    "modify_policy_set_scanner_preference"
 );
-define_nvt_selection_request!(
+impl_nvt_selection_codec!(
     ModifyPolicySetNvtSelectionRequest,
-    modify_policy_set_nvt_selection,
-    "Semantic request for replacing a policy NVT selection.",
-    "Create a policy NVT-selection mutation request."
+    policy_id,
+    "policy_id",
+    "modify_policy_set_nvt_selection"
 );
-define_family_selection_request!(
+impl_family_selection_codec!(
     ModifyPolicySetFamilySelectionRequest,
-    modify_policy_set_family_selection,
-    "Semantic request for replacing a policy family selection.",
-    "Create a policy family-selection mutation request."
+    policy_id,
+    "policy_id",
+    "modify_policy_set_family_selection"
 );
 
-/// Build a deferred `get_preferences` request for scan-config preferences.
-#[must_use]
-pub fn get_scan_config_preferences(opts: GetScanConfigPreferencesOpts) -> impl Request {
-    get_preferences_with(
-        None,
-        opts.nvt_oid.as_deref(),
-        opts.config_id.as_ref().map(EntityId::as_str),
-    )
-}
-
-/// Build a deferred `get_preferences` request for one scan-config preference.
-#[must_use]
-pub fn get_scan_config_preference(name: &str, opts: GetScanConfigPreferencesOpts) -> impl Request {
-    get_preferences_with(
-        Some(name),
-        opts.nvt_oid.as_deref(),
-        opts.config_id.as_ref().map(EntityId::as_str),
-    )
-}
-
-fn get_preferences_with(
+fn get_preferences_command(
     preference: Option<&str>,
     nvt_oid: Option<&str>,
-    config_id: Option<&str>,
+    config_id: Option<&EntityId>,
 ) -> XmlCommand {
     let mut command = XmlCommand::new("get_preferences");
     if let Some(preference) = preference {
@@ -1588,120 +1803,28 @@ fn get_preferences_with(
         command.set_attribute("nvt_oid", nvt_oid);
     }
     if let Some(config_id) = config_id {
-        command.set_attribute("config_id", config_id);
+        command.set_attribute("config_id", config_id.as_str());
     }
     command
 }
 
-/// Build a deferred `modify_config` request that sets an NVT preference.
-#[must_use]
-pub fn modify_scan_config_set_nvt_preference(
+fn modify_config_set_preference_command(
     config_id: &EntityId,
     name: &str,
-    nvt_oid: &str,
-    value: Option<&str>,
-) -> impl Request {
-    modify_config_set_nvt_preference(config_id, name, nvt_oid, value)
-}
-
-/// Build a deferred `modify_config` request that sets a scanner preference.
-#[must_use]
-pub fn modify_scan_config_set_scanner_preference(
-    config_id: &EntityId,
-    name: &str,
-    value: Option<&str>,
-) -> impl Request {
-    modify_config_set_scanner_preference(config_id, name, value)
-}
-
-/// Build a deferred `modify_config` request that replaces an NVT selection.
-#[must_use]
-pub fn modify_scan_config_set_nvt_selection(
-    config_id: &EntityId,
-    family: &str,
-    nvt_oids: &[String],
-) -> impl Request {
-    modify_config_set_nvt_selection(config_id, family, nvt_oids)
-}
-
-/// Build a deferred `modify_config` request that replaces family selection.
-#[must_use]
-pub fn modify_scan_config_set_family_selection(
-    config_id: &EntityId,
-    families: &[NvtFamilySelection],
-    auto_add_new_families: bool,
-) -> impl Request {
-    modify_config_set_family_selection(config_id, families, auto_add_new_families)
-}
-
-/// Build a deferred policy NVT-preference mutation request.
-#[must_use]
-pub fn modify_policy_set_nvt_preference(
-    policy_id: &EntityId,
-    name: &str,
-    nvt_oid: &str,
-    value: Option<&str>,
-) -> impl Request {
-    modify_config_set_nvt_preference(policy_id, name, nvt_oid, value)
-}
-
-/// Build a deferred policy scanner-preference mutation request.
-#[must_use]
-pub fn modify_policy_set_scanner_preference(
-    policy_id: &EntityId,
-    name: &str,
-    value: Option<&str>,
-) -> impl Request {
-    modify_config_set_scanner_preference(policy_id, name, value)
-}
-
-/// Build a deferred policy NVT-selection mutation request.
-#[must_use]
-pub fn modify_policy_set_nvt_selection(
-    policy_id: &EntityId,
-    family: &str,
-    nvt_oids: &[String],
-) -> impl Request {
-    modify_config_set_nvt_selection(policy_id, family, nvt_oids)
-}
-
-/// Build a deferred policy family-selection mutation request.
-#[must_use]
-pub fn modify_policy_set_family_selection(
-    policy_id: &EntityId,
-    families: &[NvtFamilySelection],
-    auto_add_new_families: bool,
-) -> impl Request {
-    modify_config_set_family_selection(policy_id, families, auto_add_new_families)
-}
-
-fn modify_config_set_nvt_preference(
-    config_id: &EntityId,
-    name: &str,
-    nvt_oid: &str,
+    nvt_oid: Option<&str>,
     value: Option<&str>,
 ) -> XmlCommand {
     let mut command = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
     let preference = command.add_element("preference");
-    preference.add_child("nvt").set_attribute("oid", nvt_oid);
+    if let Some(nvt_oid) = nvt_oid {
+        preference.add_child("nvt").set_attribute("oid", nvt_oid);
+    }
     preference.add_child_with_text("name", name);
     add_encoded_preference_value(preference, value);
     command
 }
 
-fn modify_config_set_scanner_preference(
-    config_id: &EntityId,
-    name: &str,
-    value: Option<&str>,
-) -> XmlCommand {
-    let mut command = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
-    let preference = command.add_element("preference");
-    preference.add_child_with_text("name", name);
-    add_encoded_preference_value(preference, value);
-    command
-}
-
-fn modify_config_set_nvt_selection(
+fn modify_config_set_nvt_selection_command(
     config_id: &EntityId,
     family: &str,
     nvt_oids: &[String],
@@ -1715,7 +1838,7 @@ fn modify_config_set_nvt_selection(
     command
 }
 
-fn modify_config_set_family_selection(
+fn modify_config_set_family_selection_command(
     config_id: &EntityId,
     families: &[NvtFamilySelection],
     auto_add_new_families: bool,
@@ -1733,8 +1856,50 @@ fn modify_config_set_family_selection(
 }
 
 fn add_encoded_preference_value(preference: &mut XmlElement, value: Option<&str>) {
-    if let Some(value) = value.filter(|value| !value.is_empty()) {
+    if let Some(value) = value {
         let encoded = base64::engine::general_purpose::STANDARD.encode(value.as_bytes());
         preference.add_child_with_text("value", &encoded);
     }
+}
+
+fn validate_preference_mutation(
+    resource_id: &EntityId,
+    id_field: &'static str,
+    name: &str,
+    nvt_oid: Option<&str>,
+    value: Option<&str>,
+) -> Result<(), GmpRequestError> {
+    validate_id(resource_id, id_field)?;
+    validate_required_xml(name, "name")?;
+    if let Some(nvt_oid) = nvt_oid {
+        validate_required_xml(nvt_oid, "nvt_oid")?;
+    }
+    if value == Some("") && preference_type(name) == Some("radio") {
+        return Err(GmpRequestError::invalid_field(
+            "value",
+            "must not be empty for a radio preference",
+        ));
+    }
+    Ok(())
+}
+
+fn preference_type(name: &str) -> Option<&str> {
+    let mut parts = name.splitn(4, ':');
+    let _oid = parts.next()?;
+    let _id = parts.next()?;
+    parts.next()
+}
+
+fn validate_required_xml(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        return Err(GmpRequestError::invalid_field(field, "must not be empty"));
+    }
+    validate_xml_text(value, field)
+}
+
+fn validate_optional_required_xml(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<(), GmpRequestError> {
+    value.map_or(Ok(()), |value| validate_required_xml(value, field))
 }

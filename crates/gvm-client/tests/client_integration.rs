@@ -5,12 +5,11 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialType,
-    GetAggregatesRequestOpts, GetScanReportOpts, GetSystemReportsOpts, GmpClient, GmpNextCommands,
-    GmpVersioned, GvmError, ImportReportOpts, UsageType, WireTraceDirection, WireTraceEvent,
+    AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialType, GmpClient,
+    GmpNextCommands, GmpVersioned, GvmError, UsageType, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
-use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
+use gvm_gmp::commands::aggregates::{GetAggregatesRequest, GetLegacyAggregatesRequest};
 use gvm_gmp::commands::alerts::{
     AlertData, CreateAlertRequest, GetAlertsRequest, ModifyAlertRequest, TriggerAlertRequest,
 };
@@ -18,7 +17,6 @@ use gvm_gmp::commands::assets::{
     AssetType, CreateAssetRequest, DeleteAssetRequest, GetAssetRequest, GetAssetsRequest,
     ModifyAssetRequest,
 };
-use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::configs::{
     CloneConfigRequest, ConfigUsageType, CreateConfigRequest, DeleteConfigRequest,
     GetConfigRequest, GetConfigsRequest, ModifyConfigRequest,
@@ -29,11 +27,13 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreCredentialRequest, ModifyCredentialStoreRequest,
     VerifyCredentialStoreRequest,
 };
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
 use gvm_gmp::commands::groups::{
     CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsRequest,
     ModifyGroupRequest,
 };
-use gvm_gmp::commands::help::HelpMode;
+use gvm_gmp::commands::help::{HelpMode, HelpRequest};
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -63,15 +63,19 @@ use gvm_gmp::commands::port_lists::{
 };
 use gvm_gmp::commands::report_formats::{CloneReportFormatRequest, ImportReportFormatRequest};
 use gvm_gmp::commands::reports::{
-    get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
+    GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
+    GetReportErrorsRequest, GetReportExportRequest, GetReportHostsRequest,
+    GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportTlsCertificatesRequest,
+    GetReportVulnsRequest, GetReportsRequest, GetScanReportRequest, ImportReportRequest,
 };
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::{
     CloneScanConfigRequest, CreatePolicyRequest, CreateScanConfigRequest, DeleteScanConfigRequest,
-    GetPoliciesRequest, GetPolicyRequest, GetScanConfigPreferencesOpts, GetScanConfigRequest,
-    GetScanConfigsRequest, ImportPolicyRequest, ImportScanConfigRequest,
-    ModifyPolicySetCommentRequest, ModifyPolicySetNameRequest, ModifyScanConfigRequest,
-    ModifyScanConfigSetCommentRequest, ModifyScanConfigSetNameRequest,
+    GetPoliciesRequest, GetPolicyRequest, GetScanConfigPreferenceRequest,
+    GetScanConfigPreferencesRequest, GetScanConfigRequest, GetScanConfigsRequest,
+    ImportPolicyRequest, ImportScanConfigRequest, ModifyPolicySetCommentRequest,
+    ModifyPolicySetNameRequest, ModifyScanConfigRequest, ModifyScanConfigSetCommentRequest,
+    ModifyScanConfigSetNameRequest,
 };
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
@@ -85,21 +89,24 @@ use gvm_gmp::commands::secinfo::{
     GenericInfoType, GetCertBundAdvisoryRequest, GetCpeRequest, GetCveRequest,
     GetDfnCertAdvisoryRequest, GetInfoListRequest, GetInfoRequest,
 };
-use gvm_gmp::commands::system::get_timezones;
-use gvm_gmp::commands::system::ModifyLicenseOpts;
-use gvm_gmp::commands::system::RunWizardOpts;
-use gvm_gmp::commands::system::{GetVulnerabilityRequest, GetVulnsRequest};
+use gvm_gmp::commands::system::{
+    GetTimezonesRequest, GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest,
+    ModifyLicenseRequest, RunWizardRequest,
+};
+use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::commands::targets::{
     CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
     ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
-    create_task, delete_task, get_task, start_task, stop_task, CreateTaskOpts, GetTasksOpts,
-    ModifyTaskError, ModifyTaskOpts,
+    CreateImportTaskRequest, CreateTaskRequest, DeleteTaskRequest, GetTaskRequest, GetTasksRequest,
+    ModifyTaskRequest, ResumeTaskRequest, StartTaskRequest, StopTaskRequest, TaskPreference,
 };
 use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
 };
+use gvm_gmp::commands::trashcan::{EmptyTrashcanRequest, RestoreRequest};
+use gvm_gmp::commands::user_settings::ModifyUserSettingRequest;
 use gvm_gmp::commands::users::{
     CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
     ModifyUserRequest, UserHostAccess,
@@ -218,7 +225,9 @@ async fn authenticated_client(server: &MockGmpServer) -> GmpClient<UnixSocketCon
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     client
@@ -257,11 +266,11 @@ async fn assert_task_report_survives_trash_and_restore(
     current_report_id: &EntityId,
 ) {
     client
-        .delete_task(task_id, false)
+        .delete_task(DeleteTaskRequest::new(task_id.clone(), false))
         .await
         .expect("stopped task should move to trash");
     let trashed = client
-        .get_tasks(gvm_gmp::commands::tasks::GetTasksOpts {
+        .get_tasks(GetTasksRequest {
             trash: Some(true),
             ..Default::default()
         })
@@ -280,7 +289,7 @@ async fn assert_task_report_survives_trash_and_restore(
         Some(current_report_id)
     );
     client
-        .restore_from_trashcan(task_id)
+        .restore(RestoreRequest::new(task_id.clone()))
         .await
         .expect("task should restore");
     assert_task_report_observation(client, task_id, "Stopped", Some(current_report_id), None).await;
@@ -516,7 +525,7 @@ async fn typed_feature_discovery_parses_current_gvmd_shape_over_unix_transport()
         .expect("client should connect");
 
     let response = client
-        .get_features_parsed()
+        .get_features(GetFeaturesRequest::new())
         .await
         .expect("typed feature discovery should parse");
 
@@ -541,30 +550,28 @@ async fn typed_aggregates_round_trip_current_shape_over_stateful_unix_transport(
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = GetAggregatesRequest::new("task&<");
+    request.filter_string = Some("owner=me & rows=-1".into());
+    request.data_columns = vec!["qod&<".into()];
+    request.group_column = Some("status&<".into());
+    request.sorts = vec![AggregateSort {
+        field: "qod&<".into(),
+        statistic: Some(AggregateSortStatistic::Maximum),
+        order: Some(SortOrder::Descending),
+    }];
+    request.text_columns = vec!["name&<".into()];
+    request.first_group = Some(1);
+    request.max_groups = Some(-1);
+    request.usage_type = Some(UsageType::Audit);
     let response = client
-        .get_aggregates(
-            "task&<",
-            GetAggregatesRequestOpts {
-                filter_string: Some("owner=me & rows=-1".into()),
-                data_columns: vec!["qod&<".into()],
-                group_column: Some("status&<".into()),
-                sorts: vec![AggregateSort {
-                    field: "qod&<".into(),
-                    statistic: Some(AggregateSortStatistic::Maximum),
-                    order: Some(SortOrder::Descending),
-                }],
-                text_columns: vec!["name&<".into()],
-                first_group: Some(1),
-                max_groups: Some(-1),
-                usage_type: Some(UsageType::Audit),
-                ..Default::default()
-            },
-        )
+        .get_aggregates(request)
         .await
         .expect("typed aggregate response should parse");
 
@@ -602,7 +609,7 @@ async fn typed_aggregates_round_trip_current_shape_over_stateful_unix_transport(
 }
 
 #[tokio::test]
-async fn legacy_aggregates_round_trip_comma_separated_columns_over_stateful_unix_transport() {
+async fn legacy_aggregates_round_trip_supported_singular_shape_over_stateful_unix_transport() {
     let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
         return;
     };
@@ -611,35 +618,34 @@ async fn legacy_aggregates_round_trip_comma_separated_columns_over_stateful_unix
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = GetLegacyAggregatesRequest::new("task");
+    request.data_column = Some("qod".into());
+    request.group_column = Some("status".into());
+    request.sort = Some(AggregateSort {
+        field: "qod".into(),
+        statistic: Some(AggregateSortStatistic::Mean),
+        order: Some(SortOrder::Ascending),
+    });
     let response = client
-        .call(get_aggregates_legacy(
-            "task",
-            GetAggregatesOpts {
-                data_columns: Some("qod, severity".into()),
-                text_columns: Some("name, comment".into()),
-                ..Default::default()
-            },
-        ))
+        .get_legacy_aggregates(request)
         .await
         .expect("legacy aggregate request should succeed");
 
-    let xml = response.as_str().expect("response should be UTF-8");
-    for column in ["qod", "severity"] {
-        assert!(xml.contains(&format!("<data_column>{column}</data_column>")));
-        assert!(xml.contains(&format!("<stats column=\"{column}\">")));
-    }
-    for column in ["name", "comment"] {
-        assert!(xml.contains(&format!("<text_column>{column}</text_column>")));
-        assert!(xml.contains(&format!("<text column=\"{column}\">All</text>")));
-    }
+    assert_eq!(response.aggregates[0].data_columns, vec!["qod"]);
+    assert_eq!(
+        response.aggregates[0].group_column.as_deref(),
+        Some("status")
+    );
     assert_eq!(
         server.command_history()[0].raw_xml(),
-        br#"<get_aggregates data_columns="qod, severity" text_columns="name, comment" type="task"/>"#
+        br#"<get_aggregates data_column="qod" group_column="status" sort_field="qod" sort_order="ascending" sort_stat="mean" type="task"/>"#
     );
 
     server.shutdown().await;
@@ -655,20 +661,18 @@ async fn typed_word_count_aggregates_parse_current_gvmd_shape_over_unix_transpor
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = GetAggregatesRequest::new("task");
+    request.group_column = Some("comment".into());
+    request.mode = Some(AggregateMode::WordCounts);
     let response = client
-        .get_aggregates(
-            "task",
-            GetAggregatesRequestOpts {
-                group_column: Some("comment".into()),
-                mode: Some(AggregateMode::WordCounts),
-                ..Default::default()
-            },
-        )
+        .get_aggregates(request)
         .await
         .expect("current gvmd word-count response should parse");
 
@@ -709,19 +713,21 @@ async fn typed_modify_auth_uses_current_gvmd_shape_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
     let response = client
-        .modify_auth(
+        .modify_auth(ModifyAuthRequest::new(
             "method:ldap_connect",
-            &[
+            [
                 ("enable".into(), "true".into()),
                 ("ldaphost".into(), "ldap.example".into()),
             ],
-        )
+        ))
         .await
         .expect("current gvmd modify_auth response should parse");
 
@@ -746,18 +752,17 @@ async fn typed_modify_license_uses_current_gvmd_shape_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = ModifyLicenseRequest::new("YWJj");
+    request.allow_empty = Some(false);
     let response = client
-        .modify_license(
-            "YWJj",
-            ModifyLicenseOpts {
-                allow_empty: Some(false),
-            },
-        )
+        .modify_license(request)
         .await
         .expect("current gvmd modify_license response should parse");
 
@@ -782,20 +787,19 @@ async fn typed_run_wizard_uses_current_gvmd_shape_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request =
+        RunWizardRequest::new("quick_first_scan", [("hosts".into(), "localhost".into())]);
+    request.mode = Some("step".into());
+    request.read_only = Some(false);
     let response = client
-        .run_wizard(
-            "quick_first_scan",
-            &[("hosts".into(), "localhost".into())],
-            RunWizardOpts {
-                mode: Some("step".into()),
-                read_only: Some(false),
-            },
-        )
+        .run_wizard(request)
         .await
         .expect("current gvmd run_wizard response should parse");
 
@@ -811,6 +815,63 @@ async fn typed_run_wizard_uses_current_gvmd_shape_over_unix_transport() {
         br#"<run_wizard read_only="0"><mode>step</mode><name>quick_first_scan</name><params><param><name>hosts</name><value>localhost</value></param></params></run_wizard>"#
     );
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_confidential_administration_values_fail_before_transport() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = GmpClient::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let auth_secret = "auth-secret\0";
+    let error = client
+        .modify_auth(ModifyAuthRequest::new(
+            "method:ldap_connect",
+            [("ldaphost".into(), auth_secret.into())],
+        ))
+        .await
+        .expect_err("invalid auth value must fail");
+    assert!(!error.to_string().contains(auth_secret));
+
+    let license_secret = "license-secret!";
+    let error = client
+        .modify_license(ModifyLicenseRequest::new(license_secret))
+        .await
+        .expect_err("invalid license value must fail");
+    assert!(!error.to_string().contains(license_secret));
+
+    let wizard_secret = "wizard-secret\0";
+    let error = client
+        .run_wizard(RunWizardRequest::new(
+            "quick_first_scan",
+            [("credential".into(), wizard_secret.into())],
+        ))
+        .await
+        .expect_err("invalid wizard value must fail");
+    assert!(!error.to_string().contains(wizard_secret));
+
+    let setting_secret = "setting-secret";
+    let error = client
+        .execute(ModifyUserSettingRequest::by_name(
+            "NotASetting",
+            setting_secret,
+        ))
+        .await
+        .expect_err("invalid named setting must fail");
+    assert!(!error.to_string().contains(setting_secret));
+
+    assert!(server.command_history().is_empty());
     server.shutdown().await;
 }
 
@@ -845,7 +906,9 @@ async fn live_wire_trace_observes_typed_helper_with_redaction() {
     .expect("client should connect");
 
     let response = client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("typed authenticate should succeed");
     assert_eq!(response.status, 200);
@@ -917,7 +980,9 @@ async fn live_wire_trace_redacts_credential_store_preference_values() {
     .await
     .expect("client should connect");
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
     server.clear_history();
@@ -961,6 +1026,77 @@ async fn live_wire_trace_redacts_credential_store_preference_values() {
 }
 
 #[tokio::test]
+async fn canonical_task_preference_values_are_redacted_from_wire_trace() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let trace_events = Arc::clone(&events);
+    let mut client = GmpClient::connect_with_wire_trace(unix_connection(&server), move |event| {
+        trace_events.lock().expect("trace lock").push(event);
+    })
+    .await
+    .expect("client should connect");
+    client
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authentication should succeed");
+    let target = client
+        .create_target(CreateTargetRequest::new(
+            "Preference trace target",
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
+        .await
+        .expect("target creation should succeed");
+    server.clear_history();
+    events.lock().expect("trace lock").clear();
+
+    let mut request = CreateTaskRequest::new(
+        "Preference trace task",
+        "daba56c8-73ec-11df-a475-002264764cea"
+            .parse()
+            .expect("config ID"),
+        target.id,
+        "08b69003-5fc2-4037-a479-93b440211c73"
+            .parse()
+            .expect("scanner ID"),
+    );
+    request.preferences.push(TaskPreference::new(
+        "custom-secret",
+        "task-preference-sentinel",
+    ));
+    client
+        .create_task(request)
+        .await
+        .expect("task creation should succeed");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let raw = std::str::from_utf8(history[0].raw_xml()).expect("UTF-8 request");
+    assert!(raw.contains("<value>task-preference-sentinel</value>"));
+
+    let trace = {
+        let events = events.lock().expect("trace lock");
+        events
+            .iter()
+            .find(|event| {
+                event.direction == WireTraceDirection::Request
+                    && event_text(event).contains("<create_task>")
+            })
+            .map(event_text)
+            .expect("task request trace")
+    };
+    assert!(trace.contains("<scanner_name>custom-secret</scanner_name>"));
+    assert!(trace.contains("<value><redacted/></value>"));
+    assert!(!trace.contains("task-preference-sentinel"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn typed_help_preserves_brief_xml_over_unix_transport() {
     let Some(server) = stateful_server().await else {
         return;
@@ -970,12 +1106,14 @@ async fn typed_help_preserves_brief_xml_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
 
     let response = client
-        .get_help_with_mode(HelpMode::BriefXml)
+        .get_help(HelpRequest::new(HelpMode::BriefXml))
         .await
         .expect("brief XML help should parse");
     let schema = response.schema.expect("brief help schema");
@@ -1002,15 +1140,14 @@ async fn authenticate_succeeds() {
         .expect("client should connect");
 
     let response = client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
-    assert_eq!(response.status_code(), Some(200));
-    assert_eq!(
-        response.root_element_name().as_deref(),
-        Some("authenticate_response")
-    );
+    assert_eq!(response.status, 200);
+    assert_eq!(response.role.as_deref(), Some("Admin"));
 
     server.shutdown().await;
 }
@@ -1026,7 +1163,9 @@ async fn create_target_and_get_targets_succeed() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1173,7 +1312,9 @@ async fn typed_alert_data_maps_and_rename_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1265,7 +1406,9 @@ async fn typed_alert_active_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1333,7 +1476,9 @@ async fn typed_ticket_create_read_and_reassign_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1414,7 +1559,9 @@ async fn operating_system_helpers_send_asset_commands() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1452,7 +1599,9 @@ async fn typed_generic_configs_round_trip_through_mock_server() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1510,7 +1659,9 @@ async fn typed_generic_config_get_modify_and_delete_round_trip() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1720,7 +1871,9 @@ async fn typed_asset_helpers_cover_host_lifecycle_over_unix_transport() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1741,19 +1894,21 @@ async fn get_feed_sends_typed_get_feeds_command() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
     let response = client
-        .get_feed(FeedType::Nvt)
+        .get_feed(GetFeedRequest::new(FeedType::Nvt))
         .await
         .expect("get_feed should return typed feed data");
 
     assert_eq!(response.status, 200);
-    assert!(response.feed_owner_set);
-    assert!(response.feed_roles_set);
-    assert!(response.feed_resources_access);
+    assert_eq!(response.feed_owner_set, Some(true));
+    assert_eq!(response.feed_roles_set, Some(true));
+    assert_eq!(response.feed_resources_access, Some(true));
     assert_eq!(response.items.len(), 1);
     assert_eq!(response.items[0].type_, "NVT");
     assert_eq!(response.items[0].status, None);
@@ -1768,7 +1923,7 @@ async fn get_feed_sends_typed_get_feeds_command() {
     );
 
     let all = client
-        .get_feeds()
+        .get_feeds(GetFeedsRequest::new())
         .await
         .expect("all feeds should return typed data");
     assert_eq!(all.items.len(), 4);
@@ -1805,16 +1960,17 @@ async fn typed_system_reports_preserve_wire_options_and_payload_metadata() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
+    let mut request = GetSystemReportsRequest::new();
+    request.name = Some("load".into());
+    request.duration = Some(3600);
     let response = client
-        .get_system_reports(GetSystemReportsOpts {
-            name: Some("load".into()),
-            duration: Some(3600),
-            ..Default::default()
-        })
+        .get_system_reports(request)
         .await
         .expect("system report should parse");
 
@@ -1891,14 +2047,15 @@ async fn unsupported_next_command_rejected_before_send() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
     let error = client
-        .call(get_report_hosts(
-            &EntityId::new("report-1").expect("valid id"),
-            Default::default(),
+        .execute(GetReportHostsRequest::new(
+            EntityId::new("report-1").expect("valid id"),
         ))
         .await
         .expect_err("22.7 should reject next-only command");
@@ -1917,12 +2074,11 @@ async fn unsupported_next_command_rejected_before_send() {
     }
 
     let error = client
-        .call(get_report_vulnerabilities(
-            &EntityId::new("report-1").expect("valid id"),
-            Default::default(),
+        .execute(GetReportVulnsRequest::new(
+            EntityId::new("report-1").expect("valid id"),
         ))
         .await
-        .expect_err("22.7 should reject report vulnerabilities alias");
+        .expect_err("22.7 should reject report vulnerabilities");
     assert!(matches!(
         error,
         GvmError::UnsupportedCommand {
@@ -1933,7 +2089,7 @@ async fn unsupported_next_command_rejected_before_send() {
     ));
 
     let error = client
-        .call(get_timezones())
+        .execute(GetTimezonesRequest::new())
         .await
         .expect_err("22.7 should reject get_timezones");
     assert!(matches!(
@@ -1946,9 +2102,9 @@ async fn unsupported_next_command_rejected_before_send() {
     ));
 
     let error = client
-        .call(get_report_export(
-            &EntityId::new("report-1").expect("valid id"),
-            &EntityId::new("format-1").expect("valid id"),
+        .execute(GetReportExportRequest::new(
+            EntityId::new("report-1").expect("valid id"),
+            EntityId::new("format-1").expect("valid id"),
         ))
         .await
         .expect_err("22.7 should reject the report export semantic operation");
@@ -1968,7 +2124,9 @@ async fn credential_store_commands_are_rejected_before_v22_8() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2095,7 +2253,9 @@ async fn next_commands_work_on_v22_8() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2135,16 +2295,16 @@ async fn next_commands_work_on_v22_8() {
 
     let report_id = EntityId::new("00000000-0000-0000-0000-000000000200").expect("valid id");
     let helper_error = client
-        .get_report_hosts(&report_id, Default::default())
+        .get_report_hosts(GetReportHostsRequest::new(report_id.clone()))
         .await
         .expect_err("missing report should return server error");
     assert!(matches!(helper_error, GvmError::Server { status: 404, .. }));
 
-    let alias_error = client
-        .get_report_vulnerabilities(&report_id, Default::default())
+    let vuln_error = client
+        .get_report_vulns(GetReportVulnsRequest::new(report_id))
         .await
-        .expect_err("missing report should return server error through alias");
-    assert!(matches!(alias_error, GvmError::Server { status: 404, .. }));
+        .expect_err("missing report should return server error");
+    assert!(matches!(vuln_error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }
@@ -2159,7 +2319,9 @@ async fn typed_integration_configs_round_trip_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2230,7 +2392,7 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     let report_id = EntityId::new("report-1").expect("valid id");
 
     let vulns = client
-        .get_report_vulns(&report_id, Default::default())
+        .get_report_vulns(GetReportVulnsRequest::new(report_id.clone()))
         .await
         .expect("report vulns should parse");
     assert_eq!(vulns.items.len(), 1);
@@ -2243,27 +2405,20 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     assert_eq!(vulns.items[0].hosts_count, Some(2));
     assert_eq!(vulns.items[0].occurrences, Some(3));
 
-    let vulnerabilities = client
-        .get_report_vulnerabilities(&report_id, Default::default())
-        .await
-        .expect("report vulnerabilities alias should parse");
-    assert_eq!(vulnerabilities.items.len(), 1);
-    assert_eq!(vulnerabilities.items[0].threat.as_deref(), Some("Medium"));
-
     let tls = client
-        .get_report_tls_certificates(&report_id, Default::default())
+        .get_report_tls_certificates(GetReportTlsCertificatesRequest::new(report_id.clone()))
         .await
         .expect("report tls certs should parse");
     assert_eq!(tls.items[0].issuer.as_deref(), Some("CN=Example CA"));
 
     let errors = client
-        .get_report_errors(&report_id, Default::default())
+        .get_report_errors(GetReportErrorsRequest::new(report_id.clone()))
         .await
         .expect("report errors should parse");
     assert_eq!(errors.items[0].nvt_name.as_deref(), Some("Ping Host"));
 
     let closed_cves = client
-        .get_report_closed_cves(&report_id, Default::default())
+        .get_report_closed_cves(GetReportClosedCvesRequest::new(report_id))
         .await
         .expect("closed cves should parse");
     let closed_cve = &closed_cves.items[0];
@@ -2275,7 +2430,7 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     assert_eq!(closed_cve.threat.as_deref(), Some("Medium"));
 
     let timezones = client
-        .get_timezones()
+        .get_timezones(GetTimezonesRequest::new())
         .await
         .expect("timezones should parse");
     assert!(timezones
@@ -2447,7 +2602,9 @@ async fn typed_user_rename_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
 
@@ -2490,7 +2647,9 @@ async fn typed_ssh_credential_lifecycle_uses_nested_key_shape() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -2570,7 +2729,9 @@ async fn typed_snmpv3_and_kerberos_credentials_use_current_wire_shapes() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -2641,7 +2802,9 @@ async fn typed_verify_credential_store_uses_next_command_shape() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -2695,7 +2858,9 @@ async fn typed_create_credential_store_credential_uses_next_shape() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2740,7 +2905,9 @@ async fn typed_modify_credential_store_credential_uses_next_shape() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2809,7 +2976,9 @@ async fn typed_secinfo_singular_helpers_fetch_one_entry() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2858,7 +3027,9 @@ async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2907,7 +3078,9 @@ async fn generic_secinfo_helpers_use_stateful_mock_server_path() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2960,7 +3133,9 @@ async fn typed_scan_config_field_helpers_modify_stateful_mock_resource() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -3060,39 +3235,47 @@ async fn preference_getters_send_expected_mock_server_commands() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
 
-    let opts = GetScanConfigPreferencesOpts {
-        nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
-        config_id: Some(EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("valid id")),
-    };
-    let responses = [
-        client
-            .get_scan_config_preferences(opts.clone())
-            .await
-            .expect("scan-config preferences request should succeed"),
-        client
-            .get_scan_config_preference("timeout", opts)
-            .await
-            .expect("scan-config preference request should succeed"),
-        client
-            .get_nvt_preferences(GetNvtPreferencesRequest {
-                nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
-            })
-            .await
-            .expect("nvt preferences request should succeed"),
-        client
-            .get_nvt_preference(GetNvtPreferenceRequest {
-                preference: "timeout".into(),
-                nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
-            })
-            .await
-            .expect("nvt preference request should succeed"),
-    ];
-    assert!(responses.iter().all(|response| response.status == 200));
+    let config_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("valid id");
+    let list = client
+        .execute(GetScanConfigPreferencesRequest {
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+            config_id: Some(config_id.clone()),
+        })
+        .await
+        .expect("scan-config preferences request should succeed");
+    assert_eq!(list.status, 200);
+    let single = client
+        .execute(GetScanConfigPreferenceRequest {
+            preference: "radio:Mode".into(),
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+            config_id: Some(config_id),
+        })
+        .await
+        .expect("scan-config preference request should succeed");
+    assert_eq!(single.status, 200);
+    assert!(single.item.is_some());
+    let nvt_list = client
+        .get_nvt_preferences(GetNvtPreferencesRequest {
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+        })
+        .await
+        .expect("nvt preferences request should succeed");
+    assert_eq!(nvt_list.status, 200);
+    let nvt_single = client
+        .get_nvt_preference(GetNvtPreferenceRequest {
+            preference: "radio:Mode".into(),
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+        })
+        .await
+        .expect("nvt preference request should succeed");
+    assert_eq!(nvt_single.status, 200);
 
     let history = server.command_history();
     assert_eq!(history.len(), 4);
@@ -3109,7 +3292,7 @@ async fn preference_getters_send_expected_mock_server_commands() {
     );
     assert_eq!(
         commands[1],
-        "<get_preferences config_id=\"daba56c8-73ec-11df-a475-002264764cea\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"timeout\"/>"
+        "<get_preferences config_id=\"daba56c8-73ec-11df-a475-002264764cea\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
     );
     assert_eq!(
         commands[2],
@@ -3117,7 +3300,7 @@ async fn preference_getters_send_expected_mock_server_commands() {
     );
     assert_eq!(
         commands[3],
-        "<get_preferences nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"timeout\"/>"
+        "<get_preferences nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
     );
 
     server.shutdown().await;
@@ -3144,7 +3327,9 @@ async fn typed_scan_config_nvt_helpers_use_stateful_mock_server_filters() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -3209,7 +3394,9 @@ async fn typed_config_getters_filter_stateful_mock_resources() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -3310,7 +3497,9 @@ async fn typed_permission_lifecycle_uses_nested_references() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -3412,7 +3601,9 @@ async fn typed_target_host_updates_are_atomic_and_can_clear_exclusions() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4060,7 +4251,9 @@ async fn typed_target_port_list_updates_preserve_omit_and_set_semantics() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4145,7 +4338,9 @@ async fn typed_target_port_list_clear_is_rejected_before_send() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     let target = client
@@ -4210,7 +4405,9 @@ async fn typed_user_role_updates_preserve_replace_and_clear_state() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4296,7 +4493,9 @@ async fn typed_policy_import_uses_stateful_mock_server_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4382,7 +4581,9 @@ async fn typed_scan_config_import_uses_stateful_mock_server_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -4440,7 +4641,9 @@ async fn typed_report_format_import_and_clone_use_mock_server_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -4491,41 +4694,41 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
 
     let import_task = client
-        .create_import_task("Report Import Task", None)
+        .create_import_task(CreateImportTaskRequest::new("Report Import Task"))
         .await
         .expect("import task should succeed");
     let task_id = import_task.id;
     server.clear_history();
     let report_xml = r#"<report id="imported-report"><name>Imported</name></report>"#;
+    let mut import_request = ImportReportRequest::new(task_id.clone(), report_xml.as_bytes());
+    import_request.in_assets = Some(true);
     let created = client
-        .import_report(
-            report_xml,
-            &task_id,
-            ImportReportOpts {
-                in_assets: Some(true),
-            },
-        )
+        .import_report(import_request)
         .await
         .expect("report import should succeed");
     assert_eq!(created.status, 201);
 
     let readback = client
-        .send(get_reports(GetReportsOpts {
+        .get_reports(GetReportsRequest {
             details: Some(true),
             ..Default::default()
-        }))
+        })
         .await
         .expect("get_reports should succeed");
-    let readback_xml = readback.as_str().expect("response XML should be UTF-8");
-    assert!(readback_xml.contains(&format!("id=\"{}\"", created.id)));
-    assert!(readback_xml.contains(&format!("<task_id>{task_id}</task_id>")));
-    assert!(readback_xml.contains("<in_assets>1</in_assets>"));
+    let imported = readback
+        .items
+        .iter()
+        .find(|report| report.meta.id == created.id)
+        .expect("imported report should be returned");
+    assert_eq!(imported.task.as_ref().map(|task| &task.id), Some(&task_id));
 
     let history = server.command_history();
     assert_eq!(history.len(), 2);
@@ -4536,7 +4739,7 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
     assert_eq!(
         import_command,
         format!(
-            r#"<create_report><task id="{task_id}"/><in_assets>1</in_assets>{report_xml}</create_report>"#
+            r#"<create_report>{report_xml}<task id="{task_id}"/><in_assets>1</in_assets></create_report>"#
         )
     );
 
@@ -4554,51 +4757,52 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
     let task_id = client
-        .create_import_task("Report Drilldown Task", None)
+        .create_import_task(CreateImportTaskRequest::new("Report Drilldown Task"))
         .await
         .expect("import task should succeed")
         .id;
     let created = client
-        .import_report(
-            r#"<report id="drilldown-report"><name>Drilldown</name></report>"#,
-            &task_id,
-            ImportReportOpts::default(),
-        )
+        .import_report(ImportReportRequest::new(
+            task_id,
+            br#"<report id="drilldown-report"><name>Drilldown</name></report>"#,
+        ))
         .await
         .expect("report import should succeed");
 
     let hosts = client
-        .get_report_hosts_parsed(&created.id, Default::default())
+        .get_report_hosts(GetReportHostsRequest::new(created.id.clone()))
         .await
         .expect("report hosts should parse");
     assert_eq!(hosts.items.len(), 2);
     assert_eq!(hosts.items[0].name.as_deref(), Some("192.0.2.10"));
 
     let ports = client
-        .get_report_ports_parsed(&created.id, Default::default())
+        .get_report_ports(GetReportPortsRequest::new(created.id.clone()))
         .await
         .expect("report ports should parse");
     assert_eq!(ports.items[0].name.as_deref(), Some("22/tcp"));
 
     let applications = client
-        .get_report_applications_parsed(&created.id, Default::default())
+        .get_report_applications(GetReportApplicationsRequest::new(created.id.clone()))
         .await
         .expect("report applications should parse");
     assert_eq!(applications.items[0].name.as_deref(), Some("OpenSSH"));
 
     let operating_systems = client
-        .get_report_operating_systems_parsed(&created.id, Default::default())
+        .get_report_operating_systems(GetReportOperatingSystemsRequest::new(created.id.clone()))
         .await
         .expect("report operating systems should parse");
     assert_eq!(operating_systems.items[0].name.as_deref(), Some("Debian"));
 
     let cves = client
-        .get_report_cves_parsed(&created.id, Default::default())
+        .get_report_cves(GetReportCvesRequest::new(created.id.clone()))
         .await
         .expect("report cves should parse");
     assert_eq!(cves.items[0].name.as_deref(), Some("CVE-2026-0001"));
@@ -4772,7 +4976,9 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
         .await
         .expect("client should connect");
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
     let mut client = match client {
@@ -4782,31 +4988,17 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
     server.clear_history();
 
     let response = client
-        .get_scan_report(
-            &EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
-            GetScanReportOpts {
-                filter_string: Some("levels=l".into()),
-                filter_id: Some(EntityId::new(SCAN_REPORT_FILTER_ID).expect("valid filter ID")),
-            },
-        )
+        .get_scan_report(GetScanReportRequest {
+            scan_report_id: EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
+            filter_string: Some("levels=l".into()),
+            filter_id: Some(EntityId::new(SCAN_REPORT_FILTER_ID).expect("valid filter ID")),
+        })
         .await
         .expect("get_scan_report should succeed");
     assert_typed_scan_report(&response);
 
-    let raw_response = client
-        .get_scan_report_raw(
-            &EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
-            GetScanReportOpts::default(),
-        )
-        .await
-        .expect("raw compatibility path should succeed");
-    assert!(raw_response
-        .as_str()
-        .expect("raw response should be UTF-8")
-        .starts_with("<get_scan_report_response status=\"200\""));
-
     let history = server.command_history();
-    assert_eq!(history.len(), 2);
+    assert_eq!(history.len(), 1);
     assert_eq!(history[0].command_name(), "get_scan_report");
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("request should be UTF-8"),
@@ -4815,7 +5007,6 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
              scan_report_id=\"{SCAN_REPORT_ID}\"/>"
         )
     );
-    assert_eq!(history[1].command_name(), "get_scan_report");
 
     server.shutdown().await;
 }
@@ -4831,7 +5022,9 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4845,26 +5038,24 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("create_target should succeed");
     let target_id = target_response.id;
 
-    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
+    let config_id: EntityId = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
         .expect("entity id");
-    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
+    let scanner_id: EntityId = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("entity id");
     let target_entity_id = target_id;
 
     let task_response = client
-        .call(create_task(
+        .create_task(CreateTaskRequest::new(
             "Lifecycle Task",
-            &config_id,
-            &target_entity_id,
-            &scanner_id,
-            Default::default(),
+            config_id,
+            target_entity_id.clone(),
+            scanner_id,
         ))
         .await
         .expect("create_task should succeed");
-    let task_id = task_response.id().expect("task id");
-    let task_entity_id = task_id.parse().expect("entity id");
+    let task_entity_id = task_response.id;
 
     let typed_tasks = client
         .get_tasks(Default::default())
@@ -4884,31 +5075,30 @@ async fn full_crud_lifecycle_succeeds() {
     assert_eq!(typed_task.web_application_target, None);
 
     let start_response = client
-        .call(start_task(&task_entity_id))
+        .start_task(StartTaskRequest::new(task_entity_id.clone()))
         .await
         .expect("start_task should succeed");
-    assert_eq!(start_response.status_code(), Some(202));
-    assert!(start_response.child_text("report_id").is_some());
+    assert_eq!(start_response.status, 202);
+    assert!(start_response.report_id.is_some());
 
     let get_response = client
-        .call(get_task(&task_entity_id))
+        .get_task(GetTaskRequest::new(task_entity_id.clone()))
         .await
         .expect("get_task should succeed");
-    let body = get_response.as_str().expect("utf8");
-    assert!(body.contains(&task_id));
-    assert!(body.contains("Running"));
+    assert_eq!(get_response.items[0].meta.id, task_entity_id);
+    assert_eq!(get_response.items[0].status.as_deref(), Some("Running"));
 
     let stop_response = client
-        .call(stop_task(&task_entity_id))
+        .stop_task(StopTaskRequest::new(task_entity_id.clone()))
         .await
         .expect("stop_task should succeed");
-    assert_eq!(stop_response.status_code(), Some(200));
+    assert_eq!(stop_response.status, 200);
 
     let delete_task_response = client
-        .call(delete_task(&task_entity_id, true))
+        .delete_task(DeleteTaskRequest::new(task_entity_id.clone(), true))
         .await
         .expect("delete_task should succeed");
-    assert_eq!(delete_task_response.status_code(), Some(200));
+    assert_eq!(delete_task_response.status, 200);
 
     let delete_target_response = client
         .delete_target(DeleteTargetRequest::new(target_entity_id.clone(), true))
@@ -4924,7 +5114,7 @@ async fn observed_task_observers(
     task_id: &EntityId,
 ) -> TaskObservers {
     client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task should be observable")
         .items
@@ -4945,7 +5135,9 @@ async fn typed_task_observers_round_trip_create_and_modify() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4959,18 +5151,12 @@ async fn typed_task_observers_round_trip_create_and_modify() {
         .expect("target create should succeed");
     let config_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
     let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("scanner id");
+    let mut create =
+        CreateTaskRequest::new("Observer Task", config_id, target.id.clone(), scanner_id);
+    create.observers = vec!["alice".into(), "bob".into()];
+    create.observer_group_ids = vec![EntityId::new("group-1").expect("group id")];
     let task = client
-        .create_task(
-            "Observer Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts {
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![EntityId::new("group-1").expect("group id")],
-                ..Default::default()
-            },
-        )
+        .create_task(create)
         .await
         .expect("task create should succeed");
 
@@ -4979,64 +5165,46 @@ async fn typed_task_observers_round_trip_create_and_modify() {
     assert_eq!(created_observers.groups[0].id.as_str(), "group-1");
 
     let history_len = server.command_history().len();
+    let mut group_only = ModifyTaskRequest::new(task.id.clone());
+    group_only.observer_group_ids =
+        CollectionUpdate::replace([EntityId::new("group-2").expect("group id")]);
     let error = client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observer_group_ids: CollectionUpdate::replace([
-                    EntityId::new("group-2").expect("group id")
-                ]),
-                ..Default::default()
-            },
-        )
+        .modify_task(group_only)
         .await
         .expect_err("group-only update must be rejected before sending");
     assert!(matches!(
         error,
-        GvmError::ModifyTask(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        GvmError::Request(gvm_gmp::GmpRequestError::InvalidCombination { .. })
     ));
     assert_eq!(server.command_history().len(), history_len);
 
+    let mut replace = ModifyTaskRequest::new(task.id.clone());
+    replace.observers = CollectionUpdate::replace(["carol".into(), "dave".into()]);
+    replace.observer_group_ids =
+        CollectionUpdate::replace([EntityId::new("group-2").expect("group id")]);
     client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observers: CollectionUpdate::replace(["carol".into(), "dave".into()]),
-                observer_group_ids: CollectionUpdate::replace([
-                    EntityId::new("group-2").expect("group id")
-                ]),
-                ..Default::default()
-            },
-        )
+        .modify_task(replace)
         .await
         .expect("observer replacement should succeed");
     let modified_observers = observed_task_observers(&mut client, &task.id).await;
     assert_eq!(modified_observers.users, ["carol", "dave"]);
     assert_eq!(modified_observers.groups[0].id.as_str(), "group-2");
 
+    let mut clear_users = ModifyTaskRequest::new(task.id.clone());
+    clear_users.observers = CollectionUpdate::Clear;
     client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observers: CollectionUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_task(clear_users)
         .await
         .expect("observer-user clear should succeed");
     let users_cleared = observed_task_observers(&mut client, &task.id).await;
     assert!(users_cleared.users.is_empty());
     assert_eq!(users_cleared.groups[0].id.as_str(), "group-2");
 
+    let mut clear_all = ModifyTaskRequest::new(task.id.clone());
+    clear_all.observers = CollectionUpdate::Clear;
+    clear_all.observer_group_ids = CollectionUpdate::Clear;
     client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observers: CollectionUpdate::Clear,
-                observer_group_ids: CollectionUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_task(clear_all)
         .await
         .expect("all-observer clear should succeed");
     let all_cleared = observed_task_observers(&mut client, &task.id).await;
@@ -5057,14 +5225,18 @@ async fn typed_create_import_task_uses_import_task_shape() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
     server.clear_history();
 
+    let mut request = CreateImportTaskRequest::new("Import Task");
+    request.comment = Some("Imported reports".into());
     let response = client
-        .create_import_task("Import Task", Some("Imported reports"))
+        .create_import_task(request)
         .await
         .expect("create_import_task should succeed");
 
@@ -5093,12 +5265,14 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
     let empty_response = client
-        .empty_trashcan()
+        .empty_trashcan(EmptyTrashcanRequest::new())
         .await
         .expect("empty_trashcan should succeed");
     assert_eq!(empty_response.status, 200);
@@ -5120,35 +5294,33 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
         .expect("entity id");
 
     let task_response = client
-        .create_task(
+        .create_task(CreateTaskRequest::new(
             "Trashcan Task",
-            &config_id,
-            &target_id,
-            &scanner_id,
-            Default::default(),
-        )
+            config_id,
+            target_id,
+            scanner_id,
+        ))
         .await
         .expect("create_task should succeed");
     let task_id = task_response.id;
 
     let delete_response = client
-        .call(delete_task(&task_id, false))
+        .delete_task(DeleteTaskRequest::new(task_id.clone(), false))
         .await
         .expect("delete_task should succeed");
-    assert_eq!(delete_response.status_code(), Some(200));
+    assert_eq!(delete_response.status, 200);
 
     let restore_response = client
-        .restore_from_trashcan(&task_id)
+        .restore(RestoreRequest::new(task_id.clone()))
         .await
-        .expect("restore_from_trashcan should succeed");
+        .expect("restore should succeed");
     assert_eq!(restore_response.status, 200);
 
     let get_response = client
-        .call(get_task(&task_id))
+        .get_task(GetTaskRequest::new(task_id.clone()))
         .await
         .expect("get_task should succeed");
-    let body = get_response.as_str().expect("utf8");
-    assert!(body.contains("Trashcan Task"));
+    assert_eq!(get_response.items[0].meta.name, "Trashcan Task");
 
     server.shutdown().await;
 }
@@ -5164,7 +5336,9 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5186,19 +5360,18 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
         .expect("entity id");
 
     let task_response = client
-        .create_task(
+        .create_task(CreateTaskRequest::new(
             "Typed Resume Task",
-            &config_id,
-            &target_id,
-            &scanner_id,
-            Default::default(),
-        )
+            config_id,
+            target_id.clone(),
+            scanner_id,
+        ))
         .await
         .expect("create_task should succeed");
     let task_id = task_response.id;
 
     let start_response = client
-        .start_task(&task_id)
+        .start_task(StartTaskRequest::new(task_id.clone()))
         .await
         .expect("start_task should succeed");
     assert_eq!(start_response.status, 202);
@@ -5209,14 +5382,14 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
     assert_task_report_observation(&mut client, &task_id, "Running", Some(&report_id), None).await;
 
     client
-        .stop_task(&task_id)
+        .stop_task(StopTaskRequest::new(task_id.clone()))
         .await
         .expect("stop_task should succeed");
 
     assert_task_report_observation(&mut client, &task_id, "Stopped", Some(&report_id), None).await;
 
     let resume_response = client
-        .resume_task(&task_id)
+        .resume_task(ResumeTaskRequest::new(task_id.clone()))
         .await
         .expect("resume_task should succeed");
     assert_eq!(resume_response.status, 202);
@@ -5225,13 +5398,13 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
     assert_task_report_observation(&mut client, &task_id, "Running", Some(&report_id), None).await;
 
     client
-        .stop_task(&task_id)
+        .stop_task(StopTaskRequest::new(task_id.clone()))
         .await
         .expect("resumed task should stop before trashing");
     assert_task_report_survives_trash_and_restore(&mut client, &task_id, &report_id).await;
 
     client
-        .call(delete_task(&task_id, true))
+        .delete_task(DeleteTaskRequest::new(task_id.clone(), true))
         .await
         .expect("delete_task should succeed");
     client
@@ -5274,7 +5447,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     assert_eq!(result_count.medium, Some(1));
     assert_eq!(last_report.severity.as_deref(), Some("8.8"));
     let full_report = client
-        .get_scan_report(&last_report_id, GetScanReportOpts::default())
+        .get_scan_report(GetScanReportRequest::new(last_report_id.clone()))
         .await
         .expect("full report summary should be observable");
     let full_counts = full_report
@@ -5300,7 +5473,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     );
 
     let started = client
-        .start_task(&task_id)
+        .start_task(StartTaskRequest::new(task_id.clone()))
         .await
         .expect("completed task should start a new run");
     let current_report_id = started.report_id.expect("start should return report ID");
@@ -5316,7 +5489,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     .await;
 
     client
-        .stop_task(&task_id)
+        .stop_task(StopTaskRequest::new(task_id.clone()))
         .await
         .expect("running task should stop");
     assert_task_report_observation(
@@ -5329,7 +5502,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     .await;
 
     let resumed = client
-        .resume_task(&task_id)
+        .resume_task(ResumeTaskRequest::new(task_id.clone()))
         .await
         .expect("stopped task should resume");
     assert_eq!(resumed.report_id.as_ref(), Some(&current_report_id));
@@ -5356,7 +5529,9 @@ async fn typed_oci_image_target_lifecycle_succeeds() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5421,7 +5596,9 @@ async fn typed_web_application_target_lifecycle_succeeds() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5759,7 +5936,9 @@ async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5901,7 +6080,9 @@ async fn typed_user_helpers_cover_full_lifecycle_and_redact_password_trace() {
     .await
     .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
 
@@ -6178,7 +6359,9 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -6286,7 +6469,9 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -6298,10 +6483,10 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         ))
         .await
         .expect("target create should succeed");
-    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
+    let config_id: EntityId = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
         .expect("config id");
-    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
+    let scanner_id: EntityId = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("scanner id");
     let schedule_input = |timestamp: &str| {
@@ -6329,17 +6514,16 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .expect("second schedule create should succeed");
 
     let unscheduled = client
-        .create_task(
+        .create_task(CreateTaskRequest::new(
             "Unscheduled Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts::default(),
-        )
+            config_id.clone(),
+            target.id.clone(),
+            scanner_id.clone(),
+        ))
         .await
         .expect("unscheduled task create should succeed");
     let tasks = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed");
     let unscheduled_task = tasks
@@ -6350,26 +6534,24 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     assert!(unscheduled_task.schedule.is_none());
     assert_eq!(unscheduled_task.schedule_periods, Some(0));
     client
-        .delete_task(&unscheduled.id, true)
+        .delete_task(DeleteTaskRequest::new(unscheduled.id.clone(), true))
         .await
         .expect("unscheduled task delete should succeed");
 
+    let mut create_scheduled = CreateTaskRequest::new(
+        "Scheduled Task",
+        config_id.clone(),
+        target.id.clone(),
+        scanner_id.clone(),
+    );
+    create_scheduled.schedule_id = Some(first_schedule.id.clone());
+    create_scheduled.schedule_periods = Some(3);
     let scheduled = client
-        .create_task(
-            "Scheduled Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts {
-                schedule_id: Some(first_schedule.id.clone()),
-                schedule_periods: Some(3),
-                ..Default::default()
-            },
-        )
+        .create_task(create_scheduled)
         .await
         .expect("scheduled task create should succeed");
     let observed = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6386,18 +6568,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     );
     assert_eq!(observed.schedule_periods, Some(3));
 
+    let mut preserve_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    preserve_schedule.comment = Some("schedule omitted".to_string());
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                comment: Some("schedule omitted".to_string()),
-                ..Default::default()
-            },
-        )
+        .modify_task(preserve_schedule)
         .await
         .expect("omitting schedule should preserve it");
     let preserved = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6414,18 +6592,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     );
     assert_eq!(preserved.schedule_periods, Some(3));
 
+    let mut replace_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    replace_schedule.schedule_id = ScalarUpdate::set(second_schedule.id.clone());
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::set(second_schedule.id.clone()),
-                ..Default::default()
-            },
-        )
+        .modify_task(replace_schedule)
         .await
         .expect("schedule replacement should succeed");
     let replaced = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6442,18 +6616,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     );
     assert_eq!(replaced.schedule_periods, Some(0));
 
+    let mut update_periods = ModifyTaskRequest::new(scheduled.id.clone());
+    update_periods.schedule_periods = Some(7);
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_periods: Some(7),
-                ..Default::default()
-            },
-        )
+        .modify_task(update_periods)
         .await
         .expect("period-only update should succeed");
     let period_updated = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6473,31 +6643,25 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     let missing_schedule: EntityId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         .parse()
         .expect("missing schedule id");
+    let mut missing_schedule_create = CreateTaskRequest::new(
+        "Missing Schedule Task",
+        config_id,
+        target.id.clone(),
+        scanner_id,
+    );
+    missing_schedule_create.schedule_id = Some(missing_schedule.clone());
     let create_error = client
-        .create_task(
-            "Missing Schedule Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts {
-                schedule_id: Some(missing_schedule.clone()),
-                ..Default::default()
-            },
-        )
+        .create_task(missing_schedule_create)
         .await
         .expect_err("missing schedule create should fail");
     assert!(
         matches!(&create_error, GvmError::Server { status: 404, .. }),
         "unexpected create error: {create_error:?}"
     );
+    let mut missing_schedule_update = ModifyTaskRequest::new(scheduled.id.clone());
+    missing_schedule_update.schedule_id = ScalarUpdate::set(missing_schedule);
     let modify_error = client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::set(missing_schedule),
-                ..Default::default()
-            },
-        )
+        .modify_task(missing_schedule_update)
         .await
         .expect_err("missing schedule replacement should fail");
     assert!(
@@ -6505,7 +6669,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         "unexpected modify error: {modify_error:?}"
     );
     let after_failed_update = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6530,18 +6694,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         dependency_error,
         GvmError::Server { status: 409, .. }
     ));
+    let mut clear_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    clear_schedule.schedule_id = ScalarUpdate::Clear;
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_task(clear_schedule)
         .await
         .expect("schedule clearing should succeed");
     let cleared = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6555,19 +6715,15 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .delete_schedule(DeleteScheduleRequest::new(second_schedule.id.clone(), true))
         .await
         .expect("detached schedule delete should succeed");
+    let mut reattach_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    reattach_schedule.schedule_id = ScalarUpdate::set(first_schedule.id.clone());
+    reattach_schedule.schedule_periods = Some(4);
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::set(first_schedule.id.clone()),
-                schedule_periods: Some(4),
-                ..Default::default()
-            },
-        )
+        .modify_task(reattach_schedule)
         .await
         .expect("schedule reattachment should succeed");
     client
-        .delete_task(&scheduled.id, false)
+        .delete_task(DeleteTaskRequest::new(scheduled.id.clone(), false))
         .await
         .expect("task trash should succeed");
     let trashed_dependency_error = client
@@ -6579,7 +6735,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         GvmError::Server { status: 409, .. }
     ));
     client
-        .delete_task(&scheduled.id, true)
+        .delete_task(DeleteTaskRequest::new(scheduled.id.clone(), true))
         .await
         .expect("permanent task delete should succeed");
     client

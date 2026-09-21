@@ -1,67 +1,59 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Help command builders.
+//! Canonical help discovery request.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::enums::HelpFormat as SchemaFormat;
+use crate::enums::HelpFormat;
 use crate::responses::HelpResponse;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Supported help output formats.
-///
-/// This compatibility enum selects the XML command-listing variants. Use
-/// [`HelpMode`] for new code that also needs text or another schema format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HelpFormat {
-    /// Abbreviated command listing.
-    Brief,
-    /// Full command listing.
-    Full,
-}
-
-impl HelpFormat {
-    /// Return the legacy symbolic value.
-    ///
-    /// These values describe the compatibility variants; [`help`] maps them
-    /// to gvmd's valid `format` and `type` attribute combination.
-    #[must_use]
-    pub const fn as_gmp_str(self) -> &'static str {
-        match self {
-            Self::Brief => "brief",
-            Self::Full => "full",
-        }
-    }
-}
-
-/// Valid help response modes.
+/// Valid gvmd help response modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum HelpMode {
     /// Plain-text command summary.
     #[default]
     Text,
-    /// Abbreviated XML command listing.
+    /// Abbreviated XML command listing used for command discovery.
     BriefXml,
     /// Complete schema in the selected format.
-    Schema(SchemaFormat),
+    Schema(HelpFormat),
 }
 
-/// Semantic compatibility request for [`help`].
+/// Canonical `help` request.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct HelpRequest(Option<HelpFormat>);
+pub struct HelpRequest {
+    /// Requested response mode.
+    pub mode: HelpMode,
+}
 
 impl HelpRequest {
-    /// Create a compatibility help request.
+    /// Create a help request in the selected mode.
     #[must_use]
-    pub const fn new(format: Option<HelpFormat>) -> Self {
-        Self(format)
+    pub const fn new(mode: HelpMode) -> Self {
+        Self { mode }
     }
 }
 
-impl Request for HelpRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        help(self.0).to_bytes()
+impl GmpRequestCodec for HelpRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("help"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        let mut command = XmlCommand::new("help");
+        match self.mode {
+            HelpMode::Text => {}
+            HelpMode::BriefXml => {
+                command.set_attribute("format", HelpFormat::Xml.as_gmp_str());
+                command.set_attribute("type", "brief");
+            }
+            HelpMode::Schema(format) => {
+                command.set_attribute("format", format.as_gmp_str());
+            }
+        }
+        Ok(command.to_bytes())
     }
 }
 
@@ -69,87 +61,32 @@ impl GmpRequest for HelpRequest {
     type Response = HelpResponse;
 }
 
-/// Semantic request for an explicit help response mode.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HelpWithModeRequest(HelpMode);
-
-impl HelpWithModeRequest {
-    /// Create an explicit-mode help request.
-    #[must_use]
-    pub const fn new(mode: HelpMode) -> Self {
-        Self(mode)
-    }
-}
-
-impl Request for HelpWithModeRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        help_with_mode(self.0).to_bytes()
-    }
-}
-
-impl GmpRequest for HelpWithModeRequest {
-    type Response = HelpResponse;
-}
-
-/// Build a `help` request.
-///
-/// `Brief` and `Full` are retained for source compatibility and now map to
-/// gvmd's valid XML help attributes. Older releases incorrectly placed these
-/// values in the `format` attribute.
-#[must_use]
-pub fn help(format: Option<HelpFormat>) -> XmlCommand {
-    match format {
-        Some(HelpFormat::Brief) => help_with_mode(HelpMode::BriefXml),
-        Some(HelpFormat::Full) => help_with_mode(HelpMode::Schema(SchemaFormat::Xml)),
-        None => help_with_mode(HelpMode::Text),
-    }
-}
-
-/// Build a `help` request for an explicit response mode.
-#[must_use]
-pub fn help_with_mode(mode: HelpMode) -> XmlCommand {
-    let mut cmd = XmlCommand::new("help");
-    match mode {
-        HelpMode::Text => {}
-        HelpMode::BriefXml => {
-            cmd.set_attribute("format", SchemaFormat::Xml.as_gmp_str());
-            cmd.set_attribute("type", "brief");
-        }
-        HelpMode::Schema(format) => {
-            cmd.set_attribute("format", format.as_gmp_str());
-        }
-    }
-    cmd
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::commands::help::{help, help_with_mode, HelpFormat, HelpMode};
-    use crate::common::xml;
-    use crate::enums::HelpFormat as SchemaFormat;
+    use super::*;
 
     #[test]
-    fn compatibility_help_builds_valid_xml_modes() {
-        assert_eq!(HelpFormat::Brief.as_gmp_str(), "brief");
-        assert_eq!(HelpFormat::Full.as_gmp_str(), "full");
-        assert_eq!(xml(help(None)), "<help/>");
-        assert_eq!(
-            xml(help(Some(HelpFormat::Brief))),
-            "<help format=\"xml\" type=\"brief\"/>"
-        );
-        assert_eq!(xml(help(Some(HelpFormat::Full))), "<help format=\"xml\"/>");
-    }
-
-    #[test]
-    fn explicit_help_modes_build_valid_wire_shapes() {
-        assert_eq!(xml(help_with_mode(HelpMode::Text)), "<help/>");
-        assert_eq!(
-            xml(help_with_mode(HelpMode::BriefXml)),
-            "<help format=\"xml\" type=\"brief\"/>"
-        );
-        assert_eq!(
-            xml(help_with_mode(HelpMode::Schema(SchemaFormat::Html))),
-            "<help format=\"html\"/>"
-        );
+    fn all_help_modes_build_source_faithful_xml() {
+        for (mode, expected) in [
+            (HelpMode::Text, "<help/>"),
+            (HelpMode::BriefXml, "<help format=\"xml\" type=\"brief\"/>"),
+            (
+                HelpMode::Schema(HelpFormat::Html),
+                "<help format=\"html\"/>",
+            ),
+            (HelpMode::Schema(HelpFormat::Rnc), "<help format=\"rnc\"/>"),
+            (
+                HelpMode::Schema(HelpFormat::Text),
+                "<help format=\"text\"/>",
+            ),
+            (HelpMode::Schema(HelpFormat::Xml), "<help format=\"xml\"/>"),
+        ] {
+            assert_eq!(
+                HelpRequest::new(mode)
+                    .encode(GmpVersion(22, 4))
+                    .expect("help encodes"),
+                expected.as_bytes()
+            );
+        }
     }
 }

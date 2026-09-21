@@ -114,6 +114,20 @@ fn collect_command_surfaces(root: &Path, surfaces: &mut BTreeSet<Surface>) {
                 }
             }
         }
+
+        if relative.ends_with("/reports.rs") {
+            let lines = contents.lines().collect::<Vec<_>>();
+            for (index, line) in lines.iter().enumerate() {
+                if line.trim() == "report_projection_request!(" {
+                    let symbol = lines[index + 1].trim().trim_end_matches(',').to_string();
+                    surfaces.insert(Surface {
+                        kind: "request".to_string(),
+                        source: relative.clone(),
+                        symbol,
+                    });
+                }
+            }
+        }
     }
 }
 
@@ -304,10 +318,14 @@ fn every_public_request_surface_has_an_explicit_disposition() {
             *counts.entry(disposition.value.as_str()).or_insert(0_usize) += 1;
             counts
         });
-    assert_eq!(ledger.len(), 981, "#649 disposition ledger total drifted");
-    assert_eq!(counts.get("transitional"), Some(&237));
-    assert_eq!(counts.get("canonical-request"), Some(&285));
-    assert_eq!(counts.get("removed"), Some(&336));
-    assert_eq!(counts.get("retained-construction"), Some(&111));
+    assert_eq!(ledger.len(), 1026, "#664 disposition ledger total drifted");
+    assert_eq!(
+        counts.get("transitional").copied().unwrap_or_default(),
+        0,
+        "the completed #658-#664 inventory must contain zero transitional rows"
+    );
+    assert_eq!(counts.get("canonical-request"), Some(&409));
+    assert_eq!(counts.get("removed"), Some(&474));
+    assert_eq!(counts.get("retained-construction"), Some(&131));
     assert_eq!(counts.get("frozen-ticket"), Some(&12));
 }

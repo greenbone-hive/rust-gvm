@@ -3,18 +3,19 @@
 
 use crate::{GmpClient, GvmError};
 use gvm_connection::GvmConnection;
-use gvm_gmp::commands::aggregates::{GetAggregatesRequest, GetAggregatesRequestOpts};
+use gvm_gmp::commands::aggregates::{GetAggregatesRequest, GetLegacyAggregatesRequest};
 use gvm_gmp::commands::features::GetFeaturesRequest;
-use gvm_gmp::commands::help::{HelpMode, HelpRequest, HelpWithModeRequest};
+use gvm_gmp::commands::help::HelpRequest;
+use gvm_gmp::commands::resource_names::{GetResourceNameRequest, GetResourceNamesRequest};
 use gvm_gmp::commands::system::{
-    DescribeAuthRequest, GetSettingsRequest, ModifyAuthRequest, ModifyLicenseOpts,
-    ModifyLicenseWithOptsRequest, RunWizardOpts, RunWizardWithOptsRequest,
+    DescribeAuthRequest, GetLicenseRequest, GetSettingsRequest, ModifyAuthRequest,
+    ModifyLicenseRequest, RunWizardRequest,
 };
-use gvm_gmp::commands::system_reports::{GetSystemReportsOpts, GetSystemReportsRequest};
+use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::responses::{
-    DescribeAuthResponse, GetAggregatesResponse, GetFeaturesResponse, GetSettingsResponse,
-    GetSystemReportsResponse, HelpResponse, ModifyAuthResponse, ModifyLicenseResponse,
-    RunWizardResponse,
+    DescribeAuthResponse, GetAggregatesResponse, GetFeaturesResponse, GetLicenseResponse,
+    GetResourceNamesResponse, GetSettingsResponse, GetSystemReportsResponse, HelpResponse,
+    ModifyAuthResponse, ModifyLicenseResponse, RunWizardResponse,
 };
 
 impl<C: GvmConnection + Send> GmpClient<C> {
@@ -26,31 +27,43 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_aggregates(
         &mut self,
-        resource_type: &str,
-        opts: GetAggregatesRequestOpts,
+        request: GetAggregatesRequest,
     ) -> Result<GetAggregatesResponse, GvmError> {
-        self.execute(GetAggregatesRequest::new(resource_type, opts))
-            .await
+        self.execute(request).await
+    }
+
+    /// Send the pinned gvmd legacy-attribute aggregate shape.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_legacy_aggregates(
+        &mut self,
+        request: GetLegacyAggregatesRequest,
+    ) -> Result<GetAggregatesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_features` request and return a typed
     /// [`GetFeaturesResponse`].
     ///
-    /// The `_parsed` suffix avoids conflicting with the raw
-    /// [`crate::Gmp226Commands::get_features`] versioned-client method.
-    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_features_parsed(&mut self) -> Result<GetFeaturesResponse, GvmError> {
-        self.execute(GetFeaturesRequest::new()).await
+    pub async fn get_features(
+        &mut self,
+        request: GetFeaturesRequest,
+    ) -> Result<GetFeaturesResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_settings` request and return a typed [`GetSettingsResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_settings(&mut self) -> Result<GetSettingsResponse, GvmError> {
-        self.execute(GetSettingsRequest::default()).await
+    pub async fn get_settings(
+        &mut self,
+        request: GetSettingsRequest,
+    ) -> Result<GetSettingsResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `get_system_reports` request and return typed report metadata and payloads.
@@ -59,83 +72,95 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_system_reports(
         &mut self,
-        opts: GetSystemReportsOpts,
+        request: GetSystemReportsRequest,
     ) -> Result<GetSystemReportsResponse, GvmError> {
-        self.execute(GetSystemReportsRequest::new(opts)).await
+        self.execute(request).await
     }
 
     /// Send a `help` request and return a typed [`HelpResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_help(&mut self) -> Result<HelpResponse, GvmError> {
-        self.execute(HelpRequest::new(None)).await
-    }
-
-    /// Send a `help` request for an explicit response mode.
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_help_with_mode(&mut self, mode: HelpMode) -> Result<HelpResponse, GvmError> {
-        self.execute(HelpWithModeRequest::new(mode)).await
+    pub async fn get_help(&mut self, request: HelpRequest) -> Result<HelpResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send a `describe_auth` request and return a typed [`DescribeAuthResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn describe_auth(&mut self) -> Result<DescribeAuthResponse, GvmError> {
-        self.execute(DescribeAuthRequest::new()).await
+    pub async fn describe_auth(
+        &mut self,
+        request: DescribeAuthRequest,
+    ) -> Result<DescribeAuthResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Discover resource names for one resource type.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_resource_names(
+        &mut self,
+        request: GetResourceNamesRequest,
+    ) -> Result<GetResourceNamesResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Discover one resource name.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_resource_name(
+        &mut self,
+        request: GetResourceNameRequest,
+    ) -> Result<GetResourceNamesResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Retrieve current license status and content.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_license(
+        &mut self,
+        request: GetLicenseRequest,
+    ) -> Result<GetLicenseResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Modify a named authentication group and return a typed
     /// [`ModifyAuthResponse`].
     ///
-    /// `auth_conf_settings` must contain at least one key/value pair.
-    ///
     /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
+    /// Returns an error if validation, the request, or response parsing fails.
     pub async fn modify_auth(
         &mut self,
-        group_name: &str,
-        auth_conf_settings: &[(String, String)],
+        request: ModifyAuthRequest,
     ) -> Result<ModifyAuthResponse, GvmError> {
-        self.execute(ModifyAuthRequest::new(
-            group_name,
-            auth_conf_settings.iter().cloned(),
-        ))
-        .await
+        self.execute(request).await
     }
 
     /// Upload a base64-encoded license file and return a typed
     /// [`ModifyLicenseResponse`].
     ///
     /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
+    /// Returns an error if validation, the request, or response parsing fails.
     pub async fn modify_license(
         &mut self,
-        file: &str,
-        opts: ModifyLicenseOpts,
+        request: ModifyLicenseRequest,
     ) -> Result<ModifyLicenseResponse, GvmError> {
-        self.execute(ModifyLicenseWithOptsRequest::new(file, opts))
-            .await
+        self.execute(request).await
     }
 
     /// Run a gvmd wizard and return its typed response envelope.
     ///
     /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
+    /// Returns an error if validation, the request, or response parsing fails.
     pub async fn run_wizard(
         &mut self,
-        name: &str,
-        params: &[(String, String)],
-        opts: RunWizardOpts,
+        request: RunWizardRequest,
     ) -> Result<RunWizardResponse, GvmError> {
-        self.execute(RunWizardWithOptsRequest::new(
-            name,
-            params.iter().cloned(),
-            opts,
-        ))
-        .await
+        self.execute(request).await
     }
 }
