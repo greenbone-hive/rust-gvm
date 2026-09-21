@@ -249,3 +249,4 @@ jobs:
           repository: clawosiris/rust-gvm-e2e-tests
           workflow: e2e.yml
           ref: main
+          inputs: '{"rust-gvm-ref":"${{ github.sha }}"}'
