@@ -187,12 +187,15 @@ records those contracts. Issue #639 documents why the legacy delete-user
 `ultimate` input is intentionally absent and provides the
 [v0.7 user/group migration mapping](v0.7.0-migration.md#users-and-groups).
 
-The report-configuration, report-format, TLS-certificate, and bounded
-NVT/SecInfo children are complete. Report retrieval, exports, and
-report-specific lean/delta behavior remain separately ordered families.
+The report-configuration, report-format, TLS-certificate, bounded NVT/SecInfo,
+report retrieval, structured projection, and export families are complete.
+Delta/alert-selected report generation and a streaming redesign remain
+separately tracked work.
 
 The sections below retain the bounded delivery history for each migrated
-family.
+family. They are milestone snapshots, so transitional phrases such as
+"builders remain" describe those earlier deliveries and are superseded by the
+current-state summary above and the convergence audit.
 
 The bounded canonical standard-task batch, tracked by
 [`#659`](https://github.com/greenbone-hive/rust-gvm/issues/659), now gives
@@ -306,7 +309,8 @@ Reads require a type and expose filters, details, and pagination control without
 asset trash. Direct creation requires one IPv4 or IPv6 host name; modification
 replaces or clears the host comment; deletion is permanent without an
 `ultimate` mode. The unsupported OS-modification request, builder, and facade
-are removed. Asset OS remains distinct from deferred SecInfo OS. See the
+are removed. Asset OS remains distinct from the unsupported generic SecInfo OS
+dispatch. See the
 [pinned evidence](asset-request-gvmd-evidence.md).
 
 Issue #643 completes the result child of the asset/results group: the plural
@@ -456,15 +460,16 @@ option variants are removed. Delta/alert-selected generation and streaming
 redesign remain separate work. See the
 [pinned evidence](report-request-gvmd-evidence.md).
 
-| Crate | Status | Lines | Tests | Description |
-|-------|--------|-------|-------|-------------|
-| `gvm-protocol` | ✅ Implemented | ~2,330 | 67 | XML command builder, response parser, streaming reader |
-| `gvm-mock-server` | ✅ Implemented | ~5,850 | 266 | Programmable mock GMP server |
-| `gvm-connection` | ✅ Implemented | ~1,500 | 45+ | Async Unix socket, verified TLS/mTLS, and SSH transports |
-| `gvm-gmp` | ✅ Implemented | ~19,800 | 838 | Typed GMP command builders and response models |
-| `gvm-client` | ✅ Implemented | ~3,590 | 62 | High-level async client with version negotiation and typed methods |
+| Crate | Status | Description |
+|-------|--------|-------------|
+| `gvm-protocol` | ✅ Implemented | XML command construction, response parsing, and bounded streaming framing |
+| `gvm-mock-server` | ✅ Implemented | Programmable mock GMP server for library and standalone use |
+| `gvm-connection` | ✅ Implemented | Async Unix socket, verified TLS/mTLS, and SSH transports behind crate features |
+| `gvm-gmp` | ✅ Implemented | Canonical complete requests, response models, codecs, and semantic metadata |
+| `gvm-client` | ✅ Implemented | High-level async client with version negotiation, capability checks, and typed execution |
 
-**Total: ~32,640 lines of Rust, 1,278 tests**
+Source and test counts change frequently; the workspace manifests and the
+checked inventories are authoritative instead of frozen totals in this page.
 
 Canonical schedule create/modify requests support typed first-run input and
 once, hourly, daily, weekly, and yearly recurrence, or raw iCalendar through
@@ -547,8 +552,8 @@ de-duplication without rewriting otherwise valid host spellings.
 |------|--------|-------------|
 | Echo | ✅ | Generic well-formed responses |
 | Fixture | ✅ | Realistic pre-built XML responses |
-| Stateful | ✅ | In-memory CRUD with auth |
-| Scenario | ✅ | Scripted request→response playback |
+| Stateful | ✅ | Bounded in-memory resource behavior with authentication |
+| Scenario | ✅ | Scripted request→response playback through the library builder; not a CLI mode |
 
 ### Builder API
 
@@ -565,31 +570,15 @@ de-duplication without rewriting otherwise valid host spellings.
 | Fixture overrides | ✅ | `.override_response("get_tasks", xml)` |
 | Pre-seeding | ✅ | `.seed(\|store\| { ... })` |
 | Fault injection | ✅ | `.inject_fault(Fault::once(FaultKind::Disconnect))` |
-| Scenario steps | ✅ | `.scenario_step(ScenarioStep { ... })` |
+| Scenario steps | ✅ | `.scenario(ScenarioMode::Strict, steps)` |
 
 ### Stateful CRUD
 
-| Resource Type | Create | Get (single) | Get (list) | Modify | Delete | Clone |
-|---------------|--------|-------------|-----------|--------|--------|-------|
-| task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| target | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| config | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| scanner | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| alert | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| credential | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| filter | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| note | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| override | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| port_list | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| report | ✅ | ✅ (nested) | ✅ | ✅ | ✅ | ✅ |
-| schedule | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| tag | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| ticket | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| user | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| role | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| asset | ✅ | ✅ | ✅ (by type) | ✅ | ✅ | ✅ |
-| result | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| nvt | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+The stateful handler recognizes all 145 registry roots that are marked
+stateful and combines family-specific handlers with bounded generic resource
+behavior. This is not a claim of complete gvmd semantics for every CRUD verb:
+the exact modeled, partial, and unsupported behavior is maintained in the
+[support matrix](SUPPORT_MATRIX.md).
 
 ### Task Lifecycle
 
@@ -616,7 +605,7 @@ de-duplication without rewriting otherwise valid host spellings.
 | create_note/override (text + nvt_oid) | ✅ | Non-standard element parsing |
 | create_ticket (result_id + comment) | ✅ | Non-standard element parsing |
 | modify_ticket (status attribute) | ✅ | Ticket-specific handling |
-| Trash/restore/empty_trashcan | ✅ | Full trashcan lifecycle |
+| Trash/restore/empty_trashcan | ✅ | Bounded trashcan lifecycle with relationship checks and atomic rollback |
 | Task schedule relationships | ✅ | Stateful create/get persistence, schedule-period round trips, omit/set/clear modify semantics, reference validation, and dependency-safe deletion |
 
 ### Fault Injection
@@ -641,26 +630,11 @@ de-duplication without rewriting otherwise valid host spellings.
 
 ### Fixture Library
 
-| Category | Commands Covered |
-|----------|-----------------|
-| System | get_version, authenticate, help, get_timezones |
-| Tasks | get_tasks, create_task, modify_task, delete_task, start_task, stop_task |
-| Targets | get_targets |
-| Reports | get_reports (with nested results), get_report_vulns, get_report_tls_certificates, get_report_errors, get_report_closed_cves |
-| Configs | get_scan_configs |
-| Scanners | get_scanners |
-| Alerts | get_alerts |
-| Credentials | get_credentials, get_credential_stores |
-| Filters | get_filters |
-| Notes | get_notes |
-| Overrides | get_overrides |
-| Port Lists | get_port_lists |
-| Schedules | get_schedules |
-| Tags | get_tags |
-| Tickets | get_tickets |
-| Users | get_users |
-| Roles | get_roles |
-| Error templates | 400, 401, 404, 409, 500 |
+The built-in fixture store currently seeds 33 named response templates,
+including system/authentication, resource-list, nested-report, and error
+responses. Fixture mode also uses specialized handlers where required. The
+fixture source and the [support matrix](SUPPORT_MATRIX.md) are authoritative;
+the template count is not the number of GMP commands supported by other modes.
 
 ### Version Gating
 
@@ -688,7 +662,7 @@ de-duplication without rewriting otherwise valid host spellings.
 | `--tls-client-ca <path>` | ✅ (`tls` feature) |
 | `--tls-cert-out <path>` | ✅ (`tls` feature) |
 | Cross-platform binaries | ✅ (5 targets in CI) |
-| GHCR release image | ✅ `ghcr.io/greenbone-hive/gvm-mock-server:<tag>` |
+| GHCR release image | ✅ `ghcr.io/greenbone-hive/gvm-mock-server:<v-prefixed-tag>`; release image supports TCP/Unix, not feature-gated TLS/SSH listeners |
 
 ---
 
@@ -719,6 +693,7 @@ de-duplication without rewriting otherwise valid host spellings.
 | `path` | `/run/gvmd/gvmd.sock` | Configurable |
 | `timeout` | 60s | Connect, request write/flush, and response-read timeout |
 | `read_buffer_size` | 64 KB | Per-read allocation |
+| `max_response_bytes` | 64 MiB | Bounded XML response size |
 
 ### SshConfig
 
@@ -731,6 +706,7 @@ de-duplication without rewriting otherwise valid host spellings.
 | `remote_socket` | `/run/gvmd/gvmd.sock` | Path to gvmd socket on remote host |
 | `timeout` | 60s | Connect/auth/channel, request write/flush, and response-read timeout |
 | `read_buffer_size` | 64 KB | Per-read allocation |
+| `max_response_bytes` | 64 MiB | Bounded XML response size |
 | `host_key_policy` | `KnownHosts` | Standard or custom `known_hosts`, pinned SHA-256 fingerprint, or explicit insecure opt-out |
 
 ### TlsConfig
@@ -755,8 +731,9 @@ de-duplication without rewriting otherwise valid host spellings.
 | `ConnectFailed` | Transport-level connection error |
 | `SendFailed` | Write error |
 | `ReadFailed` | Read error or unexpected EOF |
+| `DisconnectFailed` | Graceful shutdown failed |
 | `Timeout` | Operation exceeded configured timeout |
-| `InvalidConfiguration` | Trust roots, server name, or certificate/key material is unusable |
+| `InvalidConfiguration` | Trust roots, server name, SSH policy, or credential material is unusable |
 | `SocketNotFound` | Unix socket path does not exist |
 
 ### Integration Tests (against gvm-mock-server)
@@ -776,7 +753,9 @@ late responses from being associated with a later GMP command.
 
 ## gvm-gmp
 
-Typed GMP command builders covering all entity types, system commands, and enums. Full rustdoc coverage.
+Canonical complete GMP requests, direct codecs, response models, semantic
+metadata, and retained raw interoperability primitives across the supported
+surface.
 
 ### Target Port-List Updates
 
@@ -823,30 +802,28 @@ request option remains named `alive_test` for source compatibility. Target
 responses without an explicit alive-test value report `Scan Config Default`,
 matching gvmd's observation behavior.
 
-### Command Modules (29)
+### Public modules and enums
 
-alerts, authentication, credentials, filters, groups, hosts, notes, nvts, overrides, permissions, port_lists, report_formats, reports, resource_names, results, roles, scan_configs, scanners, schedules, system, tags, targets, tasks, tickets, tls_certificates, trashcan, users, version
-
-### Enums (22)
-
-AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType (34 variants), FeedType, FilterType (25 variants), HelpFormat, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SeverityLevel, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus, UserAuthType
+The crate exposes 45 command-family modules at this revision, plus shared
+request, response, capability, update, and type modules. Enums are defined both
+in `enums.rs` and in domain modules as the protocol surface evolves. Treat
+[`crates/gvm-gmp/src/commands/mod.rs`](../crates/gvm-gmp/src/commands/mod.rs)
+and the generated rustdoc as the authoritative module and type inventory.
 
 ### Tests
 
-`cargo test -p gvm-gmp --all-features -- --list` currently discovers 701 tests.
-The categories below are a tracked subset of that complete inventory.
-
-| Tracked category | Count |
-|------------------|-------|
-| Inline unit tests (command XML) | 80 |
-| External command tests | 54 |
-| Enum exhaustive tests | 347 |
-| EntityId/type tests | 6 |
-| **Tracked subset** | **487** |
+Run `cargo test -p gvm-gmp --all-features` for the crate's command XML,
+validation, parsing, capability-registry, enum, and type coverage. The checked
+canonical-request inventories in `crates/gvm-client/tests/` separately enforce
+surface ownership and facade delegation without relying on a manually copied
+test count.
 
 ## gvm-client
 
-High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connection`, `gvm-protocol`, and `gvm-gmp`. Connects, negotiates GMP version (22.4–22.7+), and provides typed `send`/`call` methods.
+High-level async `GmpClient<C>` and `GmpVersioned<C>` that combine
+`gvm-connection`, `gvm-protocol`, and `gvm-gmp`. They connect, negotiate GMP
+versions 22.4 through 22.8 (with later versions routed to `GmpNext`), retain raw
+`send`/`call`, and provide canonical typed `execute` and facade methods.
 
 ### GmpClient API
 
@@ -885,6 +862,7 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 | Variant | Description |
 |---------|-------------|
 | `Connection(ConnectionError)` | Transport failure (preserves source chain) |
+| `Request(GmpRequestError)` | Canonical request validation or encoding failure |
 | `Server { status, message }` | Non-2xx GMP response |
 | `XmlParse(String)` | Malformed version/response XML |
 | `Parse(ParseError)` | Typed response model parsing failure |
@@ -943,7 +921,7 @@ its explicit raw-send compatibility path.
 | `GvmError` with server/connection/parse/timeout/unsupported | ✅ |
 | Typed convenience methods (261 methods, all GMP domains) | ✅ |
 | Version parsing from XML | ✅ |
-| Full CRUD lifecycle tests | ✅ |
+| Bounded resource and lifecycle tests | ✅ |
 | Disconnect + error path tests | ✅ |
 | Works with Unix socket transport | ✅ |
 | Works with SSH transport | ✅ |
@@ -953,47 +931,30 @@ its explicit raw-send compatibility path.
 
 ## Test Coverage
 
-**Line coverage: 95.4%** (via `cargo-llvm-cov`)
-
-| Test Category | Count | Notes |
-|---------------|-------|-------|
-| Unit tests (protocol) | 37 | XML builder, response parser, reader, request trait |
-| Unit tests (mock server) | 73 | Store, parser, fixtures, faults, scenarios, history, version, util |
-| Integration tests (mock server) | 137 | All modes, CRUD, lifecycle, faults, MCP compat (feature-gated) |
-| Integration tests (connection) | — | Unix socket + SSH + verified TLS/mTLS transport tests (feature-gated) |
-| Unit tests (connection) | — | Config, error display, and construction coverage |
-| Unit tests (gvm-gmp inline) | 80 | Command builder XML verification |
-| External tests (gvm-gmp) | 53 | Per-module command XML tests |
-| Enum exhaustive tests | 347 | Every variant as_gmp_str + FromStr + invalid |
-| Type tests (EntityId) | 6 | Validation, Display, Hash, FromStr |
-| Unit tests (gvm-client) | 7 | Version parsing and negotiation |
-| Integration tests (gvm-client) | 6 | Version negotiation, CRUD lifecycle, error paths (feature-gated) |
-| Python integration tests | 15 steps | python-gvm full lifecycle against mock server |
-| **Total** | **620+ tests** | |
-
-### Per-File Coverage
-
-| File | Coverage |
-|------|----------|
-| `history.rs` | 100% |
-| `version.rs` | 100% |
-| `request.rs` | 100% |
-| `xml_command.rs` | 99.6% |
-| `handler.rs` | 88.3% |
-| `builder.rs` | 80.8% |
+Coverage is generated with `cargo-llvm-cov`. The checked policy in
+`.config/coverage.env` sets a 94% workspace line floor and 90% changed-lines
+floor; do not copy a transient report percentage into this status page. Run
+`make coverage-lcov` to produce the report and `make coverage-policy-test` to
+exercise the policy helpers. Unit, crate integration, transport-feature,
+mock-server, typed-inventory, and Python interoperability suites contribute to
+the workspace result.
 
 ## CI Pipelines
 
 | Pipeline | Status | Jobs |
 |----------|--------|------|
-| CI (push/PR) | ✅ | fmt, clippy, test, test-all-features, doc, deny, coverage, MSRV, python-gvm |
-| Security | ✅ | cargo-audit, cargo-machete |
-| Nightly | ✅ | Full CI + 5-target cross-platform builds + SBOM generation + sbomqs quality gate |
-| Release | ✅ | Full test → 5-target builds → SBOM + sbomqs → GitHub Release |
+| CI (push/PR) | ✅ | fmt, clippy, tests, all features, docs, deny, coverage, MSRV 1.89, Python interoperability; a successful protected-main push also dispatches downstream E2E with the exact commit SHA |
+| Security | ✅ | Weekly/on-change audit, vet, unused-dependency, unsafe/geiger, Semgrep, and SBOM-quality jobs |
+| OpenSSF Scorecard | ✅ | Weekly, protected-main push, or manual; job runs only when the repository is public |
+| Journal PR automation | ✅ | Validates and manages eligible `journal/*` pull requests targeting `journal-main` |
+| Orchestrated release | ✅ | Protected-main version/SHA/lock/release-note qualification followed by an immutable `v<version>` tag |
+| Release | ✅ | All-feature qualification, five binary archives, checksums, CycloneDX SBOMs, quality report, GitHub release, multi-arch GHCR image, verification, and attestations |
 
 ## SBOM Quality
 
-SBOMs are generated by `cargo-cyclonedx` (CycloneDX 1.5 JSON + XML) and post-processed via `scripts/sbom_postprocess.py`:
+SBOMs are generated by `cargo-cyclonedx` as CycloneDX 1.5 JSON and XML. The
+JSON document is post-processed via `scripts/sbom_postprocess.py` to add:
+
 - CC0-1.0 data license in document metadata
 - Build lifecycle phase (`build`)
 - Supplier hints: workspace crates → `greenbone-hive`, crates.io deps → `crates.io`
@@ -1005,5 +966,6 @@ Quality gate: **sbomqs ≥ 8.3** enforced in CI and release verification.
 - **SECURITY.md** — vulnerability reporting via GitHub Private Security Advisories
 - **cargo-audit** — RustSec advisory database checks (weekly + on push)
 - **cargo-deny** — license compliance, bans, source restrictions
-- **Dependabot** — automated dependency updates (Cargo, pip, GitHub Actions)
+- **Dependabot** — automated dependency updates (Cargo, pip, Docker, GitHub Actions)
 - **cargo-machete** — unused dependency detection
+- **cargo-vet / cargo-geiger / Semgrep** — supply-chain, unsafe-code, and static-analysis checks

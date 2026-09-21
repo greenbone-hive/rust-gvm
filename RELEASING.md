@@ -41,9 +41,10 @@ commit with that exact version.
 
 ## Versioning
 
-The workflow accepts the exact semantic version already merged to `main`.
-Versions containing a pre-release suffix, such as `0.6.0-alpha.1` or
-`0.6.0-rc.1`, are published as GitHub pre-releases automatically.
+The workflow accepts the exact semantic version already merged to `main`,
+without a leading `v`. Versions containing a pre-release suffix, such as
+`0.7.0-alpha.1` or `0.7.0-rc.1`, are published as GitHub pre-releases
+automatically. There is no separate scheduled nightly workflow.
 
 ## Do NOT
 
@@ -57,10 +58,16 @@ Versions containing a pre-release suffix, such as `0.6.0-alpha.1` or
 
 Each release includes:
 
-- **Binaries**: `gvm-mock-server` for Linux (amd64, arm64, musl), macOS (amd64, arm64)
-- **Docker image**: `ghcr.io/greenbone-hive/gvm-mock-server:<version>`
-- **SBOM**: CycloneDX JSON/XML with quality scoring
-- **Attestations**: Sigstore build provenance for all artifacts
+- **Binaries**: five `gvm-mock-server` archives for Linux (amd64 GNU,
+  arm64 GNU, amd64 musl) and macOS (amd64, arm64), each with a SHA-256 file
+- **Docker image**:
+  `ghcr.io/greenbone-hive/gvm-mock-server:v<version>` as a Linux amd64/arm64
+  image index; neither `latest` nor an unprefixed version tag is published
+- **SBOM**: `rust-gvm-sbom.tar.gz` containing CycloneDX 1.5 JSON and XML for
+  all five workspace crates, its SHA-256 file, and a separate
+  `sbomqs-results.json` quality report
+- **Attestations**: Sigstore build provenance for each binary archive, the SBOM
+  archive, and the registry-backed container index
 
 ## Verifying Artifacts
 
@@ -72,5 +79,7 @@ gh attestation verify oci://ghcr.io/greenbone-hive/gvm-mock-server:v0.7.0 \
 
 The release workflow also runs `scripts/verify_release.py published` against
 the immutable tag and qualified commit. It rejects missing or extra assets,
-checksum or version mismatches, incomplete SBOMs, missing provenance, incorrect
-container platforms or labels, and release notes that omit the migration guide.
+checksum or embedded-version mismatches, incomplete SBOMs, a JSON quality score
+below 8.3, missing archive/container provenance, incorrect container platforms
+or labels, a wrong runtime build version, and release notes that omit the exact
+tagged migration-guide URL.

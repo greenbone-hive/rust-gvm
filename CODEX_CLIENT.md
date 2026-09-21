@@ -1,5 +1,12 @@
 # CODEX TASK: Implement gvm-client crate
 
+> [!NOTE]
+> Archived implementation prompt. It records the original task and is not the
+> current contributor guide or API contract. See
+> [`docs/agent-code-map.md`](docs/agent-code-map.md),
+> [`docs/STATUS.md`](docs/STATUS.md), and
+> [`docs/typed-execution.md`](docs/typed-execution.md) for the v0.7 codebase.
+
 ## Context
 
 Implement `crates/gvm-client` as the high-level async GMP client that combines:

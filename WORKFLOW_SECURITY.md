@@ -1,5 +1,12 @@
 # Workflow Security Audit
 
+> [!NOTE]
+> Historical audit snapshot dated 2026-03-31. Scores and referenced actions
+> below describe the workflows reviewed on that date; several actions have since
+> been removed or replaced. Current repository workflow requirements are in
+> [`docs/WORKFLOW_SECURITY.md`](docs/WORKFLOW_SECURITY.md), and current action
+> usage is defined by [`.github/workflows/`](.github/workflows/).
+
 This document tracks the security posture of GitHub Actions used in this repository, assessed via [OpenSSF Scorecard](https://securityscorecards.dev/).
 
 ## Audit Summary

@@ -44,9 +44,9 @@ pin below.
 `get_scan_report` follows the public python-gvm `GMPNext` placement and is
 therefore gated at 22.8. Current gvmd source compiles the command
 unconditionally even in builds that may still advertise 22.7, so applications
-using such a deployment can send the public builder through a lower-level
-connection path, but the versioned high-level client will reject it until the
-server advertises 22.8.
+using such a deployment can use deliberate raw/custom execution through a
+lower-level connection path, but the versioned high-level client will reject
+the canonical request until the server advertises 22.8.
 
 ## Command and mock qualification
 
@@ -89,14 +89,16 @@ generic config, scan-config, and policy aliases. Copy/import, literal usage and
 bounded filters, independent active expansions, metadata rollback, trash/task
 reference rules, and explicit sync rejection are covered. Expanded trash
 reads, complete ACL/filter/feed behavior, internal selector cleanup, and the
-deferred configured-preference/NVT/family mutation family are not claimed. See
+full upstream reconciliation/feed-maintenance engine are not claimed. The
+configured preference and ordered NVT/family mutation family is implemented
+with bounded seeded-state behavior and atomic rollback. See
 the [scan-config/policy evidence](scan-config-policy-request-gvmd-evidence.md).
 
 The three commands outside the pinned schema are explicitly qualified:
 
-- `modify_credential_store` is feature-gated and implemented in current public
+- `modify_credential_store` is gvmd build-feature-gated and implemented in current public
   gvmd source, but is absent from the pinned `GMP.xml.in`.
-- `verify_credential_store` is likewise feature-gated and implemented in the
+- `verify_credential_store` is likewise gvmd build-feature-gated and implemented in the
   public credential-store source while absent from the pinned schema.
 - `delete_tls_certificate` is absent from the schema but is dispatched by
   pinned `gmp.c`, handled by the common delete path, and implemented as

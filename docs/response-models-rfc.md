@@ -1,8 +1,11 @@
 # RFC: Response Models for rust-gvm
 
-> Historical design record. ADR 0002 and issue #602 supersede its input-model
-> examples. Standard targets now use complete canonical request types; their
-> former options types and free builders have been removed.
+> [!NOTE]
+> Historical design record. Descriptions headed "Current Architecture," code
+> examples, proposed paths, phases, and open questions below describe the RFC
+> snapshot rather than v0.7. ADR 0002 and issue #602 supersede its input model;
+> use [the typed-execution guide](typed-execution.md) and
+> [current status](STATUS.md) for the implemented API.
 
 ## Problem Statement
 
