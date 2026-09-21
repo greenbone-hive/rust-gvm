@@ -36,8 +36,8 @@ use gvm_gmp::commands::credentials::{
     CreateCredentialStoreCredentialRequest, GetCredentialStoreRequest, GetCredentialStoresRequest,
     ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
 };
-use gvm_gmp::commands::features::get_features;
-use gvm_gmp::commands::help::help_with_mode;
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::help::HelpRequest;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -46,14 +46,17 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::reports::{
-    export_scan_report, get_report_applications, get_report_closed_cves, get_report_cves,
-    get_report_errors, get_report_hosts, get_report_operating_systems, get_report_ports,
-    get_report_tls_certificates, get_report_vulns, get_scan_report, GetScanReportRequest,
+    DeleteAuditReportRequest, ExportScanReportRequest, GetAuditReportHostsRequest,
+    GetAuditReportRequest, GetAuditReportsRequest, GetReportApplicationsRequest,
+    GetReportClosedCvesRequest, GetReportCvesRequest, GetReportErrorsRequest,
+    GetReportHostsRequest, GetReportOperatingSystemsRequest, GetReportPortsRequest,
+    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetScanReportRequest,
 };
-use gvm_gmp::commands::system::get_timezones;
-use gvm_gmp::commands::tasks::create_agent_group_task;
-use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_target_task;
-use gvm_gmp::commands::tasks::create_web_application_task;
+use gvm_gmp::commands::system::GetTimezonesRequest;
+use gvm_gmp::commands::tasks::{
+    CreateAgentGroupTaskRequest, CreateContainerImageTaskRequest, CreateOciImageTargetTaskRequest,
+    CreateWebApplicationTaskRequest,
+};
 use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
@@ -62,17 +65,23 @@ use gvm_gmp::commands::web_application_targets::{
 };
 use gvm_gmp::responses::{
     CloneAgentGroupResponse, CreateAgentGroupResponse, CreateCredentialResponse,
-    CreateOciImageTargetResponse, CreateWebApplicationTargetResponse, DeleteAgentGroupResponse,
-    DeleteAgentResponse, DeleteOciImageTargetResponse, DeleteWebApplicationTargetResponse,
-    GetAgentGroupsResponse, GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse,
-    GetAgentsResponse, GetCredentialStoresResponse, GetIntegrationConfigsResponse,
-    GetOciImageTargetsResponse, GetScanReportResponse, GetWebApplicationTargetsResponse,
-    HelpResponse, ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse,
-    ModifyAgentResponse, ModifyCredentialResponse, ModifyIntegrationConfigResponse,
-    ModifyOciImageTargetResponse, ModifyWebApplicationTargetResponse, SyncAgentsResponse,
-    VerifyCredentialStoreResponse,
+    CreateOciImageTargetResponse, CreateTaskResponse, CreateWebApplicationTargetResponse,
+    DeleteAgentGroupResponse, DeleteAgentResponse, DeleteOciImageTargetResponse,
+    DeleteWebApplicationTargetResponse, ExportScanReportResponse, GetAgentGroupsResponse,
+    GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
+    GetAuditReportsResponse, GetCredentialStoresResponse, GetFeaturesResponse,
+    GetIntegrationConfigsResponse, GetOciImageTargetsResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetScanReportResponse,
+    GetTimezonesResponse, GetWebApplicationTargetsResponse, HelpResponse,
+    ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse, ModifyAgentResponse,
+    ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse,
+    ModifyWebApplicationTargetResponse, SyncAgentsResponse, VerifyCredentialStoreResponse,
 };
-use gvm_gmp::types::{EntityId, GmpVersion};
+use gvm_gmp::types::GmpVersion;
+#[cfg(test)]
+use gvm_gmp::EntityId;
 use gvm_protocol::{Request, Response};
 use wire_trace::redact_wire_bytes;
 
@@ -81,18 +90,8 @@ pub use gvm_gmp::commands::agents::{
     AgentConfigOpts, AgentControlConfig, AgentHeartbeatConfig, AgentInstallerLanguage,
     AgentRetryConfig, AgentScriptExecutorConfig,
 };
-pub use gvm_gmp::commands::aggregates::{
-    AggregateMode, AggregateSort, AggregateSortStatistic, GetAggregatesRequestOpts,
-};
+pub use gvm_gmp::commands::aggregates::{AggregateMode, AggregateSort, AggregateSortStatistic};
 pub use gvm_gmp::commands::help::HelpMode;
-pub use gvm_gmp::commands::reports::{
-    ExportScanReportOpts, GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts,
-    GetReportExportOpts, GetScanReportOpts, ImportReportOpts,
-};
-pub use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
-pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
-pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
-pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
 pub use gvm_gmp::commands::usage_type::UsageType;
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
 pub use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse};
@@ -235,12 +234,8 @@ impl<C: GvmConnection> GmpClient<C> {
     ) -> Result<Self, GvmError> {
         connection.connect().await?;
 
-        let response = Self::send_on(
-            &mut connection,
-            GetVersionRequest::new(),
-            wire_trace.as_deref(),
-        )
-        .await?;
+        let request = GetVersionRequest::new().encode(GmpVersion(22, 4))?;
+        let response = Self::send_on_bytes(&mut connection, request, wire_trace.as_deref()).await?;
         let response = Self::raise_for_status(response)?;
         let version_text = response.child_text("version").ok_or_else(|| {
             GvmError::XmlParse("missing <version> in get_version response".to_string())
@@ -271,8 +266,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the request fails, the response cannot be parsed,
     /// or the server does not return a structured command listing.
     pub async fn discover_commands(&mut self) -> Result<HelpResponse, GvmError> {
-        let response = self.call(help_with_mode(HelpMode::BriefXml)).await?;
-        let parsed = HelpResponse::from_response(&response).map_err(GvmError::from)?;
+        let parsed = self.execute(HelpRequest::new(HelpMode::BriefXml)).await?;
         let schema = parsed.schema.as_ref().ok_or_else(|| {
             GvmError::XmlParse("help response did not include an XML command listing".to_string())
         })?;
@@ -452,14 +446,6 @@ impl<C: GvmConnection> GmpClient<C> {
         self.connection
     }
 
-    async fn send_on<R: Request>(
-        connection: &mut C,
-        request: R,
-        wire_trace: Option<&dyn WireTrace>,
-    ) -> Result<Response, GvmError> {
-        Self::send_on_bytes(connection, request.to_bytes(), wire_trace).await
-    }
-
     async fn send_on_bytes(
         connection: &mut C,
         request_bytes: Vec<u8>,
@@ -515,117 +501,6 @@ impl<C: GvmConnection> GmpClient<C> {
         self.ensure_named_command_supported(command.wire_name())
     }
 
-    /// Get one structured vulnerability report.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_scan_report(
-        &mut self,
-        scan_report_id: &EntityId,
-        opts: GetScanReportOpts,
-    ) -> Result<GetScanReportResponse, GvmError> {
-        self.execute(GetScanReportRequest::new(scan_report_id.clone(), opts))
-            .await
-    }
-
-    /// Get one structured vulnerability report without typed response parsing.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_scan_report_raw(
-        &mut self,
-        scan_report_id: &EntityId,
-        opts: GetScanReportOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_scan_report(scan_report_id, opts)).await
-    }
-
-    /// Queue or reuse an asynchronous scan-report export and return the raw
-    /// response.
-    ///
-    /// Call [`Self::discover_commands`] first. The negotiated GMP version is
-    /// not sufficient evidence that the server implements this command.
-    ///
-    /// # Errors
-    /// Returns [`GvmError::CommandDiscoveryRequired`] before discovery,
-    /// [`GvmError::CommandNotAdvertised`] when discovery omits the command, or
-    /// a request/response error after the command is attempted.
-    pub async fn export_scan_report_raw(
-        &mut self,
-        report_id: &EntityId,
-        opts: ExportScanReportOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(export_scan_report(report_id, opts)).await
-    }
-
-    /// Get host summaries for a report.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_report_hosts(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_report_hosts(report_id, opts)).await
-    }
-
-    /// Get port summaries for a report.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_report_ports(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_report_ports(report_id, opts)).await
-    }
-
-    /// Get application summaries for a report.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_report_applications(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_report_applications(report_id, opts)).await
-    }
-
-    /// Get operating system summaries for a report.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_report_operating_systems(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_report_operating_systems(report_id, opts))
-            .await
-    }
-
-    /// Get CVE summaries for a report.
-    ///
-    /// # Errors
-    /// Returns an error if the server does not support the command, the transport fails,
-    /// parsing fails, or the server returns a non-success status.
-    pub async fn get_report_cves(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.call(get_report_cves(report_id, opts)).await
-    }
-
     fn raise_for_status(response: Response) -> Result<Response, GvmError> {
         if response.is_success() {
             return Ok(response);
@@ -677,7 +552,22 @@ pub struct GmpNext<C: GvmConnection>(GmpClient<C>);
 #[async_trait::async_trait]
 pub trait Gmp226Commands {
     /// Send a `get_features` request.
-    async fn get_features(&mut self) -> Result<Response, GvmError>;
+    async fn get_features(
+        &mut self,
+        request: GetFeaturesRequest,
+    ) -> Result<GetFeaturesResponse, GvmError>;
+
+    /// List audit reports with the fixed audit usage selector.
+    async fn get_audit_reports(
+        &mut self,
+        request: GetAuditReportsRequest,
+    ) -> Result<GetAuditReportsResponse, GvmError>;
+
+    /// Delete one audit report through its non-ultimate semantic alias.
+    async fn delete_audit_report(
+        &mut self,
+        request: DeleteAuditReportRequest,
+    ) -> Result<gvm_gmp::responses::DeleteReportResponse, GvmError>;
 }
 
 /// Structured audit-report commands available in GMP 22.7 and later.
@@ -686,15 +576,13 @@ pub trait Gmp227Commands {
     /// Get one structured audit report.
     async fn get_audit_report(
         &mut self,
-        audit_report_id: &EntityId,
-        opts: GetAuditReportOpts,
+        request: GetAuditReportRequest,
     ) -> Result<gvm_gmp::responses::GetAuditReportResponse, GvmError>;
 
     /// Get structured host summaries for an audit report.
     async fn get_audit_report_hosts(
         &mut self,
-        report_id: &EntityId,
-        opts: GetAuditReportHostsOpts,
+        request: GetAuditReportHostsRequest,
     ) -> Result<gvm_gmp::responses::GetAuditReportHostsResponse, GvmError>;
 }
 
@@ -755,11 +643,8 @@ pub trait GmpNextCommands {
     /// Create a task that scans an agent group.
     async fn create_agent_group_task(
         &mut self,
-        name: &str,
-        agent_group_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateAgentGroupTaskOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateAgentGroupTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Clone an agent group.
     async fn clone_agent_group(
@@ -800,24 +685,15 @@ pub trait GmpNextCommands {
     /// Create a task that scans an OCI image target.
     async fn create_oci_image_target_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateOciImageTargetTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Create a task that scans an OCI image target using python-gvm's
     /// historical container-image helper name.
     async fn create_container_image_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.create_oci_image_target_task(name, oci_image_target_id, scanner_id, opts)
-            .await
-    }
+        request: CreateContainerImageTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Clone an OCI image target.
     async fn clone_oci_image_target(
@@ -888,11 +764,8 @@ pub trait GmpNextCommands {
     /// Create a scan task for a web application target.
     async fn create_web_application_task(
         &mut self,
-        name: &str,
-        web_application_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateWebApplicationTaskOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateWebApplicationTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Get a single integration configuration.
     async fn get_integration_config(
@@ -915,91 +788,68 @@ pub trait GmpNextCommands {
     /// Get one structured vulnerability report.
     async fn get_scan_report(
         &mut self,
-        scan_report_id: &EntityId,
-        opts: GetScanReportOpts,
+        request: GetScanReportRequest,
     ) -> Result<GetScanReportResponse, GvmError>;
-
-    /// Get one structured vulnerability report without typed response parsing.
-    async fn get_scan_report_raw(
-        &mut self,
-        scan_report_id: &EntityId,
-        opts: GetScanReportOpts,
-    ) -> Result<Response, GvmError>;
 
     /// Get report host summaries.
     async fn get_report_hosts(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportHostsRequest,
+    ) -> Result<GetReportHostsResponse, GvmError>;
 
     /// Get report port summaries.
     async fn get_report_ports(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportPortsRequest,
+    ) -> Result<GetReportPortsResponse, GvmError>;
 
     /// Get report application summaries.
     async fn get_report_applications(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportApplicationsRequest,
+    ) -> Result<GetReportApplicationsResponse, GvmError>;
 
     /// Get report operating system summaries.
     async fn get_report_operating_systems(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportOperatingSystemsRequest,
+    ) -> Result<GetReportOperatingSystemsResponse, GvmError>;
 
     /// Get report CVE summaries.
     async fn get_report_cves(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportCvesRequest,
+    ) -> Result<GetReportCvesResponse, GvmError>;
 
     /// Get report vulnerability summaries.
     async fn get_report_vulns(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
-
-    /// Get report vulnerability summaries using python-gvm's descriptive helper name.
-    async fn get_report_vulnerabilities(
-        &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.get_report_vulns(report_id, opts).await
-    }
+        request: GetReportVulnsRequest,
+    ) -> Result<GetReportVulnsResponse, GvmError>;
 
     /// Get report TLS certificate summaries.
     async fn get_report_tls_certificates(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportTlsCertificatesRequest,
+    ) -> Result<GetReportTlsCertificatesResponse, GvmError>;
 
     /// Get report error summaries.
     async fn get_report_errors(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportErrorsRequest,
+    ) -> Result<GetReportErrorsResponse, GvmError>;
 
     /// Get report closed CVE summaries.
     async fn get_report_closed_cves(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError>;
+        request: GetReportClosedCvesRequest,
+    ) -> Result<GetReportClosedCvesResponse, GvmError>;
 
     /// List timezones.
-    async fn get_timezones(&mut self) -> Result<Response, GvmError>;
+    async fn get_timezones(
+        &mut self,
+        request: GetTimezonesRequest,
+    ) -> Result<GetTimezonesResponse, GvmError>;
 
     /// List credential stores.
     async fn get_credential_stores(
@@ -1042,8 +892,25 @@ macro_rules! impl_gmp226_commands {
     ($client:ident) => {
         #[async_trait::async_trait]
         impl<C: GvmConnection + Send> Gmp226Commands for $client<C> {
-            async fn get_features(&mut self) -> Result<Response, GvmError> {
-                self.0.call(get_features()).await
+            async fn get_features(
+                &mut self,
+                request: GetFeaturesRequest,
+            ) -> Result<GetFeaturesResponse, GvmError> {
+                self.0.execute(request).await
+            }
+
+            async fn get_audit_reports(
+                &mut self,
+                request: GetAuditReportsRequest,
+            ) -> Result<GetAuditReportsResponse, GvmError> {
+                self.0.get_audit_reports(request).await
+            }
+
+            async fn delete_audit_report(
+                &mut self,
+                request: DeleteAuditReportRequest,
+            ) -> Result<gvm_gmp::responses::DeleteReportResponse, GvmError> {
+                self.0.delete_audit_report(request).await
             }
         }
     };
@@ -1055,18 +922,16 @@ macro_rules! impl_gmp227_commands {
         impl<C: GvmConnection + Send> Gmp227Commands for $client<C> {
             async fn get_audit_report(
                 &mut self,
-                audit_report_id: &EntityId,
-                opts: GetAuditReportOpts,
+                request: GetAuditReportRequest,
             ) -> Result<gvm_gmp::responses::GetAuditReportResponse, GvmError> {
-                self.0.get_audit_report(audit_report_id, opts).await
+                self.0.get_audit_report(request).await
             }
 
             async fn get_audit_report_hosts(
                 &mut self,
-                report_id: &EntityId,
-                opts: GetAuditReportHostsOpts,
+                request: GetAuditReportHostsRequest,
             ) -> Result<gvm_gmp::responses::GetAuditReportHostsResponse, GvmError> {
-                self.0.get_audit_report_hosts(report_id, opts).await
+                self.0.get_audit_report_hosts(request).await
             }
         }
     };
@@ -1182,12 +1047,9 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// a request/response error after the command is attempted.
     pub async fn export_scan_report(
         &mut self,
-        report_id: &EntityId,
-        opts: ExportScanReportOpts,
-    ) -> Result<Response, GvmError> {
-        self.inner_mut()
-            .export_scan_report_raw(report_id, opts)
-            .await
+        request: ExportScanReportRequest,
+    ) -> Result<ExportScanReportResponse, GvmError> {
+        self.inner_mut().execute(request).await
     }
 
     /// Execute a semantic request and decode its statically associated response.
@@ -1295,19 +1157,9 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_agent_group_task(
         &mut self,
-        name: &str,
-        agent_group_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateAgentGroupTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(create_agent_group_task(
-                name,
-                agent_group_id,
-                scanner_id,
-                opts,
-            ))
-            .await
+        request: CreateAgentGroupTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_agent_group_task(request).await
     }
 
     async fn clone_agent_group(
@@ -1354,19 +1206,16 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_oci_image_target_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(build_oci_image_target_task(
-                name,
-                oci_image_target_id,
-                scanner_id,
-                opts,
-            ))
-            .await
+        request: CreateOciImageTargetTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_oci_image_target_task(request).await
+    }
+
+    async fn create_container_image_task(
+        &mut self,
+        request: CreateContainerImageTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_container_image_task(request).await
     }
 
     async fn clone_oci_image_target(
@@ -1448,19 +1297,9 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_web_application_task(
         &mut self,
-        name: &str,
-        web_application_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateWebApplicationTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(create_web_application_task(
-                name,
-                web_application_target_id,
-                scanner_id,
-                opts,
-            ))
-            .await
+        request: CreateWebApplicationTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_web_application_task(request).await
     }
 
     async fn get_integration_config(
@@ -1486,98 +1325,79 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn get_scan_report(
         &mut self,
-        scan_report_id: &EntityId,
-        opts: GetScanReportOpts,
+        request: GetScanReportRequest,
     ) -> Result<GetScanReportResponse, GvmError> {
-        self.0.get_scan_report(scan_report_id, opts).await
-    }
-
-    async fn get_scan_report_raw(
-        &mut self,
-        scan_report_id: &EntityId,
-        opts: GetScanReportOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.get_scan_report_raw(scan_report_id, opts).await
+        self.0.get_scan_report(request).await
     }
 
     async fn get_report_hosts(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_report_hosts(report_id, opts)).await
+        request: GetReportHostsRequest,
+    ) -> Result<GetReportHostsResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_ports(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_report_ports(report_id, opts)).await
+        request: GetReportPortsRequest,
+    ) -> Result<GetReportPortsResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_applications(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_report_applications(report_id, opts)).await
+        request: GetReportApplicationsRequest,
+    ) -> Result<GetReportApplicationsResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_operating_systems(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(get_report_operating_systems(report_id, opts))
-            .await
+        request: GetReportOperatingSystemsRequest,
+    ) -> Result<GetReportOperatingSystemsResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_cves(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_report_cves(report_id, opts)).await
+        request: GetReportCvesRequest,
+    ) -> Result<GetReportCvesResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_vulns(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_report_vulns(report_id, opts)).await
+        request: GetReportVulnsRequest,
+    ) -> Result<GetReportVulnsResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_tls_certificates(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(get_report_tls_certificates(report_id, opts))
-            .await
+        request: GetReportTlsCertificatesRequest,
+    ) -> Result<GetReportTlsCertificatesResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_errors(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_report_errors(report_id, opts)).await
+        request: GetReportErrorsRequest,
+    ) -> Result<GetReportErrorsResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_report_closed_cves(
         &mut self,
-        report_id: &EntityId,
-        opts: GetReportDetailsOpts,
-    ) -> Result<Response, GvmError> {
-        self.0.call(get_report_closed_cves(report_id, opts)).await
+        request: GetReportClosedCvesRequest,
+    ) -> Result<GetReportClosedCvesResponse, GvmError> {
+        self.0.execute(request).await
     }
 
-    async fn get_timezones(&mut self) -> Result<Response, GvmError> {
-        self.0.call(get_timezones()).await
+    async fn get_timezones(
+        &mut self,
+        request: GetTimezonesRequest,
+    ) -> Result<GetTimezonesResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_credential_stores(
@@ -1798,10 +1618,6 @@ mod tests {
         )
     }
 
-    fn auth_response() -> &'static str {
-        r#"<authenticate_response status="200" status_text="OK"/>"#
-    }
-
     fn event_text(event: &WireTraceEvent) -> String {
         String::from_utf8(event.bytes.clone()).expect("trace event is utf-8")
     }
@@ -1909,8 +1725,10 @@ mod tests {
 
     #[tokio::test]
     async fn execute_redacts_wire_bytes_before_trace_observation() {
-        let connection =
-            ScriptedConnection::new([version_response("22.7"), auth_response().to_string()]);
+        let connection = ScriptedConnection::new([
+            version_response("22.7"),
+            r#"<authenticate_response status="200" status_text="OK"><role>Admin</role><timezone>UTC</timezone><token>issued-secret-token</token></authenticate_response>"#.to_string(),
+        ]);
         let sent = connection.sent();
         let events = Arc::new(Mutex::new(Vec::new()));
         let trace_events = Arc::clone(&events);
@@ -1921,13 +1739,14 @@ mod tests {
         .await
         .expect("client connects");
 
-        client
-            .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
-                "admin",
-                "secret-password",
-            ))
+        let mut request =
+            gvm_gmp::commands::authentication::AuthenticateRequest::new("admin", "secret-password");
+        request.request_token = Some(true);
+        let response = client
+            .execute(request)
             .await
             .expect("authenticate succeeds");
+        assert_eq!(response.token.as_deref(), Some("issued-secret-token"));
 
         let sent = sent.lock().expect("sent lock");
         assert_eq!(sent.len(), 2);
@@ -1948,12 +1767,17 @@ mod tests {
         assert_eq!(events[2].direction, WireTraceDirection::Request);
 
         let auth_request = event_text(&events[2]);
-        assert!(auth_request.contains("<authenticate>"));
+        assert!(auth_request.contains("<authenticate token=\"redacted\">"));
+        assert!(auth_request.contains("<username><redacted/></username>"));
         assert!(auth_request.contains("<password><redacted/></password>"));
+        assert!(!auth_request.contains("admin"));
         assert!(!auth_request.contains("secret-password"));
 
         assert_eq!(events[3].direction, WireTraceDirection::Response);
-        assert!(event_text(&events[3]).contains("<authenticate_response"));
+        let auth_response = event_text(&events[3]);
+        assert!(auth_response.contains("<authenticate_response"));
+        assert!(auth_response.contains("<token><redacted/></token>"));
+        assert!(!auth_response.contains("issued-secret-token"));
     }
 
     #[tokio::test]
@@ -2004,10 +1828,9 @@ mod tests {
         )
         .await;
         let report_error = report_client
-            .get_scan_report(
-                &EntityId::new("report-1").expect("valid id"),
-                GetScanReportOpts::default(),
-            )
+            .get_scan_report(GetScanReportRequest::new(
+                EntityId::new("report-1").expect("valid id"),
+            ))
             .await
             .expect_err("migrated send-based helper rejects non-success status");
         assert_server_error(report_error, 503, "backend unavailable");
@@ -2416,9 +2239,9 @@ mod tests {
 
     #[test]
     fn redacts_modify_license_file_without_hiding_generic_files() {
-        let request = gvm_gmp::commands::system::modify_license("license-secret").to_bytes();
+        let request = b"<modify_license><file>license-secret</file></modify_license>";
 
-        let redacted = String::from_utf8(redact_wire_bytes(&request)).expect("utf-8");
+        let redacted = String::from_utf8(redact_wire_bytes(request)).expect("utf-8");
 
         assert_eq!(
             redacted,
@@ -2429,6 +2252,30 @@ mod tests {
             redact_wire_bytes(b"<root><file>visible</file></root>"),
             b"<root><file>visible</file></root>"
         );
+    }
+
+    #[test]
+    fn redacts_canonical_administration_and_user_setting_values() {
+        for (wire, secrets) in [
+            (
+                b"<modify_auth><group name=\"method:radius_connect\"><auth_conf_setting><key>radiuskey-secret</key><value>auth-secret</value></auth_conf_setting></group></modify_auth>".as_slice(),
+                ["radiuskey-secret", "auth-secret"].as_slice(),
+            ),
+            (
+                b"<run_wizard><name>quick_first_scan</name><params><param><name>credential</name><value>wizard-secret</value></param></params></run_wizard>".as_slice(),
+                ["wizard-secret", "unused"].as_slice(),
+            ),
+            (
+                b"<get_settings_response status=\"200\" status_text=\"OK\"><setting id=\"s1\"><name>timezone</name><value>setting-secret</value></setting></get_settings_response>".as_slice(),
+                ["setting-secret", "unused"].as_slice(),
+            ),
+        ] {
+            let redacted = String::from_utf8(redact_wire_bytes(wire)).expect("UTF-8 trace");
+            assert!(redacted.contains("<redacted/>"));
+            for secret in secrets {
+                assert!(!redacted.contains(secret));
+            }
+        }
     }
 
     #[test]

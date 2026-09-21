@@ -9,7 +9,7 @@ use crate::responses::common::{parse_document, status_from_response, ParseError,
 use crate::types::EntityId;
 use crate::{GmpResponse, GmpVersion};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UserSetting {
@@ -17,6 +17,18 @@ pub struct UserSetting {
     pub name: String,
     pub value: Option<String>,
     pub comment: Option<String>,
+}
+
+impl std::fmt::Debug for UserSetting {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("UserSetting")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .field("comment", &self.comment)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +139,9 @@ mod tests {
         assert_eq!(parsed.settings[0].value.as_deref(), Some("UTC"));
         assert_eq!(parsed.settings[0].comment.as_deref(), Some("User timezone"));
         assert!(parsed.settings[1].comment.is_none());
+        let debug = format!("{parsed:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("UTC"));
     }
 
     #[test]

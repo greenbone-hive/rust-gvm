@@ -39,7 +39,9 @@ async fn canonical_filter_requests_round_trip_through_stateful_mock() {
     .await
     .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
     server.clear_history();

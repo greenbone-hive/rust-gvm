@@ -173,6 +173,232 @@ transport, including clone and detail semantic aliases over the create and
 list wire roots. Specialized `create_agent_group_task` remains in the task
 family and is not changed by this migration.
 
+## Standard task family
+
+The nine standard scan-task operations now use complete canonical request
+values. Their named client methods accept the same values unchanged and call
+`execute` only:
+
+```rust
+use gvm_gmp::commands::tasks::{
+    CreateTaskRequest, ModifyTaskRequest, StartTaskRequest, TaskPreference,
+};
+use gvm_gmp::{CollectionUpdate, ScalarUpdate};
+
+let mut create = CreateTaskRequest::new(
+    "nightly scan", config_id, target_id, scanner_id,
+);
+create.schedule_id = Some(schedule_id);
+create.schedule_periods = Some(5);
+create.observers = vec!["alice".into()];
+create.preferences.push(TaskPreference::new("auto_delete", "keep"));
+let task = client.create_task(create).await?;
+
+let mut modify = ModifyTaskRequest::new(task.id.clone());
+modify.schedule_id = ScalarUpdate::Clear;
+modify.alert_ids = CollectionUpdate::Clear;
+modify.observers = CollectionUpdate::Clear;
+client.modify_task(modify).await?;
+client.start_task(StartTaskRequest::new(task.id)).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`GetTasksOpts`, `CreateTaskOpts`, and `ModifyTaskOpts` are removed. The nine
+free standard-task builders are also removed.
+
+Schedule uses `ScalarUpdate` to distinguish preserve, replace, and detach;
+alerts and observers use `CollectionUpdate`. A group update must include an
+explicit user replacement or clear because both share gvmd's `<observers>`
+container. Target/config/scanner relationships are replace-or-preserve.
+Clone exposes comment and alterable overrides but no unsupported name
+override. The stale `hosts_ordering` request input is removed because pinned
+gvmd does not parse it and dropped its database column. Preference values are
+redacted from diagnostics and traces. See the
+[pinned gvmd evidence](task-request-gvmd-evidence.md).
+
+## Specialized tasks and audits
+
+Issue #660 completes the remaining task-family request migration. Import and
+container/import creation own only name and comment. Agent-group creation owns
+its group and optional matching scanner. OCI/container-image and
+web-application creation own the specialized target, required scanner, and
+their supported common creation values. All three true specialized scan
+variants retain their GMP 22.8 semantic gates.
+
+```rust
+use gvm_gmp::commands::tasks::{
+    CreateAgentGroupTaskRequest, CreateAuditRequest,
+    CreateWebApplicationTaskRequest, ModifyAuditRequest, MoveTaskRequest,
+    TaskMoveDestination,
+};
+use gvm_gmp::CollectionUpdate;
+
+let agent = CreateAgentGroupTaskRequest::new("agents", agent_group_id);
+client.create_agent_group_task(agent).await?;
+
+let web = CreateWebApplicationTaskRequest::new(
+    "web", web_target_id, web_scanner_id,
+);
+client.create_web_application_task(web).await?;
+
+client.move_task(MoveTaskRequest::new(
+    task_id,
+    TaskMoveDestination::Master,
+)).await?;
+
+let audit = client.create_audit(CreateAuditRequest::new(
+    "audit", policy_id, target_id, scanner_id,
+)).await?;
+let mut modify = ModifyAuditRequest::new(audit.id);
+modify.observers = CollectionUpdate::Clear;
+modify.observer_group_ids = CollectionUpdate::Clear;
+client.modify_audit(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`move_task` now requires `TaskMoveDestination::Master` or `Slave(id)`; omission
+is not a valid gvmd request. Audit list/detail/create carry audit usage
+identity, while clone inherits it and ID-selected mutation/action requests do
+not invent a parser-unsupported usage child. Audit delete now owns its
+`ultimate` decision. Specialized preference validation follows scanner type,
+and preference values remain redacted from diagnostics and traces. See the
+[pinned gvmd evidence](specialized-task-audit-request-gvmd-evidence.md).
+
+## Report and audit-report lifecycle
+
+Issue #661 replaces the report lifecycle and structured-report forwarding
+surfaces with complete request values. Each named typed helper accepts the
+canonical request unchanged and delegates to `execute`.
+
+```rust
+use gvm_gmp::commands::reports::{
+    DeleteReportRequest, GetAuditReportHostsRequest, GetAuditReportsRequest,
+    GetReportRequest, GetReportsRequest, GetScanReportRequest,
+    ImportReportRequest,
+};
+
+let reports = client.get_reports(GetReportsRequest::default()).await?;
+
+let mut detail = GetReportRequest::new(report_id.clone());
+detail.filter_string = Some("rows=25 first=1".into());
+let report = client.get_report(detail).await?;
+
+let mut import = ImportReportRequest::new(import_task_id, report_xml);
+import.in_assets = Some(true);
+let created = client.import_report(import).await?;
+
+client
+    .delete_report(DeleteReportRequest::new(created.id.clone()))
+    .await?;
+
+let audits = client
+    .get_audit_reports(GetAuditReportsRequest::default())
+    .await?;
+let hosts = client
+    .get_audit_report_hosts(GetAuditReportHostsRequest::new(audit_report_id))
+    .await?;
+let scan = client
+    .get_scan_report(GetScanReportRequest::new(report_id))
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Migration mapping:
+
+- `get_reports(opts)` becomes `get_reports(GetReportsRequest { ... })`;
+- `get_report(&id)` becomes `get_report(GetReportRequest::new(id))`;
+- the empty `create_report` form and `CreateReportRequest` are removed because
+  pinned gvmd only creates reports from an imported `<report>` envelope;
+- `import_report(xml, &task, opts)` becomes
+  `import_report(ImportReportRequest::new(task_id, xml))`;
+- `delete_report(&id, ultimate)` becomes
+  `delete_report(DeleteReportRequest::new(id))`; gvmd has no permanence
+  choice here and successful ordinary deletion is permanent;
+- `get_audit_reports(opts)` and `delete_audit_report(&id)` become the distinct
+  `GetAuditReportsRequest` and `DeleteAuditReportRequest` operations;
+- structured scan, structured audit, and audit-host calls take
+  `GetScanReportRequest`, `GetAuditReportRequest`, and
+  `GetAuditReportHostsRequest`, respectively.
+
+Import validation occurs before capability checks or transport. It accepts
+exactly one supported `<report>` document, rejects trailing or sibling XML,
+retains the original bytes for authoritative embedding, and redacts the
+payload from diagnostics. `task_id` is a required existing import-task
+relationship. `in_assets` is optional and is omitted by default.
+
+Report-list selection uses `report_filter`/`report_filt_id`; result selection
+inside an ID-selected ordinary report and all structured-report selection use
+`filter`/`filt_id`. Detail, pagination bypass, note details, override details,
+result tags, and lean output are independently optional and omitted by
+default. `GetReportRequest::new` explicitly selects detailed output; list and
+audit-host constructors preserve gvmd's omitted defaults. Audit lists fix
+`usage_type=audit`; ordinary report list/detail requests add scan usage only
+when GMP 22.6 supports the selector.
+
+The response associations remain intentionally separate: ordinary list/detail
+XML uses the explicit nested report parser, audit lists have their own semantic
+response association, structured scan and audit responses retain their
+mixed/repeated parsers, and host summaries keep their lean/detail model. Audit
+list/delete require GMP 22.6, structured audit and hosts require 22.7, and
+structured scan requires 22.8.
+
+### Report drill-downs and exports
+
+Issue #662 replaces every report projection and export forwarding surface with
+one complete request value. The nine projection constructors retain gvmd's
+omitted false defaults; set `details=Some(true)` when rows, rather than count
+metadata, are required. Hosts additionally expose `lean`.
+
+```rust
+use gvm_gmp::commands::reports::{
+    ExportScanReportRequest, GetReportExportRequest, GetReportHostsRequest,
+};
+
+let mut hosts = GetReportHostsRequest::new(report_id.clone());
+hosts.filter_string = Some("rows=25 first=1".into());
+hosts.details = Some(true);
+hosts.lean = Some(true);
+let hosts = client.get_report_hosts(hosts).await?;
+
+let mut export = GetReportExportRequest::new(report_id.clone(), format_id);
+export.report_config_id = Some(config_id);
+export.ignore_pagination = Some(true);
+let bytes = client.get_report_export(export).await?.bytes;
+
+client.discover_commands().await?;
+let queued = client
+    .export_scan_report(ExportScanReportRequest::new(report_id))
+    .await?;
+# let _ = (hosts, bytes, queued);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Migration mapping:
+
+- `get_report_hosts(&id, opts)` and the other projection builders become their
+  corresponding `GetReport*Request::new(id)` values;
+- `_parsed` facade suffixes are removed; the unsuffixed names are typed;
+- `get_report_vulnerabilities` is removed; use the concrete wire name
+  `get_report_vulns(GetReportVulnsRequest::new(id))`;
+- `get_report_export(&id, &format)` and `_with_opts` become
+  `get_report_export(GetReportExportRequest::new(id, format))`;
+- `export_scan_report(&id, opts)` becomes
+  `export_scan_report(ExportScanReportRequest::new(id))`, with optional fields
+  set on the request.
+
+The old synchronous-export builder forced details and pagination bypass. The
+canonical constructor follows gvmd omission defaults instead; set both fields
+explicitly to preserve the former policy. Asynchronous export accepts no saved
+filter ID or `details`, and omitted format selects gvmd's executable XML
+default despite the published schema saying it is required.
+
+All projections and synchronous export require GMP 22.8. Asynchronous export
+has a 22.7 lower bound but additionally requires positive XML-help discovery.
+The explicit response codecs preserve projection container/count variants,
+mixed-element order, nested XML, and binary/base64 payloads within the existing
+bounded response limit. Streaming redesign remains tracked separately by #4.
+See the [pinned gvmd evidence](report-request-gvmd-evidence.md).
+
 ## Agent family
 
 The agent slice removes `GetAgentsOpts`, `ModifyAgentOpts`,
@@ -1207,7 +1433,7 @@ traces redact configured/default/alternate values, but raw response and serde
 access remain data-bearing. See the
 [pinned evidence](nvt-secinfo-request-gvmd-evidence.md).
 
-## Configuration, scan-configuration, and policy lifecycle
+## Configuration, scan-configuration, policy, and preferences
 
 Lifecycle calls now take one of 24 complete requests. Six generic and fourteen
 scoped facade methods accept their request unchanged; the four policy
@@ -1251,9 +1477,14 @@ Remove uses of `SyncConfigRequest`, `scan_configs::sync_config`,
 no pinned/current gvmd dispatcher and is explicitly rejected in built-in mock
 modes. This is not feed synchronization.
 
-Preference query options/builders/facades and all eight configured
-preference/NVT/family mutation APIs remain unchanged for the next ordered
-child. See the
+Preference list/single requests and all eight configured preference/NVT/family
+mutation requests are canonical direct codecs. Use generic `execute`; the two
+preference facades, the preference options bag, and the ten old builders are
+removed. `None` deletes a preference override while `Some("")` sends an
+explicit empty value; decoded values are base64-encoded exactly once. NVT and
+family inputs are ordered replacements, with empty vectors clearing their
+scope. List/single response types preserve absent values and missing matches,
+and secret values are redacted from Debug, errors, and traces. See the
 [pinned evidence](scan-config-policy-request-gvmd-evidence.md).
 
 ## Compatibility boundary
@@ -1269,7 +1500,7 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 259 current public async methods: 256 delegate
+The facade inventory locks all 262 current public async methods: 259 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path. Unsupported `sync_config` and its deprecated per-config
 delegate are absent.

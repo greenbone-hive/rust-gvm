@@ -46,6 +46,10 @@ pub(crate) const CONFIG_SAVED_FILTER_ID: Uuid =
     Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0304);
 pub(crate) const DEFAULT_SCANNER_ID: Uuid =
     Uuid::from_u128(0x08b6_9003_5fc2_4037_a479_93b4_4021_1c73);
+pub(crate) const DEFAULT_CONTAINER_SCANNER_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0010);
+pub(crate) const DEFAULT_WEB_SCANNER_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0011);
 pub(crate) const CONFIGURABLE_REPORT_FORMAT_ID: Uuid =
     Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0200);
 pub(crate) const NONCONFIGURABLE_REPORT_FORMAT_ID: Uuid =
@@ -320,6 +324,46 @@ pub(crate) enum StoreError {
     InvalidArgument(&'static str),
     InvalidState(&'static str),
     Inconsistent(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigPreferenceUpdate {
+    pub nvt_oid: Option<String>,
+    pub name: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigNvtSelectionUpdate {
+    pub family: String,
+    pub nvt_oids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigFamilySelectionEntry {
+    pub name: String,
+    pub growing: bool,
+    pub all: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigFamilySelectionUpdate {
+    pub families: Vec<ConfigFamilySelectionEntry>,
+    pub auto_add_new_families: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ConfigMutationAction {
+    Preference(ConfigPreferenceUpdate),
+    NvtSelection(ConfigNvtSelectionUpdate),
+    FamilySelection(ConfigFamilySelectionUpdate),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ConfigMutation {
+    pub name: Option<String>,
+    pub comment: Option<String>,
+    pub actions: Vec<ConfigMutationAction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -767,6 +811,18 @@ impl Resource {
             }
         }
         if self.resource_type == "task" {
+            if let Some(alterable) = self.attr("alterable") {
+                xml.push_str(&format!("<alterable>{}</alterable>", xml_escape(alterable)));
+            }
+            if let Some(alert_ids) = self.attr("alert_ids") {
+                for alert_id in alert_ids.split(',').filter(|id| !id.is_empty()) {
+                    xml.push_str(&format!(
+                        "<alert id=\"{}\"><name>{}</name></alert>",
+                        xml_escape_attr(alert_id),
+                        xml_escape(alert_id),
+                    ));
+                }
+            }
             if self.attr("observers").is_some() || self.attr("observer_group_ids").is_some() {
                 xml.push_str("<observers>");
                 if let Some(observers) = self.attr("observers") {
@@ -782,6 +838,25 @@ impl Resource {
                     }
                 }
                 xml.push_str("</observers>");
+            }
+            let preferences = self
+                .attrs
+                .iter()
+                .filter_map(|(key, value)| {
+                    key.strip_prefix("task_preference:")
+                        .map(|name| (name, value))
+                })
+                .collect::<Vec<_>>();
+            if !preferences.is_empty() {
+                xml.push_str("<preferences>");
+                for (name, value) in preferences {
+                    xml.push_str(&format!(
+                        "<preference><scanner_name>{}</scanner_name><value>{}</value></preference>",
+                        xml_escape(name),
+                        xml_escape(value),
+                    ));
+                }
+                xml.push_str("</preferences>");
             }
             if self.attr("target_id").is_none() {
                 xml.push_str("<target id=\"\"><name></name></target>");
@@ -1096,9 +1171,13 @@ impl Resource {
                 continue;
             }
             if self.resource_type == "task"
-                && matches!(
+                && (matches!(
                     k.as_str(),
-                    "target_id"
+                    "alterable"
+                        | "alert_ids"
+                        | "observers"
+                        | "observer_group_ids"
+                        | "target_id"
                         | "agent_group_id"
                         | "oci_image_target_id"
                         | "web_application_target_id"
@@ -1107,7 +1186,7 @@ impl Resource {
                         | "schedule_id"
                         | "schedule_periods"
                         | "report_id"
-                )
+                ) || k.starts_with("task_preference:"))
             {
                 continue;
             }
@@ -1199,9 +1278,25 @@ fn task_report_reference_xml(field: &str, report: &Resource, results: &[&Resourc
 }
 
 /// Thread-safe resource store.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ResourceStore {
     inner: Arc<RwLock<StoreInner>>,
+}
+
+impl std::fmt::Debug for ResourceStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = self.inner.read().map_err(|_| std::fmt::Error)?;
+        formatter
+            .debug_struct("ResourceStore")
+            .field("resource_count", &inner.resources.len())
+            .field(
+                "authenticated_session_count",
+                &inner.authenticated_sessions.len(),
+            )
+            .field("asset_input_profile", &inner.asset_input_profile)
+            .field("system_administration", &inner.system_administration)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -1216,7 +1311,46 @@ struct StoreInner {
     /// Configured credentials.
     username: String,
     password: String,
+    system_administration: SystemAdministrationState,
     discovery: DiscoverySnapshot,
+}
+
+#[derive(Clone, Default)]
+struct SystemAdministrationState {
+    auth_groups: BTreeMap<String, BTreeMap<String, String>>,
+    license_file: Option<String>,
+    wizard_runs: Vec<WizardRun>,
+}
+
+impl std::fmt::Debug for SystemAdministrationState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SystemAdministrationState")
+            .field("auth_group_count", &self.auth_groups.len())
+            .field("license_installed", &self.license_file.is_some())
+            .field("wizard_run_count", &self.wizard_runs.len())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+struct WizardRun {
+    name: String,
+    mode: Option<String>,
+    read_only: Option<bool>,
+    params: Vec<(String, String)>,
+}
+
+impl std::fmt::Debug for WizardRun {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WizardRun")
+            .field("name", &self.name)
+            .field("mode", &self.mode)
+            .field("read_only", &self.read_only)
+            .field("parameter_count", &self.params.len())
+            .finish()
+    }
 }
 
 fn default_resources() -> HashMap<Uuid, Resource> {
@@ -1294,6 +1428,19 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     scanner.comment = "Mock default scanner".to_string();
     scanner.set_attr("type", "OpenVAS");
     resources.insert(scanner.id, scanner);
+
+    let mut container_scanner = Resource::with_id(
+        "scanner",
+        "Container Image Default",
+        DEFAULT_CONTAINER_SCANNER_ID,
+    );
+    container_scanner.set_attr("type", "10");
+    resources.insert(container_scanner.id, container_scanner);
+
+    let mut web_scanner =
+        Resource::with_id("scanner", "Web Application Default", DEFAULT_WEB_SCANNER_ID);
+    web_scanner.set_attr("type", "11");
+    resources.insert(web_scanner.id, web_scanner);
 
     let mut configurable_format = Resource::with_id(
         "report_format",
@@ -1398,6 +1545,30 @@ fn active_name_exists(
             && resource.name == name
             && except != Some(&resource.id)
     })
+}
+
+fn config_preference_type(name: &str) -> Option<&str> {
+    let mut parts = name.splitn(4, ':');
+    let _oid = parts.next()?;
+    let _id = parts.next()?;
+    parts.next()
+}
+
+fn add_config_family_order(config: &mut Resource, family: &str) {
+    let mut order = config
+        .attr("config_family_order")
+        .map(|value| {
+            value
+                .split('\u{1f}')
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !order.iter().any(|name| name == family) {
+        order.push(family.to_string());
+    }
+    config.set_attr("config_family_order", &order.join("\u{1f}"));
 }
 
 fn tls_visible_to(resource: &Resource, principal: &str) -> bool {
@@ -1522,6 +1693,125 @@ fn validate_task_reference(
     resource_type: &'static str,
 ) -> Result<(), StoreError> {
     active_typed_resource(inner, id, resource_type).map(|_| ())
+}
+
+fn scanner_has_type(scanner: &Resource, accepted: &[&str]) -> bool {
+    scanner
+        .attr("type")
+        .is_some_and(|scanner_type| accepted.contains(&scanner_type))
+}
+
+fn validate_openvas_scanner(
+    inner: &StoreInner,
+    id: &Uuid,
+    message: &'static str,
+) -> Result<(), StoreError> {
+    let scanner = active_typed_resource(inner, id, "scanner")?;
+    if scanner_has_type(scanner, &["2", "OpenVAS"]) {
+        Ok(())
+    } else {
+        Err(StoreError::InvalidArgument(message))
+    }
+}
+
+fn validate_task_attributes(inner: &StoreInner, task: &Resource) -> Result<(), StoreError> {
+    for (attribute, resource_type) in [("alert_ids", "alert"), ("observer_group_ids", "group")] {
+        for id in task
+            .attr(attribute)
+            .unwrap_or_default()
+            .split(',')
+            .filter(|id| !id.is_empty())
+        {
+            // Older mock fixtures use readable non-UUID identifiers. Preserve
+            // those fixtures while enforcing real gvmd relationships whenever
+            // the command carries a production-shaped UUID.
+            if let Ok(id) = Uuid::parse_str(id) {
+                validate_task_reference(inner, &id, resource_type)?;
+            }
+        }
+    }
+    if task
+        .attr("alterable")
+        .is_some_and(|value| !matches!(value, "0" | "1"))
+    {
+        return Err(StoreError::InvalidArgument("Invalid task alterable value"));
+    }
+    for (key, value) in task
+        .attrs
+        .iter()
+        .filter(|(key, _)| key.starts_with("task_preference:"))
+    {
+        let name = key.trim_start_matches("task_preference:");
+        if name == "auto_delete" && !matches!(value.as_str(), "keep" | "no") {
+            return Err(StoreError::InvalidArgument("Invalid auto_delete value"));
+        }
+        if name == "auto_delete_data"
+            && value
+                .parse::<u32>()
+                .map_or(true, |value| !(2..=1200).contains(&value))
+        {
+            return Err(StoreError::InvalidArgument(
+                "Auto Delete count out of range",
+            ));
+        }
+        let container = task.attr("oci_image_target_id").is_some();
+        let web = task.attr("web_application_target_id").is_some();
+        if name == "in_assets" && (container || web) {
+            return Err(StoreError::InvalidArgument(
+                "in_assets cannot be set for specialized task scanners",
+            ));
+        }
+        if web && name == "scan_mode" && !matches!(value.as_str(), "active" | "safe") {
+            return Err(StoreError::InvalidArgument("Invalid web scan_mode value"));
+        }
+        if web
+            && name == "ajax_spider_timeout"
+            && value.parse::<i64>().map_or(true, |timeout| timeout < 0)
+        {
+            return Err(StoreError::InvalidArgument(
+                "Invalid web ajax_spider_timeout value",
+            ));
+        }
+    }
+
+    let scanner = task
+        .attr("scanner_id")
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .and_then(|id| inner.resources.get(&id));
+    if let Some(group_id) = task
+        .attr("agent_group_id")
+        .and_then(|id| Uuid::parse_str(id).ok())
+    {
+        let group = active_typed_resource(inner, &group_id, "agent_group")?;
+        let group_scanner = group
+            .attr("scanner_id")
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .unwrap_or(DEFAULT_SCANNER_ID);
+        if task.attr("scanner_id") != Some(group_scanner.to_string().as_str()) {
+            return Err(StoreError::InvalidArgument(
+                "Scanner ID does not match agent group's scanner",
+            ));
+        }
+    } else if task.attr("oci_image_target_id").is_some() {
+        if scanner.is_none_or(|scanner| !scanner_has_type(scanner, &["10"])) {
+            return Err(StoreError::InvalidArgument(
+                "OCI image target requires a Container Image scanner",
+            ));
+        }
+    } else if task.attr("web_application_target_id").is_some() {
+        if scanner.is_none_or(|scanner| !scanner_has_type(scanner, &["11"])) {
+            return Err(StoreError::InvalidArgument(
+                "Web application target requires a Web Application scanner",
+            ));
+        }
+    } else if task.attr("import_task") != Some("1")
+        && scanner.is_some_and(|scanner| scanner_has_type(scanner, &["7", "9", "10", "11"]))
+    {
+        return Err(StoreError::InvalidArgument(
+            "Target and scanner types mismatch",
+        ));
+    }
+    Ok(())
 }
 
 fn stored_task_reference(
@@ -1707,6 +1997,8 @@ fn resolve_current_report_id(inner: &StoreInner, task: &Resource) -> Result<Uuid
 }
 
 impl ResourceStore {
+    const AUTH_TOKEN: &'static str = "mock-token";
+
     /// Create a new empty store with default credentials.
     pub fn new() -> Self {
         Self::with_credentials("admin", "admin")
@@ -1731,6 +2023,7 @@ impl ResourceStore {
                 authenticated_sessions: HashMap::new(),
                 username: username.to_string(),
                 password: password.to_string(),
+                system_administration: SystemAdministrationState::default(),
                 discovery: default_discovery(),
             })),
         }
@@ -1906,6 +2199,24 @@ impl ResourceStore {
         }
     }
 
+    /// Authenticate a session with the deterministic token issued by the mock.
+    pub fn authenticate_token(&self, session_id: u64, token: &str) -> bool {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        if token == Self::AUTH_TOKEN {
+            let username = inner.username.clone();
+            inner.authenticated_sessions.insert(session_id, username);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Return the deterministic token used by stateful authentication.
+    #[must_use]
+    pub fn authentication_token() -> &'static str {
+        Self::AUTH_TOKEN
+    }
+
     /// Check if a session is authenticated.
     pub fn is_authenticated(&self, session_id: u64) -> bool {
         let inner = self.inner.read().expect("store lock poisoned");
@@ -1916,6 +2227,101 @@ impl ResourceStore {
     pub(crate) fn authenticated_principal(&self, session_id: u64) -> Option<String> {
         let inner = self.inner.read().expect("store lock poisoned");
         inner.authenticated_sessions.get(&session_id).cloned()
+    }
+
+    pub(crate) fn apply_auth_groups(&self, groups: BTreeMap<String, BTreeMap<String, String>>) {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        for (name, settings) in groups {
+            if settings.is_empty() {
+                continue;
+            }
+            let group = inner
+                .system_administration
+                .auth_groups
+                .entry(name)
+                .or_default();
+            group.extend(settings);
+        }
+    }
+
+    pub(crate) fn auth_groups(&self) -> BTreeMap<String, BTreeMap<String, String>> {
+        self.inner
+            .read()
+            .expect("store lock poisoned")
+            .system_administration
+            .auth_groups
+            .clone()
+    }
+
+    pub(crate) fn replace_license(&self, file: String) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .system_administration
+            .license_file = (!file.is_empty()).then_some(file);
+    }
+
+    pub(crate) fn license_installed(&self) -> bool {
+        self.inner
+            .read()
+            .expect("store lock poisoned")
+            .system_administration
+            .license_file
+            .is_some()
+    }
+
+    pub(crate) fn record_wizard_run(
+        &self,
+        name: String,
+        mode: Option<String>,
+        read_only: Option<bool>,
+        params: Vec<(String, String)>,
+    ) {
+        self.inner
+            .write()
+            .expect("store lock poisoned")
+            .system_administration
+            .wizard_runs
+            .push(WizardRun {
+                name,
+                mode,
+                read_only,
+                params,
+            });
+    }
+
+    /// Returns the number of wizard executions accepted by the stateful store.
+    ///
+    /// Parameter values remain deliberately unavailable because they may contain
+    /// confidential administration data.
+    pub fn wizard_run_count(&self) -> usize {
+        self.inner
+            .read()
+            .expect("store lock poisoned")
+            .system_administration
+            .wizard_runs
+            .len()
+    }
+
+    pub(crate) fn modify_setting_by_name(&self, name: &str, value: &str) -> bool {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        if name == "Password" {
+            value.clone_into(&mut inner.password);
+            return true;
+        }
+        if name != "Timezone" {
+            return false;
+        }
+        let Some(setting) = inner.resources.values_mut().find(|resource| {
+            !resource.trashed
+                && resource.resource_type == "setting"
+                && resource.name.eq_ignore_ascii_case("timezone")
+        }) else {
+            return false;
+        };
+        setting.set_attr("value", value);
+        setting.modification_time = now_iso();
+        true
     }
 
     /// Set the asset request parsing profile before the server starts.
@@ -2386,7 +2792,7 @@ impl ResourceStore {
     pub(crate) fn create_task(
         &self,
         mut task: Resource,
-        references: TaskReferences,
+        mut references: TaskReferences,
     ) -> Result<Uuid, StoreError> {
         let mut inner = self.inner.write().expect("store lock poisoned");
         if let Some(target) = references.target {
@@ -2396,6 +2802,22 @@ impl ResourceStore {
         if let Some(target) = references.specialized_target {
             validate_task_reference(&inner, &target.id(), target.resource_type())?;
             task.set_attr(target.attr_name(), &target.id().to_string());
+            if let SpecializedTaskTarget::AgentGroup(group_id) = target {
+                let group = active_typed_resource(&inner, &group_id, "agent_group")?;
+                let group_scanner = group
+                    .attr("scanner_id")
+                    .and_then(|id| Uuid::parse_str(id).ok())
+                    .unwrap_or(DEFAULT_SCANNER_ID);
+                if references
+                    .scanner
+                    .is_some_and(|scanner| scanner != group_scanner)
+                {
+                    return Err(StoreError::InvalidArgument(
+                        "Scanner ID does not match agent group's scanner",
+                    ));
+                }
+                references.scanner = Some(group_scanner);
+            }
         }
         if let Some(config) = references.config {
             validate_task_reference(&inner, &config, "config")?;
@@ -2420,6 +2842,10 @@ impl ResourceStore {
         } else {
             task.set_attr("status", TaskStatus::New.as_str());
         }
+        if task.attr("usage_type").is_none() {
+            task.set_attr("usage_type", "scan");
+        }
+        validate_task_attributes(&inner, &task)?;
         task.modification_time = now_iso();
         Ok(insert_resource(&mut inner, task))
     }
@@ -2436,6 +2862,88 @@ impl ResourceStore {
         }
         report.modification_time = now_iso();
         Ok(insert_resource(&mut inner, report))
+    }
+
+    /// Atomically import a scan report, its bounded result projection, and any
+    /// requested host assets.
+    pub(crate) fn import_report(
+        &self,
+        mut report: Resource,
+        task_id: Uuid,
+        in_assets: bool,
+        hosts: &[String],
+        mut results: Vec<Resource>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let task = active_typed_resource(&inner, &task_id, "task")?;
+        if task.attr("import_task") != Some("1") {
+            return Err(StoreError::InvalidArgument(
+                "Report import requires an import task",
+            ));
+        }
+        if task.attr("usage_type").unwrap_or("scan") != "scan" {
+            return Err(StoreError::InvalidArgument(
+                "Only scan reports can be imported",
+            ));
+        }
+
+        if in_assets
+            && hosts
+                .iter()
+                .any(|host| host.parse::<std::net::IpAddr>().is_err())
+        {
+            return Err(StoreError::InvalidArgument(
+                "Imported report contains an invalid host address",
+            ));
+        }
+
+        let report_id = report.id;
+        report.set_attr("task_id", &task_id.to_string());
+        report.set_attr("usage_type", "scan");
+        report.set_attr("status", "Done");
+        report.set_attr("in_assets", if in_assets { "1" } else { "0" });
+        report.modification_time = now_iso();
+
+        for result in &mut results {
+            result.set_attr("report_id", &report_id.to_string());
+            result.modification_time = now_iso();
+        }
+
+        // All validation is complete before the first mutation. Keep the
+        // insertion sequence under the same write lock so callers never
+        // observe a partial report graph.
+        insert_resource(&mut inner, report);
+        for result in results {
+            insert_resource(&mut inner, result);
+        }
+        if in_assets {
+            for host in hosts {
+                let existing = inner
+                    .resources
+                    .values()
+                    .find(|resource| {
+                        resource.resource_type == "asset"
+                            && !resource.trashed
+                            && resource.asset_type() == Some("host")
+                            && resource.name == *host
+                    })
+                    .map(|resource| resource.id);
+                if let Some(asset_id) = existing {
+                    let asset = inner
+                        .resources
+                        .get_mut(&asset_id)
+                        .expect("selected host asset remains present while locked");
+                    asset.set_attr("source_report_id", &report_id.to_string());
+                    asset.modification_time = now_iso();
+                } else {
+                    let mut asset = Resource::new("asset", host);
+                    asset.set_attr("type", "host");
+                    asset.set_attr("source_report_id", &report_id.to_string());
+                    insert_resource(&mut inner, asset);
+                }
+            }
+        }
+        Ok(report_id)
     }
 
     /// Get a resource by UUID.
@@ -2560,14 +3068,13 @@ impl ResourceStore {
         Ok(id)
     }
 
-    pub(crate) fn modify_config_metadata(
+    pub(crate) fn modify_config_atomic(
         &self,
         id: &Uuid,
-        name: Option<&str>,
-        comment: Option<&str>,
+        mutation: ConfigMutation,
     ) -> Result<(), StoreError> {
         let mut inner = self.inner.write().expect("store lock poisoned");
-        let config = inner
+        let mut config = inner
             .resources
             .get(id)
             .filter(|resource| resource.resource_type == "config" && !resource.trashed)
@@ -2578,24 +3085,165 @@ impl ResourceStore {
                 "Predefined configuration cannot be modified",
             ));
         }
-        if let Some(name) = name.filter(|name| !name.is_empty()) {
+        if let Some(name) = mutation.name.as_deref().filter(|name| !name.is_empty()) {
             if active_name_exists(&inner, "config", name, Some(id)) {
                 return Err(StoreError::InvalidArgument(
                     "Configuration name exists already",
                 ));
             }
         }
-        let config = inner
-            .resources
-            .get_mut(id)
-            .expect("configuration remained present while locked");
-        if let Some(name) = name.filter(|name| !name.is_empty()) {
+
+        let config_key = id.to_string();
+        if !mutation.actions.is_empty()
+            && inner.resources.values().any(|task| {
+                task.resource_type == "task"
+                    && !task.trashed
+                    && task.attr("config_id") == Some(config_key.as_str())
+                    && task.attr("config_location").unwrap_or("active") == "active"
+                    && task.attr("visible") != Some("0")
+            })
+        {
+            return Err(StoreError::InUse("config"));
+        }
+
+        if let Some(name) = mutation.name.as_deref().filter(|name| !name.is_empty()) {
             config.name = name.to_string();
         }
-        if let Some(comment) = comment.filter(|comment| !comment.is_empty()) {
+        if let Some(comment) = mutation
+            .comment
+            .as_deref()
+            .filter(|comment| !comment.is_empty())
+        {
             config.comment = comment.to_string();
         }
+
+        let mut nvts = inner
+            .discovery
+            .config_nvts
+            .get(&config_key)
+            .cloned()
+            .unwrap_or_default();
+        let mut preferences = inner
+            .discovery
+            .config_preferences
+            .get(&config_key)
+            .cloned()
+            .unwrap_or_default();
+        let known_families = inner
+            .discovery
+            .nvts
+            .values()
+            .map(|nvt| nvt.family.clone())
+            .collect::<BTreeSet<_>>();
+
+        for action in mutation.actions {
+            match action {
+                ConfigMutationAction::Preference(update) => {
+                    if let Some(nvt_oid) = update.nvt_oid.as_deref() {
+                        if !inner.discovery.nvts.contains_key(nvt_oid) {
+                            return Err(StoreError::InvalidArgument(
+                                "Mock limitation: preference references an unseeded NVT",
+                            ));
+                        }
+                    }
+                    if update.value.as_deref() == Some("")
+                        && config_preference_type(&update.name) == Some("radio")
+                    {
+                        return Err(StoreError::InvalidArgument(
+                            "Empty radio preference values are invalid",
+                        ));
+                    }
+                    if let Some(value) = update.value {
+                        preferences.insert(update.name, value);
+                    } else {
+                        preferences.remove(&update.name);
+                    }
+                }
+                ConfigMutationAction::NvtSelection(update) => {
+                    if !known_families.contains(&update.family) {
+                        return Err(StoreError::InvalidArgument(
+                            "Mock limitation: selection references an unseeded family",
+                        ));
+                    }
+                    for oid in &update.nvt_oids {
+                        if inner
+                            .discovery
+                            .nvts
+                            .get(oid)
+                            .is_none_or(|nvt| nvt.family != update.family)
+                        {
+                            return Err(StoreError::InvalidArgument(
+                                "Mock limitation: selection references an unseeded family NVT",
+                            ));
+                        }
+                    }
+                    nvts.retain(|oid| {
+                        inner
+                            .discovery
+                            .nvts
+                            .get(oid)
+                            .is_none_or(|nvt| nvt.family != update.family)
+                    });
+                    nvts.extend(update.nvt_oids);
+                    add_config_family_order(&mut config, &update.family);
+                }
+                ConfigMutationAction::FamilySelection(update) => {
+                    for family in &update.families {
+                        if !known_families.contains(&family.name) {
+                            return Err(StoreError::InvalidArgument(
+                                "Mock limitation: selection references an unseeded family",
+                            ));
+                        }
+                    }
+                    nvts.clear();
+                    config.attrs.retain(|key, _| {
+                        !key.starts_with("config_family_growing:")
+                            && key != "config_family_order"
+                            && key != "config_families_growing"
+                    });
+                    let mut ordered_families = Vec::new();
+                    for family in update.families {
+                        if !ordered_families.contains(&family.name) {
+                            ordered_families.push(family.name.clone());
+                        }
+                        config.set_attr(
+                            &format!("config_family_growing:{}", family.name),
+                            if family.growing { "1" } else { "0" },
+                        );
+                        if family.all {
+                            nvts.extend(
+                                inner
+                                    .discovery
+                                    .nvts
+                                    .values()
+                                    .filter(|nvt| nvt.family == family.name)
+                                    .map(|nvt| nvt.oid.clone()),
+                            );
+                        }
+                    }
+                    config.set_attr("config_family_order", &ordered_families.join("\u{1f}"));
+                    config.set_attr(
+                        "config_families_growing",
+                        if update.auto_add_new_families {
+                            "1"
+                        } else {
+                            "0"
+                        },
+                    );
+                }
+            }
+        }
+
         config.modification_time = now_iso();
+        *inner
+            .resources
+            .get_mut(id)
+            .expect("configuration remained present while locked") = config;
+        inner.discovery.config_nvts.insert(config_key.clone(), nvts);
+        inner
+            .discovery
+            .config_preferences
+            .insert(config_key, preferences);
         Ok(())
     }
 
@@ -2869,60 +3517,86 @@ impl ResourceStore {
             validate_task_reference(&inner, &schedule, "schedule")?;
         }
 
-        let task = inner
-            .resources
-            .get_mut(id)
-            .expect("validated task should remain present while locked");
+        let mut candidate = task.clone();
+        let original_alterable = candidate.attr("alterable").map(str::to_string);
         if let Some(target) = references.target {
-            task.set_attr("target_id", &target.to_string());
+            candidate.set_attr("target_id", &target.to_string());
             for key in [
                 "agent_group_id",
                 "oci_image_target_id",
                 "web_application_target_id",
             ] {
-                task.attrs.remove(key);
+                candidate.attrs.remove(key);
             }
         }
         if let Some(target) = references.specialized_target {
-            task.attrs.remove("target_id");
+            candidate.attrs.remove("target_id");
             for key in [
                 "agent_group_id",
                 "oci_image_target_id",
                 "web_application_target_id",
             ] {
-                task.attrs.remove(key);
+                candidate.attrs.remove(key);
             }
-            task.set_attr(target.attr_name(), &target.id().to_string());
+            candidate.set_attr(target.attr_name(), &target.id().to_string());
         }
         if let Some(config) = references.config {
-            task.set_attr("config_id", &config.to_string());
+            candidate.set_attr("config_id", &config.to_string());
         }
         if let Some(scanner) = references.scanner {
-            task.set_attr("scanner_id", &scanner.to_string());
+            candidate.set_attr("scanner_id", &scanner.to_string());
         }
         match references.schedule {
             TaskScheduleUpdate::Omitted => {
                 if let Some(schedule_periods) = references.schedule_periods {
-                    task.set_attr("schedule_periods", &schedule_periods.to_string());
+                    candidate.set_attr("schedule_periods", &schedule_periods.to_string());
                 }
             }
             TaskScheduleUpdate::Set(schedule) => {
-                task.set_attr("schedule_id", &schedule.to_string());
-                task.set_attr(
+                candidate.set_attr("schedule_id", &schedule.to_string());
+                candidate.set_attr(
                     "schedule_periods",
                     &references.schedule_periods.unwrap_or(0).to_string(),
                 );
             }
             TaskScheduleUpdate::Clear => {
-                task.attrs.remove("schedule_id");
-                task.set_attr(
+                candidate.attrs.remove("schedule_id");
+                candidate.set_attr(
                     "schedule_periods",
                     &references.schedule_periods.unwrap_or(0).to_string(),
                 );
             }
         }
-        f(task);
-        task.modification_time = now_iso();
+        f(&mut candidate);
+        if candidate.attr("alterable").map(str::to_string) != original_alterable
+            && status != TaskStatus::New.as_str()
+        {
+            return Err(StoreError::InvalidState(
+                "Task must be New to modify Alterable state",
+            ));
+        }
+        validate_task_attributes(&inner, &candidate)?;
+        candidate.modification_time = now_iso();
+        inner.resources.insert(*id, candidate);
+        Ok(())
+    }
+
+    pub(crate) fn move_task(&self, id: &Uuid, destination: Uuid) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let task = active_typed_resource(&inner, id, "task")?;
+        let current_scanner = stored_task_reference(task, "scanner_id", "scanner")?;
+        validate_openvas_scanner(&inner, &current_scanner, "Task must use an OpenVAS scanner")?;
+        validate_openvas_scanner(
+            &inner,
+            &destination,
+            "Destination scanner does not support slaves",
+        )?;
+
+        let mut candidate = task.clone();
+        candidate.set_attr("scanner_id", &destination.to_string());
+        validate_task_attributes(&inner, &candidate)?;
+        candidate.modification_time = now_iso();
+        inner.resources.insert(*id, candidate);
         Ok(())
     }
 
@@ -3663,6 +4337,10 @@ mod tests {
         assert!(store.is_authenticated(1));
         assert!(!store.authenticate(2, "user", "wrong"));
         assert!(!store.is_authenticated(2));
+        assert!(store.authenticate_token(3, ResourceStore::authentication_token()));
+        assert!(store.is_authenticated(3));
+        assert!(!store.authenticate_token(4, "wrong-token"));
+        assert!(!store.is_authenticated(4));
     }
 
     #[test]
@@ -4646,5 +5324,28 @@ mod tests {
                 .expect("resume interrupted task"),
             report_id
         );
+    }
+
+    #[test]
+    fn administration_state_changes_without_exposing_confidential_values() {
+        let store = ResourceStore::new();
+        store.apply_auth_groups(BTreeMap::from([(
+            "method:radius_connect".to_string(),
+            BTreeMap::from([("radiuskey".to_string(), "radius-secret".to_string())]),
+        )]));
+        store.replace_license("license-secret".to_string());
+        store.record_wizard_run(
+            "quick_first_scan".to_string(),
+            Some("step".to_string()),
+            Some(false),
+            vec![("password".to_string(), "wizard-secret".to_string())],
+        );
+
+        assert_eq!(store.wizard_run_count(), 1);
+        assert!(store.license_installed());
+        let debug = format!("{store:?}");
+        for secret in ["radius-secret", "license-secret", "wizard-secret"] {
+            assert!(!debug.contains(secret));
+        }
     }
 }
