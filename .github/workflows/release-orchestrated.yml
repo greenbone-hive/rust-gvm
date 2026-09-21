@@ -35,6 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
@@ -47,21 +48,34 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Verify workspace release version
+      - name: Qualify exact protected-main commit and release version
         env:
+          RELEASE_SHA: ${{ github.sha }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          CURRENT_VERSION="$(awk '
-            $0 == "[workspace.package]" { in_workspace = 1; next }
-            /^\[/ { in_workspace = 0 }
-            in_workspace && $1 == "version" {
-              gsub(/"/, "", $3)
-              print $3
-              exit
-            }
-          ' Cargo.toml)"
-          if [[ "$CURRENT_VERSION" != "$RELEASE_VERSION" ]]; then
-            echo "Expected workspace version $RELEASE_VERSION, found $CURRENT_VERSION" >&2
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Releases must be dispatched from refs/heads/main, found $GITHUB_REF" >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" ]]; then
+            echo "Checkout does not match qualified workflow SHA $RELEASE_SHA" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin refs/heads/main
+          if [[ "$(git rev-parse FETCH_HEAD)" != "$RELEASE_SHA" ]]; then
+            echo "Qualified SHA $RELEASE_SHA is not the current protected main head" >&2
+            exit 1
+          fi
+          python3 scripts/check_release_version.py "$RELEASE_VERSION"
+          notes="docs/releases/v${RELEASE_VERSION}.md"
+          if [[ ! -f "$notes" ]]; then
+            echo "Missing exact release notes: $notes" >&2
+            exit 1
+          fi
+          existing_tag="$(git ls-remote --tags origin "refs/tags/v${RELEASE_VERSION}")"
+          if [[ -n "$existing_tag" ]]; then
+            echo "Tag v${RELEASE_VERSION} already exists and will not be moved" >&2
             exit 1
           fi
 
@@ -69,49 +83,44 @@ jobs:
         env:
           GITHUB_USER: ${{ vars.RELEASE_USER || github.actor }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          ARGS="--release-version ${{ inputs.version }}"
-          ARGS="$ARGS --versioning-scheme semver"
-          ARGS="$ARGS --project-types cargo"
-          ARGS="$ARGS --git-tag-prefix v"
-          ARGS="$ARGS --no-next-version"
-          ARGS="$ARGS --no-update-project"
+          set -euo pipefail
+          args=(
+            --release-version "$RELEASE_VERSION"
+            --versioning-scheme semver
+            --project-types cargo
+            --git-tag-prefix v
+            --no-next-version
+            --no-update-project
+          )
 
-          if [[ "${{ inputs.version }}" == *"-"* ]]; then
-            ARGS="$ARGS --github-pre-release"
+          if [[ "$RELEASE_VERSION" == *"-"* ]]; then
+            args+=(--github-pre-release)
           fi
 
-          pontos-release create $ARGS --repository ${{ github.repository }}
+          pontos-release create "${args[@]}" --repository "$GITHUB_REPOSITORY"
 
-      - name: Wait for release.yml triggered by tag push
+      - name: Publish reviewed release notes
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh release edit "v${RELEASE_VERSION}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file "docs/releases/v${RELEASE_VERSION}.md"
+
+      - name: Wait for exact release.yml run via the API
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          RUN_ID=""
-          for attempt in $(seq 1 30); do
-            RUN_ID="$(gh run list \
-              --repo "$GITHUB_REPOSITORY" \
-              --workflow release.yml \
-              --event push \
-              --branch "v${RELEASE_VERSION}" \
-              --limit 20 \
-              --json databaseId,headSha \
-              --jq '.[] | select(.headSha == env.RELEASE_SHA) | .databaseId' \
-              | head -n 1)"
-            if [[ -n "$RUN_ID" ]]; then
-              break
-            fi
-            sleep 10
-          done
-
-          if [[ -z "$RUN_ID" ]]; then
-            echo "release.yml did not start for v${RELEASE_VERSION} at ${RELEASE_SHA}" >&2
-            exit 1
-          fi
-
-          gh run watch "$RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --interval 30 \
-            --exit-status
+          python3 scripts/wait_for_release_run.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow release.yml \
+            --tag "v${RELEASE_VERSION}" \
+            --sha "$RELEASE_SHA" \
+            --timeout 7200 \
+            --interval 20

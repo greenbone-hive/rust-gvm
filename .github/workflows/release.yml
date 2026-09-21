@@ -21,9 +21,43 @@ env:
   CROSS_VERSION: "v0.2.5"
 
 jobs:
+  qualify:
+    name: Qualify immutable tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Verify exact tag, commit, workspace versions, and lockfile
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_TAG" != v* ]]; then
+            echo "Release ref must be a v-prefixed tag" >&2
+            exit 1
+          fi
+          version="${RELEASE_TAG#v}"
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" ]]; then
+            echo "Checkout does not match release event SHA $RELEASE_SHA" >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" != "$RELEASE_SHA" ]]; then
+            echo "Tag $RELEASE_TAG does not resolve to release event SHA $RELEASE_SHA" >&2
+            exit 1
+          fi
+          python3 scripts/check_release_version.py "$version"
+
   # Run full test suite before building release artifacts
   test:
     name: Test
+    needs: qualify
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -32,7 +66,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-      - run: cargo test --workspace --all-features
+      - run: cargo test --locked --workspace --all-features
 
   # Publish gvm-mock-server Docker image to GHCR
   container:
@@ -42,6 +76,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
@@ -77,6 +113,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - name: Build and push image
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: "{{defaultContext}}"
@@ -85,6 +122,13 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Generate container build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/gvm-mock-server
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   # Build binaries for each target platform
   build:
@@ -143,12 +187,12 @@ jobs:
       # Build with cross for cross-compiled targets
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} -p gvm-mock-server
+        run: cross build --locked --release --target ${{ matrix.target }} -p gvm-mock-server
 
       # Build natively for same-arch targets
       - name: Build (native)
         if: "!matrix.cross"
-        run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
+        run: cargo build --locked --release --target ${{ matrix.target }} -p gvm-mock-server
 
       # Package the binary
       - name: Package
@@ -157,7 +201,7 @@ jobs:
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ matrix.artifact }}.tar.gz ${{ env.BINARY_NAME }}
           cd ../../..
-          sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
+          shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
 
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -273,28 +317,97 @@ jobs:
         with:
           egress-policy: audit
 
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install pinned release verification dependencies
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all:
+          -r .github/requirements/release.txt
+
       - name: Download all artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
           merge-multiple: true
 
+      - name: Verify complete staged release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_release.py assets \
+            --directory artifacts \
+            --version "${GITHUB_REF_NAME#v}" \
+            --supplier "$GITHUB_REPOSITORY_OWNER"
+
       - name: Upload assets to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           # Wait for release to exist (pontos creates it, may take a moment)
+          found=false
           for i in $(seq 1 30); do
             if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" &>/dev/null; then
               echo "✅ Release ${{ github.ref_name }} found"
+              found=true
               break
             fi
             echo "Waiting for release... ($i/30)"
             sleep 5
           done
+          if [[ "$found" != true ]]; then
+            echo "Release ${{ github.ref_name }} was not found" >&2
+            exit 1
+          fi
 
           gh release upload "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
-            --clobber \
             artifacts/*.tar.gz artifacts/*.sha256 artifacts/sbomqs-results.json
           echo "✅ Assets uploaded to release ${{ github.ref_name }}"
+
+  verify-release:
+    name: Verify published release
+    needs: [container, upload-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install pinned release verification dependencies
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all:
+          -r .github/requirements/release.txt
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify release and container publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/verify_release.py published \
+            --repository "$GITHUB_REPOSITORY" \
+            --version "${GITHUB_REF_NAME#v}" \
+            --sha "$RELEASE_SHA"

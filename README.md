@@ -811,7 +811,8 @@ Download from [GitHub Releases](https://github.com/greenbone-hive/rust-gvm/relea
 
 ### GHCR Image
 
-Tagged releases also publish a container image at `ghcr.io/clawosiris/gvm-mock-server:<tag>`.
+Tagged releases also publish a multi-platform container image at
+`ghcr.io/greenbone-hive/gvm-mock-server:<tag>` for Linux amd64 and arm64.
 
 See [docs/mock-server-consumption.md](docs/mock-server-consumption.md) for downstream CI usage guidance.
 
@@ -835,4 +836,4 @@ Copyright 2026 Greenbone AG
 
 - [python-gvm](https://github.com/greenbone/python-gvm) — Official Python GMP library
 - [gvmd](https://github.com/greenbone/gvmd) — Greenbone Vulnerability Manager daemon
-- [openvas-mcp-server](https://github.com/clawosiris/openvas-mcp-server) — MCP Server for OpenVAS/Greenbone
+- [openvas-mcp-server](https://github.com/greenbone-hive/openvas-mcp-server) — MCP Server for OpenVAS/Greenbone

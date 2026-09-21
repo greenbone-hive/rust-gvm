@@ -7,8 +7,10 @@ Releases are managed via the repository's
 
 First, update `[workspace.package].version` and `Cargo.lock` in a normal pull
 request. Merge that pull request through the protected `main` branch after all
-required review and checks pass. Then dispatch the release workflow with that
-exact version.
+required review and checks pass. Add reviewed release notes at
+`docs/releases/v<version>.md`, including a link to the corresponding migration
+guide. Then dispatch the release workflow from the exact protected `main`
+commit with that exact version.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -19,9 +21,10 @@ exact version.
                       ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    release-orchestrated.yml                              │
-│  1. Validates the version already merged through protected main          │
+│  1. Validates the exact protected-main SHA, version, lockfile, and notes  │
 │  2. Creates the changelog, tag, and GitHub release via pontos            │
-│  3. Waits for release.yml to complete                                    │
+│  3. Publishes the reviewed release notes                                 │
+│  4. Waits for the exact-SHA release.yml run to complete                  │
 └─────────────────────┬───────────────────────────────────────────────────┘
                       │ tag push triggers
                       ▼
@@ -32,6 +35,7 @@ exact version.
 │  3. Publishes Docker image to GHCR                                       │
 │  4. Generates SBOM (CycloneDX)                                           │
 │  5. Uploads all artifacts to the GitHub release                          │
+│  6. Verifies assets, checksums, attestations, and GHCR manifests          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -44,6 +48,8 @@ Versions containing a pre-release suffix, such as `0.6.0-alpha.1` or
 ## Do NOT
 
 - **Do NOT** dispatch a version that is not already merged to `main`
+- **Do NOT** dispatch from a commit other than the current protected `main` head
+- **Do NOT** dispatch without reviewed `docs/releases/v<version>.md` notes
 - **Do NOT** push version tags manually — let pontos handle it
 - **Do NOT** create GitHub releases manually — pontos + release.yml handle everything
 
@@ -60,4 +66,11 @@ Each release includes:
 
 ```bash
 gh attestation verify gvm-mock-server-linux-amd64.tar.gz --owner greenbone-hive
+gh attestation verify oci://ghcr.io/greenbone-hive/gvm-mock-server:v0.7.0 \
+  --repo greenbone-hive/rust-gvm
 ```
+
+The release workflow also runs `scripts/verify_release.py published` against
+the immutable tag and qualified commit. It rejects missing or extra assets,
+checksum or version mismatches, incomplete SBOMs, missing provenance, incorrect
+container platforms or labels, and release notes that omit the migration guide.

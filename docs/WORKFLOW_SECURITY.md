@@ -69,7 +69,7 @@ Release and nightly builds generate [Sigstore attestations](https://docs.github.
 
 ### Verifying Attestations
 ```bash
-gh attestation verify gvm-mock-server-linux-amd64.tar.gz --owner clawosiris
+gh attestation verify gvm-mock-server-linux-amd64.tar.gz --owner greenbone-hive
 ```
 
 ## Permissions
@@ -88,11 +88,15 @@ The Hetzner VPS runners (used for nightly/release builds) follow these practices
 - Runners in `docker` group for container builds
 - Consider ephemeral runners for higher security (future)
 
+Release container indexes also receive registry-backed build provenance and
+are verified with `gh attestation verify oci://...` before the release workflow
+can succeed.
+
 ## SBOM Generation
 
 Every release includes CycloneDX SBOMs:
 - Generated with pinned `cargo-cyclonedx` version
-- Quality scored with `sbomqs` (minimum 7.0/10)
+- Quality scored with `sbomqs` (minimum 8.3/10)
 - Attached to releases for supply chain transparency
 
 ## Scheduled Security Scans
