@@ -95,8 +95,8 @@ use gvm_gmp::commands::targets::{
     ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
-    create_task, delete_task, get_task, start_task, stop_task, CreateTaskOpts, GetTasksOpts,
-    ModifyTaskError, ModifyTaskOpts,
+    CreateTaskRequest, DeleteTaskRequest, GetTaskRequest, GetTasksRequest, ModifyTaskRequest,
+    ResumeTaskRequest, StartTaskRequest, StopTaskRequest, TaskPreference,
 };
 use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
@@ -258,11 +258,11 @@ async fn assert_task_report_survives_trash_and_restore(
     current_report_id: &EntityId,
 ) {
     client
-        .delete_task(task_id, false)
+        .delete_task(DeleteTaskRequest::new(task_id.clone(), false))
         .await
         .expect("stopped task should move to trash");
     let trashed = client
-        .get_tasks(gvm_gmp::commands::tasks::GetTasksOpts {
+        .get_tasks(GetTasksRequest {
             trash: Some(true),
             ..Default::default()
         })
@@ -957,6 +957,75 @@ async fn live_wire_trace_redacts_credential_store_preference_values() {
     assert!(request.contains("<name>token</name>"));
     assert!(request.contains("<value><redacted/></value>"));
     assert!(!request.contains("transport-preference-sentinel"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn canonical_task_preference_values_are_redacted_from_wire_trace() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let trace_events = Arc::clone(&events);
+    let mut client = GmpClient::connect_with_wire_trace(unix_connection(&server), move |event| {
+        trace_events.lock().expect("trace lock").push(event);
+    })
+    .await
+    .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authentication should succeed");
+    let target = client
+        .create_target(CreateTargetRequest::new(
+            "Preference trace target",
+            target_hosts(&["127.0.0.1"], &[]),
+            target_ports(),
+        ))
+        .await
+        .expect("target creation should succeed");
+    server.clear_history();
+    events.lock().expect("trace lock").clear();
+
+    let mut request = CreateTaskRequest::new(
+        "Preference trace task",
+        "daba56c8-73ec-11df-a475-002264764cea"
+            .parse()
+            .expect("config ID"),
+        target.id,
+        "08b69003-5fc2-4037-a479-93b440211c73"
+            .parse()
+            .expect("scanner ID"),
+    );
+    request.preferences.push(TaskPreference::new(
+        "custom-secret",
+        "task-preference-sentinel",
+    ));
+    client
+        .create_task(request)
+        .await
+        .expect("task creation should succeed");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let raw = std::str::from_utf8(history[0].raw_xml()).expect("UTF-8 request");
+    assert!(raw.contains("<value>task-preference-sentinel</value>"));
+
+    let trace = {
+        let events = events.lock().expect("trace lock");
+        events
+            .iter()
+            .find(|event| {
+                event.direction == WireTraceDirection::Request
+                    && event_text(event).contains("<create_task>")
+            })
+            .map(event_text)
+            .expect("task request trace")
+    };
+    assert!(trace.contains("<scanner_name>custom-secret</scanner_name>"));
+    assert!(trace.contains("<value><redacted/></value>"));
+    assert!(!trace.contains("task-preference-sentinel"));
 
     server.shutdown().await;
 }
@@ -4852,26 +4921,24 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("create_target should succeed");
     let target_id = target_response.id;
 
-    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
+    let config_id: EntityId = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
         .expect("entity id");
-    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
+    let scanner_id: EntityId = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("entity id");
     let target_entity_id = target_id;
 
     let task_response = client
-        .call(create_task(
+        .create_task(CreateTaskRequest::new(
             "Lifecycle Task",
-            &config_id,
-            &target_entity_id,
-            &scanner_id,
-            Default::default(),
+            config_id,
+            target_entity_id.clone(),
+            scanner_id,
         ))
         .await
         .expect("create_task should succeed");
-    let task_id = task_response.id().expect("task id");
-    let task_entity_id = task_id.parse().expect("entity id");
+    let task_entity_id = task_response.id;
 
     let typed_tasks = client
         .get_tasks(Default::default())
@@ -4891,31 +4958,30 @@ async fn full_crud_lifecycle_succeeds() {
     assert_eq!(typed_task.web_application_target, None);
 
     let start_response = client
-        .call(start_task(&task_entity_id))
+        .start_task(StartTaskRequest::new(task_entity_id.clone()))
         .await
         .expect("start_task should succeed");
-    assert_eq!(start_response.status_code(), Some(202));
-    assert!(start_response.child_text("report_id").is_some());
+    assert_eq!(start_response.status, 202);
+    assert!(start_response.report_id.is_some());
 
     let get_response = client
-        .call(get_task(&task_entity_id))
+        .get_task(GetTaskRequest::new(task_entity_id.clone()))
         .await
         .expect("get_task should succeed");
-    let body = get_response.as_str().expect("utf8");
-    assert!(body.contains(&task_id));
-    assert!(body.contains("Running"));
+    assert_eq!(get_response.items[0].meta.id, task_entity_id);
+    assert_eq!(get_response.items[0].status.as_deref(), Some("Running"));
 
     let stop_response = client
-        .call(stop_task(&task_entity_id))
+        .stop_task(StopTaskRequest::new(task_entity_id.clone()))
         .await
         .expect("stop_task should succeed");
-    assert_eq!(stop_response.status_code(), Some(200));
+    assert_eq!(stop_response.status, 200);
 
     let delete_task_response = client
-        .call(delete_task(&task_entity_id, true))
+        .delete_task(DeleteTaskRequest::new(task_entity_id.clone(), true))
         .await
         .expect("delete_task should succeed");
-    assert_eq!(delete_task_response.status_code(), Some(200));
+    assert_eq!(delete_task_response.status, 200);
 
     let delete_target_response = client
         .delete_target(DeleteTargetRequest::new(target_entity_id.clone(), true))
@@ -4931,7 +4997,7 @@ async fn observed_task_observers(
     task_id: &EntityId,
 ) -> TaskObservers {
     client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task should be observable")
         .items
@@ -4966,18 +5032,12 @@ async fn typed_task_observers_round_trip_create_and_modify() {
         .expect("target create should succeed");
     let config_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
     let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("scanner id");
+    let mut create =
+        CreateTaskRequest::new("Observer Task", config_id, target.id.clone(), scanner_id);
+    create.observers = vec!["alice".into(), "bob".into()];
+    create.observer_group_ids = vec![EntityId::new("group-1").expect("group id")];
     let task = client
-        .create_task(
-            "Observer Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts {
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![EntityId::new("group-1").expect("group id")],
-                ..Default::default()
-            },
-        )
+        .create_task(create)
         .await
         .expect("task create should succeed");
 
@@ -4986,64 +5046,46 @@ async fn typed_task_observers_round_trip_create_and_modify() {
     assert_eq!(created_observers.groups[0].id.as_str(), "group-1");
 
     let history_len = server.command_history().len();
+    let mut group_only = ModifyTaskRequest::new(task.id.clone());
+    group_only.observer_group_ids =
+        CollectionUpdate::replace([EntityId::new("group-2").expect("group id")]);
     let error = client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observer_group_ids: CollectionUpdate::replace([
-                    EntityId::new("group-2").expect("group id")
-                ]),
-                ..Default::default()
-            },
-        )
+        .modify_task(group_only)
         .await
         .expect_err("group-only update must be rejected before sending");
     assert!(matches!(
         error,
-        GvmError::ModifyTask(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        GvmError::Request(gvm_gmp::GmpRequestError::InvalidCombination { .. })
     ));
     assert_eq!(server.command_history().len(), history_len);
 
+    let mut replace = ModifyTaskRequest::new(task.id.clone());
+    replace.observers = CollectionUpdate::replace(["carol".into(), "dave".into()]);
+    replace.observer_group_ids =
+        CollectionUpdate::replace([EntityId::new("group-2").expect("group id")]);
     client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observers: CollectionUpdate::replace(["carol".into(), "dave".into()]),
-                observer_group_ids: CollectionUpdate::replace([
-                    EntityId::new("group-2").expect("group id")
-                ]),
-                ..Default::default()
-            },
-        )
+        .modify_task(replace)
         .await
         .expect("observer replacement should succeed");
     let modified_observers = observed_task_observers(&mut client, &task.id).await;
     assert_eq!(modified_observers.users, ["carol", "dave"]);
     assert_eq!(modified_observers.groups[0].id.as_str(), "group-2");
 
+    let mut clear_users = ModifyTaskRequest::new(task.id.clone());
+    clear_users.observers = CollectionUpdate::Clear;
     client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observers: CollectionUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_task(clear_users)
         .await
         .expect("observer-user clear should succeed");
     let users_cleared = observed_task_observers(&mut client, &task.id).await;
     assert!(users_cleared.users.is_empty());
     assert_eq!(users_cleared.groups[0].id.as_str(), "group-2");
 
+    let mut clear_all = ModifyTaskRequest::new(task.id.clone());
+    clear_all.observers = CollectionUpdate::Clear;
+    clear_all.observer_group_ids = CollectionUpdate::Clear;
     client
-        .modify_task(
-            &task.id,
-            ModifyTaskOpts {
-                observers: CollectionUpdate::Clear,
-                observer_group_ids: CollectionUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_task(clear_all)
         .await
         .expect("all-observer clear should succeed");
     let all_cleared = observed_task_observers(&mut client, &task.id).await;
@@ -5127,22 +5169,21 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
         .expect("entity id");
 
     let task_response = client
-        .create_task(
+        .create_task(CreateTaskRequest::new(
             "Trashcan Task",
-            &config_id,
-            &target_id,
-            &scanner_id,
-            Default::default(),
-        )
+            config_id,
+            target_id,
+            scanner_id,
+        ))
         .await
         .expect("create_task should succeed");
     let task_id = task_response.id;
 
     let delete_response = client
-        .call(delete_task(&task_id, false))
+        .delete_task(DeleteTaskRequest::new(task_id.clone(), false))
         .await
         .expect("delete_task should succeed");
-    assert_eq!(delete_response.status_code(), Some(200));
+    assert_eq!(delete_response.status, 200);
 
     let restore_response = client
         .restore_from_trashcan(&task_id)
@@ -5151,11 +5192,10 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
     assert_eq!(restore_response.status, 200);
 
     let get_response = client
-        .call(get_task(&task_id))
+        .get_task(GetTaskRequest::new(task_id.clone()))
         .await
         .expect("get_task should succeed");
-    let body = get_response.as_str().expect("utf8");
-    assert!(body.contains("Trashcan Task"));
+    assert_eq!(get_response.items[0].meta.name, "Trashcan Task");
 
     server.shutdown().await;
 }
@@ -5193,19 +5233,18 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
         .expect("entity id");
 
     let task_response = client
-        .create_task(
+        .create_task(CreateTaskRequest::new(
             "Typed Resume Task",
-            &config_id,
-            &target_id,
-            &scanner_id,
-            Default::default(),
-        )
+            config_id,
+            target_id.clone(),
+            scanner_id,
+        ))
         .await
         .expect("create_task should succeed");
     let task_id = task_response.id;
 
     let start_response = client
-        .start_task(&task_id)
+        .start_task(StartTaskRequest::new(task_id.clone()))
         .await
         .expect("start_task should succeed");
     assert_eq!(start_response.status, 202);
@@ -5216,14 +5255,14 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
     assert_task_report_observation(&mut client, &task_id, "Running", Some(&report_id), None).await;
 
     client
-        .stop_task(&task_id)
+        .stop_task(StopTaskRequest::new(task_id.clone()))
         .await
         .expect("stop_task should succeed");
 
     assert_task_report_observation(&mut client, &task_id, "Stopped", Some(&report_id), None).await;
 
     let resume_response = client
-        .resume_task(&task_id)
+        .resume_task(ResumeTaskRequest::new(task_id.clone()))
         .await
         .expect("resume_task should succeed");
     assert_eq!(resume_response.status, 202);
@@ -5232,13 +5271,13 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
     assert_task_report_observation(&mut client, &task_id, "Running", Some(&report_id), None).await;
 
     client
-        .stop_task(&task_id)
+        .stop_task(StopTaskRequest::new(task_id.clone()))
         .await
         .expect("resumed task should stop before trashing");
     assert_task_report_survives_trash_and_restore(&mut client, &task_id, &report_id).await;
 
     client
-        .call(delete_task(&task_id, true))
+        .delete_task(DeleteTaskRequest::new(task_id.clone(), true))
         .await
         .expect("delete_task should succeed");
     client
@@ -5307,7 +5346,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     );
 
     let started = client
-        .start_task(&task_id)
+        .start_task(StartTaskRequest::new(task_id.clone()))
         .await
         .expect("completed task should start a new run");
     let current_report_id = started.report_id.expect("start should return report ID");
@@ -5323,7 +5362,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     .await;
 
     client
-        .stop_task(&task_id)
+        .stop_task(StopTaskRequest::new(task_id.clone()))
         .await
         .expect("running task should stop");
     assert_task_report_observation(
@@ -5336,7 +5375,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     .await;
 
     let resumed = client
-        .resume_task(&task_id)
+        .resume_task(ResumeTaskRequest::new(task_id.clone()))
         .await
         .expect("stopped task should resume");
     assert_eq!(resumed.report_id.as_ref(), Some(&current_report_id));
@@ -6305,10 +6344,10 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         ))
         .await
         .expect("target create should succeed");
-    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
+    let config_id: EntityId = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
         .expect("config id");
-    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
+    let scanner_id: EntityId = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("scanner id");
     let schedule_input = |timestamp: &str| {
@@ -6336,17 +6375,16 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .expect("second schedule create should succeed");
 
     let unscheduled = client
-        .create_task(
+        .create_task(CreateTaskRequest::new(
             "Unscheduled Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts::default(),
-        )
+            config_id.clone(),
+            target.id.clone(),
+            scanner_id.clone(),
+        ))
         .await
         .expect("unscheduled task create should succeed");
     let tasks = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed");
     let unscheduled_task = tasks
@@ -6357,26 +6395,24 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     assert!(unscheduled_task.schedule.is_none());
     assert_eq!(unscheduled_task.schedule_periods, Some(0));
     client
-        .delete_task(&unscheduled.id, true)
+        .delete_task(DeleteTaskRequest::new(unscheduled.id.clone(), true))
         .await
         .expect("unscheduled task delete should succeed");
 
+    let mut create_scheduled = CreateTaskRequest::new(
+        "Scheduled Task",
+        config_id.clone(),
+        target.id.clone(),
+        scanner_id.clone(),
+    );
+    create_scheduled.schedule_id = Some(first_schedule.id.clone());
+    create_scheduled.schedule_periods = Some(3);
     let scheduled = client
-        .create_task(
-            "Scheduled Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts {
-                schedule_id: Some(first_schedule.id.clone()),
-                schedule_periods: Some(3),
-                ..Default::default()
-            },
-        )
+        .create_task(create_scheduled)
         .await
         .expect("scheduled task create should succeed");
     let observed = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6393,18 +6429,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     );
     assert_eq!(observed.schedule_periods, Some(3));
 
+    let mut preserve_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    preserve_schedule.comment = Some("schedule omitted".to_string());
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                comment: Some("schedule omitted".to_string()),
-                ..Default::default()
-            },
-        )
+        .modify_task(preserve_schedule)
         .await
         .expect("omitting schedule should preserve it");
     let preserved = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6421,18 +6453,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     );
     assert_eq!(preserved.schedule_periods, Some(3));
 
+    let mut replace_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    replace_schedule.schedule_id = ScalarUpdate::set(second_schedule.id.clone());
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::set(second_schedule.id.clone()),
-                ..Default::default()
-            },
-        )
+        .modify_task(replace_schedule)
         .await
         .expect("schedule replacement should succeed");
     let replaced = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6449,18 +6477,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     );
     assert_eq!(replaced.schedule_periods, Some(0));
 
+    let mut update_periods = ModifyTaskRequest::new(scheduled.id.clone());
+    update_periods.schedule_periods = Some(7);
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_periods: Some(7),
-                ..Default::default()
-            },
-        )
+        .modify_task(update_periods)
         .await
         .expect("period-only update should succeed");
     let period_updated = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6480,31 +6504,25 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     let missing_schedule: EntityId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         .parse()
         .expect("missing schedule id");
+    let mut missing_schedule_create = CreateTaskRequest::new(
+        "Missing Schedule Task",
+        config_id,
+        target.id.clone(),
+        scanner_id,
+    );
+    missing_schedule_create.schedule_id = Some(missing_schedule.clone());
     let create_error = client
-        .create_task(
-            "Missing Schedule Task",
-            &config_id,
-            &target.id,
-            &scanner_id,
-            CreateTaskOpts {
-                schedule_id: Some(missing_schedule.clone()),
-                ..Default::default()
-            },
-        )
+        .create_task(missing_schedule_create)
         .await
         .expect_err("missing schedule create should fail");
     assert!(
         matches!(&create_error, GvmError::Server { status: 404, .. }),
         "unexpected create error: {create_error:?}"
     );
+    let mut missing_schedule_update = ModifyTaskRequest::new(scheduled.id.clone());
+    missing_schedule_update.schedule_id = ScalarUpdate::set(missing_schedule);
     let modify_error = client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::set(missing_schedule),
-                ..Default::default()
-            },
-        )
+        .modify_task(missing_schedule_update)
         .await
         .expect_err("missing schedule replacement should fail");
     assert!(
@@ -6512,7 +6530,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         "unexpected modify error: {modify_error:?}"
     );
     let after_failed_update = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6537,18 +6555,14 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         dependency_error,
         GvmError::Server { status: 409, .. }
     ));
+    let mut clear_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    clear_schedule.schedule_id = ScalarUpdate::Clear;
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::Clear,
-                ..Default::default()
-            },
-        )
+        .modify_task(clear_schedule)
         .await
         .expect("schedule clearing should succeed");
     let cleared = client
-        .get_tasks(GetTasksOpts::default())
+        .get_tasks(GetTasksRequest::default())
         .await
         .expect("task observation should succeed")
         .items
@@ -6562,19 +6576,15 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .delete_schedule(DeleteScheduleRequest::new(second_schedule.id.clone(), true))
         .await
         .expect("detached schedule delete should succeed");
+    let mut reattach_schedule = ModifyTaskRequest::new(scheduled.id.clone());
+    reattach_schedule.schedule_id = ScalarUpdate::set(first_schedule.id.clone());
+    reattach_schedule.schedule_periods = Some(4);
     client
-        .modify_task(
-            &scheduled.id,
-            ModifyTaskOpts {
-                schedule_id: ScalarUpdate::set(first_schedule.id.clone()),
-                schedule_periods: Some(4),
-                ..Default::default()
-            },
-        )
+        .modify_task(reattach_schedule)
         .await
         .expect("schedule reattachment should succeed");
     client
-        .delete_task(&scheduled.id, false)
+        .delete_task(DeleteTaskRequest::new(scheduled.id.clone(), false))
         .await
         .expect("task trash should succeed");
     let trashed_dependency_error = client
@@ -6586,7 +6596,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         GvmError::Server { status: 409, .. }
     ));
     client
-        .delete_task(&scheduled.id, true)
+        .delete_task(DeleteTaskRequest::new(scheduled.id.clone(), true))
         .await
         .expect("permanent task delete should succeed");
     client

@@ -7,37 +7,34 @@ mod common;
 
 use common::{id, xml};
 use gvm_gmp::commands::tasks::*;
-use gvm_gmp::{CollectionUpdate, HostsOrdering};
+use gvm_gmp::{CollectionUpdate, GmpRequestCodec, GmpRequestError, GmpVersion};
+
+fn encoded(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap()
+}
 
 #[test]
 fn test_create_task_basic() {
     assert_eq!(
-        xml(create_task("foo", &id("c1"), &id("t1"), &id("s1"), Default::default())),
+        encoded(&CreateTaskRequest::new("foo", id("c1"), id("t1"), id("s1"))),
         "<create_task><name>foo</name><usage_type>scan</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/></create_task>"
     );
 }
 
 #[test]
 fn test_create_task_with_optionals() {
+    let mut request = CreateTaskRequest::new("foo", id("c1"), id("t1"), id("s1"));
+    request.alterable = Some(true);
+    request.schedule_id = Some(id("sched1"));
+    request.alert_ids = vec![id("a1"), id("a2")];
+    request.comment = Some("bar".into());
+    request.schedule_periods = Some(5);
+    request.observers = vec!["alice".into(), "bob".into()];
+    request.observer_group_ids = vec![id("group-1")];
+    request.preferences = vec![TaskPreference::new("k", "v")];
     assert_eq!(
-        xml(create_task(
-            "foo",
-            &id("c1"),
-            &id("t1"),
-            &id("s1"),
-            CreateTaskOpts {
-                alterable: Some(true),
-                hosts_ordering: Some(HostsOrdering::Random),
-                schedule_id: Some(id("sched1")),
-                alert_ids: vec![id("a1"), id("a2")],
-                comment: Some("bar".into()),
-                schedule_periods: Some(5),
-                observers: vec!["alice".into(), "bob".into()],
-                observer_group_ids: vec![id("group-1")],
-                preferences: vec![("k".into(), "v".into())],
-            }
-        )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><hosts_ordering>random</hosts_ordering><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><alert id=\"a1\"/><alert id=\"a2\"/><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+        encoded(&request),
+        "<create_task><name>foo</name><usage_type>scan</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><alert id=\"a1\"/><alert id=\"a2\"/><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
     );
 }
 
@@ -206,7 +203,7 @@ fn test_create_web_application_task_omits_schedule_periods_without_schedule() {
 #[test]
 fn test_task_mutation_and_actions() {
     assert_eq!(
-        xml(clone_task(&id("a1"))),
+        encoded(&CloneTaskRequest::new(id("a1"))),
         "<create_task><copy>a1</copy></create_task>"
     );
     assert_eq!(
@@ -222,7 +219,7 @@ fn test_task_mutation_and_actions() {
         "<create_task><name>foo</name><target id=\"0\"/><comment>bar</comment></create_task>"
     );
     assert_eq!(
-        xml(get_task(&id("a1"))),
+        encoded(&GetTaskRequest::new(id("a1"))),
         "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"scan\"/>"
     );
     assert_eq!(
@@ -233,9 +230,18 @@ fn test_task_mutation_and_actions() {
         xml(move_task(&id("a1"), Some(&id("s1")))),
         "<move_task slave_id=\"s1\" task_id=\"a1\"/>"
     );
-    assert_eq!(xml(start_task(&id("a1"))), "<start_task task_id=\"a1\"/>");
-    assert_eq!(xml(resume_task(&id("a1"))), "<resume_task task_id=\"a1\"/>");
-    assert_eq!(xml(stop_task(&id("a1"))), "<stop_task task_id=\"a1\"/>");
+    assert_eq!(
+        encoded(&StartTaskRequest::new(id("a1"))),
+        "<start_task task_id=\"a1\"/>"
+    );
+    assert_eq!(
+        encoded(&ResumeTaskRequest::new(id("a1"))),
+        "<resume_task task_id=\"a1\"/>"
+    );
+    assert_eq!(
+        encoded(&StopTaskRequest::new(id("a1"))),
+        "<stop_task task_id=\"a1\"/>"
+    );
 }
 
 #[test]
@@ -254,15 +260,46 @@ fn test_audit_and_modify_task_observers_use_user_list_text() {
         )),
         "<create_task><name>audit</name><usage_type>audit</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><observers>alice bob<group id=\"group-1\"/></observers></create_task>"
     );
+    let mut request = ModifyTaskRequest::new(id("t1"));
+    request.observers = CollectionUpdate::replace(["alice".into(), "bob".into()]);
     assert_eq!(
-        xml(modify_task(
-            &id("t1"),
-            ModifyTaskOpts {
-                observers: CollectionUpdate::replace(["alice".into(), "bob".into()]),
-                ..Default::default()
-            },
-        )
-        .expect("valid observer update"),),
+        encoded(&request),
         "<modify_task task_id=\"t1\"><observers>alice bob</observers></modify_task>"
     );
+}
+
+#[test]
+fn test_modify_task_empty_comment_is_an_explicit_clear() {
+    let mut request = ModifyTaskRequest::new(id("t1"));
+    request.comment = Some(String::new());
+
+    assert_eq!(
+        encoded(&request),
+        "<modify_task task_id=\"t1\"><comment></comment></modify_task>"
+    );
+}
+
+#[test]
+fn test_standard_task_final_text_values_are_validated() {
+    let list = GetTasksRequest {
+        filter_string: Some("name=bad\u{0}".into()),
+        ..Default::default()
+    };
+    assert!(matches!(
+        list.encode(GmpVersion(22, 8)),
+        Err(GmpRequestError::InvalidField {
+            field: "filter_string",
+            ..
+        })
+    ));
+
+    let mut create = CreateTaskRequest::new("task", id("c1"), id("t1"), id("s1"));
+    create.comment = Some("bad\u{0}".into());
+    assert!(matches!(
+        create.encode(GmpVersion(22, 8)),
+        Err(GmpRequestError::InvalidField {
+            field: "comment",
+            ..
+        })
+    ));
 }

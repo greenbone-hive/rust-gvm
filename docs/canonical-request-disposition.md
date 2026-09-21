@@ -43,8 +43,10 @@ UPDATE_CANONICAL_REQUEST_DISPOSITION=1 \
 The update command deliberately preserves stale active rows so removal remains
 an explicit reviewed decision rather than a generated side effect.
 
-After the bounded configuration/scan-config/policy lifecycle migration in #649,
-the ledger contains exactly 981 rows: 237 `transitional`, 285
-`canonical-request`, 336 `removed`, 111
-`retained-construction`, and 12 `frozen-ticket`. The inventory test protects
-both these counts and the source-to-ledger correspondence.
+After the bounded standard-task lifecycle migration in #659, the ledger
+contains exactly 992 rows: 195 `transitional`, 313 `canonical-request`, 358
+`removed`, 114 `retained-construction`, and 12 `frozen-ticket`. The three
+shared task option bags remain only because the audit-scoped lifecycle is
+deliberately deferred to #660; no standard-task request or facade accepts
+them. The inventory test protects both these counts and the source-to-ledger
+correspondence.

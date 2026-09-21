@@ -38,6 +38,9 @@ use gvm_gmp::commands::scanners::CreateScannerRequest;
 use gvm_gmp::commands::schedules::ModifyScheduleRequest;
 use gvm_gmp::commands::tags::{CreateTagRequest, TagResources};
 use gvm_gmp::commands::targets::CreateTargetRequest;
+use gvm_gmp::commands::tasks::{
+    CreateTaskRequest, GetTasksRequest, ModifyTaskRequest, TaskPreference,
+};
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
@@ -132,6 +135,55 @@ async fn invalid_report_config_request_wins_over_version_gate_and_transport() {
         error,
         GvmError::Request(GmpRequestError::InvalidField { field, .. }) if field == "name"
     ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_final_task_values_never_reach_capability_or_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    let mut create = CreateTaskRequest::new(
+        "initially valid",
+        "config-1".parse().expect("valid ID"),
+        "target-1".parse().expect("valid ID"),
+        "scanner-1".parse().expect("valid ID"),
+    );
+    create.name.clear();
+    assert!(matches!(
+        client.execute(create).await,
+        Err(GvmError::Request(GmpRequestError::InvalidField {
+            field: "name",
+            ..
+        }))
+    ));
+
+    let list = GetTasksRequest {
+        filter_string: Some("name=bad\u{0}".into()),
+        ..Default::default()
+    };
+    assert!(matches!(
+        client.execute(list).await,
+        Err(GvmError::Request(GmpRequestError::InvalidField {
+            field: "filter_string",
+            ..
+        }))
+    ));
+
+    let mut modify = ModifyTaskRequest::new("task-1".parse().expect("valid ID"));
+    modify.preferences = vec![TaskPreference::new("auto_delete", "invalid")];
+    assert!(matches!(
+        client.execute(modify).await,
+        Err(GvmError::Request(GmpRequestError::InvalidField {
+            field: "preferences.value",
+            ..
+        }))
+    ));
+
     assert!(server.command_history().is_empty());
     server.shutdown().await;
 }

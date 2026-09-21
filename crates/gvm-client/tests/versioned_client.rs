@@ -37,7 +37,7 @@ use gvm_gmp::commands::web_application_targets::{
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
     GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
-use gvm_gmp::{EntityId, GmpVersion};
+use gvm_gmp::{EntityId, GmpRequestCodec, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 async fn stateful_server(version: MockVersion) -> Option<MockGmpServer> {
@@ -111,8 +111,11 @@ async fn delete_task(server: &MockGmpServer, task_id: &EntityId) {
         ))
         .await
         .expect("task cleanup authentication should succeed");
+    let request = gvm_gmp::commands::tasks::DeleteTaskRequest::new(task_id.clone(), true)
+        .encode(GmpVersion(22, 8))
+        .expect("valid task deletion");
     client
-        .call(gvm_gmp::commands::tasks::delete_task(task_id, true))
+        .call(request.as_slice())
         .await
         .expect("delete referencing task should succeed");
 }

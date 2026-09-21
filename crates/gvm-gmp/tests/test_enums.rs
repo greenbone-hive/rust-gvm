@@ -501,17 +501,6 @@ canonical_inventory!(
 );
 
 canonical_inventory!(
-    hosts_ordering_wire_inventory,
-    HostsOrdering,
-    {
-        Sequential => ("sequential", Sequential),
-        Random => ("random", Random),
-        Reverse => ("reverse", Reverse),
-    },
-    aliases {}
-);
-
-canonical_inventory!(
     info_type_wire_inventory,
     InfoType,
     {

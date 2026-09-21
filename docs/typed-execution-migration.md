@@ -173,6 +173,51 @@ transport, including clone and detail semantic aliases over the create and
 list wire roots. Specialized `create_agent_group_task` remains in the task
 family and is not changed by this migration.
 
+## Standard task family
+
+The nine standard scan-task operations now use complete canonical request
+values. Their named client methods accept the same values unchanged and call
+`execute` only:
+
+```rust
+use gvm_gmp::commands::tasks::{
+    CreateTaskRequest, ModifyTaskRequest, StartTaskRequest, TaskPreference,
+};
+use gvm_gmp::{CollectionUpdate, ScalarUpdate};
+
+let mut create = CreateTaskRequest::new(
+    "nightly scan", config_id, target_id, scanner_id,
+);
+create.schedule_id = Some(schedule_id);
+create.schedule_periods = Some(5);
+create.observers = vec!["alice".into()];
+create.preferences.push(TaskPreference::new("auto_delete", "keep"));
+let task = client.create_task(create).await?;
+
+let mut modify = ModifyTaskRequest::new(task.id.clone());
+modify.schedule_id = ScalarUpdate::Clear;
+modify.alert_ids = CollectionUpdate::Clear;
+modify.observers = CollectionUpdate::Clear;
+client.modify_task(modify).await?;
+client.start_task(StartTaskRequest::new(task.id)).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`GetTasksOpts`, `CreateTaskOpts`, and `ModifyTaskOpts` are no longer accepted
+by standard task requests or facades. They remain temporarily public only for
+the audit lifecycle deferred to #660. The nine free standard-task builders
+are removed.
+
+Schedule uses `ScalarUpdate` to distinguish preserve, replace, and detach;
+alerts and observers use `CollectionUpdate`. A group update must include an
+explicit user replacement or clear because both share gvmd's `<observers>`
+container. Target/config/scanner relationships are replace-or-preserve.
+Clone exposes comment and alterable overrides but no unsupported name
+override. The stale `hosts_ordering` request input is removed because pinned
+gvmd does not parse it and dropped its database column. Preference values are
+redacted from diagnostics and traces. See the
+[pinned gvmd evidence](task-request-gvmd-evidence.md).
+
 ## Agent family
 
 The agent slice removes `GetAgentsOpts`, `ModifyAgentOpts`,

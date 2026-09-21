@@ -306,7 +306,6 @@ pub enum EntityType { Alert, Asset, AuditReport, CertBundAdv, Config, Cpe, Crede
 pub enum FeedType { Nvt, Cert, Scap, Gvmd }
 pub enum FilterType { Alert, Asset, Config, Credential, Filter, Group, Host, Note, Override, Permission, PortList, Report, ReportFormat, Result, Role, Scanner, Schedule, Setting, Tag, Target, Task, Ticket, TlsCertificate, User, Vulnerability }
 pub enum HelpFormat { Html, Rnc, Text, Xml }
-pub enum HostsOrdering { Sequential, Random, Reverse }
 pub enum InfoType { CertBundAdv, Cpe, Cve, DfnCertAdv, Nvt, Ovaldef }
 pub enum PermissionSubjectType { Group, Role, User }
 pub enum PortRangeType { Tcp, Udp }
@@ -320,66 +319,32 @@ pub enum TicketStatus { Open, Fixed, Closed }
 pub enum UserAuthType { File, LdapConnect, RadiusConnect }
 ```
 
-#### Command Builder Pattern (Example: Tasks)
+#### Canonical Request Pattern (Example: Standard Tasks)
 
 ```rust
-pub struct Tasks;
-
-impl Tasks {
-    pub fn clone_task(task_id: &EntityId) -> impl Request;
-
-    pub fn create_container_task(
-        name: &str,
-        comment: Option<&str>,
-    ) -> impl Request;
-
-    pub fn create_task(
-        name: &str,
-        config_id: &EntityId,
-        target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateTaskOpts,
-    ) -> impl Request;
-
-    pub fn delete_task(
-        task_id: &EntityId,
-        ultimate: bool,
-    ) -> impl Request;
-
-    pub fn get_tasks(opts: GetTasksOpts) -> impl Request;
-    pub fn get_task(task_id: &EntityId) -> impl Request;
-    pub fn modify_task(
-        task_id: &EntityId,
-        opts: ModifyTaskOpts,
-    ) -> Result<impl Request, ModifyTaskError>;
-    pub fn move_task(task_id: &EntityId, slave_id: Option<&EntityId>) -> impl Request;
-    pub fn start_task(task_id: &EntityId) -> impl Request;
-    pub fn resume_task(task_id: &EntityId) -> impl Request;
-    pub fn stop_task(task_id: &EntityId) -> impl Request;
-}
-
-#[derive(Default)]
-pub struct CreateTaskOpts {
+pub struct CreateTaskRequest {
+    pub name: String,
+    pub config_id: EntityId,
+    pub target_id: EntityId,
+    pub scanner_id: EntityId,
     pub alterable: Option<bool>,
-    pub hosts_ordering: Option<HostsOrdering>,
     pub schedule_id: Option<EntityId>,
     pub alert_ids: Vec<EntityId>,
     pub comment: Option<String>,
     pub schedule_periods: Option<u32>,
     pub observers: Vec<String>,
     pub observer_group_ids: Vec<EntityId>,
-    pub preferences: HashMap<String, String>,
+    pub preferences: Vec<TaskPreference>,
 }
 
-#[derive(Default)]
-pub struct ModifyTaskOpts {
-    // Other optional task fields omitted here.
+pub struct ModifyTaskRequest {
+    pub task_id: EntityId,
+    // Scalar and other optional task fields omitted here.
     pub observers: CollectionUpdate<String>,
     pub observer_group_ids: CollectionUpdate<EntityId>,
 }
 
-#[derive(Default)]
-pub struct GetTasksOpts {
+pub struct GetTasksRequest {
     pub filter_string: Option<String>,
     pub filter_id: Option<EntityId>,
     pub trash: Option<bool>,
@@ -389,9 +354,14 @@ pub struct GetTasksOpts {
 }
 ```
 
-`ModifyTaskOpts::observers` distinguishes omission, replacement, and clearing.
+The nine standard list/detail/create/clone/modify/delete/start/stop/resume
+requests implement their own codec and fixed response association. Named
+client methods accept each request unchanged and delegate to `execute`.
+Specialized creation, `move_task`, and audit aliases remain separate surfaces.
+
+`ModifyTaskRequest::observers` distinguishes omission, replacement, and clearing.
 Updating `observer_group_ids` requires `observers` to explicitly replace or
-clear the user list; a group-only update returns `ModifyTaskError`.
+clear the user list; a group-only update fails final-value validation.
 
 #### Full GMP Command Coverage
 

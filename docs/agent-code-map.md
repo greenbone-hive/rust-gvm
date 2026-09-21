@@ -46,6 +46,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   evidence for generic configuration, scan-configuration, and policy
   lifecycle plus preference reads/mutations, NVT/family replacement,
   confidentiality, atomic rollback, and bounded stateful behavior.
+- `docs/task-request-gvmd-evidence.md`: pinned/current gvmd evidence for the
+  nine canonical standard-task operations, including clone overrides,
+  observer/alert/schedule/preference semantics, removed host ordering,
+  transactional mock updates, and report-producing state actions.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -92,6 +96,10 @@ Adding or changing a GMP command:
   Scan-configuration and policy lifecycle, preference, and selection behavior
   is isolated in `stateful_scan_configs.rs`; atomic store application lives in
   `store.rs`.
+  Standard task parsing/rendering lives in `handler.rs`; relationship and
+  candidate-copy rollback plus start/stop/resume report state live in
+  `store.rs`, with bounded coverage in `stateful_task_lifecycle.rs` and
+  `stateful_task_graph.rs`.
 
 Changing response parsing:
 

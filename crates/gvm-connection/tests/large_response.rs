@@ -7,7 +7,7 @@
 use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
 use gvm_gmp::commands::reports::get_report;
 use gvm_gmp::commands::scan_configs::GetScanConfigsRequest;
-use gvm_gmp::commands::tasks::{create_task, start_task, CreateTaskOpts};
+use gvm_gmp::commands::tasks::{CreateTaskRequest, StartTaskRequest};
 use gvm_gmp::types::EntityId;
 use gvm_gmp::GmpRequestCodec;
 use gvm_mock_server::{GmpVersion, LargeReportConfig, MockGmpServer, ServerMode};
@@ -107,17 +107,11 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
             .expect("get_scan_configs response should be utf8"),
     );
 
-    let task_response = send(
-        conn,
-        create_task(
-            "large-response-task",
-            &config_id,
-            &target_id,
-            &scanner_id,
-            CreateTaskOpts::default(),
-        ),
-    )
-    .await;
+    let task_request =
+        CreateTaskRequest::new("large-response-task", config_id, target_id, scanner_id)
+            .encode(gvm_gmp::GmpVersion(22, 5))
+            .expect("valid create-task request");
+    let task_response = send(conn, task_request.as_slice()).await;
     assert_eq!(task_response.status_code(), Some(201));
     let task_id: EntityId = task_response
         .id()
@@ -125,7 +119,10 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
         .parse()
         .expect("entity id");
 
-    let start_response = send(conn, start_task(&task_id)).await;
+    let start_request = StartTaskRequest::new(task_id)
+        .encode(gvm_gmp::GmpVersion(22, 5))
+        .expect("valid start-task request");
+    let start_response = send(conn, start_request.as_slice()).await;
     assert_eq!(start_response.status_code(), Some(202));
     let report_id: EntityId = start_response
         .child_text("report_id")
