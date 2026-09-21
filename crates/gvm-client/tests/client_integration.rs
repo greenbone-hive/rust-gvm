@@ -68,10 +68,11 @@ use gvm_gmp::commands::reports::{
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::{
     CloneScanConfigRequest, CreatePolicyRequest, CreateScanConfigRequest, DeleteScanConfigRequest,
-    GetPoliciesRequest, GetPolicyRequest, GetScanConfigPreferencesOpts, GetScanConfigRequest,
-    GetScanConfigsRequest, ImportPolicyRequest, ImportScanConfigRequest,
-    ModifyPolicySetCommentRequest, ModifyPolicySetNameRequest, ModifyScanConfigRequest,
-    ModifyScanConfigSetCommentRequest, ModifyScanConfigSetNameRequest,
+    GetPoliciesRequest, GetPolicyRequest, GetScanConfigPreferenceRequest,
+    GetScanConfigPreferencesRequest, GetScanConfigRequest, GetScanConfigsRequest,
+    ImportPolicyRequest, ImportScanConfigRequest, ModifyPolicySetCommentRequest,
+    ModifyPolicySetNameRequest, ModifyScanConfigRequest, ModifyScanConfigSetCommentRequest,
+    ModifyScanConfigSetNameRequest,
 };
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
@@ -3065,34 +3066,40 @@ async fn preference_getters_send_expected_mock_server_commands() {
         .expect("authenticate should succeed");
     server.clear_history();
 
-    let opts = GetScanConfigPreferencesOpts {
-        nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
-        config_id: Some(EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("valid id")),
-    };
-    let responses = [
-        client
-            .get_scan_config_preferences(opts.clone())
-            .await
-            .expect("scan-config preferences request should succeed"),
-        client
-            .get_scan_config_preference("timeout", opts)
-            .await
-            .expect("scan-config preference request should succeed"),
-        client
-            .get_nvt_preferences(GetNvtPreferencesRequest {
-                nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
-            })
-            .await
-            .expect("nvt preferences request should succeed"),
-        client
-            .get_nvt_preference(GetNvtPreferenceRequest {
-                preference: "timeout".into(),
-                nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
-            })
-            .await
-            .expect("nvt preference request should succeed"),
-    ];
-    assert!(responses.iter().all(|response| response.status == 200));
+    let config_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("valid id");
+    let list = client
+        .execute(GetScanConfigPreferencesRequest {
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+            config_id: Some(config_id.clone()),
+        })
+        .await
+        .expect("scan-config preferences request should succeed");
+    assert_eq!(list.status, 200);
+    let single = client
+        .execute(GetScanConfigPreferenceRequest {
+            preference: "radio:Mode".into(),
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+            config_id: Some(config_id),
+        })
+        .await
+        .expect("scan-config preference request should succeed");
+    assert_eq!(single.status, 200);
+    assert!(single.item.is_some());
+    let nvt_list = client
+        .get_nvt_preferences(GetNvtPreferencesRequest {
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+        })
+        .await
+        .expect("nvt preferences request should succeed");
+    assert_eq!(nvt_list.status, 200);
+    let nvt_single = client
+        .get_nvt_preference(GetNvtPreferenceRequest {
+            preference: "radio:Mode".into(),
+            nvt_oid: Some("1.3.6.1.4.1.25623.1".into()),
+        })
+        .await
+        .expect("nvt preference request should succeed");
+    assert_eq!(nvt_single.status, 200);
 
     let history = server.command_history();
     assert_eq!(history.len(), 4);
@@ -3109,7 +3116,7 @@ async fn preference_getters_send_expected_mock_server_commands() {
     );
     assert_eq!(
         commands[1],
-        "<get_preferences config_id=\"daba56c8-73ec-11df-a475-002264764cea\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"timeout\"/>"
+        "<get_preferences config_id=\"daba56c8-73ec-11df-a475-002264764cea\" nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
     );
     assert_eq!(
         commands[2],
@@ -3117,7 +3124,7 @@ async fn preference_getters_send_expected_mock_server_commands() {
     );
     assert_eq!(
         commands[3],
-        "<get_preferences nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"timeout\"/>"
+        "<get_preferences nvt_oid=\"1.3.6.1.4.1.25623.1\" preference=\"radio:Mode\"/>"
     );
 
     server.shutdown().await;

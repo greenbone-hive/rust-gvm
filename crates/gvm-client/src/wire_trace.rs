@@ -330,6 +330,25 @@ mod tests {
     }
 
     #[test]
+    fn redacts_scan_config_preference_requests_and_responses() {
+        for xml in [
+            br#"<modify_config config_id="c1"><preference><nvt oid="1.3.6.1"/><name>password</name><value>request-secret</value></preference></modify_config>"#.as_slice(),
+            br#"<get_preferences_response status="200" status_text="OK"><preference><name>Password</name><value>configured-secret</value><default>default-secret</default><alt>alternate-secret</alt></preference></get_preferences_response>"#.as_slice(),
+        ] {
+            let redacted = String::from_utf8(redact_wire_bytes(xml)).expect("valid UTF-8");
+            assert!(redacted.contains("<redacted/>"));
+            for secret in [
+                "request-secret",
+                "configured-secret",
+                "default-secret",
+                "alternate-secret",
+            ] {
+                assert!(!redacted.contains(secret));
+            }
+        }
+    }
+
+    #[test]
     fn malformed_or_unsafe_xml_fails_closed() {
         for xml in [
             "<root><password>secret",

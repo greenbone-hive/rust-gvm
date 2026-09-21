@@ -13,9 +13,15 @@ use gvm_gmp::commands::configs::{
 use gvm_gmp::commands::scan_configs::{
     ClonePolicyRequest, CloneScanConfigRequest, CreatePolicyRequest, CreateScanConfigRequest,
     DeletePolicyRequest, DeleteScanConfigRequest, GetPoliciesRequest, GetPolicyRequest,
-    GetScanConfigRequest, GetScanConfigsRequest, ImportPolicyRequest, ImportScanConfigRequest,
-    ModifyPolicyRequest, ModifyPolicySetCommentRequest, ModifyPolicySetNameRequest,
-    ModifyScanConfigRequest, ModifyScanConfigSetCommentRequest, ModifyScanConfigSetNameRequest,
+    GetScanConfigPreferenceRequest, GetScanConfigPreferencesRequest, GetScanConfigRequest,
+    GetScanConfigsRequest, ImportPolicyRequest, ImportScanConfigRequest, ModifyPolicyRequest,
+    ModifyPolicySetCommentRequest, ModifyPolicySetFamilySelectionRequest,
+    ModifyPolicySetNameRequest, ModifyPolicySetNvtPreferenceRequest,
+    ModifyPolicySetNvtSelectionRequest, ModifyPolicySetScannerPreferenceRequest,
+    ModifyScanConfigRequest, ModifyScanConfigSetCommentRequest,
+    ModifyScanConfigSetFamilySelectionRequest, ModifyScanConfigSetNameRequest,
+    ModifyScanConfigSetNvtPreferenceRequest, ModifyScanConfigSetNvtSelectionRequest,
+    ModifyScanConfigSetScannerPreferenceRequest, NvtFamilySelection,
 };
 use gvm_gmp::EntityId;
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
@@ -55,6 +61,10 @@ async fn server(version: GmpVersion) -> MockGmpServer {
             r#"<modify_config_response status="200" status_text="OK"/>"#,
         )
         .override_response(
+            "get_preferences",
+            r#"<get_preferences_response status="200" status_text="OK"><preference><nvt oid="1.3.6.1.4.1.25623.1.0.100000"><name>Fixture NVT</name></nvt><name>1.3.6.1.4.1.25623.1.0.100000:1:entry:Timeout</name><hr_name>Timeout</hr_name><id>1</id><type>entry</type><value>30</value><default>10</default></preference></get_preferences_response>"#,
+        )
+        .override_response(
             "delete_config",
             r#"<delete_config_response status="200" status_text="OK"/>"#,
         )
@@ -68,7 +78,7 @@ fn connection(server: &MockGmpServer) -> UnixSocketConnection {
 }
 
 #[tokio::test]
-async fn all_twenty_four_lifecycle_requests_execute_with_static_associations_at_baseline() {
+async fn all_thirty_four_requests_execute_with_static_associations_at_baseline() {
     let server = server(GmpVersion::V22_4).await;
     let mut client = GmpClient::connect(connection(&server))
         .await
@@ -179,8 +189,91 @@ async fn all_twenty_four_lifecycle_requests_execute_with_static_associations_at_
         .await
         .expect("policy delete");
 
+    let mut list_preferences = GetScanConfigPreferencesRequest::new();
+    list_preferences.config_id = Some(id());
+    client
+        .execute(list_preferences)
+        .await
+        .expect("preference list");
+    let mut one_preference = GetScanConfigPreferenceRequest::new("entry:Timeout");
+    one_preference.config_id = Some(id());
+    client
+        .execute(one_preference)
+        .await
+        .expect("single preference");
+    client
+        .execute(ModifyScanConfigSetNvtPreferenceRequest::new(
+            id(),
+            "1.3.6.1.4.1.25623.1.0.100000:1:entry:Timeout",
+            "1.3.6.1.4.1.25623.1.0.100000",
+            Some("30".into()),
+        ))
+        .await
+        .expect("scan NVT preference");
+    client
+        .execute(ModifyScanConfigSetScannerPreferenceRequest::new(
+            id(),
+            "max_checks",
+            Some("4".into()),
+        ))
+        .await
+        .expect("scan scanner preference");
+    client
+        .execute(ModifyScanConfigSetNvtSelectionRequest::new(
+            id(),
+            "General",
+            vec!["1.3.6.1.4.1.25623.1.0.100000".into()],
+        ))
+        .await
+        .expect("scan NVT selection");
+    client
+        .execute(ModifyScanConfigSetFamilySelectionRequest::new(
+            id(),
+            vec![NvtFamilySelection {
+                name: "General".into(),
+                growing: true,
+                all: false,
+            }],
+            true,
+        ))
+        .await
+        .expect("scan family selection");
+    client
+        .execute(ModifyPolicySetNvtPreferenceRequest::new(
+            id(),
+            "1.3.6.1.4.1.25623.1.0.100000:1:entry:Timeout",
+            "1.3.6.1.4.1.25623.1.0.100000",
+            None,
+        ))
+        .await
+        .expect("policy NVT preference delete");
+    client
+        .execute(ModifyPolicySetScannerPreferenceRequest::new(
+            id(),
+            "max_checks",
+            Some(String::new()),
+        ))
+        .await
+        .expect("policy scanner preference empty value");
+    client
+        .execute(ModifyPolicySetNvtSelectionRequest::new(
+            id(),
+            "General",
+            Vec::new(),
+        ))
+        .await
+        .expect("policy NVT selection clear");
+    client
+        .execute(ModifyPolicySetFamilySelectionRequest::new(
+            id(),
+            Vec::new(),
+            false,
+        ))
+        .await
+        .expect("policy family selection clear");
+
     let history = server.command_history();
-    assert_eq!(history.len(), 24);
+    assert_eq!(history.len(), 34);
     assert_eq!(
         history
             .iter()
@@ -200,7 +293,14 @@ async fn all_twenty_four_lifecycle_requests_execute_with_static_associations_at_
             .iter()
             .filter(|record| record.command_name() == "modify_config")
             .count(),
-        7
+        15
+    );
+    assert_eq!(
+        history
+            .iter()
+            .filter(|record| record.command_name() == "get_preferences")
+            .count(),
+        2
     );
     assert_eq!(
         history
@@ -329,6 +429,33 @@ async fn invalid_mutated_import_fails_before_transport_without_exposing_xml() {
 }
 
 #[tokio::test]
+async fn invalid_final_preference_value_wins_before_capability_and_transport() {
+    let server = server(GmpVersion::V22_4).await;
+    let mut client = GmpClient::connect(connection(&server))
+        .await
+        .expect("client connects");
+    server.clear_history();
+
+    let secret = "do-not-leak-658";
+    let mut request = ModifyPolicySetNvtPreferenceRequest::new(
+        id(),
+        "1.3.6.1.4.1.25623.1.0.100000:1:radio:Mode",
+        "1.3.6.1.4.1.25623.1.0.100000",
+        Some(secret.into()),
+    );
+    request.value = Some(String::new());
+    let error = client
+        .execute(request)
+        .await
+        .expect_err("mutated empty radio value must fail before send");
+    assert!(matches!(error, GvmError::Request(_)));
+    assert!(!format!("{error:?} {error}").contains(secret));
+    assert!(server.command_history().is_empty());
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn lifecycle_requests_are_inherited_by_every_versioned_client_family() {
     for version in [
         GmpVersion::V22_4,
@@ -344,10 +471,10 @@ async fn lifecycle_requests_are_inherited_by_every_versioned_client_family() {
         server.clear_history();
 
         let response = client
-            .execute(GetConfigsRequest::new())
+            .execute(GetScanConfigPreferenceRequest::new("entry:Timeout"))
             .await
-            .expect("baseline lifecycle request executes");
-        assert_eq!(response.items.len(), 1);
+            .expect("canonical preference request executes");
+        assert!(response.item.is_some());
         assert_eq!(server.command_history().len(), 1);
 
         server.shutdown().await;

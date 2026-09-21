@@ -5,11 +5,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use base64::Engine as _;
 use uuid::Uuid;
 
 use crate::command_parser::{ParsedCommand, ParsedElement};
 use crate::response_gen::error_response;
-use crate::store::{Resource, ResourceStore, StoreError};
+use crate::store::{
+    ConfigFamilySelectionEntry, ConfigFamilySelectionUpdate, ConfigMutation, ConfigMutationAction,
+    ConfigNvtSelectionUpdate, ConfigPreferenceUpdate, Resource, ResourceStore, StoreError,
+};
 use crate::util::{xml_escape, xml_escape_attr};
 
 pub(crate) fn handle_create(cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
@@ -304,12 +308,27 @@ fn render_config(
 ) -> String {
     let (nvts, configured_preferences) = store.config_observation(&config.id);
     let discovery = store.discovery_snapshot();
-    let family_names: BTreeSet<_> = nvts
+    let selected_family_names: BTreeSet<_> = nvts
         .iter()
         .filter_map(|oid| discovery.nvts.get(oid).map(|nvt| nvt.family.clone()))
         .collect();
+    let mut family_names = config
+        .attr("config_family_order")
+        .map(|value| {
+            value
+                .split('\u{1f}')
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| selected_family_names.iter().cloned().collect());
+    for family in selected_family_names {
+        if !family_names.contains(&family) {
+            family_names.push(family);
+        }
+    }
     let mut xml = format!(
-        "<config id=\"{}\"><owner><name>admin</name></owner><name>{}</name><comment>{}</comment><creation_time>{}</creation_time><modification_time>{}</modification_time><writable>{}</writable><in_use>{}</in_use><usage_type>{}</usage_type><type>0</type><predefined>{}</predefined><family_count>{}<growing>0</growing></family_count><nvt_count>{}<growing>0</growing></nvt_count>",
+        "<config id=\"{}\"><owner><name>admin</name></owner><name>{}</name><comment>{}</comment><creation_time>{}</creation_time><modification_time>{}</modification_time><writable>{}</writable><in_use>{}</in_use><usage_type>{}</usage_type><type>0</type><predefined>{}</predefined><family_count>{}<growing>{}</growing></family_count><nvt_count>{}<growing>0</growing></nvt_count>",
         config.id,
         xml_escape(&config.name),
         xml_escape(&config.comment),
@@ -320,6 +339,7 @@ fn render_config(
         xml_escape(config.attr("usage_type").unwrap_or("scan")),
         config.attr("predefined").unwrap_or("0"),
         family_names.len(),
+        config.attr("config_families_growing").unwrap_or("0"),
         nvts.len(),
     );
     if families || details {
@@ -334,9 +354,17 @@ fn render_config(
                         .is_some_and(|nvt| &nvt.family == family)
                 })
                 .count();
+            let max_count = discovery
+                .nvts
+                .values()
+                .filter(|nvt| &nvt.family == family)
+                .count();
+            let growing = config
+                .attr(&format!("config_family_growing:{family}"))
+                .unwrap_or("0");
             xml.push_str(&format!(
-                "<family><name>{}</name><nvt_count>{count}<growing>0</growing></nvt_count></family>",
-                xml_escape(family)
+                "<family><name>{}</name><nvt_count>{count}</nvt_count><max_nvt_count>{max_count}</max_nvt_count><growing>{growing}</growing></family>",
+                xml_escape(family),
             ));
         }
         xml.push_str("</families>");
@@ -406,30 +434,134 @@ fn render_config(
 }
 
 pub(crate) fn handle_modify(cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
-    if cmd.children.iter().any(|child| {
-        matches!(
-            child.name.as_str(),
-            "preference" | "nvt_selection" | "family_selection"
-        )
-    }) {
-        return error_response(
-            &cmd.name,
-            400,
-            "Mock limitation: configured preference and selection mutations are deferred",
-        );
-    }
     let Some(id) = cmd.attr("config_id") else {
         return error_response(&cmd.name, 400, "Missing config_id");
     };
     let Ok(id) = Uuid::parse_str(id) else {
         return error_response(&cmd.name, 400, "Invalid config_id");
     };
-    let name = child(cmd, "name").map(element_text);
-    let comment = child(cmd, "comment").map(element_text);
-    match store.modify_config_metadata(&id, name, comment) {
+    let mutation = match parse_mutation(cmd) {
+        Ok(mutation) => mutation,
+        Err(message) => return error_response(&cmd.name, 400, message),
+    };
+    match store.modify_config_atomic(&id, mutation) {
         Ok(()) => b"<modify_config_response status=\"200\" status_text=\"OK\"/>".to_vec(),
         Err(error) => store_error(&cmd.name, &error),
     }
+}
+
+fn parse_mutation(cmd: &ParsedCommand) -> Result<ConfigMutation, &'static str> {
+    let mut mutation = ConfigMutation {
+        name: child(cmd, "name").map(element_text).map(str::to_string),
+        comment: child(cmd, "comment").map(element_text).map(str::to_string),
+        actions: Vec::new(),
+    };
+    for child in &cmd.children {
+        let action = match child.name.as_str() {
+            "preference" => Some(ConfigMutationAction::Preference(parse_preference_update(
+                child,
+            )?)),
+            "nvt_selection" => Some(ConfigMutationAction::NvtSelection(
+                parse_nvt_selection_update(child)?,
+            )),
+            "family_selection" => Some(ConfigMutationAction::FamilySelection(
+                parse_family_selection_update(child)?,
+            )),
+            _ => None,
+        };
+        if let Some(action) = action {
+            mutation.actions.push(action);
+        }
+    }
+    Ok(mutation)
+}
+
+fn parse_preference_update(
+    preference: &ParsedElement,
+) -> Result<ConfigPreferenceUpdate, &'static str> {
+    let name = child_element(preference, "name")
+        .map(element_text)
+        .filter(|name| !name.is_empty())
+        .ok_or("Preference name is required")?;
+    let nvt_oid = child_element(preference, "nvt")
+        .map(|nvt| {
+            nvt.attributes
+                .get("oid")
+                .filter(|oid| !oid.is_empty())
+                .cloned()
+                .ok_or("Preference NVT OID is required")
+        })
+        .transpose()?;
+    let value = child_element(preference, "value")
+        .map(|value| {
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(element_text(value))
+                .map_err(|_| "Preference value must be valid base64")?;
+            String::from_utf8(decoded).map_err(|_| "Preference value must decode to UTF-8")
+        })
+        .transpose()?;
+    Ok(ConfigPreferenceUpdate {
+        nvt_oid,
+        name: name.to_string(),
+        value,
+    })
+}
+
+fn parse_nvt_selection_update(
+    selection: &ParsedElement,
+) -> Result<ConfigNvtSelectionUpdate, &'static str> {
+    let family = child_element(selection, "family")
+        .map(element_text)
+        .filter(|family| !family.is_empty())
+        .ok_or("NVT selection family is required")?;
+    let mut nvt_oids = Vec::new();
+    for nvt in selection
+        .children
+        .iter()
+        .filter(|child| child.name == "nvt")
+    {
+        let oid = nvt
+            .attributes
+            .get("oid")
+            .filter(|oid| !oid.is_empty())
+            .ok_or("Selected NVT OID is required")?;
+        nvt_oids.push(oid.clone());
+    }
+    Ok(ConfigNvtSelectionUpdate {
+        family: family.to_string(),
+        nvt_oids,
+    })
+}
+
+fn parse_family_selection_update(
+    selection: &ParsedElement,
+) -> Result<ConfigFamilySelectionUpdate, &'static str> {
+    let mut families = Vec::new();
+    for family in selection
+        .children
+        .iter()
+        .filter(|child| child.name == "family")
+    {
+        let name = child_element(family, "name")
+            .map(element_text)
+            .filter(|name| !name.is_empty())
+            .ok_or("Family selection name is required")?;
+        families.push(ConfigFamilySelectionEntry {
+            name: name.to_string(),
+            growing: child_element(family, "growing")
+                .map(element_text)
+                .is_some_and(|value| value != "0"),
+            all: child_element(family, "all")
+                .map(element_text)
+                .is_some_and(|value| value != "0"),
+        });
+    }
+    Ok(ConfigFamilySelectionUpdate {
+        families,
+        auto_add_new_families: child_element(selection, "growing")
+            .map(element_text)
+            .is_some_and(|value| value != "0"),
+    })
 }
 
 pub(crate) fn handle_delete(cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
