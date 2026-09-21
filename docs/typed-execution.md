@@ -1,9 +1,9 @@
 # Typed request/response execution
 
 The Technology Preview client provides typed execution described by issue
-#523. ADR 0002 makes issue #602 a pre-release convergence gate: the current
-builder-backed request wrappers remain available during bounded migration, but
-complete request values become the canonical input before publication.
+#523. ADR 0002 made issue #602 a pre-release convergence gate, and issue #678
+completed the exported-surface audit. Complete request values are now the
+canonical input throughout the supported non-ticket surface.
 Each migrated semantic request implements `GmpRequest` and selects exactly one
 `GmpResponse` through an associated type:
 
@@ -20,8 +20,8 @@ the request to `execute` determines the result type at compile time.
 
 ## Compatibility APIs
 
-Typed convenience methods may remain during bounded family migration when they
-improve discoverability. Canonical methods accept the same complete request and
+Typed convenience methods remain where they improve domain discoverability.
+Canonical methods accept the same complete request and
 delegate to `execute` without maintaining a parallel input model:
 
 ```rust
@@ -30,10 +30,9 @@ use gvm_gmp::commands::targets::GetTargetsRequest;
 let response = client.get_targets(GetTargetsRequest::default()).await?;
 ```
 
-Existing command builders in unconverted families remain available until their
-ledger disposition is reviewed. The standard target builders were removed with
-their canonical requests. Raw `send` and `call` remain supported; use them for custom XML,
-commands that have not migrated, or response details not yet represented by a
+Redundant public command builders and option bags are removed. The deliberately
+frozen ticket builders remain unchanged. Raw `send` and `call` remain
+supported; use them for custom XML or response details not represented by a
 typed model:
 
 ```rust
@@ -129,11 +128,10 @@ errors. `execute` validates the final request, applies negotiated-version/help
 checks from `GmpCommand`, then encodes and enters the shared redacted transport
 path. Unknown custom names retain the raw path's forward compatibility. A
 semantic alias supplied by `GmpCommand::with_semantic_name` is checked before
-its shared wire command. Existing builder-backed request wrappers use the
-temporary raw adapter until their family conversion. The standard target
-family implements this contract directly and serves as the reference slice.
+its shared wire command. The standard target family remains the reference slice
+for this contract.
 
-## Authoring a migrated command
+## Authoring a canonical command
 
 1. Define one complete semantic request struct in the owning `gvm-gmp` command
    module, containing required and optional inputs.

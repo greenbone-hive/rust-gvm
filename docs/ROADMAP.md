@@ -34,9 +34,11 @@ validation remains a separate follow-up.
 The current `main` branch is the unreleased `0.7.0` development line. It is
 intentionally SemVer-incompatible with `v0.6.0`: issue #602 replaces temporary
 parallel options/builders/facade inputs with canonical complete request values
-before the next downstream-ready release. The release remains gated on the
-final #602 surface audit and `rust-gvm-api#457` validation. See the
-[v0.7.0 migration guide](v0.7.0-migration.md) for caller-visible changes.
+before the next downstream-ready release. Issue #678 completes the final
+surface audit with 1,026 classified rows, zero transitional entries, and 261
+typed facades. The release remains gated on downstream validation and release
+work. See the [convergence audit](canonical-request-convergence-audit.md) and
+[v0.7.0 migration guide](v0.7.0-migration.md).
 
 python-gvm compatibility is a secondary target:
 
@@ -82,7 +84,8 @@ Existing issues:
   family-by-family migration, protected-`main` promotion, and the remaining
   release program. [#602](https://github.com/greenbone-hive/rust-gvm/issues/602)
   is its accepted pre-release canonical-request gate, recorded in
-  [ADR 0002](adr/0002-canonical-request-ownership.md).
+  [ADR 0002](adr/0002-canonical-request-ownership.md); issue #678 completes its
+  checked public-surface audit.
 - [#172](https://github.com/greenbone-hive/rust-gvm/issues/172) tracks remaining rust-gvm vs gvmd GMP coverage gaps.
 - [#247](https://github.com/greenbone-hive/rust-gvm/issues/247) tracks report option drift where rust-gvm exposes an attribute gvmd ignores.
 - [#251](https://github.com/greenbone-hive/rust-gvm/issues/251) tracks response model drift around user host access and similar XML shape mismatches.
@@ -94,15 +97,15 @@ Existing issues:
 - [#649](https://github.com/greenbone-hive/rust-gvm/issues/649) completes the
   generic configuration, scan-configuration, and policy lifecycle slice:
   required copy/import creation, metadata-only modification, bounded stateful
-  behavior, and removal of unsupported GMP synchronization. Configured
-  preference and NVT/family mutation remains the next strictly ordered child.
+  behavior, and removal of unsupported GMP synchronization. Issue #658
+  completes the configured preference and NVT/family mutations.
 - [#659](https://github.com/greenbone-hive/rust-gvm/issues/659) and
   [#660](https://github.com/greenbone-hive/rust-gvm/issues/660) complete the
   standard and specialized task/audit canonical request surfaces. The latter
   preserves the GMP 22.8 specialized-task gates, audit usage identity, typed
   move destinations, confidential preference redaction, and bounded stateful
-  lifecycle/rollback conformance. Work proceeds only to the next ordered
-  #602 slice after this patch; #661 is not part of #660.
+  lifecycle/rollback conformance. The later report and system slices complete
+  the ordered #602 family migration.
 
 Follow-up issues or milestones should cover:
 
@@ -111,11 +114,9 @@ Follow-up issues or milestones should cover:
 
 ## Near-Term Implementation Order
 
-1. Complete #602 in bounded slices: execution foundation, targets reference
-   family, remaining resource families, and the final public-surface audit.
-2. Validate the canonical surface once through `rust-gvm-api#457`.
-3. Complete the remaining #523 release gate: versioned release, artifact
+1. Validate the audited canonical surface once through `rust-gvm-api#457`.
+2. Complete the remaining #523 release gate: versioned release, artifact
    verification, and downstream pinning.
-4. Finish the remaining high-value GMP coverage gaps from #172 and known
+3. Finish the remaining high-value GMP coverage gaps from #172 and known
    protocol drift.
-5. Expand real-gvmd conformance and python-gvm migration documentation.
+4. Expand real-gvmd conformance and python-gvm migration documentation.
