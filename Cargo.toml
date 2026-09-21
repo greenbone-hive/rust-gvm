@@ -68,11 +68,11 @@ tokio-test = "0.4"
 tokio-stream = { version = "0.1", features = ["net"] }
 
 # Workspace crates (internal)
-gvm-connection = { path = "crates/gvm-connection" }
-gvm-protocol = { path = "crates/gvm-protocol" }
-gvm-gmp = { path = "crates/gvm-gmp" }
-gvm-client = { path = "crates/gvm-client" }
-gvm-mock-server = { path = "crates/gvm-mock-server" }
+gvm-connection = { version = "0.7.0", path = "crates/gvm-connection" }
+gvm-protocol = { version = "0.7.0", path = "crates/gvm-protocol" }
+gvm-gmp = { version = "0.7.0", path = "crates/gvm-gmp" }
+gvm-client = { version = "0.7.0", path = "crates/gvm-client" }
+gvm-mock-server = { version = "0.7.0", path = "crates/gvm-mock-server" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

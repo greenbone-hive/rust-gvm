@@ -14,7 +14,7 @@ We support the latest minor release with security patches. Once a new minor or m
 
 Instead, use **GitHub Private Vulnerability Reporting**:
 
-1. Go to the [Security Advisories](https://github.com/clawosiris/rust-gvm/security/advisories) tab
+1. Go to the [Security Advisories](https://github.com/greenbone-hive/rust-gvm/security/advisories) tab
 2. Click **"Report a vulnerability"**
 3. Fill in the details — affected crate(s), reproduction steps, and impact assessment
 

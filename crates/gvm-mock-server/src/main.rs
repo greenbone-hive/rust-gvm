@@ -12,8 +12,17 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "gvm-mock-server", about = "Programmable mock GMP server")]
+#[command(
+    name = "gvm-mock-server",
+    about = "Programmable mock GMP server",
+    version,
+    disable_version_flag = true
+)]
 struct Args {
+    /// Print the gvm-mock-server build version
+    #[arg(short = 'V', long = "build-version", action = clap::ArgAction::Version)]
+    _build_version: Option<bool>,
+
     /// Server mode: echo, fixture, or stateful
     #[arg(long, default_value = "echo")]
     mode: String,

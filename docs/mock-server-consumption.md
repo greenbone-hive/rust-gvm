@@ -2,9 +2,9 @@
 
 `rust-gvm` publishes a container image for tagged releases at:
 
-- `ghcr.io/clawosiris/gvm-mock-server:<tag>`
+- `ghcr.io/greenbone-hive/gvm-mock-server:<tag>`
 
-Use an immutable release tag such as `v0.2.0` in downstream CI. Do not consume `latest` unless the release process is explicitly updated to publish it.
+Use an immutable release tag such as `v0.7.0` in downstream CI. Do not consume `latest` unless the release process is explicitly updated to publish it.
 
 ## Why use the image
 
@@ -18,9 +18,9 @@ Run the mock server over TCP inside the container and point your tests at that s
 docker run --rm -d \
   --name gvm-mock \
   -p 127.0.0.1:9390:9390 \
-  ghcr.io/clawosiris/gvm-mock-server:v0.2.0 \
+  ghcr.io/greenbone-hive/gvm-mock-server:v0.7.0 \
   --mode stateful \
-  --version 22.5 \
+  --version 22.7 \
   --tcp 0.0.0.0:9390
 ```
 
@@ -40,9 +40,9 @@ jobs:
           docker run --rm -d \
             --name gvm-mock \
             -p 127.0.0.1:9390:9390 \
-            ghcr.io/clawosiris/gvm-mock-server:v0.2.0 \
+            ghcr.io/greenbone-hive/gvm-mock-server:v0.7.0 \
             --mode stateful \
-            --version 22.5 \
+            --version 22.7 \
             --tcp 0.0.0.0:9390
 
       - name: Wait for server
@@ -76,7 +76,7 @@ PY
 
 The same pattern works in GitLab CI, Buildkite, CircleCI, or local developer workflows:
 
-1. Pull `ghcr.io/clawosiris/gvm-mock-server:<tag>`.
+1. Pull `ghcr.io/greenbone-hive/gvm-mock-server:<tag>`.
 2. Start the container with `--tcp 0.0.0.0:9390`.
 3. Wait until port `9390` accepts connections.
 4. Run your GMP integration tests against that address.
