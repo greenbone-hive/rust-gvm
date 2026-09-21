@@ -324,8 +324,10 @@ covered as well, including aggregates, features, feeds, settings, timezones,
 help, system reports, generic information, preferences, resource names,
 vulnerabilities, license status, and authentication description. System
 authentication, license, and wizard mutations plus user-setting list, detail,
-and modification operations are also statically associated while retaining
-their existing builders and redaction guarantees:
+and modification operations are also complete direct-codec requests. Trashcan
+cleanup has one canonical restore operation, matching gvmd; the former
+`restore_from_trashcan` alias is removed. Confidential administration and
+setting values retain their diagnostic and wire-trace redaction guarantees:
 
 ```rust
 use gvm_gmp::commands::targets::GetTargetsRequest;

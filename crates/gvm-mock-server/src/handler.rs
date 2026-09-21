@@ -72,6 +72,15 @@ fn asset_sort_value<'a>(resource: &'a Resource, field: &str) -> &'a str {
     }
 }
 
+fn setting_sort_value<'a>(resource: &'a Resource, field: &str) -> &'a str {
+    match field {
+        "name" => resource.name.as_str(),
+        "comment" => resource.comment.as_str(),
+        "value" => resource.attr("value").unwrap_or_default(),
+        _ => resource.attr(field).unwrap_or_default(),
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum AssetFilterRelation {
     Equal,
@@ -485,6 +494,8 @@ impl SessionHandler {
                 crate::stateful_nvt_secinfo::handle(cmd, store)
             }
             "get_features" => render_features_response(),
+            "get_license" => render_license_response(store),
+            "get_settings" => self.handle_get_settings(cmd, store),
             "get_agent_installer_instruction" => render_agent_installer_instruction_response(cmd),
             "get_agent_support_bundle" => render_agent_support_bundle_response(cmd),
             "create_asset" => self.handle_create_asset(cmd, store),
@@ -543,9 +554,11 @@ impl SessionHandler {
             name if name.starts_with("get_") => self.handle_get(cmd, store),
             "modify_agent" => handle_agent_set_action(cmd),
             "modify_agent_control_scan_config" => handle_modify_agent_control_scan_config(cmd),
-            "modify_auth" => self.handle_modify_auth(cmd),
+            "describe_auth" => render_describe_auth_response(store),
+            "modify_auth" => self.handle_modify_auth(cmd, store),
             "modify_credential_store" => handle_modify_credential_store(cmd),
-            "modify_license" => self.handle_modify_license(cmd),
+            "modify_license" => self.handle_modify_license(cmd, store),
+            "modify_setting" => self.handle_modify_setting(cmd, raw_xml, store),
             // Modify commands
             name if name.starts_with("modify_") => self.handle_modify(cmd, raw_xml, store),
             "verify_credential_store" => handle_verify_credential_store(cmd),
@@ -557,7 +570,7 @@ impl SessionHandler {
             "start_task" => self.handle_start_task(cmd, store),
             "stop_task" => self.handle_stop_task(cmd, store),
             "resume_task" => self.handle_resume_task(cmd, store),
-            "run_wizard" => self.handle_run_wizard(cmd),
+            "run_wizard" => self.handle_run_wizard(cmd, store),
             // Trashcan
             "empty_trashcan" => {
                 store.empty_trashcan();
@@ -1850,6 +1863,141 @@ impl SessionHandler {
         .into_bytes()
     }
 
+    fn handle_get_settings(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let first = match cmd.attr("first") {
+            Some(value) => match value.parse::<usize>() {
+                Ok(0) | Err(_) => return error_response(&cmd.name, 400, "Invalid first value"),
+                Ok(value) => value,
+            },
+            None => 1,
+        };
+        let max = match cmd.attr("max") {
+            Some(value) => match value.parse::<i32>() {
+                Ok(-1) => -1,
+                Ok(value) if value > 0 => value,
+                _ => return error_response(&cmd.name, 400, "Invalid max value"),
+            },
+            None => -1,
+        };
+        let descending = match cmd.attr("sort_order") {
+            None | Some("ascending") => false,
+            Some("descending") => true,
+            Some(_) => return error_response(&cmd.name, 400, "Invalid sort_order value"),
+        };
+        let mut settings = if let Some(setting_id) = cmd.attr("setting_id") {
+            let Ok(setting_id) = Uuid::parse_str(setting_id) else {
+                return error_response(&cmd.name, 400, "Invalid UUID");
+            };
+            store
+                .get_typed(&setting_id, "setting")
+                .into_iter()
+                .collect()
+        } else if let Some(filter) = cmd.attr("filter") {
+            store.list_filtered("setting", filter)
+        } else {
+            store.list("setting")
+        };
+        let sort_field = cmd.attr("sort_field").unwrap_or("name");
+        settings.sort_by(|left, right| {
+            let ordering =
+                setting_sort_value(left, sort_field).cmp(setting_sort_value(right, sort_field));
+            if descending {
+                ordering.reverse()
+            } else {
+                ordering
+            }
+        });
+        let filtered = settings.len();
+        let start = first.saturating_sub(1).min(filtered);
+        let end = if max == -1 {
+            filtered
+        } else {
+            start.saturating_add(max as usize).min(filtered)
+        };
+        let page = &settings[start..end];
+        let items: String = page
+            .iter()
+            .map(|setting| store.render_resource_xml(setting))
+            .collect();
+        let filter = xml_escape(cmd.attr("filter").unwrap_or_default());
+        format!(
+            "<get_settings_response status=\"200\" status_text=\"OK\">\
+             <filters><term>{filter}</term></filters>\
+             <settings start=\"{first}\" max=\"{max}\"/>\
+             {items}<setting_count><filtered>{filtered}</filtered>\
+             <page>{}</page></setting_count></get_settings_response>",
+            page.len()
+        )
+        .into_bytes()
+    }
+
+    fn handle_modify_setting(
+        &self,
+        cmd: &ParsedCommand,
+        raw_xml: &[u8],
+        store: &ResourceStore,
+    ) -> Vec<u8> {
+        let name = element_text_including_empty(cmd, raw_xml, "name");
+        let setting_id = cmd.attr("setting_id");
+        if name.is_none() && setting_id.is_none() {
+            return error_response(
+                &cmd.name,
+                400,
+                "A NAME or setting_id and a VALUE is required",
+            );
+        }
+        let Some(encoded_value) = element_text_including_empty(cmd, raw_xml, "value") else {
+            return error_response(
+                &cmd.name,
+                400,
+                "A NAME or setting_id and a VALUE is required",
+            );
+        };
+        enum SettingTarget {
+            Name(String),
+            Id(Uuid),
+        }
+        let target = match name.as_deref() {
+            Some(name @ ("Timezone" | "Password")) => SettingTarget::Name(name.to_string()),
+            _ => {
+                let Some(setting_id) = setting_id else {
+                    return error_response(&cmd.name, 400, "Failed to find setting");
+                };
+                let Ok(setting_id) = Uuid::parse_str(setting_id) else {
+                    return error_response(&cmd.name, 400, "Invalid UUID");
+                };
+                if store.get_typed(&setting_id, "setting").is_none() {
+                    return error_response(&cmd.name, 400, "Failed to find setting");
+                }
+                SettingTarget::Id(setting_id)
+            }
+        };
+        let decoded = match base64::engine::general_purpose::STANDARD
+            .decode(encoded_value.as_bytes())
+            .ok()
+            .and_then(|value| String::from_utf8(value).ok())
+        {
+            Some(value) => value,
+            None => {
+                return error_response(&cmd.name, 400, "Value cannot be decoded to valid UTF-8")
+            }
+        };
+
+        let modified = match target {
+            SettingTarget::Name(name) => store.modify_setting_by_name(&name, &decoded),
+            SettingTarget::Id(setting_id) => {
+                store.modify_typed(&setting_id, "setting", |setting| {
+                    setting.set_attr("value", &decoded);
+                })
+            }
+        };
+        if modified {
+            b"<modify_setting_response status=\"200\" status_text=\"OK\"/>".to_vec()
+        } else {
+            error_response(&cmd.name, 400, "Failed to find setting")
+        }
+    }
+
     fn handle_modify(&self, cmd: &ParsedCommand, raw_xml: &[u8], store: &ResourceStore) -> Vec<u8> {
         let resource_type = cmd.name.strip_prefix("modify_").unwrap_or("unknown");
         if resource_type == "task"
@@ -2702,7 +2850,7 @@ impl SessionHandler {
         }
     }
 
-    fn handle_modify_auth(&self, cmd: &ParsedCommand) -> Vec<u8> {
+    fn handle_modify_auth(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
         let mut groups = cmd.children.iter().filter(|child| child.name == "group");
         let Some(group) = groups.next() else {
             return error_response(&cmd.name, 400, "Missing required element: group");
@@ -2718,31 +2866,47 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Missing required attribute: group name");
         }
 
-        let mut settings = group
+        let mut settings_to_apply = BTreeMap::new();
+        let settings = group
             .children
             .iter()
-            .filter(|child| child.name == "auth_conf_setting")
-            .peekable();
-        if settings.peek().is_none() {
-            return error_response(
-                &cmd.name,
-                400,
-                "Missing required element: auth_conf_setting",
-            );
-        }
+            .filter(|child| child.name == "auth_conf_setting");
         for setting in settings {
-            if element_child_text(setting, "key").is_none_or(str::is_empty) {
+            let Some(key) =
+                element_child_text_including_empty(setting, "key").filter(|key| !key.is_empty())
+            else {
                 return error_response(&cmd.name, 400, "Missing required element: key");
-            }
-            if !setting.children.iter().any(|child| child.name == "value") {
+            };
+            let Some(value) = element_child_text_including_empty(setting, "value") else {
                 return error_response(&cmd.name, 400, "Missing required element: value");
-            }
+            };
+            settings_to_apply
+                .entry(key.to_string())
+                .or_insert_with(|| value.to_string());
         }
+
+        let group_name = group
+            .attributes
+            .get("name")
+            .expect("validated group name")
+            .clone();
+        settings_to_apply.retain(|key, _| match group_name.as_str() {
+            "method:ldap_connect" => matches!(
+                key.as_str(),
+                "enable" | "ldaphost" | "authdn" | "allow-plaintext" | "cacert" | "ldaps-only"
+            ),
+            "method:radius_connect" => {
+                matches!(key.as_str(), "enable" | "radiushost" | "radiuskey")
+            }
+            _ => false,
+        });
+
+        store.apply_auth_groups(BTreeMap::from([(group_name, settings_to_apply)]));
 
         format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
     }
 
-    fn handle_modify_license(&self, cmd: &ParsedCommand) -> Vec<u8> {
+    fn handle_modify_license(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
         let allow_empty = match cmd.attr("allow_empty") {
             None | Some("0") => false,
             Some("1") => true,
@@ -2751,18 +2915,30 @@ impl SessionHandler {
         let Some(file) = cmd.children.iter().find(|child| child.name == "file") else {
             return error_response(&cmd.name, 400, "Missing required element: file");
         };
-        if file.text.as_deref().unwrap_or_default().is_empty() && !allow_empty {
+        let file = file.text.clone().unwrap_or_default();
+        if file.is_empty() && !allow_empty {
             return error_response(&cmd.name, 400, "A non-empty FILE is required");
         }
+        if !file.is_empty()
+            && base64::engine::general_purpose::STANDARD
+                .decode(file.as_bytes())
+                .is_err()
+        {
+            return error_response(&cmd.name, 400, "Invalid license file encoding");
+        }
+
+        store.replace_license(file);
 
         format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
     }
 
-    fn handle_run_wizard(&self, cmd: &ParsedCommand) -> Vec<u8> {
-        match cmd.attr("read_only") {
-            None | Some("0" | "1") => {}
+    fn handle_run_wizard(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let read_only = match cmd.attr("read_only") {
+            None => None,
+            Some("0") => Some(false),
+            Some("1") => Some(true),
             Some(_) => return error_response(&cmd.name, 400, "Invalid read_only value"),
-        }
+        };
 
         let Some(name) = cmd.child_text("name") else {
             return error_response(&cmd.name, 400, "Missing required element: name");
@@ -2777,13 +2953,25 @@ impl SessionHandler {
         let Some(params) = cmd.children.iter().find(|child| child.name == "params") else {
             return error_response(&cmd.name, 400, "Missing required element: params");
         };
+        let mut parameters = Vec::new();
         for param in params.children.iter().filter(|child| child.name == "param") {
-            if !param.children.iter().any(|child| child.name == "name")
-                || !param.children.iter().any(|child| child.name == "value")
-            {
+            let Some(parameter_name) =
+                element_child_text_including_empty(param, "name").filter(|name| !name.is_empty())
+            else {
                 return error_response(&cmd.name, 400, "Invalid wizard parameter");
-            }
+            };
+            let Some(parameter_value) = element_child_text_including_empty(param, "value") else {
+                return error_response(&cmd.name, 400, "Invalid wizard parameter");
+            };
+            parameters.push((parameter_name.to_string(), parameter_value.to_string()));
         }
+
+        store.record_wizard_run(
+            name.to_string(),
+            element_text_including_empty(cmd, &cmd.raw_xml, "mode"),
+            read_only,
+            parameters,
+        );
 
         b"<run_wizard_response status=\"202\" status_text=\"OK, request submitted\"><response><start_task_response status=\"202\" status_text=\"OK, request submitted\"><report_id>00000000-0000-0000-0000-000000000001</report_id></start_task_response></response></run_wizard_response>".to_vec()
     }
@@ -4318,6 +4506,56 @@ fn element_child_text<'a>(element: &'a ParsedElement, name: &str) -> Option<&'a 
         .iter()
         .find(|child| child.name == name)
         .and_then(|child| child.text.as_deref())
+}
+
+fn element_child_text_including_empty<'a>(
+    element: &'a ParsedElement,
+    name: &str,
+) -> Option<&'a str> {
+    element
+        .children
+        .iter()
+        .find(|child| child.name == name)
+        .map(|child| child.text.as_deref().unwrap_or_default())
+}
+
+fn render_describe_auth_response(store: &ResourceStore) -> Vec<u8> {
+    let groups: String = store
+        .auth_groups()
+        .into_iter()
+        .map(|(name, settings)| {
+            let settings: String = settings
+                .into_iter()
+                .map(|(key, value)| {
+                    format!(
+                        "<auth_conf_setting><key>{}</key><value>{}</value></auth_conf_setting>",
+                        xml_escape(&key),
+                        xml_escape(&value)
+                    )
+                })
+                .collect();
+            format!(
+                "<group name=\"{}\">{settings}</group>",
+                xml_escape_attr(&name)
+            )
+        })
+        .collect();
+    format!(
+        "<describe_auth_response status=\"200\" status_text=\"OK\">{groups}</describe_auth_response>"
+    )
+    .into_bytes()
+}
+
+fn render_license_response(store: &ResourceStore) -> Vec<u8> {
+    let status = if store.license_installed() {
+        "active"
+    } else {
+        "none"
+    };
+    format!(
+        "<get_license_response status=\"200\" status_text=\"OK\"><license><status>{status}</status></license></get_license_response>"
+    )
+    .into_bytes()
 }
 
 #[derive(Debug, Clone)]

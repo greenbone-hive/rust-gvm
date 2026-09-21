@@ -89,10 +89,10 @@ use gvm_gmp::commands::secinfo::{
     GenericInfoType, GetCertBundAdvisoryRequest, GetCpeRequest, GetCveRequest,
     GetDfnCertAdvisoryRequest, GetInfoListRequest, GetInfoRequest,
 };
-use gvm_gmp::commands::system::GetTimezonesRequest;
-use gvm_gmp::commands::system::ModifyLicenseOpts;
-use gvm_gmp::commands::system::RunWizardOpts;
-use gvm_gmp::commands::system::{GetVulnerabilityRequest, GetVulnsRequest};
+use gvm_gmp::commands::system::{
+    GetTimezonesRequest, GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest,
+    ModifyLicenseRequest, RunWizardRequest,
+};
 use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::commands::targets::{
     CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
@@ -105,6 +105,8 @@ use gvm_gmp::commands::tasks::{
 use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
 };
+use gvm_gmp::commands::trashcan::{EmptyTrashcanRequest, RestoreRequest};
+use gvm_gmp::commands::user_settings::ModifyUserSettingRequest;
 use gvm_gmp::commands::users::{
     CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
     ModifyUserRequest, UserHostAccess,
@@ -287,7 +289,7 @@ async fn assert_task_report_survives_trash_and_restore(
         Some(current_report_id)
     );
     client
-        .restore_from_trashcan(task_id)
+        .restore(RestoreRequest::new(task_id.clone()))
         .await
         .expect("task should restore");
     assert_task_report_observation(client, task_id, "Stopped", Some(current_report_id), None).await;
@@ -719,13 +721,13 @@ async fn typed_modify_auth_uses_current_gvmd_shape_over_unix_transport() {
     server.clear_history();
 
     let response = client
-        .modify_auth(
+        .modify_auth(ModifyAuthRequest::new(
             "method:ldap_connect",
-            &[
+            [
                 ("enable".into(), "true".into()),
                 ("ldaphost".into(), "ldap.example".into()),
             ],
-        )
+        ))
         .await
         .expect("current gvmd modify_auth response should parse");
 
@@ -757,13 +759,10 @@ async fn typed_modify_license_uses_current_gvmd_shape_over_unix_transport() {
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = ModifyLicenseRequest::new("YWJj");
+    request.allow_empty = Some(false);
     let response = client
-        .modify_license(
-            "YWJj",
-            ModifyLicenseOpts {
-                allow_empty: Some(false),
-            },
-        )
+        .modify_license(request)
         .await
         .expect("current gvmd modify_license response should parse");
 
@@ -795,15 +794,12 @@ async fn typed_run_wizard_uses_current_gvmd_shape_over_unix_transport() {
         .expect("authenticate");
     server.clear_history();
 
+    let mut request =
+        RunWizardRequest::new("quick_first_scan", [("hosts".into(), "localhost".into())]);
+    request.mode = Some("step".into());
+    request.read_only = Some(false);
     let response = client
-        .run_wizard(
-            "quick_first_scan",
-            &[("hosts".into(), "localhost".into())],
-            RunWizardOpts {
-                mode: Some("step".into()),
-                read_only: Some(false),
-            },
-        )
+        .run_wizard(request)
         .await
         .expect("current gvmd run_wizard response should parse");
 
@@ -819,6 +815,63 @@ async fn typed_run_wizard_uses_current_gvmd_shape_over_unix_transport() {
         br#"<run_wizard read_only="0"><mode>step</mode><name>quick_first_scan</name><params><param><name>hosts</name><value>localhost</value></param></params></run_wizard>"#
     );
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_confidential_administration_values_fail_before_transport() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = GmpClient::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let auth_secret = "auth-secret\0";
+    let error = client
+        .modify_auth(ModifyAuthRequest::new(
+            "method:ldap_connect",
+            [("ldaphost".into(), auth_secret.into())],
+        ))
+        .await
+        .expect_err("invalid auth value must fail");
+    assert!(!error.to_string().contains(auth_secret));
+
+    let license_secret = "license-secret!";
+    let error = client
+        .modify_license(ModifyLicenseRequest::new(license_secret))
+        .await
+        .expect_err("invalid license value must fail");
+    assert!(!error.to_string().contains(license_secret));
+
+    let wizard_secret = "wizard-secret\0";
+    let error = client
+        .run_wizard(RunWizardRequest::new(
+            "quick_first_scan",
+            [("credential".into(), wizard_secret.into())],
+        ))
+        .await
+        .expect_err("invalid wizard value must fail");
+    assert!(!error.to_string().contains(wizard_secret));
+
+    let setting_secret = "setting-secret";
+    let error = client
+        .execute(ModifyUserSettingRequest::by_name(
+            "NotASetting",
+            setting_secret,
+        ))
+        .await
+        .expect_err("invalid named setting must fail");
+    assert!(!error.to_string().contains(setting_secret));
+
+    assert!(server.command_history().is_empty());
     server.shutdown().await;
 }
 
@@ -5219,7 +5272,7 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
         .expect("authenticate should succeed");
 
     let empty_response = client
-        .empty_trashcan()
+        .empty_trashcan(EmptyTrashcanRequest::new())
         .await
         .expect("empty_trashcan should succeed");
     assert_eq!(empty_response.status, 200);
@@ -5258,9 +5311,9 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
     assert_eq!(delete_response.status, 200);
 
     let restore_response = client
-        .restore_from_trashcan(&task_id)
+        .restore(RestoreRequest::new(task_id.clone()))
         .await
-        .expect("restore_from_trashcan should succeed");
+        .expect("restore should succeed");
     assert_eq!(restore_response.status, 200);
 
     let get_response = client

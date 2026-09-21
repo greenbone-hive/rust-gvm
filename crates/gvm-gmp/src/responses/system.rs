@@ -13,7 +13,7 @@ use crate::responses::common::{
 };
 use crate::{EntityId, GmpResponse, GmpVersion};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Setting {
@@ -22,6 +22,19 @@ pub struct Setting {
     pub comment: Option<String>,
     pub value: Option<String>,
     pub certificate_info: Option<CertificateInfo>,
+}
+
+impl std::fmt::Debug for Setting {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Setting")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("comment", &self.comment)
+            .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .field("certificate_info", &self.certificate_info)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,13 +113,24 @@ pub struct AuthGroup {
     pub settings: Vec<AuthConfSetting>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AuthConfSetting {
     pub key: Option<String>,
     pub value: Option<String>,
     pub certificate_info: Option<CertificateInfo>,
+}
+
+impl std::fmt::Debug for AuthConfSetting {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AuthConfSetting")
+            .field("key", &self.key.as_ref().map(|_| "<redacted>"))
+            .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .field("certificate_info", &self.certificate_info)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,7 +151,7 @@ pub type ModifyAuthResponse = ActionResponse;
 pub type ModifyLicenseResponse = ActionResponse;
 
 /// Response returned after running a gvmd wizard.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RunWizardResponse {
@@ -135,6 +159,20 @@ pub struct RunWizardResponse {
     pub status_text: String,
     /// Serialized inner XML from the optional `<response>` element.
     pub response_xml: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for RunWizardResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RunWizardResponse")
+            .field("status", &self.status)
+            .field("status_text", &self.status_text)
+            .field(
+                "response_xml",
+                &self.response_xml.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl Setting {
@@ -440,6 +478,10 @@ mod tests {
         assert_eq!(parsed.max, Some(10));
         assert_eq!(parsed.counts.filtered, Some(4));
         assert_eq!(parsed.counts.page, Some(2));
+        let debug = format!("{parsed:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("value1"));
+        assert!(!debug.contains("value2"));
     }
 
     #[test]
@@ -586,6 +628,10 @@ mod tests {
         assert_eq!(certificate.issuer.as_deref(), Some("LDAP CA"));
         assert_eq!(parsed.groups[1].name, "method:radius_connect");
         assert_eq!(parsed.groups[1].settings.len(), 1);
+        let debug = format!("{parsed:?}");
+        for confidential in ["ldaphost", "ldap.example.com", "radiushost"] {
+            assert!(!debug.contains(confidential));
+        }
     }
 
     #[test]
@@ -601,6 +647,9 @@ mod tests {
             parsed.response_xml.as_deref(),
             Some(br#"<start_task_response status="202" status_text="OK, request submitted"><report_id>report-1</report_id></start_task_response>"#.as_slice())
         );
+        let debug = format!("{parsed:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("report-1"));
 
         let empty = Response::from(
             r#"<run_wizard_response status="202" status_text="OK"><response/></run_wizard_response>"#,

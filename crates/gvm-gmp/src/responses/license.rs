@@ -58,12 +58,22 @@ pub struct LicenseAppliance {
     pub sensor: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LicenseNamedValue {
     pub name: Option<String>,
     pub value: String,
+}
+
+impl std::fmt::Debug for LicenseNamedValue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LicenseNamedValue")
+            .field("name", &self.name)
+            .field("value", &"<redacted>")
+            .finish()
+    }
 }
 
 impl GetLicenseResponse {
@@ -147,7 +157,7 @@ mod tests {
     #[test]
     fn parses_complete_and_status_only_licenses() {
         let response = Response::from(
-            r#"<get_license_response status="200" status_text="OK"><license><status>active</status><content><meta><id>4711</id><version>1.0.0</version></meta><appliance><model>trial</model><sensor>0</sensor></appliance><keys><key name="feed">feed-key</key></keys><signatures><signature name="license">signature</signature></signatures></content></license></get_license_response>"#,
+            r#"<get_license_response status="200" status_text="OK"><license><status>active</status><content><meta><id>4711</id><version>1.0.0</version></meta><appliance><model>trial</model><sensor>0</sensor></appliance><keys><key name="feed">feed-key</key></keys><signatures><signature name="license">license-signature-secret</signature></signatures></content></license></get_license_response>"#,
         );
         let parsed = GetLicenseResponse::from_response(&response).expect("license parses");
         let license = parsed.license.expect("license");
@@ -155,6 +165,13 @@ mod tests {
         let content = license.content.expect("content");
         assert_eq!(content.meta.expect("meta").id.as_deref(), Some("4711"));
         assert_eq!(content.keys[0].name.as_deref(), Some("feed"));
+
+        let parsed_for_debug =
+            GetLicenseResponse::from_response(&response).expect("license parses");
+        let debug = format!("{parsed_for_debug:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("feed-key"));
+        assert!(!debug.contains("license-signature-secret"));
 
         let status_only = Response::from(
             r#"<get_license_response status="200" status_text="OK"><license><status>none</status></license></get_license_response>"#,

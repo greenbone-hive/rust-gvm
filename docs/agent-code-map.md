@@ -63,6 +63,9 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   evidence for pre-authentication version/authentication, help, features,
   feeds/timezones, aggregate shapes, settings, system reports, resource names,
   license retrieval, and authentication description.
+- `docs/system-admin-cleanup-request-gvmd-evidence.md`: pinned gvmd and
+  python-gvm evidence for authentication/license/setting/wizard mutations,
+  user-setting queries, and transactional trashcan empty/restore behavior.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -117,6 +120,10 @@ Adding or changing a GMP command:
   atomic report/result/host-asset insertion and deletion dependencies live in
   `store.rs`, with bounded coverage in `stateful_report_lifecycle.rs`,
   `stateful_scan_report.rs`, and `stateful_audit_report.rs`.
+  System-administration dispatch and bounded setting query/rendering live in
+  `handler.rs`; confidential persisted auth/license/wizard and setting state,
+  plus atomic restore/empty behavior, live in `store.rs`, with focused coverage
+  in `stateful_command_surface_gaps.rs` and `stateful_task_graph.rs`.
 
 Changing response parsing:
 

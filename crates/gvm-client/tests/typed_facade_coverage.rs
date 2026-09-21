@@ -110,9 +110,8 @@ use gvm_gmp::commands::secinfo::{
 };
 use gvm_gmp::commands::system::{
     DescribeAuthRequest, GetLicenseRequest, GetSettingsRequest, GetTimezonesRequest,
-    GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest, ModifyLicenseOpts,
-    ModifyLicenseRequest, ModifyLicenseWithOptsRequest, ModifySettingRequest, RunWizardOpts,
-    RunWizardRequest, RunWizardWithOptsRequest,
+    GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest, ModifyLicenseRequest,
+    ModifySettingRequest, RunWizardRequest,
 };
 use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::commands::tags::{
@@ -137,9 +136,9 @@ use gvm_gmp::commands::tls_certificates::{
     CloneTlsCertificateRequest, CreateTlsCertificateRequest, DeleteTlsCertificateRequest,
     GetTlsCertificateRequest, GetTlsCertificatesRequest, ModifyTlsCertificateRequest,
 };
+use gvm_gmp::commands::trashcan::{EmptyTrashcanRequest, RestoreRequest};
 use gvm_gmp::commands::user_settings::{
-    GetUserSettingRequest, GetUserSettingsOpts, GetUserSettingsRequest, ModifyUserSettingOpts,
-    ModifyUserSettingRequest,
+    GetUserSettingRequest, GetUserSettingsRequest, ModifyUserSettingRequest,
 };
 use gvm_gmp::commands::users::{
     CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
@@ -748,13 +747,9 @@ async fn system_admin_and_user_setting_requests_execute_over_unix_transport() {
     assert_typed_success!(
         client.execute(ModifyAuthRequest::new("method:ldap_connect", auth_settings))
     );
-    assert_typed_success!(client.execute(ModifyLicenseRequest::new("license-secret")));
-    assert_typed_success!(client.execute(ModifyLicenseWithOptsRequest::new(
-        "license-secret",
-        ModifyLicenseOpts {
-            allow_empty: Some(false),
-        }
-    )));
+    let mut license = ModifyLicenseRequest::new("bGljZW5zZS1zZWNyZXQ=");
+    license.allow_empty = Some(false);
+    assert_typed_success!(client.execute(license));
 
     let setting_id = id("setting-1");
     assert_typed_success!(client.execute(ModifySettingRequest::new(
@@ -770,34 +765,29 @@ async fn system_admin_and_user_setting_requests_execute_over_unix_transport() {
         .await
         .expect("default wizard request should parse");
     assert_eq!(wizard.status, 202);
+    let mut wizard_with_options =
+        RunWizardRequest::new("quick_first_scan", [("hosts".into(), "localhost".into())]);
+    wizard_with_options.mode = Some("step".into());
+    wizard_with_options.read_only = Some(false);
     let wizard_with_opts = client
-        .execute(RunWizardWithOptsRequest::new(
-            "quick_first_scan",
-            [("hosts".into(), "localhost".into())],
-            RunWizardOpts {
-                mode: Some("step".into()),
-                read_only: Some(false),
-            },
-        ))
+        .execute(wizard_with_options)
         .await
         .expect("option-bearing wizard request should parse");
     assert_eq!(wizard_with_opts.status, 202);
 
     let settings = client
-        .execute(GetUserSettingsRequest::new(GetUserSettingsOpts::default()))
+        .execute(GetUserSettingsRequest::new())
         .await
         .expect("user-setting list should parse");
-    assert_eq!(settings.settings.len(), 1);
+    assert_eq!(settings.items.len(), 1);
     let setting = client
         .execute(GetUserSettingRequest::new(setting_id.clone()))
         .await
         .expect("single user setting should parse");
-    assert_eq!(setting.settings[0].id, setting_id);
+    assert_eq!(setting.items[0].id, setting_id);
     assert_typed_success!(client.execute(ModifyUserSettingRequest::new(
         id("setting-1"),
-        ModifyUserSettingOpts {
-            value: "Europe/Berlin".into(),
-        }
+        "Europe/Berlin"
     )));
 
     let commands = server
@@ -809,7 +799,6 @@ async fn system_admin_and_user_setting_requests_execute_over_unix_transport() {
         commands,
         [
             "modify_auth",
-            "modify_license",
             "modify_license",
             "modify_setting",
             "run_wizard",
@@ -3162,9 +3151,8 @@ async fn filters_tags_and_trashcan_execute_through_typed_facade() {
     assert_typed_success!(client.modify_tag(ModifyTagRequest::new(resource_id.clone())));
     assert_typed_success!(client.delete_tag(DeleteTagRequest::new(resource_id.clone(), true)));
 
-    assert_typed_success!(client.empty_trashcan());
-    assert_typed_success!(client.restore(&resource_id));
-    assert_typed_success!(client.restore_from_trashcan(&resource_id));
+    assert_typed_success!(client.empty_trashcan(EmptyTrashcanRequest::new()));
+    assert_typed_success!(client.restore(RestoreRequest::new(resource_id.clone())));
 
     let commands = server
         .command_history()
@@ -3187,7 +3175,6 @@ async fn filters_tags_and_trashcan_execute_through_typed_facade() {
             "modify_tag",
             "delete_tag",
             "empty_trashcan",
-            "restore",
             "restore",
         ]
     );
@@ -3239,7 +3226,7 @@ async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
     ));
 
     let trashcan_error = client
-        .empty_trashcan()
+        .empty_trashcan(EmptyTrashcanRequest::new())
         .await
         .expect_err("non-success empty-trashcan response should fail");
     assert!(matches!(

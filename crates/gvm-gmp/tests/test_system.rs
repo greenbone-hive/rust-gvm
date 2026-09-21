@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{id, xml};
+use common::id;
 use gvm_gmp::commands::system::*;
 use gvm_gmp::{GmpRequestCodec, GmpVersion, SortOrder};
 
@@ -39,43 +39,40 @@ fn test_system_filtered_getters() {
 
 #[test]
 fn test_system_mutations() {
+    let version = GmpVersion(22, 8);
     assert_eq!(
-        xml(modify_auth(
+        typed_xml(&ModifyAuthRequest::new(
             "method:ldap_connect",
-            &[
+            [
                 ("enable".into(), "true".into()),
                 ("ldaphost".into(), "ldap.example".into()),
             ]
         )),
         "<modify_auth><group name=\"method:ldap_connect\"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting><auth_conf_setting><key>ldaphost</key><value>ldap.example</value></auth_conf_setting></group></modify_auth>"
     );
+
+    let mut license = ModifyLicenseRequest::new("YWJj");
+    license.allow_empty = Some(true);
     assert_eq!(
-        xml(modify_license("abc")),
-        "<modify_license><file>abc</file></modify_license>"
+        typed_xml(&license),
+        "<modify_license allow_empty=\"1\"><file>YWJj</file></modify_license>"
     );
     assert_eq!(
-        xml(modify_license_with_opts(
-            "",
-            ModifyLicenseOpts {
-                allow_empty: Some(true)
-            }
-        )),
-        "<modify_license allow_empty=\"1\"><file></file></modify_license>"
-    );
-    assert_eq!(
-        xml(modify_setting(&id("s1"), "Europe/Berlin")),
+        typed_xml(&ModifySettingRequest::new(id("s1"), "Europe/Berlin")),
         "<modify_setting setting_id=\"s1\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
     );
-    assert_eq!(xml(run_wizard("quick", &[("target".into(), "10.0.0.1".into()), ("ports".into(), "T:1-5".into())])), "<run_wizard><name>quick</name><params><param><name>target</name><value>10.0.0.1</value></param><param><name>ports</name><value>T:1-5</value></param></params></run_wizard>");
+
+    let mut wizard = RunWizardRequest::new(
+        "quick",
+        [
+            ("target".into(), "10.0.0.1".into()),
+            ("ports".into(), "T:1-5".into()),
+        ],
+    );
+    wizard.mode = Some("step".into());
+    wizard.read_only = Some(false);
     assert_eq!(
-        xml(run_wizard_with_opts(
-            "quick",
-            &[],
-            RunWizardOpts {
-                mode: Some("step".into()),
-                read_only: Some(false),
-            },
-        )),
-        "<run_wizard read_only=\"0\"><mode>step</mode><name>quick</name><params/></run_wizard>"
+        String::from_utf8(wizard.encode(version).unwrap()).unwrap(),
+        "<run_wizard read_only=\"0\"><mode>step</mode><name>quick</name><params><param><name>target</name><value>10.0.0.1</value></param><param><name>ports</name><value>T:1-5</value></param></params></run_wizard>"
     );
 }

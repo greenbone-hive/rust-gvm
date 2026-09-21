@@ -262,10 +262,11 @@ supersede both transitional construction models.
 The supporting-resource Phase 2 batch, tracked by
 [`#557`](https://github.com/greenbone-hive/rust-gvm/issues/557), migrates the
 complete filter and tag list/detail/create/clone/modify/delete lifecycles plus
-trashcan empty and restore operations. Existing builders remain the sole wire
-encoders, both restore builder names retain byte-identical behavior through
-distinct semantic request values, and all facade helpers delegate to generic
-typed execution without changing response or version policy.
+trashcan empty and restore operations. The filter/tag construction model was
+superseded by their bounded canonical migrations. Issue #664 supersedes the
+trashcan construction model with direct `EmptyTrashcanRequest` and
+`RestoreRequest` codecs and removes the byte-identical
+`restore_from_trashcan` alias.
 
 The note-and-override Phase 2 batch, tracked by
 [`#559`](https://github.com/greenbone-hive/rust-gvm/issues/559), migrates both
@@ -414,19 +415,26 @@ certificate information, resource-name response type, session metadata, and
 structured license content. Duplicate builders, system wrappers, and
 byte-identical facade aliases are removed with zero transitional ledger rows
 in scope. See the
-[pinned evidence](system-discovery-request-gvmd-evidence.md). Mutations, user
-settings, wizard execution, and trashcan cleanup remain deferred to #664.
+[pinned evidence](system-discovery-request-gvmd-evidence.md).
 
-The system-administration Phase 3 batch, tracked by
+The earlier system-administration Phase 3 batch, tracked by
 [`#575`](https://github.com/greenbone-hive/rust-gvm/issues/575), migrates all
 nine public authentication, license, wizard, and user-setting builder shapes to
-semantic typed execution. The default and option-bearing compatibility forms
-remain distinct request types over the existing byte-identical encoders, and
-the system-module `modify_setting` wrapper continues to share the canonical
-user-setting encoding. Existing authentication, license, and wizard typed
-helpers now delegate to `execute`. Semantic request diagnostics redact auth
-configuration values, license payloads, wizard parameter values, and
-user-setting values; raw builders and custom execution remain supported.
+semantic typed execution. Issue #664 now supersedes that transitional model.
+Complete authentication, license, generic-setting, wizard, user-setting, empty,
+and restore request values own all fields and directly encode their commands.
+The option-bearing license/wizard variants and the second restore name were
+redundant aliases and are removed. Generic and user-setting modification share
+one encoder only because pinned gvmd gives them identical selector, value, and
+response semantics. Named helpers accept canonical values unchanged and
+delegate only to `execute`; raw `send`, `call`, and custom codecs remain.
+Confidential values stay out of `Debug`, errors, diagnostics, and wire traces.
+The bounded mock persists mutations, validates before state changes, and
+preserves atomic cleanup/dependency rollback. See the
+[pinned evidence](system-admin-cleanup-request-gvmd-evidence.md) and
+[v0.7 migration mapping](v0.7.0-migration.md#system-administration-user-settings-and-cleanup).
+This final #658–#664 family leaves zero transitional rows in the enforced
+disposition inventory; the retained-surface/removal audit remains separate.
 
 Issues #661 and #662 complete the report lifecycle, structured-report,
 drill-down, and export request migration. The lifecycle operations plus all

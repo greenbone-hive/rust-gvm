@@ -2239,9 +2239,9 @@ mod tests {
 
     #[test]
     fn redacts_modify_license_file_without_hiding_generic_files() {
-        let request = gvm_gmp::commands::system::modify_license("license-secret").to_bytes();
+        let request = b"<modify_license><file>license-secret</file></modify_license>";
 
-        let redacted = String::from_utf8(redact_wire_bytes(&request)).expect("utf-8");
+        let redacted = String::from_utf8(redact_wire_bytes(request)).expect("utf-8");
 
         assert_eq!(
             redacted,
@@ -2252,6 +2252,30 @@ mod tests {
             redact_wire_bytes(b"<root><file>visible</file></root>"),
             b"<root><file>visible</file></root>"
         );
+    }
+
+    #[test]
+    fn redacts_canonical_administration_and_user_setting_values() {
+        for (wire, secrets) in [
+            (
+                b"<modify_auth><group name=\"method:radius_connect\"><auth_conf_setting><key>radiuskey-secret</key><value>auth-secret</value></auth_conf_setting></group></modify_auth>".as_slice(),
+                ["radiuskey-secret", "auth-secret"].as_slice(),
+            ),
+            (
+                b"<run_wizard><name>quick_first_scan</name><params><param><name>credential</name><value>wizard-secret</value></param></params></run_wizard>".as_slice(),
+                ["wizard-secret", "unused"].as_slice(),
+            ),
+            (
+                b"<get_settings_response status=\"200\" status_text=\"OK\"><setting id=\"s1\"><name>timezone</name><value>setting-secret</value></setting></get_settings_response>".as_slice(),
+                ["setting-secret", "unused"].as_slice(),
+            ),
+        ] {
+            let redacted = String::from_utf8(redact_wire_bytes(wire)).expect("UTF-8 trace");
+            assert!(redacted.contains("<redacted/>"));
+            for secret in secrets {
+                assert!(!redacted.contains(secret));
+            }
+        }
     }
 
     #[test]
