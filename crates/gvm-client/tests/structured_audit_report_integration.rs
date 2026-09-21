@@ -4,10 +4,9 @@
 #![allow(clippy::print_stderr, missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_client::{
-    GetAuditReportHostsOpts, GetAuditReportOpts, Gmp227Commands, GmpClient, GmpVersioned,
-};
+use gvm_client::{Gmp227Commands, GmpClient, GmpVersioned};
 use gvm_connection::UnixSocketConnection;
+use gvm_gmp::commands::reports::{GetAuditReportHostsRequest, GetAuditReportRequest};
 use gvm_gmp::responses::{ComplianceValue, GetAuditReportHostsResponse, GetAuditReportResponse};
 use gvm_gmp::EntityId;
 use gvm_mock_server::{
@@ -65,25 +64,21 @@ async fn exercise_structured_audit_facade(
     report_id: &EntityId,
 ) -> (GetAuditReportResponse, GetAuditReportHostsResponse) {
     let report = client
-        .get_audit_report(
-            report_id,
-            GetAuditReportOpts {
-                filter_string: Some("compliance_levels=y min_qod=70".into()),
-                filter_id: None,
-            },
-        )
+        .get_audit_report(GetAuditReportRequest {
+            audit_report_id: report_id.clone(),
+            filter_string: Some("compliance_levels=y min_qod=70".into()),
+            filter_id: None,
+        })
         .await
         .expect("typed audit report should parse");
     let hosts = client
-        .get_audit_report_hosts(
-            report_id,
-            GetAuditReportHostsOpts {
-                filter_string: Some("result_hosts_only=1 levels=y rows=-1".into()),
-                filter_id: None,
-                lean: Some(true),
-                details: Some(true),
-            },
-        )
+        .get_audit_report_hosts(GetAuditReportHostsRequest {
+            audit_report_id: report_id.clone(),
+            filter_string: Some("result_hosts_only=1 levels=y rows=-1".into()),
+            filter_id: None,
+            lean: Some(true),
+            details: Some(true),
+        })
         .await
         .expect("typed audit hosts should parse");
     (report, hosts)
@@ -165,10 +160,9 @@ async fn generic_client_rejects_structured_audit_commands_before_22_7() {
     server.clear_history();
 
     let error = client
-        .get_audit_report(
-            &EntityId::new(REPORT_ID).expect("report ID"),
-            GetAuditReportOpts::default(),
-        )
+        .get_audit_report(GetAuditReportRequest::new(
+            EntityId::new(REPORT_ID).expect("report ID"),
+        ))
         .await
         .expect_err("22.6 should reject the 22.7 command before send");
     assert!(matches!(

@@ -1,94 +1,81 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! Report command builders.
+//! Canonical report lifecycle requests and transitional report projections.
+
+use std::fmt;
 
 use gvm_protocol::{Request, XmlCommand};
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
 use crate::commands::usage_type::UsageType;
-use crate::common::{
-    add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr,
-    validate_single_xml_document,
-};
+use crate::common::{add_filter_attrs, bool_str, set_optional_bool_attr};
 use crate::responses::{
     CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,
-    GetAuditReportHostsResponse, GetAuditReportResponse, GetReportApplicationsResponse,
-    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
-    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
-    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
-    GetScanReportResponse, ParseError, ReportExport,
+    GetAuditReportHostsResponse, GetAuditReportResponse, GetAuditReportsResponse,
+    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
+    GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
+    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
+    GetReportsResponse, GetScanReportResponse, ReportExport,
 };
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Optional fields for `create_report` requests.
-#[derive(Debug, Clone, Default)]
-pub struct CreateReportOpts {
-    /// Optional report format identifier.
-    pub format_id: Option<EntityId>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-    /// Whether pagination should be ignored.
-    pub ignore_pagination: Option<bool>,
-}
-
-/// Optional fields for `import_report` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ImportReportOpts {
-    /// Whether to import assets embedded in the report XML.
+/// Request for importing one XML report into an existing import task.
+///
+/// The original XML bytes are retained verbatim. Validation confirms that the
+/// payload is exactly one embedded `<report>` envelope before command support
+/// is checked or transport is attempted.
+#[derive(Clone)]
+pub struct ImportReportRequest {
+    /// Existing import-task relationship.
+    pub task_id: EntityId,
+    /// Original report envelope bytes.
+    pub report_xml: Vec<u8>,
+    /// Whether host assets in the imported report should be created or updated.
+    /// Omission lets gvmd apply its false/default behavior.
     pub in_assets: Option<bool>,
 }
 
-/// Semantic request for creating a report.
-#[derive(Debug, Clone)]
-pub struct CreateReportRequest {
-    task_id: EntityId,
-    opts: CreateReportOpts,
-}
-
-impl CreateReportRequest {
-    /// Create a report-creation request.
-    #[must_use]
-    pub fn new(task_id: EntityId, opts: CreateReportOpts) -> Self {
-        Self { task_id, opts }
-    }
-}
-
-impl Request for CreateReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        create_report(&self.task_id, self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for CreateReportRequest {
-    type Response = CreateReportResponse;
-}
-
-/// Semantic request for importing report XML.
-#[derive(Debug, Clone)]
-pub struct ImportReportRequest {
-    bytes: Vec<u8>,
-}
-
 impl ImportReportRequest {
-    /// Validate report XML and create a report-import request.
-    ///
-    /// # Errors
-    /// Returns an error under the same conditions as [`import_report`].
-    pub fn new(
-        report_xml: &str,
-        task_id: &EntityId,
-        opts: ImportReportOpts,
-    ) -> Result<Self, ParseError> {
-        Ok(Self {
-            bytes: import_report(report_xml, task_id, opts)?.to_bytes(),
-        })
+    /// Own a report envelope for import into `task_id`.
+    #[must_use]
+    pub fn new(task_id: EntityId, report_xml: impl AsRef<[u8]>) -> Self {
+        Self {
+            task_id,
+            report_xml: report_xml.as_ref().to_vec(),
+            in_assets: None,
+        }
     }
 }
 
-impl Request for ImportReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.bytes.clone()
+impl fmt::Debug for ImportReportRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImportReportRequest")
+            .field("task_id", &self.task_id)
+            .field("report_xml", &"<redacted>")
+            .field("in_assets", &self.in_assets)
+            .finish()
+    }
+}
+
+impl GmpRequestCodec for ImportReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_report_envelope(&self.report_xml)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "create_report",
+            "import_report",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(import_report_bytes(self))
     }
 }
 
@@ -96,27 +83,31 @@ impl GmpRequest for ImportReportRequest {
     type Response = CreateReportResponse;
 }
 
-/// Semantic request for deleting a report.
+/// Request for permanently deleting an ordinary scan report.
+///
+/// Pinned gvmd does not parse an `ultimate` attribute for reports. Unlike
+/// trash-capable resources, a successful report deletion is permanent.
 #[derive(Debug, Clone)]
 pub struct DeleteReportRequest {
-    report_id: EntityId,
-    ultimate: bool,
+    /// Report identifier to delete.
+    pub report_id: EntityId,
 }
 
 impl DeleteReportRequest {
-    /// Create a report-deletion request.
+    /// Create a permanent report-deletion request.
     #[must_use]
-    pub fn new(report_id: EntityId, ultimate: bool) -> Self {
-        Self {
-            report_id,
-            ultimate,
-        }
+    pub fn new(report_id: EntityId) -> Self {
+        Self { report_id }
     }
 }
 
-impl Request for DeleteReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_report(&self.report_id, self.ultimate).to_bytes()
+impl GmpRequestCodec for DeleteReportRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("delete_report"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_report_command(&self.report_id).to_bytes())
     }
 }
 
@@ -124,23 +115,34 @@ impl GmpRequest for DeleteReportRequest {
     type Response = DeleteReportResponse;
 }
 
-/// Semantic request for deleting an audit report.
+/// Request for deleting an audit report through the shared report command.
+///
+/// This semantic alias deliberately emits no unsupported permanence
+/// attribute and is available only with the GMP 22.6 audit-report surface.
 #[derive(Debug, Clone)]
 pub struct DeleteAuditReportRequest {
-    report_id: EntityId,
+    /// Audit-report identifier to delete.
+    pub audit_report_id: EntityId,
 }
 
 impl DeleteAuditReportRequest {
     /// Create an audit-report deletion request.
     #[must_use]
-    pub fn new(report_id: EntityId) -> Self {
-        Self { report_id }
+    pub fn new(audit_report_id: EntityId) -> Self {
+        Self { audit_report_id }
     }
 }
 
-impl Request for DeleteAuditReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        delete_audit_report(&self.report_id).to_bytes()
+impl GmpRequestCodec for DeleteAuditReportRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "delete_report",
+            "delete_audit_report",
+        ))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(delete_report_command(&self.audit_report_id).to_bytes())
     }
 }
 
@@ -148,50 +150,302 @@ impl GmpRequest for DeleteAuditReportRequest {
     type Response = DeleteReportResponse;
 }
 
-/// Options for `get_reports` requests.
+/// Request for listing ordinary scan reports.
 #[derive(Debug, Clone, Default)]
-pub struct GetReportsOpts {
-    /// Optional report identifier for a single-report request.
-    pub report_id: Option<EntityId>,
-    /// Optional inline filter expression.
+pub struct GetReportsRequest {
+    /// Optional inline report filter, encoded as `report_filter`.
     pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
+    /// Optional saved report filter, encoded as `report_filt_id`.
     pub filter_id: Option<EntityId>,
-    /// Whether to request detailed output.
+    /// Whether report bodies and result details are included. Omission is false.
     pub details: Option<bool>,
-    /// Whether pagination should be ignored.
+    /// Whether pagination terms in the report filter are ignored. Omission is false.
     pub ignore_pagination: Option<bool>,
-}
-
-/// Options for `get_scan_report` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetScanReportOpts {
-    /// Optional inline result filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved result filter identifier.
-    pub filter_id: Option<EntityId>,
-}
-
-/// Options for `get_audit_report` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetAuditReportOpts {
-    /// Optional inline result filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved result filter identifier.
-    pub filter_id: Option<EntityId>,
-}
-
-/// Options for `get_audit_report_hosts` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetAuditReportHostsOpts {
-    /// Optional inline result and host filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved result filter identifier.
-    pub filter_id: Option<EntityId>,
-    /// Whether to omit selected empty or redundant host details.
+    /// Whether details are included for notes selected by the result filter.
+    pub notes_details: Option<bool>,
+    /// Whether details are included for overrides selected by the result filter.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
+    /// Whether gvmd may omit selected redundant report fields.
     pub lean: Option<bool>,
-    /// Whether to include host entries rather than count metadata only.
+}
+
+impl GmpRequestCodec for GetReportsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_reports"))
+    }
+
+    fn encode(&self, version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_reports_command(self, UsageType::Scan, version).to_bytes())
+    }
+}
+
+impl GmpRequest for GetReportsRequest {
+    type Response = GetReportsResponse;
+}
+
+/// Request for one detailed ordinary scan report.
+#[derive(Debug, Clone)]
+pub struct GetReportRequest {
+    /// Report identifier to retrieve.
+    pub report_id: EntityId,
+    /// Optional inline result filter.
+    pub filter_string: Option<String>,
+    /// Optional saved result-filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether to request report details. The constructor defaults this to true.
     pub details: Option<bool>,
+    /// Whether result pagination terms are ignored. Omission is false.
+    pub ignore_pagination: Option<bool>,
+    /// Whether gvmd may omit selected redundant report fields.
+    pub lean: Option<bool>,
+    /// Whether included notes use detailed output.
+    pub notes_details: Option<bool>,
+    /// Whether included overrides use detailed output.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
+}
+
+impl GetReportRequest {
+    /// Create an ID-selected request with details explicitly enabled.
+    #[must_use]
+    pub fn new(report_id: EntityId) -> Self {
+        Self {
+            report_id,
+            filter_string: None,
+            filter_id: None,
+            details: Some(true),
+            ignore_pagination: None,
+            lean: None,
+            notes_details: None,
+            overrides_details: None,
+            result_tags: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for GetReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name("get_reports", "get_report"))
+    }
+
+    fn encode(&self, version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_report_command(self, UsageType::Scan, version).to_bytes())
+    }
+}
+
+impl GmpRequest for GetReportRequest {
+    type Response = GetReportsResponse;
+}
+
+/// Request for listing audit reports through the shared `get_reports` root.
+#[derive(Debug, Clone, Default)]
+pub struct GetAuditReportsRequest {
+    /// Optional inline report filter, encoded as `report_filter`.
+    pub filter_string: Option<String>,
+    /// Optional saved report filter, encoded as `report_filt_id`.
+    pub filter_id: Option<EntityId>,
+    /// Whether report bodies and result details are included. Omission is false.
+    pub details: Option<bool>,
+    /// Whether pagination terms in the report filter are ignored. Omission is false.
+    pub ignore_pagination: Option<bool>,
+    /// Whether included notes use detailed output.
+    pub notes_details: Option<bool>,
+    /// Whether included overrides use detailed output.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
+    /// Whether gvmd may omit selected redundant report fields.
+    pub lean: Option<bool>,
+}
+
+impl GmpRequestCodec for GetAuditReportsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::with_semantic_name(
+            "get_reports",
+            "get_audit_reports",
+        ))
+    }
+
+    fn encode(&self, version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(get_audit_reports_command(self, version).to_bytes())
+    }
+}
+
+impl GmpRequest for GetAuditReportsRequest {
+    type Response = GetAuditReportsResponse;
+}
+
+/// Request for one structured vulnerability report.
+#[derive(Debug, Clone)]
+pub struct GetScanReportRequest {
+    /// Structured scan-report identifier.
+    pub scan_report_id: EntityId,
+    /// Optional inline result filter.
+    pub filter_string: Option<String>,
+    /// Optional saved result-filter identifier.
+    pub filter_id: Option<EntityId>,
+}
+
+impl GetScanReportRequest {
+    /// Create an unfiltered structured scan-report request.
+    #[must_use]
+    pub fn new(scan_report_id: EntityId) -> Self {
+        Self {
+            scan_report_id,
+            filter_string: None,
+            filter_id: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for GetScanReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_scan_report"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(structured_report_command(
+            "get_scan_report",
+            "scan_report_id",
+            &self.scan_report_id,
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for GetScanReportRequest {
+    type Response = GetScanReportResponse;
+}
+
+/// Request for one structured audit report.
+#[derive(Debug, Clone)]
+pub struct GetAuditReportRequest {
+    /// Structured audit-report identifier.
+    pub audit_report_id: EntityId,
+    /// Optional inline result filter.
+    pub filter_string: Option<String>,
+    /// Optional saved result-filter identifier.
+    pub filter_id: Option<EntityId>,
+}
+
+impl GetAuditReportRequest {
+    /// Create an unfiltered structured audit-report request.
+    #[must_use]
+    pub fn new(audit_report_id: EntityId) -> Self {
+        Self {
+            audit_report_id,
+            filter_string: None,
+            filter_id: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for GetAuditReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_audit_report"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(structured_report_command(
+            "get_audit_report",
+            "audit_report_id",
+            &self.audit_report_id,
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for GetAuditReportRequest {
+    type Response = GetAuditReportResponse;
+}
+
+/// Request for structured audit-report host summaries.
+#[derive(Debug, Clone)]
+pub struct GetAuditReportHostsRequest {
+    /// Audit-report identifier whose hosts are summarized.
+    pub audit_report_id: EntityId,
+    /// Optional inline result/host filter.
+    pub filter_string: Option<String>,
+    /// Optional saved result-filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether selected optional/redundant host XML is omitted. Omission is false.
+    pub lean: Option<bool>,
+    /// Whether host entries are included. Omission returns count metadata only.
+    pub details: Option<bool>,
+}
+
+impl GetAuditReportHostsRequest {
+    /// Create an audit-report host-summary request with source defaults.
+    #[must_use]
+    pub fn new(audit_report_id: EntityId) -> Self {
+        Self {
+            audit_report_id,
+            filter_string: None,
+            filter_id: None,
+            lean: None,
+            details: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for GetAuditReportHostsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_audit_report_hosts"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = structured_report_command(
+            "get_audit_report_hosts",
+            "report_id",
+            &self.audit_report_id,
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        );
+        set_optional_bool_attr(&mut command, "lean", self.lean);
+        set_optional_bool_attr(&mut command, "details", self.details);
+        Ok(command.to_bytes())
+    }
+}
+
+impl GmpRequest for GetAuditReportHostsRequest {
+    type Response = GetAuditReportHostsResponse;
 }
 
 /// Options for `get_reports` report-format export requests.
@@ -229,159 +483,6 @@ pub struct ExportScanReportOpts {
     pub overrides_details: Option<bool>,
     /// Whether result tags are included.
     pub result_tags: Option<bool>,
-}
-
-/// Semantic request for listing reports.
-#[derive(Debug, Clone, Default)]
-pub struct GetReportsRequest {
-    opts: GetReportsOpts,
-}
-
-impl GetReportsRequest {
-    /// Create a report-list request.
-    #[must_use]
-    pub fn new(opts: GetReportsOpts) -> Self {
-        Self { opts }
-    }
-}
-
-impl Request for GetReportsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_reports(self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetReportsRequest {
-    type Response = GetReportsResponse;
-}
-
-/// Semantic request for one detailed report.
-#[derive(Debug, Clone)]
-pub struct GetReportRequest {
-    report_id: EntityId,
-}
-
-impl GetReportRequest {
-    /// Create a detailed single-report request.
-    #[must_use]
-    pub fn new(report_id: EntityId) -> Self {
-        Self { report_id }
-    }
-}
-
-impl Request for GetReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_report(&self.report_id).to_bytes()
-    }
-}
-
-impl GmpRequest for GetReportRequest {
-    type Response = GetReportsResponse;
-}
-
-/// Semantic request for listing audit reports.
-#[derive(Debug, Clone, Default)]
-pub struct GetAuditReportsRequest {
-    opts: GetReportsOpts,
-}
-
-impl GetAuditReportsRequest {
-    /// Create an audit-report list request.
-    #[must_use]
-    pub fn new(opts: GetReportsOpts) -> Self {
-        Self { opts }
-    }
-}
-
-impl Request for GetAuditReportsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_audit_reports(self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetAuditReportsRequest {
-    type Response = GetReportsResponse;
-}
-
-/// Semantic request for one structured vulnerability report.
-#[derive(Debug, Clone)]
-pub struct GetScanReportRequest {
-    scan_report_id: EntityId,
-    opts: GetScanReportOpts,
-}
-
-impl GetScanReportRequest {
-    /// Create a structured vulnerability-report request.
-    #[must_use]
-    pub fn new(scan_report_id: EntityId, opts: GetScanReportOpts) -> Self {
-        Self {
-            scan_report_id,
-            opts,
-        }
-    }
-}
-
-impl Request for GetScanReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_scan_report(&self.scan_report_id, self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetScanReportRequest {
-    type Response = GetScanReportResponse;
-}
-
-/// Semantic request for one structured audit report.
-#[derive(Debug, Clone)]
-pub struct GetAuditReportRequest {
-    audit_report_id: EntityId,
-    opts: GetAuditReportOpts,
-}
-
-impl GetAuditReportRequest {
-    /// Create a structured audit-report request.
-    #[must_use]
-    pub fn new(audit_report_id: EntityId, opts: GetAuditReportOpts) -> Self {
-        Self {
-            audit_report_id,
-            opts,
-        }
-    }
-}
-
-impl Request for GetAuditReportRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_audit_report(&self.audit_report_id, self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetAuditReportRequest {
-    type Response = GetAuditReportResponse;
-}
-
-/// Semantic request for structured audit-report host summaries.
-#[derive(Debug, Clone)]
-pub struct GetAuditReportHostsRequest {
-    report_id: EntityId,
-    opts: GetAuditReportHostsOpts,
-}
-
-impl GetAuditReportHostsRequest {
-    /// Create an audit-report host request.
-    #[must_use]
-    pub fn new(report_id: EntityId, opts: GetAuditReportHostsOpts) -> Self {
-        Self { report_id, opts }
-    }
-}
-
-impl Request for GetAuditReportHostsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_audit_report_hosts(&self.report_id, self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetAuditReportHostsRequest {
-    type Response = GetAuditReportHostsResponse;
 }
 
 /// Semantic request for a synchronous report-format export.
@@ -561,124 +662,107 @@ pub struct GetReportDetailsOpts {
     pub details: Option<bool>,
 }
 
-/// Build a `create_report` request.
-#[must_use]
-pub fn create_report(task_id: &EntityId, opts: CreateReportOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_report");
-    add_optional_id_element(&mut cmd, "report_format", opts.format_id.as_ref());
-    cmd.add_element("task")
-        .set_attribute("id", task_id.as_str());
-    add_optional_id_element(&mut cmd, "filter", opts.filter_id.as_ref());
-    if let Some(ignore_pagination) = opts.ignore_pagination {
-        cmd.set_attribute("ignore_pagination", bool_str(ignore_pagination));
-    }
-    cmd
-}
-
-/// Build a `create_report` request that imports existing report XML.
-///
-/// # Errors
-/// Returns an error if `report_xml` is not a single well-formed XML document.
-pub fn import_report(
-    report_xml: &str,
-    task_id: &EntityId,
-    opts: ImportReportOpts,
-) -> Result<impl Request, ParseError> {
-    validate_single_xml_document(report_xml, "report_xml", Some("report"))?;
-    let in_assets_len = opts
+fn import_report_bytes(request: &ImportReportRequest) -> Vec<u8> {
+    let in_assets_len = request
         .in_assets
         .map(|_| "<in_assets>0</in_assets>".len())
         .unwrap_or_default();
-    let mut request = Vec::with_capacity(
+    let mut bytes = Vec::with_capacity(
         "<create_report><task id=\"\"/></create_report>".len()
-            + task_id.as_str().len()
+            + request.task_id.as_str().len()
             + in_assets_len
-            + report_xml.len(),
+            + request.report_xml.len(),
     );
-    request.extend_from_slice(b"<create_report><task id=\"");
-    request.extend_from_slice(task_id.as_str().as_bytes());
-    request.extend_from_slice(b"\"/>");
-    if let Some(in_assets) = opts.in_assets {
-        request.extend_from_slice(b"<in_assets>");
-        request.extend_from_slice(bool_str(in_assets).as_bytes());
-        request.extend_from_slice(b"</in_assets>");
+    bytes.extend_from_slice(b"<create_report>");
+    bytes.extend_from_slice(&request.report_xml);
+    bytes.extend_from_slice(b"<task id=\"");
+    bytes.extend_from_slice(request.task_id.as_str().as_bytes());
+    bytes.extend_from_slice(b"\"/>");
+    if let Some(in_assets) = request.in_assets {
+        bytes.extend_from_slice(b"<in_assets>");
+        bytes.extend_from_slice(bool_str(in_assets).as_bytes());
+        bytes.extend_from_slice(b"</in_assets>");
     }
-    request.extend_from_slice(report_xml.as_bytes());
-    request.extend_from_slice(b"</create_report>");
-    Ok(request)
+    bytes.extend_from_slice(b"</create_report>");
+    bytes
 }
 
-/// Build a `get_reports` request.
-#[must_use]
-pub fn get_reports(opts: GetReportsOpts) -> impl Request {
-    get_reports_with_usage(opts, None)
+fn delete_report_command(report_id: &EntityId) -> XmlCommand {
+    XmlCommand::new("delete_report").attribute("report_id", report_id.as_str())
 }
 
-fn get_reports_with_usage(opts: GetReportsOpts, usage_type: Option<UsageType>) -> XmlCommand {
-    let mut cmd = XmlCommand::new("get_reports");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    if let Some(report_id) = opts.report_id {
-        cmd.set_attribute("report_id", report_id.as_str());
+fn get_reports_command(
+    request: &GetReportsRequest,
+    usage_type: UsageType,
+    version: GmpVersion,
+) -> XmlCommand {
+    let mut command = XmlCommand::new("get_reports");
+    if version >= GmpVersion(22, 6) {
+        command.set_attribute("usage_type", usage_type.as_gmp_str());
     }
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
-    if let Some(usage_type) = usage_type {
-        cmd.set_attribute("usage_type", usage_type.as_gmp_str());
+    if let Some(filter) = &request.filter_string {
+        command.set_attribute("report_filter", filter);
     }
-    cmd
+    if let Some(filter_id) = &request.filter_id {
+        command.set_attribute("report_filt_id", filter_id.as_str());
+    }
+    set_optional_bool_attr(&mut command, "details", request.details);
+    set_optional_bool_attr(&mut command, "ignore_pagination", request.ignore_pagination);
+    set_optional_bool_attr(&mut command, "notes_details", request.notes_details);
+    set_optional_bool_attr(&mut command, "overrides_details", request.overrides_details);
+    set_optional_bool_attr(&mut command, "result_tags", request.result_tags);
+    set_optional_bool_attr(&mut command, "lean", request.lean);
+    command
 }
 
-/// Build a `get_report` request.
-#[must_use]
-pub fn get_report(report_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_reports")
-        .attribute("report_id", report_id.as_str())
-        .attribute("details", "1")
+fn get_audit_reports_command(request: &GetAuditReportsRequest, version: GmpVersion) -> XmlCommand {
+    let ordinary = GetReportsRequest {
+        filter_string: request.filter_string.clone(),
+        filter_id: request.filter_id.clone(),
+        details: request.details,
+        ignore_pagination: request.ignore_pagination,
+        notes_details: request.notes_details,
+        overrides_details: request.overrides_details,
+        result_tags: request.result_tags,
+        lean: request.lean,
+    };
+    get_reports_command(&ordinary, UsageType::Audit, version)
 }
 
-/// Build a `get_scan_report` request for a structured vulnerability report.
-#[must_use]
-pub fn get_scan_report(scan_report_id: &EntityId, opts: GetScanReportOpts) -> impl Request {
-    let mut cmd =
-        XmlCommand::new("get_scan_report").attribute("scan_report_id", scan_report_id.as_str());
+fn get_report_command(
+    request: &GetReportRequest,
+    usage_type: UsageType,
+    version: GmpVersion,
+) -> XmlCommand {
+    let mut command =
+        XmlCommand::new("get_reports").attribute("report_id", request.report_id.as_str());
+    if version >= GmpVersion(22, 6) {
+        command.set_attribute("usage_type", usage_type.as_gmp_str());
+    }
     add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
+        &mut command,
+        request.filter_string.as_deref(),
+        request.filter_id.as_ref(),
     );
-    cmd
+    set_optional_bool_attr(&mut command, "details", request.details);
+    set_optional_bool_attr(&mut command, "ignore_pagination", request.ignore_pagination);
+    set_optional_bool_attr(&mut command, "lean", request.lean);
+    set_optional_bool_attr(&mut command, "notes_details", request.notes_details);
+    set_optional_bool_attr(&mut command, "overrides_details", request.overrides_details);
+    set_optional_bool_attr(&mut command, "result_tags", request.result_tags);
+    command
 }
 
-/// Build a `get_audit_report` request for a structured audit report.
-#[must_use]
-pub fn get_audit_report(audit_report_id: &EntityId, opts: GetAuditReportOpts) -> impl Request {
-    let mut cmd =
-        XmlCommand::new("get_audit_report").attribute("audit_report_id", audit_report_id.as_str());
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    cmd
-}
-
-/// Build a `get_audit_report_hosts` request.
-#[must_use]
-pub fn get_audit_report_hosts(report_id: &EntityId, opts: GetAuditReportHostsOpts) -> impl Request {
-    let mut cmd =
-        XmlCommand::new("get_audit_report_hosts").attribute("report_id", report_id.as_str());
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    set_optional_bool_attr(&mut cmd, "lean", opts.lean);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    cmd
+fn structured_report_command(
+    command_name: &str,
+    id_attribute: &str,
+    report_id: &EntityId,
+    filter_string: Option<&str>,
+    filter_id: Option<&EntityId>,
+) -> XmlCommand {
+    let mut command = XmlCommand::new(command_name).attribute(id_attribute, report_id.as_str());
+    add_filter_attrs(&mut command, filter_string, filter_id);
+    command
 }
 
 /// Build a `get_reports` export request for a specific report format.
@@ -738,26 +822,6 @@ pub fn export_scan_report(report_id: &EntityId, opts: ExportScanReportOpts) -> i
     set_optional_bool_attr(&mut cmd, "overrides_details", opts.overrides_details);
     set_optional_bool_attr(&mut cmd, "result_tags", opts.result_tags);
     cmd
-}
-
-/// Build a `delete_report` request.
-#[must_use]
-pub fn delete_report(report_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_report")
-        .attribute("report_id", report_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
-}
-
-/// Build a `get_reports` request scoped to audit reports.
-#[must_use]
-pub fn get_audit_reports(opts: GetReportsOpts) -> impl Request {
-    get_reports_with_usage(opts, Some(UsageType::Audit))
-}
-
-/// Build a `delete_report` request for an audit report.
-#[must_use]
-pub fn delete_audit_report(report_id: &EntityId) -> impl Request {
-    delete_report(report_id, false)
 }
 
 fn get_report_detail_command(
@@ -845,6 +909,88 @@ pub fn get_report_closed_cves(report_id: &EntityId, opts: GetReportDetailsOpts) 
     get_report_detail_command("get_report_closed_cves", report_id, opts)
 }
 
+fn validate_filter(filter: Option<&str>) -> Result<(), GmpRequestError> {
+    if filter.is_some_and(|value| {
+        value
+            .chars()
+            .any(|character| !is_xml_1_0_character(character))
+    }) {
+        return Err(GmpRequestError::invalid_field(
+            "filter_string",
+            "must contain only XML 1.0 characters",
+        ));
+    }
+    Ok(())
+}
+
+const fn is_xml_1_0_character(character: char) -> bool {
+    matches!(character, '\u{9}' | '\u{A}' | '\u{D}')
+        || matches!(character as u32, 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF)
+}
+
+fn validate_report_envelope(report_xml: &[u8]) -> Result<(), GmpRequestError> {
+    let invalid = || {
+        GmpRequestError::invalid_field(
+            "report_xml",
+            "must be exactly one well-formed embedded report envelope",
+        )
+    };
+    let mut reader = Reader::from_reader(report_xml);
+    reader.config_mut().trim_text(true);
+    let mut depth = 0usize;
+    let mut saw_root = false;
+    let mut completed_root = false;
+
+    loop {
+        match reader.read_event().map_err(|_| invalid())? {
+            Event::Start(event) => {
+                if completed_root || (depth == 0 && event.name().as_ref() != "report") {
+                    return Err(invalid());
+                }
+                saw_root = true;
+                depth += 1;
+            }
+            Event::Empty(event) => {
+                if completed_root || (depth == 0 && event.name().as_ref() != "report") {
+                    return Err(invalid());
+                }
+                saw_root = true;
+                if depth == 0 {
+                    completed_root = true;
+                }
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(invalid());
+                }
+                depth -= 1;
+                if depth == 0 {
+                    completed_root = true;
+                }
+            }
+            Event::Text(event) => {
+                if depth == 0 && !event.as_ref().trim_ascii().is_empty() {
+                    return Err(invalid());
+                }
+            }
+            Event::Eof => {
+                return if saw_root && completed_root && depth == 0 {
+                    Ok(())
+                } else {
+                    Err(invalid())
+                };
+            }
+            Event::Decl(_) | Event::DocType(_) | Event::CData(_) | Event::GeneralRef(_)
+                if depth == 0 =>
+            {
+                return Err(invalid());
+            }
+            Event::PI(_) | Event::Comment(_) => {}
+            Event::Decl(_) | Event::DocType(_) | Event::CData(_) | Event::GeneralRef(_) => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -855,24 +1001,18 @@ mod tests {
         EntityId::new(value).expect("valid id")
     }
 
+    fn encode<R: GmpRequestCodec>(request: &R, version: GmpVersion) -> Vec<u8> {
+        request.encode(version).expect("request should encode")
+    }
+
+    fn encode_text<R: GmpRequestCodec>(request: &R, version: GmpVersion) -> String {
+        String::from_utf8(encode(request, version)).expect("encoded request should be UTF-8")
+    }
+
     #[test]
     fn report_commands_build_xml() {
         let export = get_report_export(&id("r1"), &id("rf1"));
         assert_eq!(export.semantic_command_name(), Some("get_report_export"));
-        let rendered = xml(create_report(
-            &id("t1"),
-            CreateReportOpts {
-                format_id: Some(id("rf1")),
-                filter_id: Some(id("f1")),
-                ignore_pagination: Some(true),
-            },
-        ));
-        assert!(rendered.contains("<report_format id=\"rf1\"/>"));
-        assert!(rendered.contains("<task id=\"t1\"/>"));
-        assert_eq!(
-            xml(get_report(&id("r1"))),
-            "<get_reports details=\"1\" report_id=\"r1\"/>"
-        );
         assert_eq!(
             xml(export),
             "<get_reports details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
@@ -881,22 +1021,18 @@ mod tests {
 
     #[test]
     fn report_get_delete_build_xml() {
+        let request = GetReportsRequest {
+            details: Some(false),
+            ..GetReportsRequest::default()
+        };
         assert_eq!(
-            xml(get_reports(GetReportsOpts {
-                report_id: Some(id("r1")),
-                details: Some(false),
-                ..Default::default()
-            })),
-            "<get_reports details=\"0\" report_id=\"r1\"/>"
+            encode_text(&request, GmpVersion(22, 6)),
+            "<get_reports details=\"0\" usage_type=\"scan\"/>"
         );
-        let rendered = xml(get_reports(GetReportsOpts {
-            details: Some(true),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("details=\"1\""));
+        let delete = DeleteReportRequest::new(id("r1"));
         assert_eq!(
-            xml(delete_report(&id("r1"), false)),
-            "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+            encode_text(&delete, GmpVersion(22, 4)),
+            "<delete_report report_id=\"r1\"/>"
         );
     }
 
@@ -933,13 +1069,12 @@ mod tests {
 
     #[test]
     fn semantic_report_requests_have_fixed_response_types() {
-        assert_associated_response::<CreateReportRequest, CreateReportResponse>();
         assert_associated_response::<ImportReportRequest, CreateReportResponse>();
         assert_associated_response::<DeleteReportRequest, DeleteReportResponse>();
         assert_associated_response::<DeleteAuditReportRequest, DeleteReportResponse>();
         assert_associated_response::<GetReportsRequest, GetReportsResponse>();
         assert_associated_response::<GetReportRequest, GetReportsResponse>();
-        assert_associated_response::<GetAuditReportsRequest, GetReportsResponse>();
+        assert_associated_response::<GetAuditReportsRequest, GetAuditReportsResponse>();
         assert_associated_response::<GetScanReportRequest, GetScanReportResponse>();
         assert_associated_response::<GetAuditReportRequest, GetAuditReportResponse>();
         assert_associated_response::<GetAuditReportHostsRequest, GetAuditReportHostsResponse>();
@@ -963,89 +1098,80 @@ mod tests {
     }
 
     #[test]
-    fn semantic_report_mutation_requests_match_legacy_builder_bytes() {
+    fn canonical_report_mutations_encode_directly() {
         let task_id = id("task-1");
-        let create_opts = CreateReportOpts {
-            format_id: Some(id("format-1")),
-            filter_id: Some(id("filter-1")),
-            ignore_pagination: Some(true),
-        };
-        assert_eq!(
-            CreateReportRequest::new(task_id.clone(), create_opts.clone()).to_bytes(),
-            create_report(&task_id, create_opts).to_bytes()
-        );
-
         let report_xml = r#"<report id="imported-report"><name>Imported</name></report>"#;
-        let import_opts = ImportReportOpts {
-            in_assets: Some(true),
-        };
+        let mut import = ImportReportRequest::new(task_id, report_xml);
+        import.in_assets = Some(true);
         assert_eq!(
-            ImportReportRequest::new(report_xml, &task_id, import_opts.clone())
-                .expect("valid report XML")
-                .to_bytes(),
-            import_report(report_xml, &task_id, import_opts)
-                .expect("valid report XML")
-                .to_bytes()
+            encode(&import, GmpVersion(22, 4)),
+            br#"<create_report><report id="imported-report"><name>Imported</name></report><task id="task-1"/><in_assets>1</in_assets></create_report>"#
         );
-        assert!(ImportReportRequest::new("<not-report/>", &task_id, Default::default()).is_err());
+        assert!(ImportReportRequest::new(id("task-1"), "<not-report/>")
+            .validate()
+            .is_err());
 
         let report_id = id("report-1");
         assert_eq!(
-            DeleteReportRequest::new(report_id.clone(), true).to_bytes(),
-            delete_report(&report_id, true).to_bytes()
+            encode(
+                &DeleteReportRequest::new(report_id.clone()),
+                GmpVersion(22, 4),
+            ),
+            br#"<delete_report report_id="report-1"/>"#
         );
         assert_eq!(
-            DeleteAuditReportRequest::new(report_id.clone()).to_bytes(),
-            delete_audit_report(&report_id).to_bytes()
+            encode(&DeleteAuditReportRequest::new(report_id), GmpVersion(22, 6),),
+            br#"<delete_report report_id="report-1"/>"#
         );
     }
 
     #[test]
-    fn semantic_report_requests_match_legacy_builder_bytes() {
+    fn canonical_report_queries_encode_source_shapes() {
         let report_id = id("report-1");
-        let list_opts = GetReportsOpts {
+        let list = GetReportsRequest {
             filter_string: Some("severity>5".into()),
             details: Some(true),
-            ..Default::default()
+            ..GetReportsRequest::default()
         };
         assert_eq!(
-            GetReportsRequest::new(list_opts.clone()).to_bytes(),
-            get_reports(list_opts.clone()).to_bytes()
+            encode(&list, GmpVersion(22, 6)),
+            br#"<get_reports details="1" report_filter="severity&gt;5" usage_type="scan"/>"#
         );
+        let detail = GetReportRequest::new(report_id.clone());
         assert_eq!(
-            GetReportRequest::new(report_id.clone()).to_bytes(),
-            get_report(&report_id).to_bytes()
+            encode(&detail, GmpVersion(22, 6)),
+            br#"<get_reports details="1" report_id="report-1" usage_type="scan"/>"#
         );
+        let audit_list = GetAuditReportsRequest {
+            filter_string: Some("name~audit".into()),
+            ..GetAuditReportsRequest::default()
+        };
         assert_eq!(
-            GetAuditReportsRequest::new(list_opts.clone()).to_bytes(),
-            get_audit_reports(list_opts).to_bytes()
+            encode(&audit_list, GmpVersion(22, 6)),
+            br#"<get_reports report_filter="name~audit" usage_type="audit"/>"#
         );
 
-        let scan_opts = GetScanReportOpts {
-            filter_string: Some("levels=chml".into()),
-            filter_id: Some(id("filter-1")),
-        };
+        let mut scan = GetScanReportRequest::new(report_id.clone());
+        scan.filter_string = Some("levels=chml".into());
+        scan.filter_id = Some(id("filter-1"));
         assert_eq!(
-            GetScanReportRequest::new(report_id.clone(), scan_opts.clone()).to_bytes(),
-            get_scan_report(&report_id, scan_opts).to_bytes()
+            encode(&scan, GmpVersion(22, 8)),
+            br#"<get_scan_report filt_id="filter-1" filter="levels=chml" scan_report_id="report-1"/>"#
         );
-        let audit_opts = GetAuditReportOpts {
-            filter_string: Some("compliance_levels=yniu".into()),
-            filter_id: Some(id("filter-2")),
-        };
+        let mut audit = GetAuditReportRequest::new(report_id.clone());
+        audit.filter_string = Some("compliance_levels=yniu".into());
+        audit.filter_id = Some(id("filter-2"));
         assert_eq!(
-            GetAuditReportRequest::new(report_id.clone(), audit_opts.clone()).to_bytes(),
-            get_audit_report(&report_id, audit_opts).to_bytes()
+            encode(&audit, GmpVersion(22, 7)),
+            br#"<get_audit_report audit_report_id="report-1" filt_id="filter-2" filter="compliance_levels=yniu"/>"#
         );
-        let audit_hosts_opts = GetAuditReportHostsOpts {
-            filter_string: Some("rows=25".into()),
-            filter_id: None,
-            lean: Some(true),
-            details: Some(false),
-        };
+        let mut hosts = GetAuditReportHostsRequest::new(report_id.clone());
+        hosts.filter_string = Some("rows=25".into());
+        hosts.lean = Some(true);
+        hosts.details = Some(false);
         assert_eq!(
-            GetAuditReportHostsRequest::new(report_id.clone(), audit_hosts_opts.clone()).to_bytes(),
-            get_audit_report_hosts(&report_id, audit_hosts_opts).to_bytes()
+            encode(&hosts, GmpVersion(22, 7)),
+            br#"<get_audit_report_hosts details="0" filter="rows=25" lean="1" report_id="report-1"/>"#
         );
 
         let mut export_opts = GetReportExportOpts::new(id("format-1"));
@@ -1088,34 +1214,29 @@ mod tests {
 
     #[test]
     fn audit_report_commands_build_xml() {
+        let list = GetAuditReportsRequest::default();
         assert_eq!(
-            xml(get_audit_reports(GetReportsOpts::default())),
+            encode_text(&list, GmpVersion(22, 6)),
             "<get_reports usage_type=\"audit\"/>"
         );
+        let delete = DeleteAuditReportRequest::new(id("r1"));
         assert_eq!(
-            xml(delete_audit_report(&id("r1"))),
-            "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+            encode_text(&delete, GmpVersion(22, 6)),
+            "<delete_report report_id=\"r1\"/>"
         );
+        let mut audit = GetAuditReportRequest::new(id("r1"));
+        audit.filter_string = Some("compliance_levels=yniu min_qod=70".into());
+        audit.filter_id = Some(id("f1"));
         assert_eq!(
-            xml(get_audit_report(
-                &id("r1"),
-                GetAuditReportOpts {
-                    filter_string: Some("compliance_levels=yniu min_qod=70".into()),
-                    filter_id: Some(id("f1")),
-                }
-            )),
+            encode_text(&audit, GmpVersion(22, 7)),
             "<get_audit_report audit_report_id=\"r1\" filt_id=\"f1\" filter=\"compliance_levels=yniu min_qod=70\"/>"
         );
+        let mut hosts = GetAuditReportHostsRequest::new(id("r1"));
+        hosts.filter_string = Some("levels=yniu rows=10 first=1".into());
+        hosts.lean = Some(true);
+        hosts.details = Some(false);
         assert_eq!(
-            xml(get_audit_report_hosts(
-                &id("r1"),
-                GetAuditReportHostsOpts {
-                    filter_string: Some("levels=yniu rows=10 first=1".into()),
-                    filter_id: None,
-                    lean: Some(true),
-                    details: Some(false),
-                }
-            )),
+            encode_text(&hosts, GmpVersion(22, 7)),
             "<get_audit_report_hosts details=\"0\" filter=\"levels=yniu rows=10 first=1\" lean=\"1\" report_id=\"r1\"/>"
         );
     }

@@ -5,7 +5,7 @@
 #![cfg(feature = "large-response-tests")]
 
 use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
-use gvm_gmp::commands::reports::get_report;
+use gvm_gmp::commands::reports::GetReportRequest;
 use gvm_gmp::commands::scan_configs::GetScanConfigsRequest;
 use gvm_gmp::commands::tasks::{CreateTaskRequest, StartTaskRequest};
 use gvm_gmp::types::EntityId;
@@ -130,7 +130,10 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
         .parse()
         .expect("entity id");
 
-    conn.send(&get_report(&report_id).to_bytes())
+    let report_request = GetReportRequest::new(report_id.clone())
+        .encode(gvm_gmp::GmpVersion(22, 5))
+        .expect("valid get-report request");
+    conn.send(&report_request)
         .await
         .expect("get_report send should succeed");
     let bytes = conn.read().await.expect("get_report read should succeed");
@@ -183,7 +186,10 @@ async fn test_large_report_deterministic() {
     conn.connect().await.expect("connect should succeed");
 
     let (report_id, first) = create_large_report(&mut conn).await;
-    let second = send(&mut conn, get_report(&report_id))
+    let second_request = GetReportRequest::new(report_id)
+        .encode(gvm_gmp::GmpVersion(22, 5))
+        .expect("valid get-report request");
+    let second = send(&mut conn, second_request.as_slice())
         .await
         .data()
         .to_vec();

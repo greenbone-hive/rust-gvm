@@ -68,6 +68,21 @@ pub struct GetReportsResponse {
     pub counts: CountInfo,
 }
 
+/// Typed response for the audit-scoped `get_reports` semantic operation.
+///
+/// The wire envelope is still `get_reports_response`, but this distinct type
+/// prevents ordinary and audit report lists from becoming interchangeable in
+/// statically associated request execution.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetAuditReportsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<Report>,
+    pub counts: CountInfo,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -377,6 +392,18 @@ impl GetReportsResponse {
     }
 }
 
+impl GetAuditReportsResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let ordinary = GetReportsResponse::from_response(response)?;
+        Ok(Self {
+            status: ordinary.status,
+            status_text: ordinary.status_text,
+            items: ordinary.items,
+            counts: ordinary.counts,
+        })
+    }
+}
+
 impl CreateReportResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -433,6 +460,7 @@ macro_rules! impl_report_gmp_response {
 impl_report_gmp_response!(
     CreateReportResponse,
     GetReportsResponse,
+    GetAuditReportsResponse,
     GetReportVulnsResponse,
     GetReportTlsCertificatesResponse,
     GetReportErrorsResponse,

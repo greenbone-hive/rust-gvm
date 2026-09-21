@@ -317,9 +317,18 @@ async fn matrix_reports_create_list() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
+    let task_id = create_and_get_id(
+        &mut stream,
+        b"<create_task><name>Matrix Import</name><target id=\"0\"/></create_task>",
+        "create_task",
+    )
+    .await;
     let report_id = create_and_get_id(
         &mut stream,
-        b"<create_report><name>Matrix Report</name><comment>report</comment></create_report>",
+        format!(
+            "<create_report><report><name>Matrix Report</name><comment>report</comment></report><task id=\"{task_id}\"/></create_report>"
+        )
+        .as_bytes(),
         "create_report",
     )
     .await;

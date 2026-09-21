@@ -279,6 +279,7 @@ pub fn minimum_version_for_command(name: &str) -> Option<GmpVersion> {
         | "get_credential_store"
         | "get_report_export"
         | "modify_credential_store_credential" => Some(GmpVersion(22, 8)),
+        "delete_audit_report" | "get_audit_reports" => Some(GmpVersion(22, 6)),
         _ => command_capability(name).and_then(|capability| capability.min_version),
     }
 }

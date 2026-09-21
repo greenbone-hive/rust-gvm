@@ -424,25 +424,24 @@ helpers now delegate to `execute`. Semantic request diagnostics redact auth
 configuration values, license payloads, wizard parameter values, and
 user-setting values; raw builders and custom execution remain supported.
 
-The irregular-report Phase 3 batch, tracked by
-[`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
-list/detail, structured scan and audit reports, audit hosts, nine structured
-report drill-downs, and synchronous report-format export. Existing explicit
-parsers remain authoritative for binary/base64 exports, nested XML exports,
-mixed/repeated response elements, and large bounded responses. Existing typed
-helpers delegate to generic execution, while raw builders and versioned/raw
-helpers remain supported. Version policy stays explicit: audit operations are
-22.7+, scan/drill-down/synchronous-export operations are 22.8+, and
-`export_scan_report` still requires positive help discovery.
+Issue #661 completes the report lifecycle and structured-report request
+migration. Ordinary list/detail, XML import, permanent ordinary deletion,
+audit list/non-ultimate deletion, structured scan/audit retrieval, and audit
+host summaries now own complete canonical values. Pinned gvmd has no empty
+report-creation form, so the incompatible `CreateReportRequest` is removed and
+validated report import is the sole creation operation. Imports accept exactly
+one `<report>` envelope, retain its original bytes, redact payload diagnostics,
+and model import-task and optional asset behavior explicitly.
 
-The report-mutation Phase 3 batch, tracked by
-[`#576`](https://github.com/greenbone-hive/rust-gvm/issues/576), adds semantic
-requests for report creation, XML import, deletion, and audit-report deletion.
-Create and import retain distinct Rust request types over their shared
-`create_report` wire root, while both deletion forms preserve the established
-`delete_report` encoding. The existing typed import helper now delegates to
-generic execution without changing validation, base64 payload handling,
-response parsing, or raw compatibility APIs.
+Ordinary, audit-list, structured scan, structured audit, and audit-host
+responses retain separate associations and explicit parsers for nested,
+mixed, repeated, and large report XML. Audit list/delete are gated at 22.6,
+structured audit/hosts at 22.7, and structured scan at 22.8. Stateful mock
+coverage includes task validation, result/asset import, report/result filters,
+pagination/counts/details/lean semantics, usage separation, dependencies,
+permanent deletion, and atomic rollback. Report exports, format/config and
+delta selection, and all drill-down projections remain explicitly assigned to
+issue #662. See the [pinned evidence](report-request-gvmd-evidence.md).
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
@@ -596,9 +595,10 @@ de-duplication without rewriting otherwise valid host spellings.
 |---------|--------|-------|
 | get_version (pre-auth) | ✅ | Always allowed without authentication |
 | authenticate (credential validation) | ✅ | Per-session state |
-| direct-host asset lifecycle and canonical `get_assets` | ✅ | Strict gvmd behavior by default; legacy flat inputs are explicit opt-in; report-import/bulk-delete paths are not modeled |
+| direct-host asset lifecycle and canonical `get_assets` | ✅ | Strict gvmd behavior by default; legacy flat inputs are explicit opt-in; report import creates or updates host assets only when requested |
 | result list/detail conformance | ✅ | Bounded saved/inline filter, effective task context, resolved pagination/counts, ID-tied sorting, task-restricted expansions, and effective seeded override behavior; unsupported or malformed terms are explicit and the full gvmd filter/permission/CVSS engine is not modeled |
-| get_report (nested results XML) | ✅ | Proper `<report><report><results>` nesting |
+| report lifecycle | ✅ | Import-task validation, XML/result/asset persistence, scan/audit selection, list/detail filters, pagination/counts, dependency-safe permanent deletion, and atomic rollback |
+| get_report (nested results XML) | ✅ | Proper `<report><report><results>` nesting with explicit parser preservation |
 | structured audit reports (22.7+) | ✅ | Typed summaries and hosts with compliance filtering, pagination, details, and lean output |
 | create_note/override (text + nvt_oid) | ✅ | Non-standard element parsing |
 | create_ticket (result_id + comment) | ✅ | Non-standard element parsing |
@@ -897,7 +897,7 @@ its explicit raw-send compatibility path.
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
 | port_list | ✅ | ✅ | |
 | task | ✅ | ✅ | Also: `start_task()` |
-| report | ✅ | — | Also: typed report drill-down helpers for vulns, TLS certificates, errors, closed CVEs |
+| report | ✅ | ✅ | Ten canonical lifecycle/structured operations; import is gvmd's report creation form, while drill-down/export helpers remain pending #662 |
 | result | ✅ | — | |
 | feed | ✅ | — | |
 | nvt | ✅ | — | Also: `get_nvt_families()` |

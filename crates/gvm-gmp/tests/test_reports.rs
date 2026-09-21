@@ -7,127 +7,165 @@ mod common;
 
 use common::{id, xml};
 use gvm_gmp::commands::reports::*;
-
-#[test]
-fn test_create_report_basic() {
-    assert_eq!(
-        xml(create_report(&id("t1"), Default::default())),
-        "<create_report><task id=\"t1\"/></create_report>"
-    );
-}
-
-#[test]
-fn test_create_report_with_optionals() {
-    assert_eq!(
-        xml(create_report(
-            &id("t1"),
-            CreateReportOpts {
-                format_id: Some(id("rf1")),
-                filter_id: Some(id("f1")),
-                ignore_pagination: Some(true),
-            }
-        )),
-        "<create_report ignore_pagination=\"1\"><report_format id=\"rf1\"/><task id=\"t1\"/><filter id=\"f1\"/></create_report>"
-    );
-}
+use gvm_gmp::{GmpRequestCodec, GmpVersion};
 
 #[test]
 fn test_import_report_basic() {
     let report_xml = r#"<report id="r1"><name>Imported</name></report>"#;
+    let request = ImportReportRequest::new(id("t1"), report_xml);
 
     assert_eq!(
-        xml(import_report(report_xml, &id("t1"), Default::default()).expect("valid report XML")),
-        r#"<create_report><task id="t1"/><report id="r1"><name>Imported</name></report></create_report>"#
+        String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap(),
+        r#"<create_report><report id="r1"><name>Imported</name></report><task id="t1"/></create_report>"#
     );
 }
 
 #[test]
 fn test_import_report_with_in_assets() {
     let report_xml = r#"<report id="r1"><name>Imported</name></report>"#;
+    let mut request = ImportReportRequest::new(id("t1"), report_xml);
+    request.in_assets = Some(false);
+    assert_eq!(
+        String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap(),
+        r#"<create_report><report id="r1"><name>Imported</name></report><task id="t1"/><in_assets>0</in_assets></create_report>"#
+    );
+}
 
+#[test]
+fn test_import_report_preserves_original_envelope_bytes_and_redacts_debug() {
+    let report_xml =
+        b"<report id=\"r1\">\n  <!--opaque--><name><![CDATA[Private & exact]]></name>\n</report>";
+    let request = ImportReportRequest::new(id("t1"), report_xml);
+    let encoded = request.encode(GmpVersion(22, 8)).unwrap();
     assert_eq!(
-        xml(import_report(
-            report_xml,
-            &id("t1"),
-            ImportReportOpts {
-                in_assets: Some(false),
-            },
-        )
-        .expect("valid report XML")),
-        r#"<create_report><task id="t1"/><in_assets>0</in_assets><report id="r1"><name>Imported</name></report></create_report>"#
+        encoded,
+        [
+            b"<create_report>".as_slice(),
+            report_xml.as_slice(),
+            b"<task id=\"t1\"/></create_report>".as_slice(),
+        ]
+        .concat()
     );
-    assert_eq!(
-        xml(import_report(
-            report_xml,
-            &id("t1"),
-            ImportReportOpts {
-                in_assets: Some(true),
-            },
-        )
-        .expect("valid report XML")),
-        r#"<create_report><task id="t1"/><in_assets>1</in_assets><report id="r1"><name>Imported</name></report></create_report>"#
-    );
+    let debug = format!("{request:?}");
+    assert!(debug.contains("<redacted>"));
+    assert!(!debug.contains("Private"));
 }
 
 #[test]
 fn test_import_report_rejects_invalid_report_xml() {
-    assert!(import_report("report", &id("t1"), Default::default()).is_err());
-    assert!(import_report("", &id("t1"), Default::default()).is_err());
-    assert!(import_report("<foo/>", &id("t1"), Default::default()).is_err());
-    assert!(import_report(
-        r#"<?xml version="1.0"?><report id="r1"/>"#,
-        &id("t1"),
-        Default::default()
-    )
-    .is_err());
-    assert!(import_report(
-        r#"<!DOCTYPE report><report id="r1"/>"#,
-        &id("t1"),
-        Default::default()
-    )
-    .is_err());
-    assert!(import_report(
-        r#"<report id="r1"/></create_report><delete_task/>"#,
-        &id("t1"),
-        Default::default()
-    )
-    .is_err());
+    for invalid in [
+        b"report".as_slice(),
+        b"",
+        b"<foo/>",
+        br#"<?xml version="1.0"?><report id="r1"/>"#,
+        br#"<!DOCTYPE report><report id="r1"/>"#,
+        br#"<report id="r1"/><report id="r2"/>"#,
+        b"\xff<report/>",
+    ] {
+        let request = ImportReportRequest::new(id("t1"), invalid);
+        let error = request.validate().expect_err("invalid report envelope");
+        assert!(!error.to_string().contains("r1"));
+    }
 }
 
 #[test]
 fn test_report_get_and_delete() {
+    let report = GetReportRequest::new(id("r1"));
     assert_eq!(
-        xml(get_report(&id("r1"))),
-        "<get_reports details=\"1\" report_id=\"r1\"/>"
+        String::from_utf8(report.encode(GmpVersion(22, 6)).unwrap()).unwrap(),
+        "<get_reports details=\"1\" report_id=\"r1\" usage_type=\"scan\"/>"
     );
     assert_eq!(
         xml(get_report_export(&id("r1"), &id("rf1"))),
         "<get_reports details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
     );
+    let delete = DeleteReportRequest::new(id("r1"));
     assert_eq!(
-        xml(get_reports(GetReportsOpts {
-            report_id: Some(id("r1")),
-            details: Some(false),
-            ..Default::default()
-        })),
-        "<get_reports details=\"0\" report_id=\"r1\"/>"
+        String::from_utf8(delete.encode(GmpVersion(22, 4)).unwrap()).unwrap(),
+        "<delete_report report_id=\"r1\"/>"
+    );
+}
+
+#[test]
+fn test_report_list_and_detail_own_every_source_query_control() {
+    let list = GetReportsRequest {
+        filter_string: Some("sort-reverse=date rows=20".into()),
+        filter_id: Some(id("report-filter")),
+        details: Some(true),
+        ignore_pagination: Some(false),
+        notes_details: Some(true),
+        overrides_details: Some(false),
+        result_tags: Some(true),
+        lean: Some(false),
+    };
+    assert_eq!(
+        String::from_utf8(list.encode(GmpVersion(22, 6)).unwrap()).unwrap(),
+        "<get_reports details=\"1\" ignore_pagination=\"0\" lean=\"0\" notes_details=\"1\" overrides_details=\"0\" report_filt_id=\"report-filter\" report_filter=\"sort-reverse=date rows=20\" result_tags=\"1\" usage_type=\"scan\"/>"
     );
     assert_eq!(
-        xml(delete_report(&id("r1"), false)),
-        "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+        String::from_utf8(
+            GetReportsRequest::default()
+                .encode(GmpVersion(22, 5))
+                .unwrap()
+        )
+        .unwrap(),
+        "<get_reports/>"
+    );
+
+    let detail = GetReportRequest {
+        report_id: id("report"),
+        filter_string: Some("levels=hm rows=10".into()),
+        filter_id: Some(id("result-filter")),
+        details: Some(false),
+        ignore_pagination: Some(true),
+        lean: Some(true),
+        notes_details: Some(false),
+        overrides_details: Some(true),
+        result_tags: Some(false),
+    };
+    assert_eq!(
+        String::from_utf8(detail.encode(GmpVersion(22, 6)).unwrap()).unwrap(),
+        "<get_reports details=\"0\" filt_id=\"result-filter\" filter=\"levels=hm rows=10\" ignore_pagination=\"1\" lean=\"1\" notes_details=\"0\" overrides_details=\"1\" report_id=\"report\" result_tags=\"0\" usage_type=\"scan\"/>"
+    );
+}
+
+#[test]
+fn test_audit_list_and_delete_have_distinct_semantics_without_ultimate() {
+    let list = GetAuditReportsRequest {
+        filter_string: Some("rows=-1".into()),
+        details: Some(true),
+        lean: Some(true),
+        ..Default::default()
+    };
+    assert_eq!(
+        list.command().and_then(gvm_gmp::GmpCommand::semantic_name),
+        Some("get_audit_reports")
+    );
+    assert_eq!(
+        String::from_utf8(list.encode(GmpVersion(22, 6)).unwrap()).unwrap(),
+        "<get_reports details=\"1\" lean=\"1\" report_filter=\"rows=-1\" usage_type=\"audit\"/>"
+    );
+
+    let delete = DeleteAuditReportRequest::new(id("audit-report"));
+    assert_eq!(
+        delete
+            .command()
+            .and_then(gvm_gmp::GmpCommand::semantic_name),
+        Some("delete_audit_report")
+    );
+    assert_eq!(
+        String::from_utf8(delete.encode(GmpVersion(22, 6)).unwrap()).unwrap(),
+        "<delete_report report_id=\"audit-report\"/>"
     );
 }
 
 #[test]
 fn test_get_scan_report_with_filters() {
+    let mut request = GetScanReportRequest::new(id("r1"));
+    request.filter_string = Some("levels=chml min_qod=70".into());
+    request.filter_id = Some(id("f1"));
     assert_eq!(
-        xml(get_scan_report(
-            &id("r1"),
-            GetScanReportOpts {
-                filter_string: Some("levels=chml min_qod=70".into()),
-                filter_id: Some(id("f1")),
-            },
-        )),
+        String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap()).unwrap(),
         "<get_scan_report filt_id=\"f1\" filter=\"levels=chml min_qod=70\" scan_report_id=\"r1\"/>"
     );
 }
@@ -135,39 +173,36 @@ fn test_get_scan_report_with_filters() {
 #[test]
 fn test_get_scan_report_without_filters() {
     assert_eq!(
-        xml(get_scan_report(&id("r1"), Default::default())),
+        String::from_utf8(
+            GetScanReportRequest::new(id("r1"))
+                .encode(GmpVersion(22, 8))
+                .unwrap()
+        )
+        .unwrap(),
         "<get_scan_report scan_report_id=\"r1\"/>"
     );
 }
 
 #[test]
 fn test_get_audit_report_matches_current_schema_example() {
+    let mut request = GetAuditReportRequest::new(id("c00e2b2b-6b3a-4be9-a6df-337f76262fe0"));
+    request.filter_string = Some("compliance_levels=yniu min_qod=70".into());
     assert_eq!(
-        xml(get_audit_report(
-            &id("c00e2b2b-6b3a-4be9-a6df-337f76262fe0"),
-            GetAuditReportOpts {
-                filter_string: Some("compliance_levels=yniu min_qod=70".into()),
-                filter_id: None,
-            },
-        )),
+        String::from_utf8(request.encode(GmpVersion(22, 7)).unwrap()).unwrap(),
         "<get_audit_report audit_report_id=\"c00e2b2b-6b3a-4be9-a6df-337f76262fe0\" filter=\"compliance_levels=yniu min_qod=70\"/>"
     );
 }
 
 #[test]
 fn test_get_audit_report_hosts_serializes_schema_attributes() {
+    let mut request = GetAuditReportHostsRequest::new(id("6587438c-4787-41e6-a0a7-765193dcd44f"));
+    request.filter_string =
+        Some("levels=yniu rows=10 min_qod=70 first=1 sort-reverse=severity".into());
+    request.filter_id = Some(id("f1"));
+    request.lean = Some(true);
+    request.details = Some(true);
     assert_eq!(
-        xml(get_audit_report_hosts(
-            &id("6587438c-4787-41e6-a0a7-765193dcd44f"),
-            GetAuditReportHostsOpts {
-                filter_string: Some(
-                    "levels=yniu rows=10 min_qod=70 first=1 sort-reverse=severity".into(),
-                ),
-                filter_id: Some(id("f1")),
-                lean: Some(true),
-                details: Some(true),
-            },
-        )),
+        String::from_utf8(request.encode(GmpVersion(22, 7)).unwrap()).unwrap(),
         "<get_audit_report_hosts details=\"1\" filt_id=\"f1\" filter=\"levels=yniu rows=10 min_qod=70 first=1 sort-reverse=severity\" lean=\"1\" report_id=\"6587438c-4787-41e6-a0a7-765193dcd44f\"/>"
     );
 }

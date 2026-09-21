@@ -29,7 +29,7 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::report_configs::CreateReportConfigRequest;
-use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
+use gvm_gmp::commands::reports::GetScanReportRequest;
 use gvm_gmp::commands::targets::GetTargetsRequest;
 use gvm_gmp::commands::tasks::{
     CreateAgentGroupTaskRequest, CreateContainerImageTaskRequest, CreateWebApplicationTaskRequest,
@@ -734,7 +734,7 @@ async fn versioned_client_rejects_get_scan_report_before_next() {
 
     let report_id = EntityId::new("10000000-0000-4000-8000-000000000001").expect("valid report ID");
     let error = client
-        .call(get_scan_report(&report_id, GetScanReportOpts::default()))
+        .execute(GetScanReportRequest::new(report_id))
         .await
         .expect_err("22.7 should reject get_scan_report");
 

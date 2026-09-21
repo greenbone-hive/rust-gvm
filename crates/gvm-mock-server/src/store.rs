@@ -2693,6 +2693,88 @@ impl ResourceStore {
         Ok(insert_resource(&mut inner, report))
     }
 
+    /// Atomically import a scan report, its bounded result projection, and any
+    /// requested host assets.
+    pub(crate) fn import_report(
+        &self,
+        mut report: Resource,
+        task_id: Uuid,
+        in_assets: bool,
+        hosts: &[String],
+        mut results: Vec<Resource>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let task = active_typed_resource(&inner, &task_id, "task")?;
+        if task.attr("import_task") != Some("1") {
+            return Err(StoreError::InvalidArgument(
+                "Report import requires an import task",
+            ));
+        }
+        if task.attr("usage_type").unwrap_or("scan") != "scan" {
+            return Err(StoreError::InvalidArgument(
+                "Only scan reports can be imported",
+            ));
+        }
+
+        if in_assets
+            && hosts
+                .iter()
+                .any(|host| host.parse::<std::net::IpAddr>().is_err())
+        {
+            return Err(StoreError::InvalidArgument(
+                "Imported report contains an invalid host address",
+            ));
+        }
+
+        let report_id = report.id;
+        report.set_attr("task_id", &task_id.to_string());
+        report.set_attr("usage_type", "scan");
+        report.set_attr("status", "Done");
+        report.set_attr("in_assets", if in_assets { "1" } else { "0" });
+        report.modification_time = now_iso();
+
+        for result in &mut results {
+            result.set_attr("report_id", &report_id.to_string());
+            result.modification_time = now_iso();
+        }
+
+        // All validation is complete before the first mutation. Keep the
+        // insertion sequence under the same write lock so callers never
+        // observe a partial report graph.
+        insert_resource(&mut inner, report);
+        for result in results {
+            insert_resource(&mut inner, result);
+        }
+        if in_assets {
+            for host in hosts {
+                let existing = inner
+                    .resources
+                    .values()
+                    .find(|resource| {
+                        resource.resource_type == "asset"
+                            && !resource.trashed
+                            && resource.asset_type() == Some("host")
+                            && resource.name == *host
+                    })
+                    .map(|resource| resource.id);
+                if let Some(asset_id) = existing {
+                    let asset = inner
+                        .resources
+                        .get_mut(&asset_id)
+                        .expect("selected host asset remains present while locked");
+                    asset.set_attr("source_report_id", &report_id.to_string());
+                    asset.modification_time = now_iso();
+                } else {
+                    let mut asset = Resource::new("asset", host);
+                    asset.set_attr("type", "host");
+                    asset.set_attr("source_report_id", &report_id.to_string());
+                    insert_resource(&mut inner, asset);
+                }
+            }
+        }
+        Ok(report_id)
+    }
+
     /// Get a resource by UUID.
     pub fn get(&self, id: &Uuid) -> Option<Resource> {
         let inner = self.inner.read().expect("store lock poisoned");

@@ -43,10 +43,10 @@ UPDATE_CANONICAL_REQUEST_DISPOSITION=1 \
 The update command deliberately preserves stale active rows so removal remains
 an explicit reviewed decision rather than a generated side effect.
 
-After the bounded specialized-task and audit lifecycle migration in #660, the
-ledger contains exactly 998 rows: 150 `transitional`, 345
-`canonical-request`, 380 `removed`, 111 `retained-construction`, and 12
-`frozen-ticket`. The combined #659/#660 task command module and task/audit
-facades contain no transitional rows: complete requests replace all task
-option bags and forwarding builders. The inventory test protects both these
-counts and the source-to-ledger correspondence.
+After the bounded report and audit-report lifecycle migration in #661, the
+ledger contains exactly 1003 rows: 120 `transitional`, 363
+`canonical-request`, 397 `removed`, 111 `retained-construction`, and 12
+`frozen-ticket`. The scoped report lifecycle and structured-report surfaces
+contain no transitional rows. Remaining report drill-down and export rows are
+explicitly deferred to #662. The inventory test protects both these counts and
+the source-to-ledger correspondence.

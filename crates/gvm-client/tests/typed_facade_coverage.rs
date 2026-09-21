@@ -83,9 +83,9 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    CreateReportOpts, CreateReportRequest, DeleteAuditReportRequest, DeleteReportRequest,
-    GetReportDetailsOpts, GetReportExportRequest, GetReportVulnsRequest, GetReportsOpts,
-    GetReportsRequest, ImportReportOpts, ImportReportRequest,
+    DeleteAuditReportRequest, DeleteReportRequest, GetAuditReportsRequest, GetReportDetailsOpts,
+    GetReportExportRequest, GetReportRequest, GetReportVulnsRequest, GetReportsRequest,
+    GetScanReportRequest, ImportReportRequest,
 };
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::roles::*;
@@ -1837,7 +1837,7 @@ async fn remaining_report_mutations_execute_with_fixed_response_associations() {
             r#"<delete_report_response status="200" status_text="OK"/>"#,
         ),
     ];
-    let Some(server) = fixture_server(MockVersion::V22_4, &overrides).await else {
+    let Some(server) = fixture_server(MockVersion::V22_6, &overrides).await else {
         return;
     };
     let mut client = client(&server).await;
@@ -1846,31 +1846,27 @@ async fn remaining_report_mutations_execute_with_fixed_response_associations() {
     let report_id = id("33333333-3333-3333-3333-333333333333");
 
     let created = client
-        .execute(CreateReportRequest::new(
+        .execute(ImportReportRequest::new(
             task_id.clone(),
-            CreateReportOpts::default(),
+            br#"<report id="created"><name>Created</name></report>"#,
         ))
         .await
         .expect("report creation should decode");
     assert_eq!(created.status, 201);
 
+    let mut import_request = ImportReportRequest::new(
+        task_id,
+        br#"<report id="imported"><name>Imported</name></report>"#,
+    );
+    import_request.in_assets = Some(true);
     let imported = client
-        .execute(
-            ImportReportRequest::new(
-                r#"<report id="imported"><name>Imported</name></report>"#,
-                &task_id,
-                ImportReportOpts {
-                    in_assets: Some(true),
-                },
-            )
-            .expect("valid report XML"),
-        )
+        .execute(import_request)
         .await
         .expect("report import should decode");
     assert_eq!(imported.status, 201);
 
     let deleted = client
-        .execute(DeleteReportRequest::new(report_id.clone(), true))
+        .execute(DeleteReportRequest::new(report_id.clone()))
         .await
         .expect("report deletion should decode");
     assert_eq!(deleted.status, 200);
@@ -1891,6 +1887,60 @@ async fn remaining_report_mutations_execute_with_fixed_response_associations() {
 }
 
 #[tokio::test]
+async fn canonical_report_lifecycle_facades_accept_complete_requests_unchanged() {
+    let overrides = [
+        (
+            "get_reports",
+            r#"<get_reports_response status="200" status_text="OK"><report_count>0<filtered>0</filtered></report_count></get_reports_response>"#,
+        ),
+        (
+            "get_scan_report",
+            r#"<get_scan_report_response status="200" status_text="OK"><report id="33333333-3333-3333-3333-333333333333"><name>scan</name></report><scan_report_count>1<filtered>1</filtered></scan_report_count></get_scan_report_response>"#,
+        ),
+        (
+            "delete_report",
+            r#"<delete_report_response status="200" status_text="OK"/>"#,
+        ),
+    ];
+    let Some(server) = fixture_server(MockVersion::V22_8, &overrides).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let report_id = id("33333333-3333-3333-3333-333333333333");
+    server.clear_history();
+
+    client
+        .get_report(GetReportRequest::new(report_id.clone()))
+        .await
+        .expect("ordinary report detail facade");
+    client
+        .get_audit_reports(GetAuditReportsRequest::default())
+        .await
+        .expect("audit list facade");
+    client
+        .get_scan_report(GetScanReportRequest::new(report_id.clone()))
+        .await
+        .expect("structured scan facade");
+    client
+        .delete_report(DeleteReportRequest::new(report_id.clone()))
+        .await
+        .expect("ordinary delete facade");
+    client
+        .delete_audit_report(DeleteAuditReportRequest::new(report_id))
+        .await
+        .expect("audit delete facade");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 5);
+    assert_eq!(history[0].command_name(), "get_reports");
+    assert_eq!(history[1].command_name(), "get_reports");
+    assert_eq!(history[2].command_name(), "get_scan_report");
+    assert_eq!(history[3].command_name(), "delete_report");
+    assert_eq!(history[4].command_name(), "delete_report");
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn report_mutation_execution_preserves_server_status_and_parse_context() {
     let Some(status_server) = fixture_server(
         MockVersion::V22_4,
@@ -1905,9 +1955,9 @@ async fn report_mutation_execution_preserves_server_status_and_parse_context() {
     };
     let mut status_client = client(&status_server).await;
     let status_error = status_client
-        .execute(CreateReportRequest::new(
+        .execute(ImportReportRequest::new(
             id("22222222-2222-2222-2222-222222222222"),
-            CreateReportOpts::default(),
+            br#"<report id="status"><name>Status</name></report>"#,
         ))
         .await
         .expect_err("server status should fail");
@@ -1931,11 +1981,10 @@ async fn report_mutation_execution_preserves_server_status_and_parse_context() {
     };
     let mut malformed_client = client(&malformed_server).await;
     let malformed_error = malformed_client
-        .import_report(
-            r#"<report id="imported"><name>Imported</name></report>"#,
-            &id("22222222-2222-2222-2222-222222222222"),
-            ImportReportOpts::default(),
-        )
+        .import_report(ImportReportRequest::new(
+            id("22222222-2222-2222-2222-222222222222"),
+            br#"<report id="imported"><name>Imported</name></report>"#,
+        ))
         .await
         .expect_err("missing response id should retain parse context");
     assert!(matches!(
@@ -2887,7 +2936,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_task(GetTaskRequest::new(id(
         "11111111-1111-1111-1111-111111111111"
     ))));
-    assert_typed_success!(client.get_reports(GetReportsOpts::default()));
+    assert_typed_success!(client.get_reports(GetReportsRequest::default()));
     assert_typed_success!(client.get_results(GetResultsRequest::default()));
     assert_typed_success!(client.get_nvts(GetNvtsRequest::default()));
     assert_typed_success!(client.get_nvt_families(GetNvtFamiliesRequest::new()));

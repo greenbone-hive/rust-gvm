@@ -6,8 +6,8 @@
 
 use gvm_client::{
     AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialType,
-    GetAggregatesRequestOpts, GetScanReportOpts, GetSystemReportsOpts, GmpClient, GmpNextCommands,
-    GmpVersioned, GvmError, ImportReportOpts, UsageType, WireTraceDirection, WireTraceEvent,
+    GetAggregatesRequestOpts, GetSystemReportsOpts, GmpClient, GmpNextCommands, GmpVersioned,
+    GvmError, UsageType, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
@@ -63,7 +63,8 @@ use gvm_gmp::commands::port_lists::{
 };
 use gvm_gmp::commands::report_formats::{CloneReportFormatRequest, ImportReportFormatRequest};
 use gvm_gmp::commands::reports::{
-    get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
+    get_report_export, get_report_hosts, get_report_vulnerabilities, GetReportsRequest,
+    GetScanReportRequest, ImportReportRequest,
 };
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::{
@@ -4579,29 +4580,27 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
     let task_id = import_task.id;
     server.clear_history();
     let report_xml = r#"<report id="imported-report"><name>Imported</name></report>"#;
+    let mut import_request = ImportReportRequest::new(task_id.clone(), report_xml.as_bytes());
+    import_request.in_assets = Some(true);
     let created = client
-        .import_report(
-            report_xml,
-            &task_id,
-            ImportReportOpts {
-                in_assets: Some(true),
-            },
-        )
+        .import_report(import_request)
         .await
         .expect("report import should succeed");
     assert_eq!(created.status, 201);
 
     let readback = client
-        .send(get_reports(GetReportsOpts {
+        .get_reports(GetReportsRequest {
             details: Some(true),
             ..Default::default()
-        }))
+        })
         .await
         .expect("get_reports should succeed");
-    let readback_xml = readback.as_str().expect("response XML should be UTF-8");
-    assert!(readback_xml.contains(&format!("id=\"{}\"", created.id)));
-    assert!(readback_xml.contains(&format!("<task_id>{task_id}</task_id>")));
-    assert!(readback_xml.contains("<in_assets>1</in_assets>"));
+    let imported = readback
+        .items
+        .iter()
+        .find(|report| report.meta.id == created.id)
+        .expect("imported report should be returned");
+    assert_eq!(imported.task.as_ref().map(|task| &task.id), Some(&task_id));
 
     let history = server.command_history();
     assert_eq!(history.len(), 2);
@@ -4612,7 +4611,7 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
     assert_eq!(
         import_command,
         format!(
-            r#"<create_report><task id="{task_id}"/><in_assets>1</in_assets>{report_xml}</create_report>"#
+            r#"<create_report>{report_xml}<task id="{task_id}"/><in_assets>1</in_assets></create_report>"#
         )
     );
 
@@ -4640,11 +4639,10 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .expect("import task should succeed")
         .id;
     let created = client
-        .import_report(
-            r#"<report id="drilldown-report"><name>Drilldown</name></report>"#,
-            &task_id,
-            ImportReportOpts::default(),
-        )
+        .import_report(ImportReportRequest::new(
+            task_id,
+            br#"<report id="drilldown-report"><name>Drilldown</name></report>"#,
+        ))
         .await
         .expect("report import should succeed");
 
@@ -4858,31 +4856,17 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
     server.clear_history();
 
     let response = client
-        .get_scan_report(
-            &EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
-            GetScanReportOpts {
-                filter_string: Some("levels=l".into()),
-                filter_id: Some(EntityId::new(SCAN_REPORT_FILTER_ID).expect("valid filter ID")),
-            },
-        )
+        .get_scan_report(GetScanReportRequest {
+            scan_report_id: EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
+            filter_string: Some("levels=l".into()),
+            filter_id: Some(EntityId::new(SCAN_REPORT_FILTER_ID).expect("valid filter ID")),
+        })
         .await
         .expect("get_scan_report should succeed");
     assert_typed_scan_report(&response);
 
-    let raw_response = client
-        .get_scan_report_raw(
-            &EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
-            GetScanReportOpts::default(),
-        )
-        .await
-        .expect("raw compatibility path should succeed");
-    assert!(raw_response
-        .as_str()
-        .expect("raw response should be UTF-8")
-        .starts_with("<get_scan_report_response status=\"200\""));
-
     let history = server.command_history();
-    assert_eq!(history.len(), 2);
+    assert_eq!(history.len(), 1);
     assert_eq!(history[0].command_name(), "get_scan_report");
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("request should be UTF-8"),
@@ -4891,7 +4875,6 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
              scan_report_id=\"{SCAN_REPORT_ID}\"/>"
         )
     );
-    assert_eq!(history[1].command_name(), "get_scan_report");
 
     server.shutdown().await;
 }
@@ -5322,7 +5305,7 @@ async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
     assert_eq!(result_count.medium, Some(1));
     assert_eq!(last_report.severity.as_deref(), Some("8.8"));
     let full_report = client
-        .get_scan_report(&last_report_id, GetScanReportOpts::default())
+        .get_scan_report(GetScanReportRequest::new(last_report_id.clone()))
         .await
         .expect("full report summary should be observable");
     let full_counts = full_report

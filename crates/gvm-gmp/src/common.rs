@@ -2,9 +2,12 @@
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
 use gvm_protocol::XmlCommand;
+#[cfg(test)]
 use quick_xml::events::Event;
+#[cfg(test)]
 use quick_xml::Reader;
 
+#[cfg(test)]
 use crate::responses::ParseError;
 use crate::types::{EntityId, ScalarUpdate};
 
@@ -60,6 +63,7 @@ pub(crate) fn set_optional_bool_attr(cmd: &mut XmlCommand, name: &str, value: Op
     }
 }
 
+#[cfg(test)]
 pub(crate) fn validate_single_xml_document(
     xml: &str,
     field: &str,
@@ -148,6 +152,7 @@ pub(crate) fn validate_single_xml_document(
     }
 }
 
+#[cfg(test)]
 fn validate_root_name(
     actual: &str,
     field: &str,
