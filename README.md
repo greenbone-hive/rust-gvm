@@ -337,6 +337,13 @@ let targets = client
     .await?;
 ```
 
+The final convergence audit classifies all 1,026 request-surface rows and all
+261 public typed facade helpers. It enforces 258 canonical `execute` delegates,
+only three frozen ticket raw paths, zero transitional rows, and the continued
+absence of unsupported configuration synchronization. See the
+[canonical-request convergence audit](docs/canonical-request-convergence-audit.md)
+and the complete [v0.6.0 to v0.7.0 migration guide](docs/v0.7.0-migration.md).
+
 NVT and SecInfo discovery follows the same request-by-value rule:
 
 ```rust

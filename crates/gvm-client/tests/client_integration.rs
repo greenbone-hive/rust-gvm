@@ -2456,7 +2456,7 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     assert_eq!(store.items[0].name, "Local credential store");
 
     let filtered_stores = client
-        .get_credential_stores_with_opts(GetCredentialStoresRequest {
+        .get_credential_stores(GetCredentialStoresRequest {
             filter_string: Some("name=Local".into()),
             filter_id: Some(EntityId::new("filter-1").expect("valid id")),
             details: Some(false),

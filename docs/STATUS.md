@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-20
+Last updated: 2026-09-21
 
 ## Support Direction
 
@@ -23,16 +23,18 @@ split into private resource-family modules without changing public paths. See
 compatibility, and release adoption are summarized in the
 [migration notes](typed-execution-migration.md).
 
-The unreleased additive request wrappers are now the transition baseline for
-the canonical-request program in issue #602. [ADR 0002](adr/0002-canonical-request-ownership.md)
-separates fallible typed validation/encoding from raw `Request`, fixes execution
-precedence as validate → semantic support → encode → transport → decode, and
-makes #602 a pre-release gate. The checked
-[surface disposition ledger](canonical-request-disposition.md) currently tracks
-all public options, builder, request, and typed-facade symbols. The standard
-target family is the first converted reference slice: its six complete requests
-own validation, semantic metadata, encoding, and response association, while
-the three redundant options types and six free builders are removed. Its
+The canonical-request program in issue #602 is complete. [ADR 0002](adr/0002-canonical-request-ownership.md)
+separates fallible typed validation/encoding from raw `Request` and fixes
+execution precedence as validate → semantic support → encode → transport →
+decode. Issue #678 audits the complete exported surface: the checked
+[surface disposition ledger](canonical-request-disposition.md) contains 1,026
+classified rows with zero transitional entries, and all 261 public typed
+facades are enforced as 258 canonical `execute` delegates plus three frozen
+ticket raw paths. The [convergence audit](canonical-request-convergence-audit.md)
+records the reproducible counts and v0.6.0 comparison. The standard target
+family remains the converted reference slice: its six complete requests own
+validation, semantic metadata, encoding, and response association, while the
+three redundant options types and six free builders are removed. Its
 [pinned gvmd evidence](target-request-gvmd-evidence.md) is recorded separately
 from mock-server validation. Issue #609 applies that contract to all twelve
 OCI-image and web-application target operations, removes their six redundant
@@ -434,7 +436,8 @@ preserves atomic cleanup/dependency rollback. See the
 [pinned evidence](system-admin-cleanup-request-gvmd-evidence.md) and
 [v0.7 migration mapping](v0.7.0-migration.md#system-administration-user-settings-and-cleanup).
 This final #658–#664 family leaves zero transitional rows in the enforced
-disposition inventory; the retained-surface/removal audit remains separate.
+disposition inventory; issue #678 completes the retained-surface, removal, and
+exported-facade audit.
 
 Issues #661 and #662 complete the report lifecycle, structured-report,
 drill-down, and export request migration. The lifecycle operations plus all
@@ -938,7 +941,7 @@ its explicit raw-send compatibility path.
 | Auto version negotiation | ✅ |
 | `GmpVersioned` enum (V224–VNext) | ✅ |
 | `GvmError` with server/connection/parse/timeout/unsupported | ✅ |
-| Typed convenience methods (50+ methods, all GMP domains) | ✅ |
+| Typed convenience methods (261 methods, all GMP domains) | ✅ |
 | Version parsing from XML | ✅ |
 | Full CRUD lifecycle tests | ✅ |
 | Disconnect + error path tests | ✅ |

@@ -22,10 +22,9 @@ methods or raw command builders. It complements the contributor-oriented
 | `GmpClient::call(builder)` | Raw XML response details are needed. | Returns `gvm_protocol::Response`; non-2xx GMP statuses are reported as `GvmError::Server`. |
 | `GmpClient::send(builder)` | The caller must inspect every raw GMP status itself. | Returns `gvm_protocol::Response` for success and non-success statuses. |
 
-During the bounded migration, unconverted builders and options remain
-available. Converted families remove redundant surfaces after their canonical
-replacement and migration notes exist. The first downstream-ready release occurs only after
-the disposition audit, so applications adopt the final canonical surface once.
+The bounded migration and disposition audit are complete. Redundant builders
+and options are removed after their canonical replacement and migration mapping
+was recorded, so applications adopt one final canonical surface.
 Raw `send`/`call`, transports, framing, response models, and wire formats remain
 supported.
 
@@ -1500,10 +1499,14 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 262 current public async methods: 259 delegate
+The facade inventory locks all 261 current public async methods: 258 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path. Unsupported `sync_config` and its deprecated per-config
 delegate are absent.
+
+The final [convergence audit](canonical-request-convergence-audit.md) also
+locks the 1,026-row disposition inventory, retained-construction rationales,
+v0.6.0 removal mappings, raw escape hatches, and reproducible regeneration.
 
 The existing rust-gvm GMP ticket surface is frozen: it remains supported for
 compatibility and may receive maintenance, but it is not expanded or migrated
@@ -1512,9 +1515,9 @@ to expose tickets.
 
 ## Release and downstream adoption
 
-The bounded typed-execution change set completed protected-`main` promotion.
-A downstream-ready release now waits for the canonical-request family
-migrations, final disposition audit, `rust-gvm-api#457` validation, and then a
+The bounded typed-execution change set, canonical-request family migrations,
+and final disposition audit completed protected-`main` promotion. A
+downstream-ready release now waits for downstream validation and then a
 reviewed workspace-version and lockfile update followed by verified release
 artifacts.
 

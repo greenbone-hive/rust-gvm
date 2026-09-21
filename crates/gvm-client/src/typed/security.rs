@@ -86,18 +86,6 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         self.execute(request).await
     }
 
-    /// Send a filtered `get_credential_stores` request and return a typed
-    /// [`GetCredentialStoresResponse`].
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_credential_stores_with_opts(
-        &mut self,
-        request: GetCredentialStoresRequest,
-    ) -> Result<GetCredentialStoresResponse, GvmError> {
-        self.execute(request).await
-    }
-
     /// Send a single-store `get_credential_stores` request and return a typed
     /// [`GetCredentialStoresResponse`].
     ///
