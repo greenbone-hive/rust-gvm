@@ -52,7 +52,8 @@ python-gvm compatibility is a secondary target:
 
 A GMP feature is considered covered when the relevant pieces are aligned:
 
-- Command builders emit the gvmd-supported XML shape.
+- Canonical request codecs (and the frozen ticket builders) emit the
+  gvmd-supported XML shape.
 - Response models parse the gvmd-supported XML shape.
 - Version gates reflect the GMP versions where a command is available.
 - Mock-server behavior does not mask drift from real gvmd.
@@ -116,7 +117,9 @@ Follow-up issues or milestones should cover:
 
 1. Validate the audited canonical surface once through `rust-gvm-api#457`.
 2. Complete the remaining #523 release gate: versioned release, artifact
-   verification, and downstream pinning.
+   verification, and downstream pinning. Protected-`main` CI already dispatches
+   downstream E2E with the exact successful rust-gvm commit SHA; a branch name
+   is not substituted for that revision.
 3. Finish the remaining high-value GMP coverage gaps from #172 and known
    protocol drift.
 4. Expand real-gvmd conformance and python-gvm migration documentation.

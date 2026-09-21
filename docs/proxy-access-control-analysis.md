@@ -447,7 +447,7 @@ services:
     volumes: [gvmd-socket:/run/gvmd]
 
   gvm-gateway:
-    image: ghcr.io/clawosiris/gvm-gateway
+    image: ghcr.io/<owner>/gvm-gateway:<version>
     volumes: [gvmd-socket:/run/gvmd:ro]
     ports: ["8443:8443"]
     environment:
@@ -461,7 +461,7 @@ Central gateway managing scanners across network zones:
 ```yaml
 services:
   gvm-gateway:
-    image: ghcr.io/clawosiris/gvm-gateway
+    image: ghcr.io/<owner>/gvm-gateway:<version>
     ports: ["8443:8443"]
     volumes:
       - ./config.yaml:/etc/gvm-gateway/config.yaml:ro
@@ -496,11 +496,11 @@ Strict tenant isolation through policy engine. Customer A cannot see Customer B'
 | Unix socket transport | ✅ Complete | `UnixSocketConnection` |
 | SSH transport | ✅ Complete | `SshConnection` |
 | TLS transport | ✅ Implemented | `TlsConnection` with verified roots/SAN and optional client identity |
-| GMP command builders | ✅ Complete | All `gvm-gmp` commands |
-| Response parsing | ✅ Complete | `Response` + `child_text()` |
+| GMP request surface | ✅ Implemented | Canonical complete requests across the supported surface; raw/custom-codec escape hatches remain for gaps |
+| Response parsing | ✅ Implemented | Associated typed response models plus raw `Response` access |
 | Version negotiation | ✅ Complete | `GmpClient` auto-negotiates |
 | Connection trait | ✅ Complete | Polymorphic over transport |
-| Buffer limits | ✅ PR #36 | `max_buffer_bytes` on XmlReader |
+| Buffer limits | ✅ Implemented | `XmlReader::with_buffer_limit` and per-transport `max_response_bytes` (64 MiB by default) |
 | Host key verification | ✅ PR #36 | `KnownHosts` by default, custom known-hosts file, or `Fingerprint` pinning |
 
 ### 9.2 What the Gateway Would Add

@@ -4,7 +4,11 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | ✅ Current |
+| 0.6.x   | ✅ Latest published minor |
+| 0.5.x and older | Critical fixes only, at maintainer discretion |
+
+The `main` branch currently identifies itself as `0.7.0`, but it is an
+unreleased Technology Preview until the qualified `v0.7.0` release completes.
 
 We support the latest minor release with security patches. Once a new minor or major version is published, prior versions receive patches only for critical vulnerabilities at maintainer discretion.
 
@@ -18,7 +22,9 @@ Instead, use **GitHub Private Vulnerability Reporting**:
 2. Click **"Report a vulnerability"**
 3. Fill in the details — affected crate(s), reproduction steps, and impact assessment
 
-Alternatively, contact the maintainers directly at: **[maintainer email / Signal contact — fill in]**
+No alternate private contact channel is published in this repository. If the
+GitHub reporting control is unavailable, contact a maintainer without including
+exploit details and ask for a private disclosure channel.
 
 ### What to expect
 
@@ -32,7 +38,8 @@ Alternatively, contact the maintainers directly at: **[maintainer email / Signal
 
 ### What qualifies
 
-- Vulnerabilities in `gvm-protocol`, `gvm-gmp`, `gvm-client`, or `gvm-connection` crate code
+- Vulnerabilities in `gvm-protocol`, `gvm-gmp`, `gvm-client`, or
+  `gvm-connection`
 - Authentication bypass or credential exposure in transport handling (SSH, Unix socket, TLS)
 - XML parsing vulnerabilities (injection, XXE, billion-laughs)
 - Memory safety issues
@@ -40,7 +47,8 @@ Alternatively, contact the maintainers directly at: **[maintainer email / Signal
 
 ### What doesn't qualify
 
-- Vulnerabilities in the mock server (`gvm-mock-server`) — it is a testing tool, not production software
+- Vulnerabilities in `gvm-mock-server` — it is a testing tool, not production
+  software
 - Issues in upstream dependencies without a demonstrated attack path through rust-gvm
 - Denial-of-service via malformed GMP XML from a trusted gvmd server (trusted network assumption)
 
@@ -48,10 +56,14 @@ Alternatively, contact the maintainers directly at: **[maintainer email / Signal
 
 ### Dependency Auditing
 
-- **[cargo-audit](https://github.com/rustsec/rustsec)** runs in CI on every push and weekly via the [Security workflow](.github/workflows/security.yml), checking against the [RustSec Advisory Database](https://rustsec.org/)
+- **[cargo-audit](https://github.com/rustsec/rustsec)** runs on relevant pushes
+  and pull requests plus the weekly [Security workflow](.github/workflows/security.yml),
+  checking against the [RustSec Advisory Database](https://rustsec.org/)
 - **[cargo-deny](https://github.com/EmbarkStudios/cargo-deny)** enforces license compliance, bans, and source restrictions (see [`deny.toml`](deny.toml))
 - **[Dependabot](https://docs.github.com/en/code-security/dependabot)** monitors Cargo, pip, Docker, and GitHub Actions dependencies with weekly update PRs ([`.github/dependabot.yml`](.github/dependabot.yml))
 - **[cargo-machete](https://github.com/bnjbvr/cargo-machete)** checks for unused dependencies in CI
+- **cargo-vet**, workspace unsafe-code gates, Semgrep, and release-SBOM quality
+  checks are also part of the Security aggregate
 
 ### Known Advisory Exceptions
 
@@ -64,14 +76,18 @@ crate from the resolved graph while retaining compression and AWS-LC.
 - All dependencies sourced exclusively from [crates.io](https://crates.io)
 - Git dependencies denied by default (`[sources] unknown-git = "deny"`)
 - GitHub Actions pinned to immutable commit SHAs; Dependabot keeps them current
-- SBOM (CycloneDX) generated on every release and nightly build
+- CycloneDX JSON is generated and quality-gated in Security; tagged releases
+  publish the verified JSON/XML SBOM bundle
 
 ### Code Quality
 
 - `cargo clippy` with `-D warnings` in CI
-- `#[deny(unsafe_code)]` — no unsafe blocks in any crate
+- workspace `unsafe_code = "forbid"`, reinforced by the Security workflow's
+  source and cargo-geiger gates
 - MSRV tested (currently Rust 1.89.0)
-- All XML parsing uses `quick-xml` with default limits (no unbounded expansion)
+- XML framing uses `quick-xml` with a 64 MiB default frame limit and a separate
+  256-element nesting limit; transport response and mock request limits are
+  configurable
 
 ## Security-Relevant Architecture
 
@@ -86,7 +102,7 @@ crate from the resolved graph while retaining compression and AWS-LC.
        │ The transport layer (gvm-connection) handles:
        │ • SSH host key verification
        │ • Unix socket file permissions (OS-level)
-       │ • TLS certificate validation (planned)
+       │ • TLS certificate and DNS/IP SAN validation
        │
        │ GMP authentication is username/password over
        │ the encrypted transport — never plaintext TCP.
@@ -98,32 +114,30 @@ crate from the resolved graph while retaining compression and AWS-LC.
 
 ## GitHub Security Features Checklist
 
+GitHub repository settings below were verified live on **2026-09-21**. They
+are distinct from workflow configuration kept in this checkout.
+
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Private vulnerability reporting | ⬜ **Enable** | Settings → Security → Advisories |
-| Dependabot alerts | ✅ Active | Cargo + Actions + pip |
-| Dependabot security updates | ⬜ **Enable** | Auto-PRs for vulnerable deps |
-| Secret scanning | ⬜ **Enable** | Detects leaked credentials in commits |
-| Secret scanning push protection | ⬜ **Enable** | Blocks pushes containing secrets |
-| Code scanning (CodeQL) | ⬜ Optional | Limited Rust support; cargo-audit + clippy cover most cases |
-| Branch protection | ⬜ **Recommend** | Require PR reviews + status checks on `main` |
-| Signed commits | ⬜ Optional | Consider requiring for release tags |
-| OSSF Scorecard | ⬜ Deferred | Requires public repo; workflow ready but commented out |
+| Private vulnerability reporting | ✅ Enabled | Settings → Security → Advisories |
+| Dependabot version updates | ✅ Configured | Cargo, Actions, pip, and Docker |
+| Dependabot alerts/security updates | ✅ Enabled | Security update PRs are enabled |
+| Secret scanning | ✅ Enabled | Repository security setting |
+| Secret scanning push protection | ✅ Enabled | Repository security setting |
+| Code scanning | ✅ Active | Semgrep uploads SARIF code-scanning results |
+| Branch protection | ✅ Enforced on `main` | Administrators included; strict `CI` and `Security` checks; one CODEOWNER review; stale-review dismissal; last-push approval; linear history |
+| Signed commits | ❌ Not enabled | This setting is not currently required |
+| OSSF Scorecard | ✅ Active | Public repository workflow runs on `main` pushes, weekly, and manual dispatch |
 
-### Recommended Enablement Steps
+### Verification Follow-up
 
-1. **Private Vulnerability Reporting**: Repository Settings → Code security and analysis → Private vulnerability reporting → Enable
-2. **Dependabot Security Updates**: Settings → Code security and analysis → Dependabot security updates → Enable (complements the existing version update PRs with auto-fix PRs for known CVEs)
-3. **Secret Scanning + Push Protection**: Settings → Code security and analysis → Secret scanning → Enable both. Free for all repos since GitHub made it available to private repos.
-4. **Branch Protection on `main`**:
-   - Require pull request reviews (1 reviewer minimum)
-   - Require status checks: CI, Security
-   - Require linear history (optional, keeps history clean)
-   - Restrict who can push directly (admin-only bypass)
-5. **OSSF Scorecard**: Uncomment the workflow in `security.yml` when/if the repo goes public
+Recheck these live settings after repository-visibility, branch-protection, or
+security-policy changes. Required signed commits remain a separate policy
+decision; they are not enabled as of the verification date.
 
 ## Changelog
 
 | Date | Change |
 |------|--------|
 | 2026-03-17 | Initial security policy |
+| 2026-09-21 | Reconciled versions, transport controls, workflows, and release/SBOM claims with v0.7 |

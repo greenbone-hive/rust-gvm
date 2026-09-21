@@ -162,16 +162,15 @@ For example, standard scans, imports, agent-group scans, OCI/container-image
 scans, web-application scans, and audits all reuse `<create_task>`, but each has
 a request type whose fields match that operation. Compatibility aliases such as
 container/import and container-image/OCI remain separately named while
-delegating to the same established builders.
+sharing canonical codec logic where their wire shapes are identical.
 
 Agent-group, OCI/container-image, and web-application task requests declare
 their GMP Next semantic capability even though the wire root is the baseline
 `create_task` command. Generic execution therefore rejects them before sending
 on GMP 22.7 and earlier, preserving the existing versioned-client boundary.
-The client also recognizes these shapes when their existing raw builders are
-passed to `send` or `call`, so the compatibility escape hatch cannot bypass the
-same gate. Import/container and move requests retain their established baseline
-behavior.
+The client also recognizes these shapes in literal raw XML passed to `send` or
+`call`, so the escape hatch cannot bypass the same semantic gate. Import/
+container and move requests retain their established baseline behavior.
 
 ## Agents and integration configurations
 
@@ -217,8 +216,8 @@ settings, license files, wizard parameter values, and user-setting values.
 Audit list, detail, create, clone, modify, delete, start, stop, and resume
 requests likewise remain audit-scoped types even where their wire command is a
 task command. This keeps compile-time intent explicit without duplicating XML
-encoding or changing server behavior. Fallible audit modification validates
-observer updates in its constructor before execution.
+encoding or changing server behavior. Audit modification validates observer
+updates from the final request value before capability checks or transport.
 
 ## Credential stores and semantic aliases
 
@@ -326,8 +325,8 @@ required non-empty iCalendar value before capability checks or transport.
 Filters and tags each expose semantic list, detailed-get, create, clone,
 modify, and delete request values. The list/detail and create/clone pairs keep
 separate Rust types even where they share a wire command and response model,
-so call-site intent remains explicit while the established builders remain the
-single XML encoders.
+so call-site intent remains explicit while the canonical request codecs remain
+the single typed XML encoders.
 
 Notes and overrides use twelve complete canonical request values. Their six
 option bags and twelve forwarding builders are removed, while the named facade
@@ -359,10 +358,11 @@ diagnostics and wire traces remain redacted. The twelve corresponding
 `GmpClient` convenience methods accept each request unchanged and delegate to
 `execute`; raw `send` and `call` remain available.
 
-Roles and permissions retain the earlier additive typed-execution surface
-until their bounded canonical-request slice. Their semantic request values
-still delegate to the existing builders and preserve role membership and
-permission subject/resource relationships.
+Roles and permissions expose twelve complete canonical list, detailed-get,
+create, clone, modify, and delete requests. Their former option bags and free
+builders are removed; the request codecs preserve role membership and
+permission subject/resource relationships, and the named facade methods
+delegate directly to `execute`.
 
 ## NVT and SecInfo queries
 
@@ -419,8 +419,8 @@ The old operating-system modification request/helper is removed: pinned gvmd
 only modifies host comments and returns a find error for an OS asset ID. There
 is no supported typed replacement. Raw XML remains an escape hatch for
 unmodeled commands, not an OS-modification workaround. Asset OS remains a rich
-`get_assets type="os"` family and is not interchangeable with the deferred
-SecInfo OS or report projection surfaces. See the
+`get_assets type="os"` family and is not interchangeable with the unsupported
+generic SecInfo OS dispatch or report projection surfaces. See the
 [pinned evidence](asset-request-gvmd-evidence.md).
 
 Result list and detail are complete canonical requests over the same
@@ -492,7 +492,7 @@ escape hatch without introducing a second typed encoding path.
 ## Generic configurations and port lists
 
 Generic configurations retain separate list, detail, create, clone, modify,
-and delete request values over the existing generic config builders. Port
+and delete complete request values with direct canonical codecs. Port
 lists now use complete canonical requests for that lifecycle plus create and
 delete port ranges. The associated response is fixed for every operation,
 including the action-shaped port-range responses. List/detail and create/clone
@@ -578,8 +578,9 @@ authentication description, and vulnerabilities are thin `execute` wrappers.
 Version policy is unchanged. `GetFeaturesRequest` requires GMP 22.6 and
 `GetTimezonesRequest` requires GMP 22.8; generic execution checks those semantic
 command identities before writing to the transport. All other requests in this
-read-only slice retain their existing baseline gates. Raw builders, `send`, and
-`call` remain available without introducing another XML encoder.
+read-only slice retain their existing baseline gates. Literal raw requests,
+`send`, and `call` remain available without introducing another typed XML
+encoder.
 
 ## Irregular report codecs and version policy
 
@@ -639,13 +640,13 @@ need intentionally unmodeled report XML.
 
 ## Report mutations
 
-Report creation and XML import use separate semantic request values even though
-both delegate to the existing `<create_report>` builders and decode the same
-typed create response. Import validation and payload encoding still happen in
-the legacy builder before transmission. Ordinary and audit-report deletion are
-likewise distinct semantic values over the established `<delete_report>` wire
-shape and action response. The `import_report` convenience method is a thin
-`execute` wrapper; raw builders and custom report XML remain supported.
+Gvmd report creation is XML import. `ImportReportRequest` owns and validates one
+supported `<report>` document, encodes `<create_report>` directly, and selects
+the typed create response; the unsupported empty report-creation request was
+removed. Ordinary and audit-report deletion are distinct complete semantic
+values over the `<delete_report>` wire shape and action response. The
+`import_report` convenience method is a thin `execute` wrapper; literal raw
+requests and downstream custom codecs remain supported.
 
 ## Scan configurations, policies, and preferences
 

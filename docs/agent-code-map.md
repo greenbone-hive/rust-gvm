@@ -197,6 +197,9 @@ When fixing a mismatch with real gvmd, check all of these before calling it done
 
 ## Targeted Tests
 
+- README checked examples: `cargo test -p gvm-client --test readme_examples`
+- Canonical request inventory: `cargo test -p gvm-client --test canonical_request_surface_inventory`
+- Typed facade inventory: `cargo test -p gvm-client --test typed_facade_inventory`
 - Command XML only: `cargo test -p gvm-gmp --test test_<domain>`
 - Response model only: `cargo test -p gvm-gmp <response_or_domain_filter>`
 - Client typed API: `cargo test -p gvm-client`
@@ -211,5 +214,6 @@ When fixing a mismatch with real gvmd, check all of these before calling it done
 - GMP is not HTTP. gvmd exposes XML over persistent Unix/TCP/TLS sockets; see `docs/gvmd-transport-analysis.md`.
 - `python-gvm` compatibility is useful, but current GMP/GVMD behavior is the source of truth for protocol modeling.
 - The mock server is a test tool, not proof that behavior matches gvmd.
-- Raw `send`/`call` exists so unsupported or not-yet-modeled GMP details can still be reached without adding premature wrappers.
+- Raw `send`/`call` and custom codecs exist so unsupported or not-yet-modeled
+  GMP details can still be reached without adding premature wrappers.
 - `GmpNext` is the forward-compatible bucket for newer supported versions, not a guarantee that every new command is modeled.
