@@ -7,37 +7,27 @@ mod common;
 
 use common::{id, xml};
 use gvm_gmp::commands::system::*;
-use gvm_gmp::{
-    AggregateStatistic, FeedType, GmpRequestCodec, GmpVersion, HelpFormat, ResourceType, SortOrder,
-};
+use gvm_gmp::{GmpRequestCodec, GmpVersion, SortOrder};
 
 fn typed_xml(request: &impl GmpRequestCodec) -> String {
     String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap()
 }
 
 #[test]
-fn test_system_help_and_feeds() {
-    assert_eq!(xml(help(None)), "<help/>");
-    assert_eq!(xml(help(Some(HelpFormat::Xml))), "<help format=\"xml\"/>");
-    assert_eq!(
-        xml(get_feeds(GetFeedsOpts {
-            feed_type: Some(FeedType::Nvt)
-        })),
-        "<get_feeds type=\"NVT\"/>"
-    );
-}
-
-#[test]
 fn test_system_filtered_getters() {
-    assert_eq!(xml(get_settings(Default::default())), "<get_settings/>");
+    let mut settings = GetSettingsRequest::new();
+    settings.filter_string = Some("name=Timezone".into());
+    settings.first = Some(1);
+    settings.max = Some(-1);
+    settings.sort_field = Some("name".into());
+    settings.sort_order = Some(SortOrder::Ascending);
     assert_eq!(
-        xml(get_system_reports(GetSystemReportsOpts {
-            name: Some("load".into()),
-            brief: Some(true),
-            ..Default::default()
-        })),
-        "<get_system_reports brief=\"1\" name=\"load\"/>"
+        typed_xml(&settings),
+        "<get_settings filter=\"name=Timezone\" first=\"1\" max=\"-1\" sort_field=\"name\" sort_order=\"ascending\"/>"
     );
+    assert_eq!(typed_xml(&GetLicenseRequest::new()), "<get_license/>");
+    assert_eq!(typed_xml(&DescribeAuthRequest::new()), "<describe_auth/>");
+    assert_eq!(typed_xml(&GetTimezonesRequest::new()), "<get_timezones/>");
     assert_eq!(
         typed_xml(&GetVulnsRequest {
             filter_string: Some("qod>0".into()),
@@ -48,30 +38,7 @@ fn test_system_filtered_getters() {
 }
 
 #[test]
-fn test_system_aggregates_info_resource_names_and_mutations() {
-    assert_eq!(
-        xml(get_aggregates(GetAggregatesOpts {
-            data_column: Some("severity".into()),
-            group_column: Some("task_id".into()),
-            statistic: Some(AggregateStatistic::Count),
-            sort_field: Some("severity".into()),
-            sort_order: Some(SortOrder::Descending),
-            filter_string: Some("rows=10".into()),
-            filter_id: Some(id("f1")),
-        })),
-        "<get_aggregates data_column=\"severity\" filt_id=\"f1\" filter=\"rows=10\" group_column=\"task_id\" sort_field=\"severity\" sort_order=\"descending\" statistic=\"count\"/>"
-    );
-    assert_eq!(
-        xml(get_resource_names(GetResourceNamesOpts {
-            resource_type: Some(ResourceType::Task),
-            resource_id: Some(id("t1")),
-            filter_string: None,
-            filter_id: None
-        })),
-        "<get_resource_names resource_id=\"t1\" type=\"TASK\"/>"
-    );
-    assert_eq!(xml(get_license()), "<get_license/>");
-    assert_eq!(xml(describe_auth()), "<describe_auth/>");
+fn test_system_mutations() {
     assert_eq!(
         xml(modify_auth(
             "method:ldap_connect",

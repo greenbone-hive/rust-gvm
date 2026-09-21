@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! System-report command builders.
+//! Canonical system-report discovery request.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::common::bool_str;
+use crate::common::set_optional_bool_attr;
 use crate::responses::GetSystemReportsResponse;
 use crate::types::EntityId;
-use crate::GmpRequest;
+use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-/// Options for `get_system_reports` requests.
+/// Canonical `get_system_reports` request.
 #[derive(Debug, Clone, Default)]
-pub struct GetSystemReportsOpts {
+pub struct GetSystemReportsRequest {
     /// Name of a single system report to retrieve.
     pub name: Option<String>,
     /// Number of seconds into the past to include.
@@ -27,21 +27,62 @@ pub struct GetSystemReportsOpts {
     pub slave_id: Option<EntityId>,
 }
 
-/// Semantic request for system-report discovery.
-#[derive(Debug, Clone, Default)]
-pub struct GetSystemReportsRequest(GetSystemReportsOpts);
-
 impl GetSystemReportsRequest {
-    /// Create a system-report request.
+    /// Create a system-report discovery request with gvmd defaults.
     #[must_use]
-    pub fn new(opts: GetSystemReportsOpts) -> Self {
-        Self(opts)
+    pub const fn new() -> Self {
+        Self {
+            name: None,
+            duration: None,
+            start_time: None,
+            end_time: None,
+            brief: None,
+            slave_id: None,
+        }
     }
 }
 
-impl Request for GetSystemReportsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_system_reports(self.0.clone()).to_bytes()
+impl GmpRequestCodec for GetSystemReportsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        for (value, field) in [
+            (self.name.as_deref(), "name"),
+            (self.start_time.as_deref(), "start_time"),
+            (self.end_time.as_deref(), "end_time"),
+        ] {
+            if let Some(value) = value {
+                if value.trim().is_empty() {
+                    return Err(GmpRequestError::invalid_field(field, "must not be empty"));
+                }
+                validate_xml(value, field)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_system_reports"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("get_system_reports");
+        if let Some(name) = self.name.as_deref() {
+            command.set_attribute("name", name);
+        }
+        if let Some(duration) = self.duration {
+            command.set_attribute("duration", &duration.to_string());
+        }
+        if let Some(start_time) = self.start_time.as_deref() {
+            command.set_attribute("start_time", start_time);
+        }
+        if let Some(end_time) = self.end_time.as_deref() {
+            command.set_attribute("end_time", end_time);
+        }
+        set_optional_bool_attr(&mut command, "brief", self.brief);
+        if let Some(slave_id) = self.slave_id.as_ref() {
+            command.set_attribute("slave_id", slave_id.as_str());
+        }
+        Ok(command.to_bytes())
     }
 }
 
@@ -49,49 +90,40 @@ impl GmpRequest for GetSystemReportsRequest {
     type Response = GetSystemReportsResponse;
 }
 
-/// Build a `get_system_reports` request.
-#[must_use]
-pub fn get_system_reports(opts: GetSystemReportsOpts) -> XmlCommand {
-    let mut cmd = XmlCommand::new("get_system_reports");
-    if let Some(name) = opts.name.as_deref() {
-        cmd.set_attribute("name", name);
+fn validate_xml(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.chars().all(|character| {
+        matches!(character, '\u{9}' | '\u{A}' | '\u{D}')
+            || matches!(
+                character as u32,
+                0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF
+            )
+    }) {
+        Ok(())
+    } else {
+        Err(GmpRequestError::invalid_field(
+            field,
+            "must contain only XML 1.0 characters",
+        ))
     }
-    if let Some(duration) = opts.duration {
-        cmd.set_attribute("duration", &duration.to_string());
-    }
-    if let Some(start_time) = opts.start_time.as_deref() {
-        cmd.set_attribute("start_time", start_time);
-    }
-    if let Some(end_time) = opts.end_time.as_deref() {
-        cmd.set_attribute("end_time", end_time);
-    }
-    if let Some(brief) = opts.brief {
-        cmd.set_attribute("brief", bool_str(brief));
-    }
-    if let Some(slave_id) = opts.slave_id.as_ref() {
-        cmd.set_attribute("slave_id", slave_id.as_str());
-    }
-    cmd
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
-    use crate::common::xml;
-    use crate::types::EntityId;
+    use super::*;
 
     #[test]
-    fn get_system_reports_builds_xml() {
+    fn request_owns_report_selection_and_interval() {
+        let request = GetSystemReportsRequest {
+            name: Some("load".into()),
+            duration: Some(3600),
+            start_time: Some("2026-07-23T12:00:00Z".into()),
+            end_time: Some("2026-07-23T13:00:00Z".into()),
+            brief: Some(false),
+            slave_id: Some(EntityId::new("scanner-1").expect("valid id")),
+        };
         assert_eq!(
-            xml(get_system_reports(GetSystemReportsOpts {
-                name: Some("load".into()),
-                duration: Some(3600),
-                start_time: Some("2026-07-23T12:00:00Z".into()),
-                end_time: Some("2026-07-23T13:00:00Z".into()),
-                brief: Some(false),
-                slave_id: Some(EntityId::new("scanner-1").expect("valid id")),
-            })),
-            "<get_system_reports brief=\"0\" duration=\"3600\" end_time=\"2026-07-23T13:00:00Z\" name=\"load\" slave_id=\"scanner-1\" start_time=\"2026-07-23T12:00:00Z\"/>"
+            request.encode(GmpVersion(22, 4)).expect("valid request"),
+            b"<get_system_reports brief=\"0\" duration=\"3600\" end_time=\"2026-07-23T13:00:00Z\" name=\"load\" slave_id=\"scanner-1\" start_time=\"2026-07-23T12:00:00Z\"/>"
         );
     }
 }

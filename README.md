@@ -57,6 +57,7 @@ The high-level client handles version negotiation automatically and exposes type
 ```rust
 use gvm_client::GmpClient;
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
+use gvm_gmp::commands::authentication::AuthenticateRequest;
 use gvm_gmp::commands::targets::{CreateTargetRequest, GetTargetsRequest};
 use gvm_gmp::commands::tasks::{CreateTaskRequest, StartTaskRequest};
 use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
@@ -69,7 +70,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Connected, GMP version: {}", client.version());
 
     // 2. Authenticate
-    client.authenticate("admin", "admin").await?;
+    client
+        .authenticate(AuthenticateRequest::new("admin", "admin"))
+        .await?;
 
     // 3. Create a target — typed response, no manual XML parsing
     let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
@@ -272,10 +275,10 @@ with a raw request value. Canonical families intentionally do not keep parallel
 public builders:
 
 ```rust
-use gvm_gmp::commands::authentication;
-
 // call() raises GvmError::Server on non-2xx; send() returns the raw Response
-client.call(authentication::authenticate("admin", "admin")).await?;
+client
+    .call(b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice())
+    .await?;
 let response = client.call(b"<get_targets/>".as_slice()).await?;
 println!("Raw XML: {} bytes", response.data().len());
 ```
@@ -537,8 +540,10 @@ match &client {
     _ => println!("Other version: {}", client.version()),
 }
 
-// All versions share the same send/call API
-client.call(authentication::authenticate("admin", "admin")).await?;
+// All versions share the same send/call API.
+client
+    .call(b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice())
+    .await?;
 ```
 
 `GmpClient::command_support` and `GmpVersioned::command_support` distinguish

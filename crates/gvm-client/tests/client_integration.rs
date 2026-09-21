@@ -5,12 +5,11 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialType,
-    GetAggregatesRequestOpts, GetSystemReportsOpts, GmpClient, GmpNextCommands, GmpVersioned,
-    GvmError, UsageType, WireTraceDirection, WireTraceEvent,
+    AggregateMode, AggregateSort, AggregateSortStatistic, CredentialStoreCredentialType, GmpClient,
+    GmpNextCommands, GmpVersioned, GvmError, UsageType, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
-use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
+use gvm_gmp::commands::aggregates::{GetAggregatesRequest, GetLegacyAggregatesRequest};
 use gvm_gmp::commands::alerts::{
     AlertData, CreateAlertRequest, GetAlertsRequest, ModifyAlertRequest, TriggerAlertRequest,
 };
@@ -18,7 +17,6 @@ use gvm_gmp::commands::assets::{
     AssetType, CreateAssetRequest, DeleteAssetRequest, GetAssetRequest, GetAssetsRequest,
     ModifyAssetRequest,
 };
-use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::configs::{
     CloneConfigRequest, ConfigUsageType, CreateConfigRequest, DeleteConfigRequest,
     GetConfigRequest, GetConfigsRequest, ModifyConfigRequest,
@@ -29,11 +27,13 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreCredentialRequest, ModifyCredentialStoreRequest,
     VerifyCredentialStoreRequest,
 };
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
 use gvm_gmp::commands::groups::{
     CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsRequest,
     ModifyGroupRequest,
 };
-use gvm_gmp::commands::help::HelpMode;
+use gvm_gmp::commands::help::{HelpMode, HelpRequest};
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -89,10 +89,11 @@ use gvm_gmp::commands::secinfo::{
     GenericInfoType, GetCertBundAdvisoryRequest, GetCpeRequest, GetCveRequest,
     GetDfnCertAdvisoryRequest, GetInfoListRequest, GetInfoRequest,
 };
-use gvm_gmp::commands::system::get_timezones;
+use gvm_gmp::commands::system::GetTimezonesRequest;
 use gvm_gmp::commands::system::ModifyLicenseOpts;
 use gvm_gmp::commands::system::RunWizardOpts;
 use gvm_gmp::commands::system::{GetVulnerabilityRequest, GetVulnsRequest};
+use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::commands::targets::{
     CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsRequest,
     ModifyTargetRequest,
@@ -222,7 +223,9 @@ async fn authenticated_client(server: &MockGmpServer) -> GmpClient<UnixSocketCon
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     client
@@ -520,7 +523,7 @@ async fn typed_feature_discovery_parses_current_gvmd_shape_over_unix_transport()
         .expect("client should connect");
 
     let response = client
-        .get_features_parsed()
+        .get_features(GetFeaturesRequest::new())
         .await
         .expect("typed feature discovery should parse");
 
@@ -545,30 +548,28 @@ async fn typed_aggregates_round_trip_current_shape_over_stateful_unix_transport(
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = GetAggregatesRequest::new("task&<");
+    request.filter_string = Some("owner=me & rows=-1".into());
+    request.data_columns = vec!["qod&<".into()];
+    request.group_column = Some("status&<".into());
+    request.sorts = vec![AggregateSort {
+        field: "qod&<".into(),
+        statistic: Some(AggregateSortStatistic::Maximum),
+        order: Some(SortOrder::Descending),
+    }];
+    request.text_columns = vec!["name&<".into()];
+    request.first_group = Some(1);
+    request.max_groups = Some(-1);
+    request.usage_type = Some(UsageType::Audit);
     let response = client
-        .get_aggregates(
-            "task&<",
-            GetAggregatesRequestOpts {
-                filter_string: Some("owner=me & rows=-1".into()),
-                data_columns: vec!["qod&<".into()],
-                group_column: Some("status&<".into()),
-                sorts: vec![AggregateSort {
-                    field: "qod&<".into(),
-                    statistic: Some(AggregateSortStatistic::Maximum),
-                    order: Some(SortOrder::Descending),
-                }],
-                text_columns: vec!["name&<".into()],
-                first_group: Some(1),
-                max_groups: Some(-1),
-                usage_type: Some(UsageType::Audit),
-                ..Default::default()
-            },
-        )
+        .get_aggregates(request)
         .await
         .expect("typed aggregate response should parse");
 
@@ -606,7 +607,7 @@ async fn typed_aggregates_round_trip_current_shape_over_stateful_unix_transport(
 }
 
 #[tokio::test]
-async fn legacy_aggregates_round_trip_comma_separated_columns_over_stateful_unix_transport() {
+async fn legacy_aggregates_round_trip_supported_singular_shape_over_stateful_unix_transport() {
     let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
         return;
     };
@@ -615,35 +616,34 @@ async fn legacy_aggregates_round_trip_comma_separated_columns_over_stateful_unix
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = GetLegacyAggregatesRequest::new("task");
+    request.data_column = Some("qod".into());
+    request.group_column = Some("status".into());
+    request.sort = Some(AggregateSort {
+        field: "qod".into(),
+        statistic: Some(AggregateSortStatistic::Mean),
+        order: Some(SortOrder::Ascending),
+    });
     let response = client
-        .call(get_aggregates_legacy(
-            "task",
-            GetAggregatesOpts {
-                data_columns: Some("qod, severity".into()),
-                text_columns: Some("name, comment".into()),
-                ..Default::default()
-            },
-        ))
+        .get_legacy_aggregates(request)
         .await
         .expect("legacy aggregate request should succeed");
 
-    let xml = response.as_str().expect("response should be UTF-8");
-    for column in ["qod", "severity"] {
-        assert!(xml.contains(&format!("<data_column>{column}</data_column>")));
-        assert!(xml.contains(&format!("<stats column=\"{column}\">")));
-    }
-    for column in ["name", "comment"] {
-        assert!(xml.contains(&format!("<text_column>{column}</text_column>")));
-        assert!(xml.contains(&format!("<text column=\"{column}\">All</text>")));
-    }
+    assert_eq!(response.aggregates[0].data_columns, vec!["qod"]);
+    assert_eq!(
+        response.aggregates[0].group_column.as_deref(),
+        Some("status")
+    );
     assert_eq!(
         server.command_history()[0].raw_xml(),
-        br#"<get_aggregates data_columns="qod, severity" text_columns="name, comment" type="task"/>"#
+        br#"<get_aggregates data_column="qod" group_column="status" sort_field="qod" sort_order="ascending" sort_stat="mean" type="task"/>"#
     );
 
     server.shutdown().await;
@@ -659,20 +659,18 @@ async fn typed_word_count_aggregates_parse_current_gvmd_shape_over_unix_transpor
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
 
+    let mut request = GetAggregatesRequest::new("task");
+    request.group_column = Some("comment".into());
+    request.mode = Some(AggregateMode::WordCounts);
     let response = client
-        .get_aggregates(
-            "task",
-            GetAggregatesRequestOpts {
-                group_column: Some("comment".into()),
-                mode: Some(AggregateMode::WordCounts),
-                ..Default::default()
-            },
-        )
+        .get_aggregates(request)
         .await
         .expect("current gvmd word-count response should parse");
 
@@ -713,7 +711,9 @@ async fn typed_modify_auth_uses_current_gvmd_shape_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
@@ -750,7 +750,9 @@ async fn typed_modify_license_uses_current_gvmd_shape_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
@@ -786,7 +788,9 @@ async fn typed_run_wizard_uses_current_gvmd_shape_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate");
     server.clear_history();
@@ -849,7 +853,9 @@ async fn live_wire_trace_observes_typed_helper_with_redaction() {
     .expect("client should connect");
 
     let response = client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("typed authenticate should succeed");
     assert_eq!(response.status, 200);
@@ -921,7 +927,9 @@ async fn live_wire_trace_redacts_credential_store_preference_values() {
     .await
     .expect("client should connect");
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
     server.clear_history();
@@ -977,7 +985,9 @@ async fn canonical_task_preference_values_are_redacted_from_wire_trace() {
     .await
     .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
     let target = client
@@ -1043,12 +1053,14 @@ async fn typed_help_preserves_brief_xml_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
 
     let response = client
-        .get_help_with_mode(HelpMode::BriefXml)
+        .get_help(HelpRequest::new(HelpMode::BriefXml))
         .await
         .expect("brief XML help should parse");
     let schema = response.schema.expect("brief help schema");
@@ -1075,15 +1087,14 @@ async fn authenticate_succeeds() {
         .expect("client should connect");
 
     let response = client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
-    assert_eq!(response.status_code(), Some(200));
-    assert_eq!(
-        response.root_element_name().as_deref(),
-        Some("authenticate_response")
-    );
+    assert_eq!(response.status, 200);
+    assert_eq!(response.role.as_deref(), Some("Admin"));
 
     server.shutdown().await;
 }
@@ -1099,7 +1110,9 @@ async fn create_target_and_get_targets_succeed() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1246,7 +1259,9 @@ async fn typed_alert_data_maps_and_rename_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1338,7 +1353,9 @@ async fn typed_alert_active_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1406,7 +1423,9 @@ async fn typed_ticket_create_read_and_reassign_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1487,7 +1506,9 @@ async fn operating_system_helpers_send_asset_commands() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1525,7 +1546,9 @@ async fn typed_generic_configs_round_trip_through_mock_server() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1583,7 +1606,9 @@ async fn typed_generic_config_get_modify_and_delete_round_trip() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1793,7 +1818,9 @@ async fn typed_asset_helpers_cover_host_lifecycle_over_unix_transport() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -1814,19 +1841,21 @@ async fn get_feed_sends_typed_get_feeds_command() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
     let response = client
-        .get_feed(FeedType::Nvt)
+        .get_feed(GetFeedRequest::new(FeedType::Nvt))
         .await
         .expect("get_feed should return typed feed data");
 
     assert_eq!(response.status, 200);
-    assert!(response.feed_owner_set);
-    assert!(response.feed_roles_set);
-    assert!(response.feed_resources_access);
+    assert_eq!(response.feed_owner_set, Some(true));
+    assert_eq!(response.feed_roles_set, Some(true));
+    assert_eq!(response.feed_resources_access, Some(true));
     assert_eq!(response.items.len(), 1);
     assert_eq!(response.items[0].type_, "NVT");
     assert_eq!(response.items[0].status, None);
@@ -1841,7 +1870,7 @@ async fn get_feed_sends_typed_get_feeds_command() {
     );
 
     let all = client
-        .get_feeds()
+        .get_feeds(GetFeedsRequest::new())
         .await
         .expect("all feeds should return typed data");
     assert_eq!(all.items.len(), 4);
@@ -1878,16 +1907,17 @@ async fn typed_system_reports_preserve_wire_options_and_payload_metadata() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
+    let mut request = GetSystemReportsRequest::new();
+    request.name = Some("load".into());
+    request.duration = Some(3600);
     let response = client
-        .get_system_reports(GetSystemReportsOpts {
-            name: Some("load".into()),
-            duration: Some(3600),
-            ..Default::default()
-        })
+        .get_system_reports(request)
         .await
         .expect("system report should parse");
 
@@ -1964,7 +1994,9 @@ async fn unsupported_next_command_rejected_before_send() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2004,7 +2036,7 @@ async fn unsupported_next_command_rejected_before_send() {
     ));
 
     let error = client
-        .call(get_timezones())
+        .execute(GetTimezonesRequest::new())
         .await
         .expect_err("22.7 should reject get_timezones");
     assert!(matches!(
@@ -2039,7 +2071,9 @@ async fn credential_store_commands_are_rejected_before_v22_8() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2166,7 +2200,9 @@ async fn next_commands_work_on_v22_8() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2230,7 +2266,9 @@ async fn typed_integration_configs_round_trip_over_unix_transport() {
         .await
         .expect("client should connect");
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2339,7 +2377,7 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     assert_eq!(closed_cve.threat.as_deref(), Some("Medium"));
 
     let timezones = client
-        .get_timezones()
+        .get_timezones(GetTimezonesRequest::new())
         .await
         .expect("timezones should parse");
     assert!(timezones
@@ -2511,7 +2549,9 @@ async fn typed_user_rename_round_trip() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
 
@@ -2554,7 +2594,9 @@ async fn typed_ssh_credential_lifecycle_uses_nested_key_shape() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -2634,7 +2676,9 @@ async fn typed_snmpv3_and_kerberos_credentials_use_current_wire_shapes() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -2705,7 +2749,9 @@ async fn typed_verify_credential_store_uses_next_command_shape() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -2759,7 +2805,9 @@ async fn typed_create_credential_store_credential_uses_next_shape() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2804,7 +2852,9 @@ async fn typed_modify_credential_store_credential_uses_next_shape() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2873,7 +2923,9 @@ async fn typed_secinfo_singular_helpers_fetch_one_entry() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2922,7 +2974,9 @@ async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -2971,7 +3025,9 @@ async fn generic_secinfo_helpers_use_stateful_mock_server_path() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -3024,7 +3080,9 @@ async fn typed_scan_config_field_helpers_modify_stateful_mock_resource() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -3124,7 +3182,9 @@ async fn preference_getters_send_expected_mock_server_commands() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -3214,7 +3274,9 @@ async fn typed_scan_config_nvt_helpers_use_stateful_mock_server_filters() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -3279,7 +3341,9 @@ async fn typed_config_getters_filter_stateful_mock_resources() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -3380,7 +3444,9 @@ async fn typed_permission_lifecycle_uses_nested_references() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -3482,7 +3548,9 @@ async fn typed_target_host_updates_are_atomic_and_can_clear_exclusions() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4130,7 +4198,9 @@ async fn typed_target_port_list_updates_preserve_omit_and_set_semantics() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4215,7 +4285,9 @@ async fn typed_target_port_list_clear_is_rejected_before_send() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     let target = client
@@ -4280,7 +4352,9 @@ async fn typed_user_role_updates_preserve_replace_and_clear_state() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4366,7 +4440,9 @@ async fn typed_policy_import_uses_stateful_mock_server_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4452,7 +4528,9 @@ async fn typed_scan_config_import_uses_stateful_mock_server_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -4510,7 +4588,9 @@ async fn typed_report_format_import_and_clone_use_mock_server_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -4561,7 +4641,9 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
     server.clear_history();
@@ -4622,7 +4704,9 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4839,7 +4923,9 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
         .await
         .expect("client should connect");
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
     let mut client = match client {
@@ -4883,7 +4969,9 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("client should connect");
 
     client
-        .call(authenticate("admin", "admin"))
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -4994,7 +5082,9 @@ async fn typed_task_observers_round_trip_create_and_modify() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5082,7 +5172,9 @@ async fn typed_create_import_task_uses_import_task_shape() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5120,7 +5212,9 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5189,7 +5283,9 @@ async fn typed_task_report_reference_tracks_start_stop_and_resume() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5380,7 +5476,9 @@ async fn typed_oci_image_target_lifecycle_succeeds() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5445,7 +5543,9 @@ async fn typed_web_application_target_lifecycle_succeeds() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5783,7 +5883,9 @@ async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
         .expect("client should connect");
 
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -5925,7 +6027,9 @@ async fn typed_user_helpers_cover_full_lifecycle_and_redact_password_trace() {
     .await
     .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authentication should succeed");
 
@@ -6202,7 +6306,9 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 
@@ -6310,7 +6416,9 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
         .await
         .expect("client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("authenticate should succeed");
 

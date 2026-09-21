@@ -3,12 +3,15 @@
 
 #![allow(missing_docs, clippy::unwrap_used)]
 
-mod common;
-
-use common::xml;
-use gvm_gmp::commands::version::get_version;
+use gvm_gmp::commands::version::GetVersionRequest;
+use gvm_gmp::{GmpRequestCodec, GmpVersion};
 
 #[test]
 fn test_get_version_basic() {
-    assert_eq!(xml(get_version()), "<get_version/>");
+    assert_eq!(
+        GetVersionRequest::new()
+            .encode(GmpVersion(22, 4))
+            .expect("encode"),
+        b"<get_version/>"
+    );
 }

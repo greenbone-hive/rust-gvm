@@ -411,8 +411,8 @@ canonical_inventory!(
     ResourceType,
     {
         Alert => ("ALERT", Alert),
-        Audit => ("TASK", Task),
-        AuditReport => ("REPORT", Report),
+        Audit => ("AUDIT", Audit),
+        AuditReport => ("AUDIT_REPORT", AuditReport),
         CertBundAdv => ("CERT_BUND_ADV", CertBundAdv),
         Config => ("CONFIG", Config),
         Cpe => ("CPE", Cpe),
@@ -427,6 +427,7 @@ canonical_inventory!(
         OperatingSystem => ("OS", OperatingSystem),
         Override => ("OVERRIDE", Override),
         Permission => ("PERMISSION", Permission),
+        Policy => ("POLICY", Policy),
         PortList => ("PORT_LIST", PortList),
         ReportFormat => ("REPORT_FORMAT", ReportFormat),
         Report => ("REPORT", Report),

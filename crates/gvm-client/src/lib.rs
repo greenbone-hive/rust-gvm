@@ -36,8 +36,8 @@ use gvm_gmp::commands::credentials::{
     CreateCredentialStoreCredentialRequest, GetCredentialStoreRequest, GetCredentialStoresRequest,
     ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
 };
-use gvm_gmp::commands::features::get_features;
-use gvm_gmp::commands::help::help_with_mode;
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::help::HelpRequest;
 use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigRequest,
 };
@@ -52,7 +52,7 @@ use gvm_gmp::commands::reports::{
     GetReportHostsRequest, GetReportOperatingSystemsRequest, GetReportPortsRequest,
     GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetScanReportRequest,
 };
-use gvm_gmp::commands::system::get_timezones;
+use gvm_gmp::commands::system::GetTimezonesRequest;
 use gvm_gmp::commands::tasks::{
     CreateAgentGroupTaskRequest, CreateContainerImageTaskRequest, CreateOciImageTargetTaskRequest,
     CreateWebApplicationTaskRequest,
@@ -69,11 +69,12 @@ use gvm_gmp::responses::{
     DeleteAgentGroupResponse, DeleteAgentResponse, DeleteOciImageTargetResponse,
     DeleteWebApplicationTargetResponse, ExportScanReportResponse, GetAgentGroupsResponse,
     GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
-    GetAuditReportsResponse, GetCredentialStoresResponse, GetIntegrationConfigsResponse,
-    GetOciImageTargetsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
-    GetReportCvesResponse, GetReportErrorsResponse, GetReportHostsResponse,
-    GetReportOperatingSystemsResponse, GetReportPortsResponse, GetReportTlsCertificatesResponse,
-    GetReportVulnsResponse, GetScanReportResponse, GetWebApplicationTargetsResponse, HelpResponse,
+    GetAuditReportsResponse, GetCredentialStoresResponse, GetFeaturesResponse,
+    GetIntegrationConfigsResponse, GetOciImageTargetsResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetScanReportResponse,
+    GetTimezonesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse, ModifyAgentResponse,
     ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse,
     ModifyWebApplicationTargetResponse, SyncAgentsResponse, VerifyCredentialStoreResponse,
@@ -89,11 +90,8 @@ pub use gvm_gmp::commands::agents::{
     AgentConfigOpts, AgentControlConfig, AgentHeartbeatConfig, AgentInstallerLanguage,
     AgentRetryConfig, AgentScriptExecutorConfig,
 };
-pub use gvm_gmp::commands::aggregates::{
-    AggregateMode, AggregateSort, AggregateSortStatistic, GetAggregatesRequestOpts,
-};
+pub use gvm_gmp::commands::aggregates::{AggregateMode, AggregateSort, AggregateSortStatistic};
 pub use gvm_gmp::commands::help::HelpMode;
-pub use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 pub use gvm_gmp::commands::usage_type::UsageType;
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
 pub use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse};
@@ -236,12 +234,8 @@ impl<C: GvmConnection> GmpClient<C> {
     ) -> Result<Self, GvmError> {
         connection.connect().await?;
 
-        let response = Self::send_on(
-            &mut connection,
-            GetVersionRequest::new(),
-            wire_trace.as_deref(),
-        )
-        .await?;
+        let request = GetVersionRequest::new().encode(GmpVersion(22, 4))?;
+        let response = Self::send_on_bytes(&mut connection, request, wire_trace.as_deref()).await?;
         let response = Self::raise_for_status(response)?;
         let version_text = response.child_text("version").ok_or_else(|| {
             GvmError::XmlParse("missing <version> in get_version response".to_string())
@@ -272,8 +266,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the request fails, the response cannot be parsed,
     /// or the server does not return a structured command listing.
     pub async fn discover_commands(&mut self) -> Result<HelpResponse, GvmError> {
-        let response = self.call(help_with_mode(HelpMode::BriefXml)).await?;
-        let parsed = HelpResponse::from_response(&response).map_err(GvmError::from)?;
+        let parsed = self.execute(HelpRequest::new(HelpMode::BriefXml)).await?;
         let schema = parsed.schema.as_ref().ok_or_else(|| {
             GvmError::XmlParse("help response did not include an XML command listing".to_string())
         })?;
@@ -453,14 +446,6 @@ impl<C: GvmConnection> GmpClient<C> {
         self.connection
     }
 
-    async fn send_on<R: Request>(
-        connection: &mut C,
-        request: R,
-        wire_trace: Option<&dyn WireTrace>,
-    ) -> Result<Response, GvmError> {
-        Self::send_on_bytes(connection, request.to_bytes(), wire_trace).await
-    }
-
     async fn send_on_bytes(
         connection: &mut C,
         request_bytes: Vec<u8>,
@@ -567,7 +552,10 @@ pub struct GmpNext<C: GvmConnection>(GmpClient<C>);
 #[async_trait::async_trait]
 pub trait Gmp226Commands {
     /// Send a `get_features` request.
-    async fn get_features(&mut self) -> Result<Response, GvmError>;
+    async fn get_features(
+        &mut self,
+        request: GetFeaturesRequest,
+    ) -> Result<GetFeaturesResponse, GvmError>;
 
     /// List audit reports with the fixed audit usage selector.
     async fn get_audit_reports(
@@ -858,7 +846,10 @@ pub trait GmpNextCommands {
     ) -> Result<GetReportClosedCvesResponse, GvmError>;
 
     /// List timezones.
-    async fn get_timezones(&mut self) -> Result<Response, GvmError>;
+    async fn get_timezones(
+        &mut self,
+        request: GetTimezonesRequest,
+    ) -> Result<GetTimezonesResponse, GvmError>;
 
     /// List credential stores.
     async fn get_credential_stores(
@@ -901,8 +892,11 @@ macro_rules! impl_gmp226_commands {
     ($client:ident) => {
         #[async_trait::async_trait]
         impl<C: GvmConnection + Send> Gmp226Commands for $client<C> {
-            async fn get_features(&mut self) -> Result<Response, GvmError> {
-                self.0.call(get_features()).await
+            async fn get_features(
+                &mut self,
+                request: GetFeaturesRequest,
+            ) -> Result<GetFeaturesResponse, GvmError> {
+                self.0.execute(request).await
             }
 
             async fn get_audit_reports(
@@ -1399,8 +1393,11 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         self.0.execute(request).await
     }
 
-    async fn get_timezones(&mut self) -> Result<Response, GvmError> {
-        self.0.call(get_timezones()).await
+    async fn get_timezones(
+        &mut self,
+        request: GetTimezonesRequest,
+    ) -> Result<GetTimezonesResponse, GvmError> {
+        self.0.execute(request).await
     }
 
     async fn get_credential_stores(
@@ -1621,10 +1618,6 @@ mod tests {
         )
     }
 
-    fn auth_response() -> &'static str {
-        r#"<authenticate_response status="200" status_text="OK"/>"#
-    }
-
     fn event_text(event: &WireTraceEvent) -> String {
         String::from_utf8(event.bytes.clone()).expect("trace event is utf-8")
     }
@@ -1732,8 +1725,10 @@ mod tests {
 
     #[tokio::test]
     async fn execute_redacts_wire_bytes_before_trace_observation() {
-        let connection =
-            ScriptedConnection::new([version_response("22.7"), auth_response().to_string()]);
+        let connection = ScriptedConnection::new([
+            version_response("22.7"),
+            r#"<authenticate_response status="200" status_text="OK"><role>Admin</role><timezone>UTC</timezone><token>issued-secret-token</token></authenticate_response>"#.to_string(),
+        ]);
         let sent = connection.sent();
         let events = Arc::new(Mutex::new(Vec::new()));
         let trace_events = Arc::clone(&events);
@@ -1744,13 +1739,14 @@ mod tests {
         .await
         .expect("client connects");
 
-        client
-            .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
-                "admin",
-                "secret-password",
-            ))
+        let mut request =
+            gvm_gmp::commands::authentication::AuthenticateRequest::new("admin", "secret-password");
+        request.request_token = Some(true);
+        let response = client
+            .execute(request)
             .await
             .expect("authenticate succeeds");
+        assert_eq!(response.token.as_deref(), Some("issued-secret-token"));
 
         let sent = sent.lock().expect("sent lock");
         assert_eq!(sent.len(), 2);
@@ -1771,12 +1767,17 @@ mod tests {
         assert_eq!(events[2].direction, WireTraceDirection::Request);
 
         let auth_request = event_text(&events[2]);
-        assert!(auth_request.contains("<authenticate>"));
+        assert!(auth_request.contains("<authenticate token=\"redacted\">"));
+        assert!(auth_request.contains("<username><redacted/></username>"));
         assert!(auth_request.contains("<password><redacted/></password>"));
+        assert!(!auth_request.contains("admin"));
         assert!(!auth_request.contains("secret-password"));
 
         assert_eq!(events[3].direction, WireTraceDirection::Response);
-        assert!(event_text(&events[3]).contains("<authenticate_response"));
+        let auth_response = event_text(&events[3]);
+        assert!(auth_response.contains("<authenticate_response"));
+        assert!(auth_response.contains("<token><redacted/></token>"));
+        assert!(!auth_response.contains("issued-secret-token"));
     }
 
     #[tokio::test]

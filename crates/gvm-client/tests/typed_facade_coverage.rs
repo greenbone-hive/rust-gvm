@@ -15,7 +15,7 @@ use gvm_gmp::commands::agents::{
     GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
     ModifyAgentControlScanConfigRequest, ModifyAgentRequest, SyncAgentsRequest,
 };
-use gvm_gmp::commands::aggregates::GetAggregatesRequestOpts;
+use gvm_gmp::commands::aggregates::{GetAggregatesRequest, GetLegacyAggregatesRequest};
 use gvm_gmp::commands::alerts::{
     CloneAlertRequest, CreateAlertRequest, DeleteAlertRequest, GetAlertRequest, GetAlertsRequest,
     ModifyAlertRequest, TestAlertRequest, TriggerAlertRequest,
@@ -32,6 +32,8 @@ use gvm_gmp::commands::credentials::{
     CloneCredentialRequest, CreateCredentialRequest, DeleteCredentialRequest, GetCredentialRequest,
     GetCredentialsRequest, ModifyCredentialRequest,
 };
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
 use gvm_gmp::commands::filters::{
     CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, GetFilterRequest,
     GetFiltersRequest, ModifyFilterRequest,
@@ -40,7 +42,7 @@ use gvm_gmp::commands::groups::{
     CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsRequest,
     ModifyGroupRequest,
 };
-use gvm_gmp::commands::help::HelpMode;
+use gvm_gmp::commands::help::{HelpMode, HelpRequest};
 use gvm_gmp::commands::hosts::{
     CreateHostRequest, DeleteHostRequest, GetHostRequest, GetHostsRequest, ModifyHostRequest,
 };
@@ -89,6 +91,7 @@ use gvm_gmp::commands::reports::{
     GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsRequest,
     GetScanReportRequest, ImportReportRequest,
 };
+use gvm_gmp::commands::resource_names::{GetResourceNameRequest, GetResourceNamesRequest};
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsRequest};
 use gvm_gmp::commands::roles::*;
 use gvm_gmp::commands::scan_configs::GetScanConfigsRequest;
@@ -106,11 +109,12 @@ use gvm_gmp::commands::secinfo::{
     GetDfnCertAdvisoryRequest, GetInfoListRequest, GetInfoRequest,
 };
 use gvm_gmp::commands::system::{
+    DescribeAuthRequest, GetLicenseRequest, GetSettingsRequest, GetTimezonesRequest,
     GetVulnerabilityRequest, GetVulnsRequest, ModifyAuthRequest, ModifyLicenseOpts,
     ModifyLicenseRequest, ModifyLicenseWithOptsRequest, ModifySettingRequest, RunWizardOpts,
     RunWizardRequest, RunWizardWithOptsRequest,
 };
-use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
+use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
 use gvm_gmp::commands::tags::{
     CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsRequest,
     ModifyTagRequest, TagResources,
@@ -141,6 +145,7 @@ use gvm_gmp::commands::users::{
     CloneUserRequest, CreateUserRequest, DeleteUserRequest, GetUserRequest, GetUsersRequest,
     ModifyUserRequest, UserHostAccess,
 };
+use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
@@ -150,8 +155,8 @@ use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, EntityType, FeedType, GmpRequest, PortRangeType,
-    ScannerType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
-    ScheduleTimezone,
+    ResourceType, ScannerType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
+    ScheduleTimestamp, ScheduleTimezone,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
@@ -1420,30 +1425,40 @@ async fn system_discovery_queries_execute_through_typed_facade() {
     let mut client = client(&server).await;
     server.clear_history();
 
-    assert_typed_success!(client.get_aggregates("task", GetAggregatesRequestOpts::default()));
-    assert_typed_success!(client.get_features_parsed());
-    assert_typed_success!(client.get_feeds());
-    assert_typed_success!(client.get_feed(FeedType::Nvt));
-    assert_typed_success!(client.get_timezones());
-    assert_typed_success!(client.get_settings());
-    assert_typed_success!(client.get_system_reports(GetSystemReportsOpts::default()));
-    assert_typed_success!(client.get_help());
-    assert_typed_success!(client.get_help_with_mode(HelpMode::BriefXml));
-    assert_typed_success!(client.describe_auth());
+    assert_typed_success!(client.get_aggregates(GetAggregatesRequest::new("task")));
+    assert_typed_success!(client.get_legacy_aggregates(GetLegacyAggregatesRequest::new("task")));
+    assert_typed_success!(client.get_features(GetFeaturesRequest::new()));
+    assert_typed_success!(client.get_feeds(GetFeedsRequest::new()));
+    assert_typed_success!(client.get_feed(GetFeedRequest::new(FeedType::Nvt)));
+    assert_typed_success!(client.get_timezones(GetTimezonesRequest::new()));
+    assert_typed_success!(client.get_settings(GetSettingsRequest::new()));
+    assert_typed_success!(client.get_system_reports(GetSystemReportsRequest::new()));
+    assert_typed_success!(client.get_help(HelpRequest::new(HelpMode::BriefXml)));
+    assert_typed_success!(client.describe_auth(DescribeAuthRequest::new()));
+    assert_typed_success!(
+        client.get_resource_names(GetResourceNamesRequest::new(ResourceType::Task))
+    );
+    assert_typed_success!(client.get_resource_name(GetResourceNameRequest::new(
+        id("task-1"),
+        ResourceType::Task
+    )));
+    assert_typed_success!(client.get_license(GetLicenseRequest::new()));
     assert_typed_success!(client.get_vulnerabilities(GetVulnsRequest::default()));
     assert_typed_success!(client.get_vulnerability(GetVulnerabilityRequest::new("vuln-1")));
 
     let history = server.command_history();
-    assert_eq!(history.len(), 12);
+    assert_eq!(history.len(), 15);
     for (command, expected_count) in [
-        ("get_aggregates", 1),
+        ("get_aggregates", 2),
         ("get_features", 1),
         ("get_feeds", 2),
         ("get_timezones", 1),
         ("get_settings", 1),
         ("get_system_reports", 1),
-        ("help", 2),
+        ("help", 1),
         ("describe_auth", 1),
+        ("get_resource_names", 2),
+        ("get_license", 1),
         ("get_vulns", 2),
     ] {
         assert_eq!(
@@ -1519,7 +1534,7 @@ async fn system_discovery_facades_preserve_status_and_parse_context() {
     let mut status_client = client(&status_server).await;
 
     assert_server_error!(
-        status_client.get_system_reports(GetSystemReportsOpts::default()),
+        status_client.get_system_reports(GetSystemReportsRequest::new()),
         503,
         "metrics unavailable"
     );
@@ -1538,7 +1553,7 @@ async fn system_discovery_facades_preserve_status_and_parse_context() {
     };
     let mut parse_client = client(&parse_server).await;
     let parse_error = parse_client
-        .get_features_parsed()
+        .get_features(GetFeaturesRequest::new())
         .await
         .expect_err("missing feature compiled-in state should fail");
     assert!(matches!(
@@ -2914,7 +2929,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     };
     let mut client = client(&server).await;
 
-    let version = assert_typed_success!(client.get_version());
+    let version = assert_typed_success!(client.get_version(GetVersionRequest::new()));
     assert_eq!(version.version, "22.8");
 
     assert_typed_success!(client.get_targets(GetTargetsRequest::default()));
@@ -2956,9 +2971,9 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesRequest::default()));
     assert_typed_success!(client.get_report_formats(GetReportFormatsRequest::default()));
     assert_typed_success!(client.get_report_configs(GetReportConfigsRequest::default()));
-    assert_typed_success!(client.get_settings());
-    assert_typed_success!(client.get_help());
-    assert_typed_success!(client.describe_auth());
+    assert_typed_success!(client.get_settings(GetSettingsRequest::new()));
+    assert_typed_success!(client.get_help(HelpRequest::new(HelpMode::Text)));
+    assert_typed_success!(client.describe_auth(DescribeAuthRequest::new()));
 
     let history = server.command_history();
     for expected in [
@@ -3757,7 +3772,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
     v225_server.clear_history();
 
     let features_error = v225_client
-        .get_features_parsed()
+        .get_features(GetFeaturesRequest::new())
         .await
         .expect_err("22.6 registry gate should reject 22.5");
     assert!(matches!(
@@ -3981,7 +3996,7 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
         } if command == "get_report_export"
     ));
     let timezones_error = v227_client
-        .get_timezones()
+        .get_timezones(GetTimezonesRequest::new())
         .await
         .expect_err("22.8 timezone gate should reject 22.7");
     assert!(matches!(

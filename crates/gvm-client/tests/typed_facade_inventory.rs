@@ -259,12 +259,15 @@ const INTEGRATION_COVERED: &[&str] = &[
     "modify_report_config",
     "delete_report_config",
     "get_aggregates",
-    "get_features_parsed",
+    "get_legacy_aggregates",
+    "get_features",
     "get_settings",
     "get_system_reports",
     "get_help",
-    "get_help_with_mode",
     "describe_auth",
+    "get_resource_names",
+    "get_resource_name",
+    "get_license",
     "modify_auth",
     "modify_license",
     "run_wizard",
@@ -344,7 +347,7 @@ fn normalized_integration_sources() -> String {
 #[test]
 fn every_public_typed_helper_has_exactly_one_enforced_classification() {
     let public = public_typed_methods();
-    assert_eq!(public.len(), 260);
+    assert_eq!(public.len(), 263);
     let mut classified = BTreeSet::new();
 
     for (class, methods) in [
@@ -386,7 +389,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         .map(|(_, source)| source.matches("self.send(").count())
         .sum::<usize>();
 
-    assert_eq!(direct_execute_count, 257);
+    assert_eq!(direct_execute_count, 260);
     assert_eq!(raw_send_count, 3);
     assert_eq!(raw_send_sources.len(), 1);
     assert_eq!(

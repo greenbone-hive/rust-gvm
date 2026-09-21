@@ -3,12 +3,13 @@
 
 #![allow(missing_docs, clippy::unwrap_used)]
 
-mod common;
-
-use common::xml;
-use gvm_gmp::commands::features::get_features;
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::{GmpRequestCodec, GmpVersion};
 
 #[test]
 fn test_get_features() {
-    assert_eq!(xml(get_features()), "<get_features/>");
+    assert_eq!(
+        GetFeaturesRequest::new().encode(GmpVersion(22, 6)).unwrap(),
+        b"<get_features/>"
+    );
 }

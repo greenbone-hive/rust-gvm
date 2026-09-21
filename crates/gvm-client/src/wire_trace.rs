@@ -258,7 +258,8 @@ fn is_credential_store_preference(stack: &[String], element_name: &str) -> bool 
 fn is_sensitive_name(name: &str) -> bool {
     matches!(
         name,
-        "password"
+        "username"
+            | "password"
             | "community"
             | "private"
             | "private_key"

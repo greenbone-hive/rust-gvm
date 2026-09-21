@@ -4,8 +4,6 @@
 #![allow(clippy::print_stderr, clippy::unwrap_used, missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_gmp::commands::authentication::authenticate;
-use gvm_gmp::commands::help::{help_with_mode, HelpMode};
 use gvm_gmp::commands::reports::ExportScanReportRequest;
 use gvm_gmp::{EntityId, GmpRequestCodec};
 use gvm_mock_server::{GmpVersion, MockGmpServer, Resource, ServerMode};
@@ -74,7 +72,7 @@ async fn send_recv_export(stream: &mut UnixStream, request: &ExportScanReportReq
 }
 
 async fn assert_created_and_reused(server: &MockGmpServer, stream: &mut UnixStream) {
-    let help = send_recv(stream, help_with_mode(HelpMode::BriefXml)).await;
+    let help = send_recv(stream, b"<help format=\"xml\" type=\"brief\"/>".as_slice()).await;
     assert_eq!(help.status_code(), Some(200));
     assert!(help
         .as_str()
@@ -168,7 +166,7 @@ async fn assert_pre_22_7_unsupported() {
     let mut stream = UnixStream::connect(server.socket_path().expect("socket path"))
         .await
         .expect("connect");
-    let _ = send_recv(&mut stream, authenticate("admin", "admin")).await;
+    let _ = send_recv(&mut stream, b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice()).await;
     let unsupported = send_recv_export(
         &mut stream,
         &ExportScanReportRequest::new(EntityId::new(REPORT_ID).expect("valid entity id")),
@@ -191,7 +189,7 @@ async fn stateful_mock_rejects_invalid_inputs_and_pre_22_7_command_use() {
         .await
         .expect("connect");
     assert_eq!(
-        send_recv(&mut stream, authenticate("admin", "admin"))
+        send_recv(&mut stream, b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice())
             .await
             .status_code(),
         Some(200)

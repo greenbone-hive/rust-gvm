@@ -1,75 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! System-level command builders.
+//! System-level requests.
 
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::commands::user_settings::{modify_user_setting, ModifyUserSettingOpts};
 use crate::common::add_filter_attrs;
-use crate::enums::{AggregateStatistic, FeedType, HelpFormat, ResourceType, SortOrder};
+use crate::enums::SortOrder;
 use crate::responses::{
-    ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeedsResponse,
-    GetResourceNamesResponse, GetSettingsResponse, GetTimezonesResponse,
-    GetVulnerabilitiesResponse, HelpResponse, ModifyAuthResponse, ModifyLicenseResponse,
-    RunWizardResponse,
+    DescribeAuthResponse, GetLicenseResponse, GetSettingsResponse, GetTimezonesResponse,
+    GetVulnerabilitiesResponse, ModifyAuthResponse, ModifyLicenseResponse, RunWizardResponse,
 };
 use crate::types::EntityId;
 use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
-
-pub use super::system_reports::{get_system_reports, GetSystemReportsOpts};
-
-/// Legacy system-module options for `get_aggregates` requests.
-///
-/// This type and [`get_aggregates`] are retained for source compatibility.
-/// They predate current gvmd's required aggregate resource type. New code
-/// should use [`crate::commands::aggregates::get_aggregates_request`].
-#[derive(Debug, Clone, Default)]
-pub struct GetAggregatesOpts {
-    /// Optional aggregate data column.
-    pub data_column: Option<String>,
-    /// Optional aggregate group-by column.
-    pub group_column: Option<String>,
-    /// Optional aggregate statistic.
-    pub statistic: Option<AggregateStatistic>,
-    /// Optional aggregate sort field.
-    pub sort_field: Option<String>,
-    /// Optional sort order.
-    pub sort_order: Option<SortOrder>,
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-}
-
-/// Options for `get_feeds` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetFeedsOpts {
-    /// Optional feed type.
-    pub feed_type: Option<FeedType>,
-}
-
-/// Options for `get_resource_names` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetResourceNamesOpts {
-    /// Optional related resource type.
-    pub resource_type: Option<ResourceType>,
-    /// Optional related resource identifier.
-    pub resource_id: Option<EntityId>,
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-}
-
-/// Shared filter options for simple getter requests.
-#[derive(Debug, Clone, Default)]
-pub struct FilteredGetOpts {
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-}
 
 /// Options for `modify_license` requests.
 #[derive(Debug, Clone, Default)]
@@ -318,65 +262,93 @@ impl GmpRequest for RunWizardWithOptsRequest {
     type Response = RunWizardResponse;
 }
 
-/// Semantic compatibility request for the system-module [`help`] builder.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SystemHelpRequest(Option<HelpFormat>);
-
-impl SystemHelpRequest {
-    /// Create a system-module help request.
-    #[must_use]
-    pub const fn new(format: Option<HelpFormat>) -> Self {
-        Self(format)
-    }
-}
-
-impl Request for SystemHelpRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        help(self.0).to_bytes()
-    }
-}
-
-impl GmpRequest for SystemHelpRequest {
-    type Response = HelpResponse;
-}
-
-/// Semantic compatibility request for the system-module [`get_feeds`] builder.
+/// Canonical request for system-setting discovery.
 #[derive(Debug, Clone, Default)]
-pub struct GetSystemFeedsRequest(GetFeedsOpts);
-
-impl GetSystemFeedsRequest {
-    /// Create a system-module feed request.
-    #[must_use]
-    pub fn new(opts: GetFeedsOpts) -> Self {
-        Self(opts)
-    }
+pub struct GetSettingsRequest {
+    /// Return a single setting by identifier.
+    pub setting_id: Option<EntityId>,
+    /// Inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// One-based first result.
+    pub first: Option<u32>,
+    /// Maximum results, or `-1` for all results.
+    pub max: Option<i32>,
+    /// Field used for sorting.
+    pub sort_field: Option<String>,
+    /// Sort direction.
+    pub sort_order: Option<SortOrder>,
 }
-
-impl Request for GetSystemFeedsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_feeds(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetSystemFeedsRequest {
-    type Response = GetFeedsResponse;
-}
-
-/// Semantic request for filtered setting discovery.
-#[derive(Debug, Clone, Default)]
-pub struct GetSettingsRequest(FilteredGetOpts);
 
 impl GetSettingsRequest {
-    /// Create a filtered setting request.
+    /// Create an unrestricted setting-discovery request.
     #[must_use]
-    pub fn new(opts: FilteredGetOpts) -> Self {
-        Self(opts)
+    pub const fn new() -> Self {
+        Self {
+            setting_id: None,
+            filter_string: None,
+            first: None,
+            max: None,
+            sort_field: None,
+            sort_order: None,
+        }
     }
 }
 
-impl Request for GetSettingsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_settings(self.0.clone()).to_bytes()
+impl GmpRequestCodec for GetSettingsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.first == Some(0) {
+            return Err(GmpRequestError::invalid_field(
+                "first",
+                "must be at least 1",
+            ));
+        }
+        if self.max.is_some_and(|value| value == 0 || value < -1) {
+            return Err(GmpRequestError::invalid_field(
+                "max",
+                "must be positive or -1",
+            ));
+        }
+        if let Some(filter) = self.filter_string.as_deref() {
+            validate_xml_text(filter, "filter_string")?;
+        }
+        if let Some(field) = self.sort_field.as_deref() {
+            if field.trim().is_empty() {
+                return Err(GmpRequestError::invalid_field(
+                    "sort_field",
+                    "must not be empty",
+                ));
+            }
+            validate_xml_text(field, "sort_field")?;
+        }
+        Ok(())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_settings"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("get_settings");
+        if let Some(id) = self.setting_id.as_ref() {
+            command.set_attribute("setting_id", id.as_str());
+        }
+        if let Some(filter) = self.filter_string.as_deref() {
+            command.set_attribute("filter", filter);
+        }
+        if let Some(first) = self.first {
+            command.set_attribute("first", &first.to_string());
+        }
+        if let Some(max) = self.max {
+            command.set_attribute("max", &max.to_string());
+        }
+        if let Some(field) = self.sort_field.as_deref() {
+            command.set_attribute("sort_field", field);
+        }
+        if let Some(order) = self.sort_order {
+            command.set_attribute("sort_order", order.as_gmp_str());
+        }
+        Ok(command.to_bytes())
     }
 }
 
@@ -384,7 +356,7 @@ impl GmpRequest for GetSettingsRequest {
     type Response = GetSettingsResponse;
 }
 
-/// Semantic request for timezone discovery.
+/// Canonical request for timezone discovery.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetTimezonesRequest;
 
@@ -396,86 +368,18 @@ impl GetTimezonesRequest {
     }
 }
 
-impl Request for GetTimezonesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_timezones().to_bytes()
+impl GmpRequestCodec for GetTimezonesRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_timezones"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("get_timezones").to_bytes())
     }
 }
 
 impl GmpRequest for GetTimezonesRequest {
     type Response = GetTimezonesResponse;
-}
-
-/// Semantic compatibility request for the legacy system aggregate builder.
-#[derive(Debug, Clone, Default)]
-pub struct GetSystemAggregatesRequest(GetAggregatesOpts);
-
-impl GetSystemAggregatesRequest {
-    /// Create a legacy system aggregate request.
-    #[must_use]
-    pub fn new(opts: GetAggregatesOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetSystemAggregatesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_aggregates(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetSystemAggregatesRequest {
-    type Response = GetAggregatesResponse;
-}
-
-/// Semantic request for resource-name discovery.
-#[derive(Debug, Clone, Default)]
-pub struct GetResourceNamesRequest(GetResourceNamesOpts);
-
-impl GetResourceNamesRequest {
-    /// Create a resource-name list request.
-    #[must_use]
-    pub fn new(opts: GetResourceNamesOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetResourceNamesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_resource_names(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetResourceNamesRequest {
-    type Response = GetResourceNamesResponse;
-}
-
-/// Semantic request for one resource name.
-#[derive(Debug, Clone)]
-pub struct GetResourceNameRequest {
-    resource_id: EntityId,
-    resource_type: ResourceType,
-}
-
-impl GetResourceNameRequest {
-    /// Create a single-resource name request.
-    #[must_use]
-    pub fn new(resource_id: EntityId, resource_type: ResourceType) -> Self {
-        Self {
-            resource_id,
-            resource_type,
-        }
-    }
-}
-
-impl Request for GetResourceNameRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_resource_name(&self.resource_id, self.resource_type).to_bytes()
-    }
-}
-
-impl GmpRequest for GetResourceNameRequest {
-    type Response = GetResourceNamesResponse;
 }
 
 /// Canonical request for observed vulnerabilities occurring in reports.
@@ -634,14 +538,18 @@ impl GetLicenseRequest {
     }
 }
 
-impl Request for GetLicenseRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_license().to_bytes()
+impl GmpRequestCodec for GetLicenseRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_license"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("get_license").to_bytes())
     }
 }
 
 impl GmpRequest for GetLicenseRequest {
-    type Response = ActionResponse;
+    type Response = GetLicenseResponse;
 }
 
 /// Semantic request for authentication-configuration discovery.
@@ -656,123 +564,18 @@ impl DescribeAuthRequest {
     }
 }
 
-impl Request for DescribeAuthRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        describe_auth().to_bytes()
+impl GmpRequestCodec for DescribeAuthRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("describe_auth"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("describe_auth").to_bytes())
     }
 }
 
 impl GmpRequest for DescribeAuthRequest {
     type Response = DescribeAuthResponse;
-}
-
-/// Build a `help` request.
-#[must_use]
-pub fn help(format: Option<HelpFormat>) -> impl Request {
-    match format {
-        Some(format) => {
-            crate::commands::help::help_with_mode(crate::commands::help::HelpMode::Schema(format))
-        }
-        None => crate::commands::help::help_with_mode(crate::commands::help::HelpMode::Text),
-    }
-}
-
-/// Build a `get_feeds` request.
-#[must_use]
-pub fn get_feeds(opts: GetFeedsOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_feeds");
-    if let Some(feed_type) = opts.feed_type {
-        cmd.set_attribute("type", feed_type.as_gmp_str());
-    }
-    cmd
-}
-
-/// Build a `get_settings` request.
-#[must_use]
-pub fn get_settings(opts: FilteredGetOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_settings");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    cmd
-}
-
-/// Build a `get_timezones` request.
-#[must_use]
-pub fn get_timezones() -> impl Request {
-    XmlCommand::new("get_timezones")
-}
-
-/// Build a legacy system-module `get_aggregates` request.
-///
-/// New code should use
-/// [`crate::commands::aggregates::get_aggregates_request`], which includes the
-/// required resource type and models repeated sort and column elements.
-#[must_use]
-pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_aggregates");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    if let Some(data_column) = opts.data_column.as_deref() {
-        cmd.set_attribute("data_column", data_column);
-    }
-    if let Some(group_column) = opts.group_column.as_deref() {
-        cmd.set_attribute("group_column", group_column);
-    }
-    if let Some(statistic) = opts.statistic {
-        cmd.set_attribute("statistic", statistic.as_gmp_str());
-    }
-    if let Some(sort_field) = opts.sort_field.as_deref() {
-        cmd.set_attribute("sort_field", sort_field);
-    }
-    if let Some(sort_order) = opts.sort_order {
-        cmd.set_attribute("sort_order", sort_order.as_gmp_str());
-    }
-    cmd
-}
-
-/// Build a `get_resource_names` request.
-#[must_use]
-pub fn get_resource_names(opts: GetResourceNamesOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_resource_names");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    if let Some(resource_type) = opts.resource_type {
-        cmd.set_attribute("type", resource_type.as_gmp_str());
-    }
-    if let Some(resource_id) = opts.resource_id.as_ref() {
-        cmd.set_attribute("resource_id", resource_id.as_str());
-    }
-    cmd
-}
-
-/// Build a `get_resource_names` request for a single resource.
-#[must_use]
-pub fn get_resource_name(resource_id: &EntityId, resource_type: ResourceType) -> impl Request {
-    let mut cmd = XmlCommand::new("get_resource_names");
-    cmd.set_attribute("resource_id", resource_id.as_str());
-    cmd.set_attribute("type", resource_type.as_gmp_str());
-    cmd
-}
-
-/// Build a `get_license` request.
-#[must_use]
-pub fn get_license() -> impl Request {
-    XmlCommand::new("get_license")
-}
-
-/// Build a `describe_auth` request.
-#[must_use]
-pub fn describe_auth() -> impl Request {
-    XmlCommand::new("describe_auth")
 }
 
 /// Build a `modify_auth` request for a named authentication group.
@@ -861,45 +664,35 @@ mod tests {
     }
 
     #[test]
-    fn system_commands_build_xml() {
-        assert_eq!(xml(help(Some(HelpFormat::Xml))), "<help format=\"xml\"/>");
+    fn canonical_discovery_requests_encode() {
+        let version = GmpVersion(22, 8);
         assert_eq!(
-            xml(get_feeds(GetFeedsOpts {
-                feed_type: Some(FeedType::Nvt)
-            })),
-            "<get_feeds type=\"NVT\"/>"
+            GetLicenseRequest::new().encode(version).expect("encode"),
+            b"<get_license/>"
         );
-        let rendered = xml(get_aggregates(GetAggregatesOpts {
-            data_column: Some("severity".into()),
-            statistic: Some(AggregateStatistic::Count),
-            sort_order: Some(SortOrder::Descending),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("data_column=\"severity\""));
-        assert!(rendered.contains("statistic=\"count\""));
-        assert_eq!(xml(get_license()), "<get_license/>");
-        assert_eq!(xml(describe_auth()), "<describe_auth/>");
-        assert_eq!(xml(get_timezones()), "<get_timezones/>");
+        assert_eq!(
+            DescribeAuthRequest::new().encode(version).expect("encode"),
+            b"<describe_auth/>"
+        );
+        assert_eq!(
+            GetTimezonesRequest::new().encode(version).expect("encode"),
+            b"<get_timezones/>"
+        );
+        let mut settings = GetSettingsRequest::new();
+        settings.setting_id = Some(id("s1"));
+        settings.filter_string = Some("name=Timezone".into());
+        settings.first = Some(2);
+        settings.max = Some(-1);
+        settings.sort_field = Some("name".into());
+        settings.sort_order = Some(SortOrder::Descending);
+        assert_eq!(
+            settings.encode(version).expect("encode"),
+            br#"<get_settings filter="name=Timezone" first="2" max="-1" setting_id="s1" sort_field="name" sort_order="descending"/>"#
+        );
     }
 
     #[test]
     fn system_filtered_mutation_commands_build_xml() {
-        assert!(xml(get_settings(FilteredGetOpts {
-            filter_id: Some(id("f1")),
-            ..Default::default()
-        }))
-        .contains("filt_id=\"f1\""));
-        assert!(xml(get_system_reports(GetSystemReportsOpts {
-            name: Some("load".into()),
-            ..Default::default()
-        }))
-        .contains("name=\"load\""));
-        assert!(xml(get_resource_names(GetResourceNamesOpts {
-            resource_type: Some(ResourceType::Task),
-            resource_id: Some(id("t1")),
-            ..Default::default()
-        }))
-        .contains("resource_id=\"t1\""));
         assert_eq!(
             xml(modify_auth(
                 "method:ldap_connect",

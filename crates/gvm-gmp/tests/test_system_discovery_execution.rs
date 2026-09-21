@@ -4,206 +4,170 @@
 #![allow(missing_docs, clippy::unwrap_used)]
 
 use gvm_gmp::commands::aggregates::{
-    get_aggregates as get_legacy_aggregates, get_aggregates_request, GetAggregatesOpts,
-    GetAggregatesRequest, GetAggregatesRequestOpts, GetLegacyAggregatesRequest,
+    AggregateMode, AggregateSort, AggregateSortStatistic, GetAggregatesRequest,
+    GetLegacyAggregatesRequest,
 };
-use gvm_gmp::commands::features::{get_features, GetFeaturesRequest};
-use gvm_gmp::commands::feed::{get_feed, get_feeds, GetFeedRequest, GetFeedsRequest};
-use gvm_gmp::commands::help::{
-    help as help_command, help_with_mode, HelpFormat as CommandHelpFormat, HelpMode, HelpRequest,
-    HelpWithModeRequest,
-};
+use gvm_gmp::commands::authentication::AuthenticateRequest;
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
+use gvm_gmp::commands::help::{HelpMode, HelpRequest};
+use gvm_gmp::commands::resource_names::{GetResourceNameRequest, GetResourceNamesRequest};
 use gvm_gmp::commands::system::{
-    describe_auth, get_aggregates, get_feeds as get_system_feeds, get_license, get_resource_name,
-    get_resource_names, get_settings, get_timezones, DescribeAuthRequest, FilteredGetOpts,
-    GetAggregatesOpts as SystemAggregatesOpts, GetLicenseRequest, GetResourceNameRequest,
-    GetResourceNamesOpts, GetResourceNamesRequest, GetSettingsRequest, GetSystemAggregatesRequest,
-    GetSystemFeedsRequest, GetTimezonesRequest, GetVulnerabilityRequest, GetVulnsRequest,
-    SystemHelpRequest,
+    DescribeAuthRequest, GetLicenseRequest, GetSettingsRequest, GetTimezonesRequest,
 };
-use gvm_gmp::commands::system_reports::{
-    get_system_reports, GetSystemReportsOpts, GetSystemReportsRequest,
-};
+use gvm_gmp::commands::system_reports::GetSystemReportsRequest;
+use gvm_gmp::commands::version::GetVersionRequest;
+use gvm_gmp::enums::{FeedType, HelpFormat, ResourceType, SortOrder};
 use gvm_gmp::responses::{
-    ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeaturesResponse,
-    GetFeedsResponse, GetResourceNamesResponse, GetSettingsResponse, GetSystemReportsResponse,
-    GetTimezonesResponse, GetVulnerabilitiesResponse, HelpResponse,
+    AuthenticateResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeaturesResponse,
+    GetFeedsResponse, GetLicenseResponse, GetResourceNamesResponse, GetSettingsResponse,
+    GetSystemReportsResponse, GetTimezonesResponse, GetVersionResponse, HelpResponse,
 };
-use gvm_gmp::{
-    FeedType, GmpRequest, GmpRequestCodec, GmpResponse, GmpVersion, HelpFormat, ResourceType,
-};
-use gvm_protocol::Request;
+use gvm_gmp::{EntityId, GmpRequest, GmpRequestCodec, GmpResponse, GmpVersion};
 
-fn assert_associated<R, T>(_: &R)
+fn id(value: &str) -> EntityId {
+    EntityId::new(value).expect("valid id")
+}
+
+fn xml(request: &impl GmpRequestCodec) -> String {
+    String::from_utf8(request.encode(GmpVersion(22, 8)).expect("request encodes")).unwrap()
+}
+
+fn assert_response<R, T>(_request: &R)
 where
     R: GmpRequest<Response = T>,
     T: GmpResponse,
 {
 }
 
-macro_rules! assert_request {
-    ($request:expr, $builder:expr, $response:ty) => {{
-        let request = $request;
-        assert_eq!(request.to_bytes(), $builder.to_bytes());
-        assert_associated::<_, $response>(&request);
-    }};
-}
-
-fn id(value: &str) -> gvm_gmp::EntityId {
-    gvm_gmp::EntityId::new(value).expect("valid test id")
-}
-
-fn assert_discovery_requests() {
-    let aggregate_opts = GetAggregatesRequestOpts {
-        filter_string: Some("rows=5".into()),
-        data_columns: vec!["severity".into()],
-        group_column: Some("status".into()),
-        ..Default::default()
-    };
-    assert_request!(
-        GetAggregatesRequest::new("task", aggregate_opts.clone()),
-        get_aggregates_request("task", aggregate_opts),
-        GetAggregatesResponse
+#[test]
+fn canonical_requests_have_concrete_response_associations() {
+    assert_response::<GetVersionRequest, GetVersionResponse>(&GetVersionRequest::new());
+    assert_response::<AuthenticateRequest, AuthenticateResponse>(&AuthenticateRequest::new(
+        "admin", "secret",
+    ));
+    assert_response::<GetFeaturesRequest, GetFeaturesResponse>(&GetFeaturesRequest::new());
+    assert_response::<GetFeedsRequest, GetFeedsResponse>(&GetFeedsRequest::new());
+    assert_response::<GetFeedRequest, GetFeedsResponse>(&GetFeedRequest::new(FeedType::Nvt));
+    assert_response::<HelpRequest, HelpResponse>(&HelpRequest::new(HelpMode::BriefXml));
+    assert_response::<GetAggregatesRequest, GetAggregatesResponse>(&GetAggregatesRequest::new(
+        "task",
+    ));
+    assert_response::<GetLegacyAggregatesRequest, GetAggregatesResponse>(
+        &GetLegacyAggregatesRequest::new("task"),
     );
-
-    let legacy_aggregate_opts = GetAggregatesOpts {
-        group_column: Some("status".into()),
-        filter: Some("rows=5".into()),
-        ..Default::default()
-    };
-    assert_request!(
-        GetLegacyAggregatesRequest::new("task", legacy_aggregate_opts.clone()),
-        get_legacy_aggregates("task", legacy_aggregate_opts),
-        GetAggregatesResponse
+    assert_response::<GetSettingsRequest, GetSettingsResponse>(&GetSettingsRequest::new());
+    assert_response::<GetTimezonesRequest, GetTimezonesResponse>(&GetTimezonesRequest::new());
+    assert_response::<GetSystemReportsRequest, GetSystemReportsResponse>(
+        &GetSystemReportsRequest::new(),
     );
-
-    assert_request!(
-        GetFeaturesRequest::new(),
-        get_features(),
-        GetFeaturesResponse
+    assert_response::<GetResourceNamesRequest, GetResourceNamesResponse>(
+        &GetResourceNamesRequest::new(ResourceType::Task),
     );
-    assert_request!(GetFeedsRequest::new(), get_feeds(), GetFeedsResponse);
-    assert_request!(
-        GetFeedRequest::new(FeedType::Nvt),
-        get_feed(FeedType::Nvt),
-        GetFeedsResponse
+    assert_response::<GetResourceNameRequest, GetResourceNamesResponse>(
+        &GetResourceNameRequest::new(id("task-1"), ResourceType::Task),
     );
-    assert_request!(
-        HelpRequest::new(Some(CommandHelpFormat::Brief)),
-        help_command(Some(CommandHelpFormat::Brief)),
-        HelpResponse
-    );
-    assert_request!(
-        HelpWithModeRequest::new(HelpMode::Schema(HelpFormat::Rnc)),
-        help_with_mode(HelpMode::Schema(HelpFormat::Rnc)),
-        HelpResponse
-    );
-
-    let report_opts = GetSystemReportsOpts {
-        name: Some("load".into()),
-        brief: Some(true),
-        ..Default::default()
-    };
-    assert_request!(
-        GetSystemReportsRequest::new(report_opts.clone()),
-        get_system_reports(report_opts),
-        GetSystemReportsResponse
-    );
-}
-
-fn assert_system_inventory_requests() {
-    assert_request!(
-        SystemHelpRequest::new(Some(HelpFormat::Xml)),
-        gvm_gmp::commands::system::help(Some(HelpFormat::Xml)),
-        HelpResponse
-    );
-
-    let system_feed_opts = gvm_gmp::commands::system::GetFeedsOpts {
-        feed_type: Some(FeedType::Scap),
-    };
-    assert_request!(
-        GetSystemFeedsRequest::new(system_feed_opts.clone()),
-        get_system_feeds(system_feed_opts),
-        GetFeedsResponse
-    );
-
-    let filtered = FilteredGetOpts {
-        filter_string: Some("name=example".into()),
-        filter_id: Some(id("filter-1")),
-    };
-    assert_request!(
-        GetSettingsRequest::new(filtered.clone()),
-        get_settings(filtered.clone()),
-        GetSettingsResponse
-    );
-    assert_request!(
-        GetTimezonesRequest::new(),
-        get_timezones(),
-        GetTimezonesResponse
-    );
-
-    let system_aggregate_opts = SystemAggregatesOpts {
-        data_column: Some("severity".into()),
-        group_column: Some("task_id".into()),
-        filter_string: Some("rows=5".into()),
-        ..Default::default()
-    };
-    assert_request!(
-        GetSystemAggregatesRequest::new(system_aggregate_opts.clone()),
-        get_aggregates(system_aggregate_opts),
-        GetAggregatesResponse
-    );
-}
-
-fn assert_system_resource_requests() {
-    let filtered = FilteredGetOpts {
-        filter_string: Some("name=example".into()),
-        filter_id: Some(id("filter-1")),
-    };
-    let resource_opts = GetResourceNamesOpts {
-        resource_type: Some(ResourceType::Task),
-        resource_id: Some(id("task-1")),
-        filter_string: Some("name=example".into()),
-        ..Default::default()
-    };
-    assert_request!(
-        GetResourceNamesRequest::new(resource_opts.clone()),
-        get_resource_names(resource_opts),
-        GetResourceNamesResponse
-    );
-    assert_request!(
-        GetResourceNameRequest::new(id("task-1"), ResourceType::Task),
-        get_resource_name(&id("task-1"), ResourceType::Task),
-        GetResourceNamesResponse
-    );
-
-    let request = GetVulnsRequest {
-        filter_string: filtered.filter_string,
-        filter_id: filtered.filter_id,
-    };
-    assert_eq!(
-        request.encode(GmpVersion(22, 4)).expect("valid request"),
-        b"<get_vulns filt_id=\"filter-1\" filter=\"name=example\"/>"
-    );
-    assert_associated::<_, GetVulnerabilitiesResponse>(&request);
-    let detail = GetVulnerabilityRequest::new("vuln-1");
-    assert_eq!(
-        detail.encode(GmpVersion(22, 4)).expect("valid request"),
-        b"<get_vulns vuln_id=\"vuln-1\"/>"
-    );
-    assert_associated::<_, GetVulnerabilitiesResponse>(&detail);
-
-    assert_request!(GetLicenseRequest::new(), get_license(), ActionResponse);
-    assert_request!(
-        DescribeAuthRequest::new(),
-        describe_auth(),
-        DescribeAuthResponse
-    );
+    assert_response::<GetLicenseRequest, GetLicenseResponse>(&GetLicenseRequest::new());
+    assert_response::<DescribeAuthRequest, DescribeAuthResponse>(&DescribeAuthRequest::new());
 }
 
 #[test]
-fn remaining_system_requests_and_canonical_vulnerabilities_have_associations() {
-    assert_discovery_requests();
-    assert_system_inventory_requests();
-    assert_system_resource_requests();
+fn canonical_values_own_every_query_control() {
+    let mut current = GetAggregatesRequest::new("task");
+    current.filter_string = Some("owner=me".into());
+    current.filter_id = Some(id("filter-1"));
+    current.resource_id = Some(id("task-1"));
+    current.filter_replace = Some("owner".into());
+    current.trash = Some(false);
+    current.details = Some(true);
+    current.ignore_pagination = Some(true);
+    current.data_columns = vec!["severity".into(), "qod".into()];
+    current.text_columns = vec!["name".into()];
+    current.group_column = Some("status".into());
+    current.subgroup_column = Some("owner".into());
+    current.sorts = vec![AggregateSort {
+        field: "severity".into(),
+        statistic: Some(AggregateSortStatistic::Maximum),
+        order: Some(SortOrder::Descending),
+    }];
+    current.first_group = Some(2);
+    current.max_groups = Some(-1);
+    assert!(xml(&current).contains("<data_column>severity</data_column>"));
+
+    let mut legacy = GetLegacyAggregatesRequest::new("task");
+    legacy.data_column = Some("severity".into());
+    legacy.group_column = Some("status".into());
+    legacy.sort = Some(AggregateSort {
+        field: "severity".into(),
+        statistic: Some(AggregateSortStatistic::Count),
+        order: Some(SortOrder::Descending),
+    });
+    legacy.mode = Some(AggregateMode::WordCounts);
+    let legacy_xml = xml(&legacy);
+    assert!(legacy_xml.contains("sort_stat=\"count\""));
+    assert!(!legacy_xml.contains("<sort"));
+
+    let mut names = GetResourceNamesRequest::new(ResourceType::Policy);
+    names.filter_string = Some("first=2 rows=10".into());
+    names.filter_id = Some(id("filter-2"));
+    names.filter_replace = Some("owner".into());
+    names.trash = Some(false);
+    names.details = Some(true);
+    names.ignore_pagination = Some(true);
+    assert_eq!(
+        xml(&names),
+        "<get_resource_names details=\"1\" filt_id=\"filter-2\" filter=\"first=2 rows=10\" filter_replace=\"owner\" ignore_pagination=\"1\" trash=\"0\" type=\"POLICY\"/>"
+    );
+
+    let mut reports = GetSystemReportsRequest::new();
+    reports.name = Some("load".into());
+    reports.duration = Some(3600);
+    reports.start_time = Some("2026-09-20T10:00:00Z".into());
+    reports.end_time = Some("2026-09-20T11:00:00Z".into());
+    reports.brief = Some(false);
+    reports.slave_id = Some(id("scanner-1"));
+    assert!(xml(&reports).contains("duration=\"3600\""));
+}
+
+#[test]
+fn help_feed_auth_and_empty_discovery_shapes_are_source_faithful() {
+    assert_eq!(xml(&HelpRequest::new(HelpMode::Text)), "<help/>");
+    assert_eq!(
+        xml(&HelpRequest::new(HelpMode::BriefXml)),
+        "<help format=\"xml\" type=\"brief\"/>"
+    );
+    assert_eq!(
+        xml(&HelpRequest::new(HelpMode::Schema(HelpFormat::Rnc))),
+        "<help format=\"rnc\"/>"
+    );
+    assert_eq!(xml(&GetFeedsRequest::new()), "<get_feeds/>");
+    assert_eq!(
+        xml(&GetFeedRequest::new(FeedType::Gvmd)),
+        "<get_feeds type=\"GVMD_DATA\"/>"
+    );
+
+    let mut auth = AuthenticateRequest::new("admin", "secret");
+    auth.request_token = Some(true);
+    let auth_xml = xml(&auth);
+    assert!(auth_xml.contains("token=\"1\""));
+    assert!(!format!("{auth:?}").contains("admin"));
+    assert!(!format!("{auth:?}").contains("secret"));
+
+    assert_eq!(xml(&GetVersionRequest::new()), "<get_version/>");
+    assert_eq!(xml(&GetFeaturesRequest::new()), "<get_features/>");
+    assert_eq!(xml(&GetTimezonesRequest::new()), "<get_timezones/>");
+    assert_eq!(xml(&GetLicenseRequest::new()), "<get_license/>");
+    assert_eq!(xml(&DescribeAuthRequest::new()), "<describe_auth/>");
+}
+
+#[test]
+fn validation_is_semantic_and_secret_free() {
+    let mut invalid = GetAggregatesRequest::new("task");
+    invalid.subgroup_column = Some("owner".into());
+    assert!(invalid.validate().is_err());
+
+    let auth = AuthenticateRequest::new("admin", "do-not-disclose");
+    let debug = format!("{auth:?}");
+    assert!(!debug.contains("admin"));
+    assert!(!debug.contains("do-not-disclose"));
 }

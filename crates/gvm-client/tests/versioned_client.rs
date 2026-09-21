@@ -74,7 +74,7 @@ async fn authenticated_next_client(server: &MockGmpServer) -> GmpNext<UnixSocket
         .await
         .expect("client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -90,7 +90,9 @@ async fn typed_task_by_id(server: &MockGmpServer, task_id: &EntityId) -> gvm_gmp
         .await
         .expect("typed task client should connect");
     client
-        .authenticate("admin", "admin")
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
         .await
         .expect("typed task authentication should succeed");
     client
@@ -108,7 +110,7 @@ async fn delete_task(server: &MockGmpServer, task_id: &EntityId) {
         .await
         .expect("task cleanup client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -289,7 +291,7 @@ async fn next_client_exposes_next_trait_methods() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -320,7 +322,7 @@ async fn next_client_verify_credential_store_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -361,7 +363,7 @@ async fn next_client_credential_store_helpers_send_expected_commands() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -429,7 +431,7 @@ async fn next_client_create_credential_store_credential_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -481,7 +483,7 @@ async fn next_client_modify_credential_store_credential_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -542,7 +544,7 @@ async fn next_client_agent_groups_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -645,7 +647,7 @@ async fn versioned_client_rejects_oci_image_targets_before_next() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -694,7 +696,7 @@ async fn versioned_client_rejects_agent_commands_before_next() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -726,7 +728,7 @@ async fn versioned_client_rejects_get_scan_report_before_next() {
         .await
         .expect("client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -759,7 +761,7 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
         .await
         .expect("client should connect");
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -805,7 +807,7 @@ async fn versioned_execute_forwards_and_decodes_the_associated_response() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -831,7 +833,7 @@ async fn next_client_agent_commands_round_trip() {
         .expect("client should connect");
 
     client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
@@ -1136,12 +1138,12 @@ async fn gmp226_commands_work_on_v226() {
         .expect("client should connect");
 
     let auth_response = client
-        .call(gvm_gmp::commands::authentication::authenticate(
+        .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
             "admin", "admin",
         ))
         .await
         .expect("authenticate should succeed");
-    assert_eq!(auth_response.status_code(), Some(200));
+    assert_eq!(auth_response.status, 200);
 
     let create_response = client
         .execute(CreateReportConfigRequest::new(
@@ -1158,10 +1160,10 @@ async fn gmp226_commands_work_on_v226() {
         other => panic!("expected V226 client, got {other:?}"),
     };
     let features_response = client
-        .get_features()
+        .get_features(gvm_gmp::commands::features::GetFeaturesRequest::new())
         .await
         .expect("get_features should succeed");
-    assert_eq!(features_response.status_code(), Some(200));
+    assert_eq!(features_response.status, 200);
 
     server.shutdown().await;
 }
