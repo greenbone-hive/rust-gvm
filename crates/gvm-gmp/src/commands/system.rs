@@ -1,97 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! System-level command builders.
+//! System-level requests.
 
-use gvm_protocol::{Request, XmlCommand};
+use base64::Engine as _;
+use gvm_protocol::{Request as _, XmlCommand};
 
-use crate::commands::user_settings::{modify_user_setting, ModifyUserSettingOpts};
+use crate::commands::user_settings::{
+    encode_setting_modification, validate_setting_modification, SettingSelector,
+};
 use crate::common::add_filter_attrs;
-use crate::enums::{AggregateStatistic, FeedType, HelpFormat, ResourceType, SortOrder};
+use crate::enums::SortOrder;
 use crate::responses::{
-    ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeedsResponse,
-    GetResourceNamesResponse, GetSettingsResponse, GetTimezonesResponse,
-    GetVulnerabilitiesResponse, HelpResponse, ModifyAuthResponse, ModifyLicenseResponse,
-    RunWizardResponse,
+    DescribeAuthResponse, GetLicenseResponse, GetSettingsResponse, GetTimezonesResponse,
+    GetVulnerabilitiesResponse, ModifyAuthResponse, ModifyLicenseResponse, RunWizardResponse,
 };
 use crate::types::EntityId;
 use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
-pub use super::system_reports::{get_system_reports, GetSystemReportsOpts};
-
-/// Legacy system-module options for `get_aggregates` requests.
-///
-/// This type and [`get_aggregates`] are retained for source compatibility.
-/// They predate current gvmd's required aggregate resource type. New code
-/// should use [`crate::commands::aggregates::get_aggregates_request`].
-#[derive(Debug, Clone, Default)]
-pub struct GetAggregatesOpts {
-    /// Optional aggregate data column.
-    pub data_column: Option<String>,
-    /// Optional aggregate group-by column.
-    pub group_column: Option<String>,
-    /// Optional aggregate statistic.
-    pub statistic: Option<AggregateStatistic>,
-    /// Optional aggregate sort field.
-    pub sort_field: Option<String>,
-    /// Optional sort order.
-    pub sort_order: Option<SortOrder>,
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-}
-
-/// Options for `get_feeds` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetFeedsOpts {
-    /// Optional feed type.
-    pub feed_type: Option<FeedType>,
-}
-
-/// Options for `get_resource_names` requests.
-#[derive(Debug, Clone, Default)]
-pub struct GetResourceNamesOpts {
-    /// Optional related resource type.
-    pub resource_type: Option<ResourceType>,
-    /// Optional related resource identifier.
-    pub resource_id: Option<EntityId>,
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-}
-
-/// Shared filter options for simple getter requests.
-#[derive(Debug, Clone, Default)]
-pub struct FilteredGetOpts {
-    /// Optional inline filter expression.
-    pub filter_string: Option<String>,
-    /// Optional saved filter identifier.
-    pub filter_id: Option<EntityId>,
-}
-
-/// Options for `modify_license` requests.
-#[derive(Debug, Clone, Default)]
-pub struct ModifyLicenseOpts {
-    /// Whether gvmd may accept an empty license file.
-    pub allow_empty: Option<bool>,
-}
-
-/// Options for `run_wizard` requests.
-#[derive(Debug, Clone, Default)]
-pub struct RunWizardOpts {
-    /// Optional wizard execution mode.
-    pub mode: Option<String>,
-    /// Whether gvmd may only run a wizard marked as read-only.
-    pub read_only: Option<bool>,
-}
-
-/// Semantic request for modifying a named authentication group.
+/// Canonical request for modifying a named authentication group.
 #[derive(Clone)]
 pub struct ModifyAuthRequest {
-    group_name: String,
-    auth_conf_settings: Vec<(String, String)>,
+    /// Authentication-method group name.
+    pub group_name: String,
+    /// Ordered setting-name/value replacements.
+    ///
+    /// An empty value explicitly clears the corresponding string setting.
+    pub auth_conf_settings: Vec<(String, String)>,
 }
 
 impl std::fmt::Debug for ModifyAuthRequest {
@@ -117,9 +52,31 @@ impl ModifyAuthRequest {
     }
 }
 
-impl Request for ModifyAuthRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_auth(&self.group_name, &self.auth_conf_settings).to_bytes()
+impl GmpRequestCodec for ModifyAuthRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_nonempty_xml(&self.group_name, "group_name")?;
+        for (name, value) in &self.auth_conf_settings {
+            validate_nonempty_xml(name, "auth_conf_settings")?;
+            validate_xml_text(value, "auth_conf_settings")?;
+        }
+        Ok(())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_auth"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("modify_auth");
+        let group = command.add_element("group");
+        group.set_attribute("name", &self.group_name);
+        for (name, value) in &self.auth_conf_settings {
+            let setting = group.add_child("auth_conf_setting");
+            setting.add_child_with_text("key", name);
+            setting.add_child_with_text("value", value);
+        }
+        Ok(command.to_bytes())
     }
 }
 
@@ -127,16 +84,22 @@ impl GmpRequest for ModifyAuthRequest {
     type Response = ModifyAuthResponse;
 }
 
-/// Semantic request backed by [`modify_license`].
+/// Canonical request for replacing or clearing the current license file.
 #[derive(Clone)]
 pub struct ModifyLicenseRequest {
-    file: String,
+    /// Base64-encoded license-file payload.
+    pub file: String,
+    /// Whether gvmd may accept an empty payload.
+    ///
+    /// Omission has the pinned gvmd default of `false`.
+    pub allow_empty: Option<bool>,
 }
 
 impl std::fmt::Debug for ModifyLicenseRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ModifyLicenseRequest")
             .field("file", &"<redacted>")
+            .field("allow_empty", &self.allow_empty)
             .finish()
     }
 }
@@ -145,13 +108,42 @@ impl ModifyLicenseRequest {
     /// Create a license modification with default options.
     #[must_use]
     pub fn new(file: impl Into<String>) -> Self {
-        Self { file: file.into() }
+        Self {
+            file: file.into(),
+            allow_empty: None,
+        }
     }
 }
 
-impl Request for ModifyLicenseRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_license(&self.file).to_bytes()
+impl GmpRequestCodec for ModifyLicenseRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.file.is_empty() {
+            if self.allow_empty != Some(true) {
+                return Err(GmpRequestError::invalid_field(
+                    "file",
+                    "must not be empty unless allow_empty is true",
+                ));
+            }
+            return Ok(());
+        }
+        base64::engine::general_purpose::STANDARD
+            .decode(self.file.as_bytes())
+            .map(|_| ())
+            .map_err(|_| GmpRequestError::invalid_field("file", "must be valid standard Base64"))
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_license"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("modify_license");
+        if let Some(allow_empty) = self.allow_empty {
+            command.set_attribute("allow_empty", if allow_empty { "1" } else { "0" });
+        }
+        command.add_element_with_text("file", &self.file);
+        Ok(command.to_bytes())
     }
 }
 
@@ -159,54 +151,19 @@ impl GmpRequest for ModifyLicenseRequest {
     type Response = ModifyLicenseResponse;
 }
 
-/// Semantic request backed by [`modify_license_with_opts`].
-#[derive(Clone)]
-pub struct ModifyLicenseWithOptsRequest {
-    file: String,
-    opts: ModifyLicenseOpts,
-}
-
-impl std::fmt::Debug for ModifyLicenseWithOptsRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ModifyLicenseWithOptsRequest")
-            .field("file", &"<redacted>")
-            .field("allow_empty", &self.opts.allow_empty)
-            .finish()
-    }
-}
-
-impl ModifyLicenseWithOptsRequest {
-    /// Create a license modification with explicit options.
-    #[must_use]
-    pub fn new(file: impl Into<String>, opts: ModifyLicenseOpts) -> Self {
-        Self {
-            file: file.into(),
-            opts,
-        }
-    }
-}
-
-impl Request for ModifyLicenseWithOptsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_license_with_opts(&self.file, self.opts.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for ModifyLicenseWithOptsRequest {
-    type Response = ModifyLicenseResponse;
-}
-
-/// Semantic compatibility request backed by [`modify_setting`].
+/// Canonical generic setting modification.
 #[derive(Clone)]
 pub struct ModifySettingRequest {
-    setting_id: EntityId,
-    value: String,
+    /// Setting selected by identifier or one of gvmd's name-addressable names.
+    pub setting: SettingSelector,
+    /// UTF-8 value to apply. An empty string requests an explicit clear.
+    pub value: String,
 }
 
 impl std::fmt::Debug for ModifySettingRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ModifySettingRequest")
-            .field("setting_id", &self.setting_id)
+            .field("setting", &self.setting)
             .field("value", &"<redacted>")
             .finish()
     }
@@ -217,15 +174,33 @@ impl ModifySettingRequest {
     #[must_use]
     pub fn new(setting_id: EntityId, value: impl Into<String>) -> Self {
         Self {
-            setting_id,
+            setting: SettingSelector::Id(setting_id),
+            value: value.into(),
+        }
+    }
+
+    /// Create a setting modification selected by gvmd's setting name.
+    #[must_use]
+    pub fn by_name(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            setting: SettingSelector::Name(name.into()),
             value: value.into(),
         }
     }
 }
 
-impl Request for ModifySettingRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        modify_setting(&self.setting_id, &self.value).to_bytes()
+impl GmpRequestCodec for ModifySettingRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_setting_modification(&self.setting)
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("modify_setting"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(encode_setting_modification(&self.setting, &self.value))
     }
 }
 
@@ -233,11 +208,17 @@ impl GmpRequest for ModifySettingRequest {
     type Response = crate::responses::ModifyUserSettingResponse;
 }
 
-/// Semantic request backed by [`run_wizard`].
+/// Canonical request for running a gvmd wizard.
 #[derive(Clone)]
 pub struct RunWizardRequest {
-    name: String,
-    params: Vec<(String, String)>,
+    /// Wizard name. Pinned gvmd accepts only ASCII alphanumeric characters and `_`.
+    pub name: String,
+    /// Ordered wizard parameter-name/value pairs.
+    pub params: Vec<(String, String)>,
+    /// Optional wizard execution mode. An empty mode selects the default mode.
+    pub mode: Option<String>,
+    /// Whether gvmd must reject a wizard that is not marked read-only.
+    pub read_only: Option<bool>,
 }
 
 impl std::fmt::Debug for RunWizardRequest {
@@ -245,6 +226,8 @@ impl std::fmt::Debug for RunWizardRequest {
         f.debug_struct("RunWizardRequest")
             .field("name", &self.name)
             .field("params", &"<redacted>")
+            .field("mode", &self.mode)
+            .field("read_only", &self.read_only)
             .finish()
     }
 }
@@ -259,13 +242,56 @@ impl RunWizardRequest {
         Self {
             name: name.into(),
             params: params.into_iter().collect(),
+            mode: None,
+            read_only: None,
         }
     }
 }
 
-impl Request for RunWizardRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        run_wizard(&self.name, &self.params).to_bytes()
+impl GmpRequestCodec for RunWizardRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.name.is_empty()
+            || !self
+                .name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        {
+            return Err(GmpRequestError::invalid_field(
+                "name",
+                "must contain only ASCII alphanumeric characters or underscore",
+            ));
+        }
+        if let Some(mode) = self.mode.as_deref() {
+            validate_xml_text(mode, "mode")?;
+        }
+        for (name, value) in &self.params {
+            validate_nonempty_xml(name, "params")?;
+            validate_xml_text(value, "params")?;
+        }
+        Ok(())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("run_wizard"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("run_wizard");
+        if let Some(read_only) = self.read_only {
+            command.set_attribute("read_only", if read_only { "1" } else { "0" });
+        }
+        if let Some(mode) = self.mode.as_deref() {
+            command.add_element_with_text("mode", mode);
+        }
+        command.add_element_with_text("name", &self.name);
+        let params = command.add_element("params");
+        for (name, value) in &self.params {
+            let param = params.add_child("param");
+            param.add_child_with_text("name", name);
+            param.add_child_with_text("value", value);
+        }
+        Ok(command.to_bytes())
     }
 }
 
@@ -273,110 +299,93 @@ impl GmpRequest for RunWizardRequest {
     type Response = RunWizardResponse;
 }
 
-/// Semantic request backed by [`run_wizard_with_opts`].
-#[derive(Clone)]
-pub struct RunWizardWithOptsRequest {
-    name: String,
-    params: Vec<(String, String)>,
-    opts: RunWizardOpts,
+/// Canonical request for system-setting discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetSettingsRequest {
+    /// Return a single setting by identifier.
+    pub setting_id: Option<EntityId>,
+    /// Inline GMP filter expression, preserved verbatim.
+    pub filter_string: Option<String>,
+    /// One-based first result.
+    pub first: Option<u32>,
+    /// Maximum results, or `-1` for all results.
+    pub max: Option<i32>,
+    /// Field used for sorting.
+    pub sort_field: Option<String>,
+    /// Sort direction.
+    pub sort_order: Option<SortOrder>,
 }
 
-impl std::fmt::Debug for RunWizardWithOptsRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RunWizardWithOptsRequest")
-            .field("name", &self.name)
-            .field("params", &"<redacted>")
-            .field("mode", &self.opts.mode)
-            .field("read_only", &self.opts.read_only)
-            .finish()
-    }
-}
-
-impl RunWizardWithOptsRequest {
-    /// Create a wizard request with explicit options.
+impl GetSettingsRequest {
+    /// Create an unrestricted setting-discovery request.
     #[must_use]
-    pub fn new(
-        name: impl Into<String>,
-        params: impl IntoIterator<Item = (String, String)>,
-        opts: RunWizardOpts,
-    ) -> Self {
+    pub const fn new() -> Self {
         Self {
-            name: name.into(),
-            params: params.into_iter().collect(),
-            opts,
+            setting_id: None,
+            filter_string: None,
+            first: None,
+            max: None,
+            sort_field: None,
+            sort_order: None,
         }
     }
 }
 
-impl Request for RunWizardWithOptsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        run_wizard_with_opts(&self.name, &self.params, self.opts.clone()).to_bytes()
+impl GmpRequestCodec for GetSettingsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if self.first == Some(0) {
+            return Err(GmpRequestError::invalid_field(
+                "first",
+                "must be at least 1",
+            ));
+        }
+        if self.max.is_some_and(|value| value == 0 || value < -1) {
+            return Err(GmpRequestError::invalid_field(
+                "max",
+                "must be positive or -1",
+            ));
+        }
+        if let Some(filter) = self.filter_string.as_deref() {
+            validate_xml_text(filter, "filter_string")?;
+        }
+        if let Some(field) = self.sort_field.as_deref() {
+            if field.trim().is_empty() {
+                return Err(GmpRequestError::invalid_field(
+                    "sort_field",
+                    "must not be empty",
+                ));
+            }
+            validate_xml_text(field, "sort_field")?;
+        }
+        Ok(())
     }
-}
 
-impl GmpRequest for RunWizardWithOptsRequest {
-    type Response = RunWizardResponse;
-}
-
-/// Semantic compatibility request for the system-module [`help`] builder.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SystemHelpRequest(Option<HelpFormat>);
-
-impl SystemHelpRequest {
-    /// Create a system-module help request.
-    #[must_use]
-    pub const fn new(format: Option<HelpFormat>) -> Self {
-        Self(format)
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_settings"))
     }
-}
 
-impl Request for SystemHelpRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        help(self.0).to_bytes()
-    }
-}
-
-impl GmpRequest for SystemHelpRequest {
-    type Response = HelpResponse;
-}
-
-/// Semantic compatibility request for the system-module [`get_feeds`] builder.
-#[derive(Debug, Clone, Default)]
-pub struct GetSystemFeedsRequest(GetFeedsOpts);
-
-impl GetSystemFeedsRequest {
-    /// Create a system-module feed request.
-    #[must_use]
-    pub fn new(opts: GetFeedsOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetSystemFeedsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_feeds(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetSystemFeedsRequest {
-    type Response = GetFeedsResponse;
-}
-
-/// Semantic request for filtered setting discovery.
-#[derive(Debug, Clone, Default)]
-pub struct GetSettingsRequest(FilteredGetOpts);
-
-impl GetSettingsRequest {
-    /// Create a filtered setting request.
-    #[must_use]
-    pub fn new(opts: FilteredGetOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetSettingsRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_settings(self.0.clone()).to_bytes()
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("get_settings");
+        if let Some(id) = self.setting_id.as_ref() {
+            command.set_attribute("setting_id", id.as_str());
+        }
+        if let Some(filter) = self.filter_string.as_deref() {
+            command.set_attribute("filter", filter);
+        }
+        if let Some(first) = self.first {
+            command.set_attribute("first", &first.to_string());
+        }
+        if let Some(max) = self.max {
+            command.set_attribute("max", &max.to_string());
+        }
+        if let Some(field) = self.sort_field.as_deref() {
+            command.set_attribute("sort_field", field);
+        }
+        if let Some(order) = self.sort_order {
+            command.set_attribute("sort_order", order.as_gmp_str());
+        }
+        Ok(command.to_bytes())
     }
 }
 
@@ -384,7 +393,7 @@ impl GmpRequest for GetSettingsRequest {
     type Response = GetSettingsResponse;
 }
 
-/// Semantic request for timezone discovery.
+/// Canonical request for timezone discovery.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetTimezonesRequest;
 
@@ -396,86 +405,18 @@ impl GetTimezonesRequest {
     }
 }
 
-impl Request for GetTimezonesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_timezones().to_bytes()
+impl GmpRequestCodec for GetTimezonesRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_timezones"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("get_timezones").to_bytes())
     }
 }
 
 impl GmpRequest for GetTimezonesRequest {
     type Response = GetTimezonesResponse;
-}
-
-/// Semantic compatibility request for the legacy system aggregate builder.
-#[derive(Debug, Clone, Default)]
-pub struct GetSystemAggregatesRequest(GetAggregatesOpts);
-
-impl GetSystemAggregatesRequest {
-    /// Create a legacy system aggregate request.
-    #[must_use]
-    pub fn new(opts: GetAggregatesOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetSystemAggregatesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_aggregates(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetSystemAggregatesRequest {
-    type Response = GetAggregatesResponse;
-}
-
-/// Semantic request for resource-name discovery.
-#[derive(Debug, Clone, Default)]
-pub struct GetResourceNamesRequest(GetResourceNamesOpts);
-
-impl GetResourceNamesRequest {
-    /// Create a resource-name list request.
-    #[must_use]
-    pub fn new(opts: GetResourceNamesOpts) -> Self {
-        Self(opts)
-    }
-}
-
-impl Request for GetResourceNamesRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_resource_names(self.0.clone()).to_bytes()
-    }
-}
-
-impl GmpRequest for GetResourceNamesRequest {
-    type Response = GetResourceNamesResponse;
-}
-
-/// Semantic request for one resource name.
-#[derive(Debug, Clone)]
-pub struct GetResourceNameRequest {
-    resource_id: EntityId,
-    resource_type: ResourceType,
-}
-
-impl GetResourceNameRequest {
-    /// Create a single-resource name request.
-    #[must_use]
-    pub fn new(resource_id: EntityId, resource_type: ResourceType) -> Self {
-        Self {
-            resource_id,
-            resource_type,
-        }
-    }
-}
-
-impl Request for GetResourceNameRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_resource_name(&self.resource_id, self.resource_type).to_bytes()
-    }
-}
-
-impl GmpRequest for GetResourceNameRequest {
-    type Response = GetResourceNamesResponse;
 }
 
 /// Canonical request for observed vulnerabilities occurring in reports.
@@ -622,6 +563,13 @@ fn validate_xml_text(value: &str, field: &'static str) -> Result<(), GmpRequestE
     }
 }
 
+fn validate_nonempty_xml(value: &str, field: &'static str) -> Result<(), GmpRequestError> {
+    if value.is_empty() {
+        return Err(GmpRequestError::invalid_field(field, "must not be empty"));
+    }
+    validate_xml_text(value, field)
+}
+
 /// Semantic request for license discovery.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetLicenseRequest;
@@ -634,14 +582,18 @@ impl GetLicenseRequest {
     }
 }
 
-impl Request for GetLicenseRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        get_license().to_bytes()
+impl GmpRequestCodec for GetLicenseRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_license"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("get_license").to_bytes())
     }
 }
 
 impl GmpRequest for GetLicenseRequest {
-    type Response = ActionResponse;
+    type Response = GetLicenseResponse;
 }
 
 /// Semantic request for authentication-configuration discovery.
@@ -656,9 +608,13 @@ impl DescribeAuthRequest {
     }
 }
 
-impl Request for DescribeAuthRequest {
-    fn to_bytes(&self) -> Vec<u8> {
-        describe_auth().to_bytes()
+impl GmpRequestCodec for DescribeAuthRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("describe_auth"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("describe_auth").to_bytes())
     }
 }
 
@@ -666,281 +622,81 @@ impl GmpRequest for DescribeAuthRequest {
     type Response = DescribeAuthResponse;
 }
 
-/// Build a `help` request.
-#[must_use]
-pub fn help(format: Option<HelpFormat>) -> impl Request {
-    match format {
-        Some(format) => {
-            crate::commands::help::help_with_mode(crate::commands::help::HelpMode::Schema(format))
-        }
-        None => crate::commands::help::help_with_mode(crate::commands::help::HelpMode::Text),
-    }
-}
-
-/// Build a `get_feeds` request.
-#[must_use]
-pub fn get_feeds(opts: GetFeedsOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_feeds");
-    if let Some(feed_type) = opts.feed_type {
-        cmd.set_attribute("type", feed_type.as_gmp_str());
-    }
-    cmd
-}
-
-/// Build a `get_settings` request.
-#[must_use]
-pub fn get_settings(opts: FilteredGetOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_settings");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    cmd
-}
-
-/// Build a `get_timezones` request.
-#[must_use]
-pub fn get_timezones() -> impl Request {
-    XmlCommand::new("get_timezones")
-}
-
-/// Build a legacy system-module `get_aggregates` request.
-///
-/// New code should use
-/// [`crate::commands::aggregates::get_aggregates_request`], which includes the
-/// required resource type and models repeated sort and column elements.
-#[must_use]
-pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_aggregates");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    if let Some(data_column) = opts.data_column.as_deref() {
-        cmd.set_attribute("data_column", data_column);
-    }
-    if let Some(group_column) = opts.group_column.as_deref() {
-        cmd.set_attribute("group_column", group_column);
-    }
-    if let Some(statistic) = opts.statistic {
-        cmd.set_attribute("statistic", statistic.as_gmp_str());
-    }
-    if let Some(sort_field) = opts.sort_field.as_deref() {
-        cmd.set_attribute("sort_field", sort_field);
-    }
-    if let Some(sort_order) = opts.sort_order {
-        cmd.set_attribute("sort_order", sort_order.as_gmp_str());
-    }
-    cmd
-}
-
-/// Build a `get_resource_names` request.
-#[must_use]
-pub fn get_resource_names(opts: GetResourceNamesOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_resource_names");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    if let Some(resource_type) = opts.resource_type {
-        cmd.set_attribute("type", resource_type.as_gmp_str());
-    }
-    if let Some(resource_id) = opts.resource_id.as_ref() {
-        cmd.set_attribute("resource_id", resource_id.as_str());
-    }
-    cmd
-}
-
-/// Build a `get_resource_names` request for a single resource.
-#[must_use]
-pub fn get_resource_name(resource_id: &EntityId, resource_type: ResourceType) -> impl Request {
-    let mut cmd = XmlCommand::new("get_resource_names");
-    cmd.set_attribute("resource_id", resource_id.as_str());
-    cmd.set_attribute("type", resource_type.as_gmp_str());
-    cmd
-}
-
-/// Build a `get_license` request.
-#[must_use]
-pub fn get_license() -> impl Request {
-    XmlCommand::new("get_license")
-}
-
-/// Build a `describe_auth` request.
-#[must_use]
-pub fn describe_auth() -> impl Request {
-    XmlCommand::new("describe_auth")
-}
-
-/// Build a `modify_auth` request for a named authentication group.
-///
-/// `auth_conf_settings` must contain at least one key/value pair. Current gvmd
-/// accepts a group containing authentication configuration settings; the old
-/// `enabled` root attribute is not part of the command contract.
-#[must_use]
-pub fn modify_auth(group_name: &str, auth_conf_settings: &[(String, String)]) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_auth");
-    let group = cmd.add_element("group");
-    group.set_attribute("name", group_name);
-    for (key, value) in auth_conf_settings {
-        let setting = group.add_child("auth_conf_setting");
-        setting.add_child_with_text("key", key);
-        setting.add_child_with_text("value", value);
-    }
-    cmd
-}
-
-/// Build a `modify_license` request with a base64-encoded license file.
-#[must_use]
-pub fn modify_license(file: &str) -> impl Request {
-    modify_license_with_opts(file, ModifyLicenseOpts::default())
-}
-
-/// Build a `modify_license` request with explicit options.
-#[must_use]
-pub fn modify_license_with_opts(file: &str, opts: ModifyLicenseOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_license");
-    if let Some(allow_empty) = opts.allow_empty {
-        cmd.set_attribute("allow_empty", if allow_empty { "1" } else { "0" });
-    }
-    cmd.add_element_with_text("file", file);
-    cmd
-}
-
-/// Build a `modify_setting` request, Base64-encoding the UTF-8 value for GMP.
-#[must_use]
-pub fn modify_setting(setting_id: &EntityId, value: &str) -> impl Request {
-    modify_user_setting(
-        setting_id,
-        ModifyUserSettingOpts {
-            value: value.to_string(),
-        },
-    )
-}
-
-/// Build a `run_wizard` request.
-#[must_use]
-pub fn run_wizard(name: &str, params: &[(String, String)]) -> impl Request {
-    run_wizard_with_opts(name, params, RunWizardOpts::default())
-}
-
-/// Build a `run_wizard` request with explicit execution options.
-#[must_use]
-pub fn run_wizard_with_opts(
-    name: &str,
-    params: &[(String, String)],
-    opts: RunWizardOpts,
-) -> impl Request {
-    let mut cmd = XmlCommand::new("run_wizard");
-    if let Some(read_only) = opts.read_only {
-        cmd.set_attribute("read_only", if read_only { "1" } else { "0" });
-    }
-    if let Some(mode) = opts.mode.as_deref() {
-        cmd.add_element_with_text("mode", mode);
-    }
-    cmd.add_element_with_text("name", name);
-    let params_element = cmd.add_element("params");
-    for (key, value) in params {
-        let param = params_element.add_child("param");
-        param.add_child_with_text("name", key);
-        param.add_child_with_text("value", value);
-    }
-    cmd
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::xml;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
     }
 
     #[test]
-    fn system_commands_build_xml() {
-        assert_eq!(xml(help(Some(HelpFormat::Xml))), "<help format=\"xml\"/>");
+    fn canonical_discovery_requests_encode() {
+        let version = GmpVersion(22, 8);
         assert_eq!(
-            xml(get_feeds(GetFeedsOpts {
-                feed_type: Some(FeedType::Nvt)
-            })),
-            "<get_feeds type=\"NVT\"/>"
+            GetLicenseRequest::new().encode(version).expect("encode"),
+            b"<get_license/>"
         );
-        let rendered = xml(get_aggregates(GetAggregatesOpts {
-            data_column: Some("severity".into()),
-            statistic: Some(AggregateStatistic::Count),
-            sort_order: Some(SortOrder::Descending),
-            ..Default::default()
-        }));
-        assert!(rendered.contains("data_column=\"severity\""));
-        assert!(rendered.contains("statistic=\"count\""));
-        assert_eq!(xml(get_license()), "<get_license/>");
-        assert_eq!(xml(describe_auth()), "<describe_auth/>");
-        assert_eq!(xml(get_timezones()), "<get_timezones/>");
+        assert_eq!(
+            DescribeAuthRequest::new().encode(version).expect("encode"),
+            b"<describe_auth/>"
+        );
+        assert_eq!(
+            GetTimezonesRequest::new().encode(version).expect("encode"),
+            b"<get_timezones/>"
+        );
+        let mut settings = GetSettingsRequest::new();
+        settings.setting_id = Some(id("s1"));
+        settings.filter_string = Some("name=Timezone".into());
+        settings.first = Some(2);
+        settings.max = Some(-1);
+        settings.sort_field = Some("name".into());
+        settings.sort_order = Some(SortOrder::Descending);
+        assert_eq!(
+            settings.encode(version).expect("encode"),
+            br#"<get_settings filter="name=Timezone" first="2" max="-1" setting_id="s1" sort_field="name" sort_order="descending"/>"#
+        );
     }
 
     #[test]
-    fn system_filtered_mutation_commands_build_xml() {
-        assert!(xml(get_settings(FilteredGetOpts {
-            filter_id: Some(id("f1")),
-            ..Default::default()
-        }))
-        .contains("filt_id=\"f1\""));
-        assert!(xml(get_system_reports(GetSystemReportsOpts {
-            name: Some("load".into()),
-            ..Default::default()
-        }))
-        .contains("name=\"load\""));
-        assert!(xml(get_resource_names(GetResourceNamesOpts {
-            resource_type: Some(ResourceType::Task),
-            resource_id: Some(id("t1")),
-            ..Default::default()
-        }))
-        .contains("resource_id=\"t1\""));
+    fn canonical_system_mutations_encode_complete_values() {
+        let version = GmpVersion(22, 8);
         assert_eq!(
-            xml(modify_auth(
+            ModifyAuthRequest::new(
                 "method:ldap_connect",
-                &[("enable".into(), "true".into())]
-            )),
-            "<modify_auth><group name=\"method:ldap_connect\"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting></group></modify_auth>"
+                [("enable".into(), "true".into())]
+            )
+            .encode(version)
+            .expect("valid auth"),
+            b"<modify_auth><group name=\"method:ldap_connect\"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting></group></modify_auth>"
+        );
+
+        let mut license = ModifyLicenseRequest::new("YWJj");
+        license.allow_empty = Some(false);
+        assert_eq!(
+            license.encode(version).expect("valid license"),
+            b"<modify_license allow_empty=\"0\"><file>YWJj</file></modify_license>"
+        );
+
+        let mut empty_license = ModifyLicenseRequest::new("");
+        empty_license.allow_empty = Some(true);
+        assert_eq!(
+            empty_license.encode(version).expect("valid clear"),
+            b"<modify_license allow_empty=\"1\"><file></file></modify_license>"
         );
         assert_eq!(
-            xml(modify_license("abc")),
-            "<modify_license><file>abc</file></modify_license>"
+            ModifySettingRequest::new(id("s1"), "Europe/Berlin")
+                .encode(version)
+                .expect("valid setting"),
+            b"<modify_setting setting_id=\"s1\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
         );
+
+        let mut wizard = RunWizardRequest::new("quick", [("target".into(), "10.0.0.1".into())]);
+        wizard.mode = Some("step".into());
+        wizard.read_only = Some(true);
         assert_eq!(
-            xml(modify_license_with_opts(
-                "",
-                ModifyLicenseOpts {
-                    allow_empty: Some(true)
-                }
-            )),
-            "<modify_license allow_empty=\"1\"><file></file></modify_license>"
-        );
-        assert_eq!(
-            xml(modify_setting(&id("s1"), "Europe/Berlin")),
-            "<modify_setting setting_id=\"s1\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
-        );
-        assert_eq!(
-            xml(run_wizard(
-                "quick",
-                &[("target".into(), "10.0.0.1".into())]
-            )),
-            "<run_wizard><name>quick</name><params><param><name>target</name><value>10.0.0.1</value></param></params></run_wizard>"
-        );
-        assert_eq!(
-            xml(run_wizard_with_opts(
-                "quick",
-                &[],
-                RunWizardOpts {
-                    mode: Some("step".into()),
-                    read_only: Some(true),
-                }
-            )),
-            "<run_wizard read_only=\"1\"><mode>step</mode><name>quick</name><params/></run_wizard>"
+            wizard.encode(version).expect("valid wizard"),
+            b"<run_wizard read_only=\"1\"><mode>step</mode><name>quick</name><params><param><name>target</name><value>10.0.0.1</value></param></params></run_wizard>"
         );
     }
 
@@ -974,65 +730,32 @@ mod tests {
     }
 
     #[test]
-    fn semantic_system_admin_requests_preserve_builder_bytes_and_associations() {
+    fn canonical_system_admin_requests_have_fixed_associations() {
         fn auth<R: GmpRequest<Response = ModifyAuthResponse>>(_: &R) {}
         fn license<R: GmpRequest<Response = ModifyLicenseResponse>>(_: &R) {}
         fn setting<R: GmpRequest<Response = crate::responses::ModifyUserSettingResponse>>(_: &R) {}
         fn wizard<R: GmpRequest<Response = RunWizardResponse>>(_: &R) {}
 
-        let settings = vec![("enable".into(), "auth-secret".into())];
-        let auth_request = ModifyAuthRequest::new("method:ldap_connect", settings.clone());
-        assert_eq!(
-            auth_request.to_bytes(),
-            modify_auth("method:ldap_connect", &settings).to_bytes()
+        let auth_request = ModifyAuthRequest::new(
+            "method:ldap_connect",
+            [("enable".into(), "auth-secret".into())],
         );
         auth(&auth_request);
 
-        let license_request = ModifyLicenseRequest::new("license-secret");
-        assert_eq!(
-            license_request.to_bytes(),
-            modify_license("license-secret").to_bytes()
-        );
+        let mut license_request = ModifyLicenseRequest::new("bGljZW5zZS1zZWNyZXQ=");
+        license_request.allow_empty = Some(false);
         license(&license_request);
 
-        let license_opts = ModifyLicenseOpts {
-            allow_empty: Some(false),
-        };
-        let license_with_opts =
-            ModifyLicenseWithOptsRequest::new("license-secret", license_opts.clone());
-        assert_eq!(
-            license_with_opts.to_bytes(),
-            modify_license_with_opts("license-secret", license_opts).to_bytes()
-        );
-        license(&license_with_opts);
-
-        let setting_id = id("setting-1");
-        let setting_request = ModifySettingRequest::new(setting_id.clone(), "setting-secret");
-        assert_eq!(
-            setting_request.to_bytes(),
-            modify_setting(&setting_id, "setting-secret").to_bytes()
-        );
+        let setting_request = ModifySettingRequest::new(id("setting-1"), "setting-secret");
         setting(&setting_request);
 
-        let params = vec![("hosts".into(), "wizard-secret".into())];
-        let wizard_request = RunWizardRequest::new("quick_first_scan", params.clone());
-        assert_eq!(
-            wizard_request.to_bytes(),
-            run_wizard("quick_first_scan", &params).to_bytes()
+        let mut wizard_request = RunWizardRequest::new(
+            "quick_first_scan",
+            [("hosts".into(), "wizard-secret".into())],
         );
+        wizard_request.mode = Some("step".into());
+        wizard_request.read_only = Some(false);
         wizard(&wizard_request);
-
-        let wizard_opts = RunWizardOpts {
-            mode: Some("step".into()),
-            read_only: Some(false),
-        };
-        let wizard_with_opts =
-            RunWizardWithOptsRequest::new("quick_first_scan", params.clone(), wizard_opts.clone());
-        assert_eq!(
-            wizard_with_opts.to_bytes(),
-            run_wizard_with_opts("quick_first_scan", &params, wizard_opts).to_bytes()
-        );
-        wizard(&wizard_with_opts);
     }
 
     #[test]
@@ -1045,15 +768,6 @@ mod tests {
             )
         );
         let license = format!("{:?}", ModifyLicenseRequest::new("license-secret"));
-        let license_with_opts = format!(
-            "{:?}",
-            ModifyLicenseWithOptsRequest::new(
-                "license-secret",
-                ModifyLicenseOpts {
-                    allow_empty: Some(false),
-                }
-            )
-        );
         let setting = format!(
             "{:?}",
             ModifySettingRequest::new(id("setting-1"), "setting-secret")
@@ -1065,22 +779,12 @@ mod tests {
                 [("hosts".into(), "wizard-secret".into())]
             )
         );
-        let wizard_with_opts = format!(
-            "{:?}",
-            RunWizardWithOptsRequest::new(
-                "quick_first_scan",
-                [("hosts".into(), "wizard-secret".into())],
-                RunWizardOpts::default(),
-            )
-        );
 
         for (debug, secret) in [
             (&auth, "auth-secret"),
             (&license, "license-secret"),
-            (&license_with_opts, "license-secret"),
             (&setting, "setting-secret"),
             (&wizard, "wizard-secret"),
-            (&wizard_with_opts, "wizard-secret"),
         ] {
             assert!(debug.contains("<redacted>"));
             assert!(!debug.contains(secret));

@@ -14,8 +14,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
-    pub async fn get_version(&mut self) -> Result<GetVersionResponse, GvmError> {
-        self.execute(GetVersionRequest::new()).await
+    pub async fn get_version(
+        &mut self,
+        request: GetVersionRequest,
+    ) -> Result<GetVersionResponse, GvmError> {
+        self.execute(request).await
     }
 
     /// Send an `authenticate` request and return a typed [`AuthenticateResponse`].
@@ -24,10 +27,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn authenticate(
         &mut self,
-        username: &str,
-        password: &str,
+        request: AuthenticateRequest,
     ) -> Result<AuthenticateResponse, GvmError> {
-        self.execute(AuthenticateRequest::new(username, password))
-            .await
+        self.execute(request).await
     }
 }

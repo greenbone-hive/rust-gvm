@@ -158,7 +158,7 @@ For each enum type, test:
 | ENUM-{type}-004 | Invalid string → error | `Type::from_str("garbage")` → Err |
 
 **Enum types to test** (22 types):
-AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType, FeedType, FilterType, HelpFormat, HostsOrdering, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, SeverityLevel, TicketStatus, UserAuthType
+AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType, FeedType, FilterType, HelpFormat, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, SeverityLevel, TicketStatus, UserAuthType
 
 Total: ~88 enum tests (4 per type × 22 types)
 
@@ -180,7 +180,7 @@ Each command builder must produce XML bytes that **exactly match** what python-g
 | BUILD-TASK-002 | create_container_task | `<create_task><name>foo</name><target id="0"/></create_task>` |
 | BUILD-TASK-003 | create_container_task with comment | Includes `<comment>bar</comment>` |
 | BUILD-TASK-004 | create_task (minimal) | `<create_task><name>foo</name><usage_type>scan</usage_type><config id="c1"/><target id="t1"/><scanner id="s1"/></create_task>` |
-| BUILD-TASK-005 | create_task with all options | Includes alterable, hosts_ordering, schedule, alerts, observers, preferences |
+| BUILD-TASK-005 | create_task with all source-supported options | Includes alterable, schedule, alerts, observers, and preferences |
 | BUILD-TASK-006 | create_task with multiple alerts | Multiple `<alert id="..."/>` elements |
 | BUILD-TASK-007 | create_task with preferences | `<preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences>` |
 | BUILD-TASK-008 | delete_task (soft) | `<delete_task task_id="a1" ultimate="0"/>` |

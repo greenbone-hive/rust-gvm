@@ -548,18 +548,30 @@ async fn imported_reports_require_an_existing_task_and_task_deletion_cascades() 
     };
     let mut stream = connect_and_auth(&server).await;
     let target_id = create_target(&mut stream, "Import Target").await;
-    let task_id = create_task(&mut stream, "Import Task", &target_id).await;
+    let import_task = send_recv(
+        &mut stream,
+        b"<create_task><name>Import Task</name><target id=\"0\"/></create_task>",
+    )
+    .await;
+    assert_eq!(import_task.status_code(), Some(201));
+    let task_id = id(&import_task);
 
     let wrong_type = send_recv(
         &mut stream,
-        format!("<create_report><task id=\"{target_id}\"/></create_report>").as_bytes(),
+        format!(
+            "<create_report><report><name>Wrong</name></report><task id=\"{target_id}\"/></create_report>"
+        )
+        .as_bytes(),
     )
     .await;
     assert_eq!(wrong_type.status_code(), Some(404));
 
     let linked_report = send_recv(
         &mut stream,
-        format!("<create_report><task id=\"{task_id}\"/></create_report>").as_bytes(),
+        format!(
+            "<create_report><report><name>Imported</name><results><result><name>Finding</name></result></results></report><task id=\"{task_id}\"/></create_report>"
+        )
+        .as_bytes(),
     )
     .await;
     assert_eq!(linked_report.status_code(), Some(201));

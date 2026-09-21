@@ -2,9 +2,12 @@
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
 use gvm_protocol::XmlCommand;
+#[cfg(test)]
 use quick_xml::events::Event;
+#[cfg(test)]
 use quick_xml::Reader;
 
+#[cfg(test)]
 use crate::responses::ParseError;
 use crate::types::{EntityId, ScalarUpdate};
 
@@ -60,18 +63,7 @@ pub(crate) fn set_optional_bool_attr(cmd: &mut XmlCommand, name: &str, value: Op
     }
 }
 
-pub(crate) fn add_preferences(cmd: &mut XmlCommand, preferences: &[(String, String)]) {
-    if preferences.is_empty() {
-        return;
-    }
-    let prefs = cmd.add_element("preferences");
-    for (key, value) in preferences {
-        let pref = prefs.add_child("preference");
-        pref.add_child_with_text("scanner_name", key);
-        pref.add_child_with_text("value", value);
-    }
-}
-
+#[cfg(test)]
 pub(crate) fn validate_single_xml_document(
     xml: &str,
     field: &str,
@@ -160,6 +152,7 @@ pub(crate) fn validate_single_xml_document(
     }
 }
 
+#[cfg(test)]
 fn validate_root_name(
     actual: &str,
     field: &str,

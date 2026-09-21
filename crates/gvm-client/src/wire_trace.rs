@@ -258,7 +258,8 @@ fn is_credential_store_preference(stack: &[String], element_name: &str) -> bool 
 fn is_sensitive_name(name: &str) -> bool {
     matches!(
         name,
-        "password"
+        "username"
+            | "password"
             | "community"
             | "private"
             | "private_key"
@@ -327,6 +328,37 @@ mod tests {
         }
         assert!(redacted.contains("visible-value"));
         assert!(redacted.contains("algorithm=\"plain\""));
+    }
+
+    #[test]
+    fn redacts_scan_config_preference_requests_and_responses() {
+        for xml in [
+            br#"<modify_config config_id="c1"><preference><nvt oid="1.3.6.1"/><name>password</name><value>request-secret</value></preference></modify_config>"#.as_slice(),
+            br#"<get_preferences_response status="200" status_text="OK"><preference><name>Password</name><value>configured-secret</value><default>default-secret</default><alt>alternate-secret</alt></preference></get_preferences_response>"#.as_slice(),
+        ] {
+            let redacted = String::from_utf8(redact_wire_bytes(xml)).expect("valid UTF-8");
+            assert!(redacted.contains("<redacted/>"));
+            for secret in [
+                "request-secret",
+                "configured-secret",
+                "default-secret",
+                "alternate-secret",
+            ] {
+                assert!(!redacted.contains(secret));
+            }
+        }
+    }
+
+    #[test]
+    fn redacts_task_preference_values() {
+        let secret = "confidential-task-preference";
+        let xml = format!(
+            "<create_task><name>visible</name><preferences><preference><scanner_name>token</scanner_name><value>{secret}</value></preference></preferences></create_task>"
+        );
+        let redacted = String::from_utf8(redact_wire_bytes(xml.as_bytes())).expect("valid UTF-8");
+        assert!(redacted.contains("<scanner_name>token</scanner_name>"));
+        assert!(redacted.contains("<value><redacted/></value>"));
+        assert!(!redacted.contains(secret));
     }
 
     #[test]

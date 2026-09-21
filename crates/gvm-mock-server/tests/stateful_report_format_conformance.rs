@@ -5,9 +5,8 @@
 #![allow(missing_docs, clippy::too_many_lines, clippy::unwrap_used)]
 
 use base64::Engine as _;
-use gvm_gmp::commands::authentication::authenticate;
 use gvm_mock_server::{GmpVersion, MockGmpServer, Resource, ResourceStore, ServerMode};
-use gvm_protocol::{Request, Response};
+use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use uuid::Uuid;
@@ -43,7 +42,7 @@ async fn connect(server: &MockGmpServer) -> UnixStream {
     let mut stream = UnixStream::connect(server.socket_path().unwrap())
         .await
         .unwrap();
-    let response = exchange(&mut stream, &authenticate("admin", "admin").to_bytes()).await;
+    let response = exchange(&mut stream, b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>").await;
     assert_eq!(response.status_code(), Some(200));
     stream
 }

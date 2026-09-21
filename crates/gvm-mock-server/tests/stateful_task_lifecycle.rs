@@ -410,3 +410,129 @@ async fn task_start_returns_report_id() {
 
     server.shutdown().await;
 }
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn task_create_clone_modify_and_failed_updates_are_atomic() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let target_id = create_and_get_id(
+        &mut stream,
+        b"<create_target><name>Canonical Target</name><hosts>127.0.0.1</hosts><port_range>T:1-65535</port_range></create_target>",
+        "create_target",
+    )
+    .await;
+    let alert_id = create_and_get_id(
+        &mut stream,
+        b"<create_alert><name>Canonical Alert</name></create_alert>",
+        "create_alert",
+    )
+    .await;
+    let group_id = create_and_get_id(
+        &mut stream,
+        b"<create_group><name>Canonical Group</name><users>alice</users></create_group>",
+        "create_group",
+    )
+    .await;
+    let task_id = create_and_get_id(
+        &mut stream,
+        format!(
+            "<create_task><name>Canonical Task</name><config id=\"daba56c8-73ec-11df-a475-002264764cea\"/><target id=\"{target_id}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><alterable>1</alterable><alert id=\"{alert_id}\"/><observers>alice<group id=\"{group_id}\"/></observers><preferences><preference><scanner_name>auto_delete</scanner_name><value>keep</value></preference><preference><scanner_name>auto_delete_data</scanner_name><value>5</value></preference></preferences></create_task>"
+        )
+        .as_bytes(),
+        "create_task",
+    )
+    .await;
+
+    let created = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    let created = created.as_str().expect("UTF-8 task response");
+    assert!(created.contains("<alterable>1</alterable>"));
+    assert!(created.contains(&format!("<alert id=\"{alert_id}\">")));
+    assert!(created.contains(&format!("<group id=\"{group_id}\">")));
+    assert!(created.contains("<scanner_name>auto_delete</scanner_name><value>keep</value>"));
+
+    let clone_id = create_and_get_id(
+        &mut stream,
+        format!(
+            "<create_task><comment>clone override</comment><copy>{task_id}</copy><alterable>0</alterable></create_task>"
+        )
+        .as_bytes(),
+        "create_task",
+    )
+    .await;
+    let cloned = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{clone_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    let cloned = cloned.as_str().expect("UTF-8 cloned task response");
+    assert!(cloned.contains("<comment>clone override</comment>"));
+    assert!(cloned.contains("<alterable>0</alterable>"));
+    assert!(cloned.contains(&format!("<alert id=\"{alert_id}\">")));
+    assert!(cloned.contains("<scanner_name>auto_delete_data</scanner_name><value>5</value>"));
+    assert!(cloned.contains("<status>New</status>"));
+
+    let invalid_preference = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><name>Must Roll Back</name><preferences><preference><scanner_name>auto_delete_data</scanner_name><value>1</value></preference></preferences></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(invalid_preference.status_code(), Some(400));
+
+    let missing_alert = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><comment>also rollback</comment><alert id=\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"/></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(missing_alert.status_code(), Some(404));
+
+    let after_failures = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    let after_failures = after_failures.as_str().expect("UTF-8 task response");
+    assert!(after_failures.contains("<name>Canonical Task</name>"));
+    assert!(!after_failures.contains("Must Roll Back"));
+    assert!(!after_failures.contains("also rollback"));
+    assert!(after_failures.contains(&format!("<alert id=\"{alert_id}\">")));
+    assert!(
+        after_failures.contains("<scanner_name>auto_delete_data</scanner_name><value>5</value>")
+    );
+
+    let clear = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><alert id=\"0\"/><observers><group id=\"0\"/></observers><preferences><preference><scanner_name>auto_delete</scanner_name><value>no</value></preference></preferences></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(clear.status_code(), Some(200));
+    let cleared = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    let cleared = cleared.as_str().expect("UTF-8 task response");
+    assert!(!cleared.contains("<alert id="));
+    assert!(!cleared.contains("<group id="));
+    assert!(cleared.contains("<observers></observers>"));
+    assert!(cleared.contains("<scanner_name>auto_delete</scanner_name><value>no</value>"));
+
+    server.shutdown().await;
+}
