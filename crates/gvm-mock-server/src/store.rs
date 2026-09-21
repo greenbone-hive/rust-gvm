@@ -46,6 +46,10 @@ pub(crate) const CONFIG_SAVED_FILTER_ID: Uuid =
     Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0304);
 pub(crate) const DEFAULT_SCANNER_ID: Uuid =
     Uuid::from_u128(0x08b6_9003_5fc2_4037_a479_93b4_4021_1c73);
+pub(crate) const DEFAULT_CONTAINER_SCANNER_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0010);
+pub(crate) const DEFAULT_WEB_SCANNER_ID: Uuid =
+    Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0011);
 pub(crate) const CONFIGURABLE_REPORT_FORMAT_ID: Uuid =
     Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_0200);
 pub(crate) const NONCONFIGURABLE_REPORT_FORMAT_ID: Uuid =
@@ -1370,6 +1374,19 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     scanner.set_attr("type", "OpenVAS");
     resources.insert(scanner.id, scanner);
 
+    let mut container_scanner = Resource::with_id(
+        "scanner",
+        "Container Image Default",
+        DEFAULT_CONTAINER_SCANNER_ID,
+    );
+    container_scanner.set_attr("type", "10");
+    resources.insert(container_scanner.id, container_scanner);
+
+    let mut web_scanner =
+        Resource::with_id("scanner", "Web Application Default", DEFAULT_WEB_SCANNER_ID);
+    web_scanner.set_attr("type", "11");
+    resources.insert(web_scanner.id, web_scanner);
+
     let mut configurable_format = Resource::with_id(
         "report_format",
         "Mock configurable format",
@@ -1623,6 +1640,25 @@ fn validate_task_reference(
     active_typed_resource(inner, id, resource_type).map(|_| ())
 }
 
+fn scanner_has_type(scanner: &Resource, accepted: &[&str]) -> bool {
+    scanner
+        .attr("type")
+        .is_some_and(|scanner_type| accepted.contains(&scanner_type))
+}
+
+fn validate_openvas_scanner(
+    inner: &StoreInner,
+    id: &Uuid,
+    message: &'static str,
+) -> Result<(), StoreError> {
+    let scanner = active_typed_resource(inner, id, "scanner")?;
+    if scanner_has_type(scanner, &["2", "OpenVAS"]) {
+        Ok(())
+    } else {
+        Err(StoreError::InvalidArgument(message))
+    }
+}
+
 fn validate_task_attributes(inner: &StoreInner, task: &Resource) -> Result<(), StoreError> {
     for (attribute, resource_type) in [("alert_ids", "alert"), ("observer_group_ids", "group")] {
         for id in task
@@ -1663,6 +1699,62 @@ fn validate_task_attributes(inner: &StoreInner, task: &Resource) -> Result<(), S
                 "Auto Delete count out of range",
             ));
         }
+        let container = task.attr("oci_image_target_id").is_some();
+        let web = task.attr("web_application_target_id").is_some();
+        if name == "in_assets" && (container || web) {
+            return Err(StoreError::InvalidArgument(
+                "in_assets cannot be set for specialized task scanners",
+            ));
+        }
+        if web && name == "scan_mode" && !matches!(value.as_str(), "active" | "safe") {
+            return Err(StoreError::InvalidArgument("Invalid web scan_mode value"));
+        }
+        if web
+            && name == "ajax_spider_timeout"
+            && value.parse::<i64>().map_or(true, |timeout| timeout < 0)
+        {
+            return Err(StoreError::InvalidArgument(
+                "Invalid web ajax_spider_timeout value",
+            ));
+        }
+    }
+
+    let scanner = task
+        .attr("scanner_id")
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .and_then(|id| inner.resources.get(&id));
+    if let Some(group_id) = task
+        .attr("agent_group_id")
+        .and_then(|id| Uuid::parse_str(id).ok())
+    {
+        let group = active_typed_resource(inner, &group_id, "agent_group")?;
+        let group_scanner = group
+            .attr("scanner_id")
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .unwrap_or(DEFAULT_SCANNER_ID);
+        if task.attr("scanner_id") != Some(group_scanner.to_string().as_str()) {
+            return Err(StoreError::InvalidArgument(
+                "Scanner ID does not match agent group's scanner",
+            ));
+        }
+    } else if task.attr("oci_image_target_id").is_some() {
+        if scanner.is_none_or(|scanner| !scanner_has_type(scanner, &["10"])) {
+            return Err(StoreError::InvalidArgument(
+                "OCI image target requires a Container Image scanner",
+            ));
+        }
+    } else if task.attr("web_application_target_id").is_some() {
+        if scanner.is_none_or(|scanner| !scanner_has_type(scanner, &["11"])) {
+            return Err(StoreError::InvalidArgument(
+                "Web application target requires a Web Application scanner",
+            ));
+        }
+    } else if task.attr("import_task") != Some("1")
+        && scanner.is_some_and(|scanner| scanner_has_type(scanner, &["7", "9", "10", "11"]))
+    {
+        return Err(StoreError::InvalidArgument(
+            "Target and scanner types mismatch",
+        ));
     }
     Ok(())
 }
@@ -2529,7 +2621,7 @@ impl ResourceStore {
     pub(crate) fn create_task(
         &self,
         mut task: Resource,
-        references: TaskReferences,
+        mut references: TaskReferences,
     ) -> Result<Uuid, StoreError> {
         let mut inner = self.inner.write().expect("store lock poisoned");
         if let Some(target) = references.target {
@@ -2539,6 +2631,22 @@ impl ResourceStore {
         if let Some(target) = references.specialized_target {
             validate_task_reference(&inner, &target.id(), target.resource_type())?;
             task.set_attr(target.attr_name(), &target.id().to_string());
+            if let SpecializedTaskTarget::AgentGroup(group_id) = target {
+                let group = active_typed_resource(&inner, &group_id, "agent_group")?;
+                let group_scanner = group
+                    .attr("scanner_id")
+                    .and_then(|id| Uuid::parse_str(id).ok())
+                    .unwrap_or(DEFAULT_SCANNER_ID);
+                if references
+                    .scanner
+                    .is_some_and(|scanner| scanner != group_scanner)
+                {
+                    return Err(StoreError::InvalidArgument(
+                        "Scanner ID does not match agent group's scanner",
+                    ));
+                }
+                references.scanner = Some(group_scanner);
+            }
         }
         if let Some(config) = references.config {
             validate_task_reference(&inner, &config, "config")?;
@@ -2562,6 +2670,9 @@ impl ResourceStore {
             task.set_attr("status", TaskStatus::Done.as_str());
         } else {
             task.set_attr("status", TaskStatus::New.as_str());
+        }
+        if task.attr("usage_type").is_none() {
+            task.set_attr("usage_type", "scan");
         }
         validate_task_attributes(&inner, &task)?;
         task.modification_time = now_iso();
@@ -3211,6 +3322,25 @@ impl ResourceStore {
                 "Task must be New to modify Alterable state",
             ));
         }
+        validate_task_attributes(&inner, &candidate)?;
+        candidate.modification_time = now_iso();
+        inner.resources.insert(*id, candidate);
+        Ok(())
+    }
+
+    pub(crate) fn move_task(&self, id: &Uuid, destination: Uuid) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let task = active_typed_resource(&inner, id, "task")?;
+        let current_scanner = stored_task_reference(task, "scanner_id", "scanner")?;
+        validate_openvas_scanner(&inner, &current_scanner, "Task must use an OpenVAS scanner")?;
+        validate_openvas_scanner(
+            &inner,
+            &destination,
+            "Destination scanner does not support slaves",
+        )?;
+
+        let mut candidate = task.clone();
+        candidate.set_attr("scanner_id", &destination.to_string());
         validate_task_attributes(&inner, &candidate)?;
         candidate.modification_time = now_iso();
         inner.resources.insert(*id, candidate);

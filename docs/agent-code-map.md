@@ -50,6 +50,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   nine canonical standard-task operations, including clone overrides,
   observer/alert/schedule/preference semantics, removed host ordering,
   transactional mock updates, and report-producing state actions.
+- `docs/specialized-task-audit-request-gvmd-evidence.md`: pinned/current gvmd
+  evidence for specialized/import task creation, scanner-specific preferences,
+  move destinations, audit usage identity, lifecycle actions, and bounded
+  transactional mock behavior.
 - `docs/response-models-rfc.md`: response parsing/modeling direction.
 
 ## Request Flow
@@ -96,10 +100,10 @@ Adding or changing a GMP command:
   Scan-configuration and policy lifecycle, preference, and selection behavior
   is isolated in `stateful_scan_configs.rs`; atomic store application lives in
   `store.rs`.
-  Standard task parsing/rendering lives in `handler.rs`; relationship and
-  candidate-copy rollback plus start/stop/resume report state live in
-  `store.rs`, with bounded coverage in `stateful_task_lifecycle.rs` and
-  `stateful_task_graph.rs`.
+  Task parsing/rendering lives in `handler.rs`; relationship and candidate-copy
+  rollback plus move/start/stop/resume state live in `store.rs`, with bounded
+  coverage in `stateful_task_lifecycle.rs`, `stateful_task_graph.rs`, and
+  `stateful_specialized_task_audit.rs`.
 
 Changing response parsing:
 

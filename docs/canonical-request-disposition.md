@@ -43,10 +43,10 @@ UPDATE_CANONICAL_REQUEST_DISPOSITION=1 \
 The update command deliberately preserves stale active rows so removal remains
 an explicit reviewed decision rather than a generated side effect.
 
-After the bounded standard-task lifecycle migration in #659, the ledger
-contains exactly 992 rows: 195 `transitional`, 313 `canonical-request`, 358
-`removed`, 114 `retained-construction`, and 12 `frozen-ticket`. The three
-shared task option bags remain only because the audit-scoped lifecycle is
-deliberately deferred to #660; no standard-task request or facade accepts
-them. The inventory test protects both these counts and the source-to-ledger
-correspondence.
+After the bounded specialized-task and audit lifecycle migration in #660, the
+ledger contains exactly 998 rows: 150 `transitional`, 345
+`canonical-request`, 380 `removed`, 111 `retained-construction`, and 12
+`frozen-ticket`. The combined #659/#660 task command module and task/audit
+facades contain no transitional rows: complete requests replace all task
+option bags and forwarding builders. The inventory test protects both these
+counts and the source-to-ledger correspondence.

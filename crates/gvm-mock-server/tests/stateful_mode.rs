@@ -17,6 +17,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 const DEFAULT_SCANNER_ID: &str = "08b69003-5fc2-4037-a479-93b440211c73";
+const CONTAINER_SCANNER_ID: &str = "00000000-0000-4000-8000-000000000010";
+const WEB_SCANNER_ID: &str = "00000000-0000-4000-8000-000000000011";
 
 async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
     stream.write_all(xml).await.expect("write failed");
@@ -321,7 +323,7 @@ async fn stateful_create_oci_image_target_task_preserves_target_id() {
     let create_resp = send_recv(
         &mut stream,
         format!(
-            "<create_task><name>OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{target_id}\"/><scanner id=\"{DEFAULT_SCANNER_ID}\"/></create_task>"
+            "<create_task><name>OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{target_id}\"/><scanner id=\"{CONTAINER_SCANNER_ID}\"/></create_task>"
         )
         .as_bytes(),
     )
@@ -342,7 +344,7 @@ async fn stateful_create_oci_image_target_task_preserves_target_id() {
         "<oci_image_target id=\"{target_id}\"><name></name></oci_image_target>"
     )));
     assert!(text.contains(&format!(
-        "<scanner id=\"{DEFAULT_SCANNER_ID}\"><name></name></scanner>"
+        "<scanner id=\"{CONTAINER_SCANNER_ID}\"><name></name></scanner>"
     )));
 
     server.shutdown().await;
@@ -375,7 +377,7 @@ async fn stateful_create_web_application_task_preserves_target_id() {
     let create_resp = send_recv(
         &mut stream,
         format!(
-            "<create_task><name>Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"{DEFAULT_SCANNER_ID}\"/></create_task>"
+            "<create_task><name>Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"{WEB_SCANNER_ID}\"/></create_task>"
         )
         .as_bytes(),
     )
@@ -395,7 +397,7 @@ async fn stateful_create_web_application_task_preserves_target_id() {
         "<web_application_target id=\"{target_id}\"><name></name></web_application_target>"
     )));
     assert!(text.contains(&format!(
-        "<scanner id=\"{DEFAULT_SCANNER_ID}\"><name></name></scanner>"
+        "<scanner id=\"{WEB_SCANNER_ID}\"><name></name></scanner>"
     )));
 
     server.shutdown().await;

@@ -6,7 +6,6 @@
 use std::time::Duration;
 
 use gvm_connection::ConnectionError;
-use gvm_gmp::commands::tasks::ModifyTaskError;
 use gvm_gmp::responses::ParseError;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::GmpRequestError;
@@ -26,10 +25,6 @@ pub enum GvmError {
     /// A semantic request failed final-value validation or encoding.
     #[error("request error: {0}")]
     Request(#[from] GmpRequestError),
-
-    /// A typed `modify_task` update cannot be represented safely by gvmd.
-    #[error("modify_task request error: {0}")]
-    ModifyTask(#[from] ModifyTaskError),
 
     /// Response or version XML could not be parsed.
     #[error("XML parse error: {0}")]

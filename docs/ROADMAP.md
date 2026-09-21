@@ -96,6 +96,13 @@ Existing issues:
   required copy/import creation, metadata-only modification, bounded stateful
   behavior, and removal of unsupported GMP synchronization. Configured
   preference and NVT/family mutation remains the next strictly ordered child.
+- [#659](https://github.com/greenbone-hive/rust-gvm/issues/659) and
+  [#660](https://github.com/greenbone-hive/rust-gvm/issues/660) complete the
+  standard and specialized task/audit canonical request surfaces. The latter
+  preserves the GMP 22.8 specialized-task gates, audit usage identity, typed
+  move destinations, confidential preference redaction, and bounded stateful
+  lifecycle/rollback conformance. Work proceeds only to the next ordered
+  #602 slice after this patch; #661 is not part of #660.
 
 Follow-up issues or milestones should cover:
 

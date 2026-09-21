@@ -118,11 +118,13 @@ use gvm_gmp::commands::targets::{
     ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
-    create_agent_group_task, create_container_image_task, create_oci_image_target_task,
-    create_web_application_task, CloneTaskRequest, CreateAgentGroupTaskOpts,
-    CreateOciImageTargetTaskOpts, CreateTaskOpts, CreateTaskRequest, CreateWebApplicationTaskOpts,
-    DeleteTaskRequest, GetTaskRequest, GetTasksOpts, GetTasksRequest, ModifyTaskError,
-    ModifyTaskOpts, ModifyTaskRequest, ResumeTaskRequest, StartTaskRequest, StopTaskRequest,
+    CloneAuditRequest, CloneTaskRequest, CreateAgentGroupTaskRequest, CreateAuditRequest,
+    CreateContainerImageTaskRequest, CreateContainerTaskRequest, CreateImportTaskRequest,
+    CreateOciImageTargetTaskRequest, CreateTaskRequest, CreateWebApplicationTaskRequest,
+    DeleteAuditRequest, DeleteTaskRequest, GetAuditRequest, GetAuditsRequest, GetTaskRequest,
+    GetTasksRequest, ModifyAuditRequest, ModifyTaskRequest, MoveTaskRequest, ResumeAuditRequest,
+    ResumeTaskRequest, StartAuditRequest, StartTaskRequest, StopAuditRequest, StopTaskRequest,
+    TaskMoveDestination,
 };
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{
@@ -2082,33 +2084,32 @@ async fn specialized_task_create_and_move_helpers_use_typed_execution() {
     let mut client = client(&server).await;
     server.clear_history();
 
-    assert_create_success!(client.create_import_task("import", Some("comment")));
-    assert_create_success!(client.create_container_task("container", None));
-    assert_create_success!(client.create_agent_group_task(
-        "agents",
-        &id("agent-group-1"),
-        &id("scanner-1"),
-        CreateAgentGroupTaskOpts::default(),
-    ));
+    let mut import = CreateImportTaskRequest::new("import");
+    import.comment = Some("comment".into());
+    assert_create_success!(client.create_import_task(import));
+    assert_create_success!(
+        client.create_container_task(CreateContainerTaskRequest::new("container"))
+    );
+    let mut agent = CreateAgentGroupTaskRequest::new("agents", id("agent-group-1"));
+    agent.scanner_id = Some(id("scanner-1"));
+    assert_create_success!(client.create_agent_group_task(agent));
     assert_create_success!(client.create_oci_image_target_task(
-        "oci",
-        &id("oci-target-1"),
-        &id("scanner-1"),
-        CreateOciImageTargetTaskOpts::default(),
+        CreateOciImageTargetTaskRequest::new("oci", id("oci-target-1"), id("scanner-1"))
     ));
     assert_create_success!(client.create_container_image_task(
-        "container image",
-        &id("oci-target-1"),
-        &id("scanner-1"),
-        CreateOciImageTargetTaskOpts::default(),
+        CreateContainerImageTaskRequest::new(
+            "container image",
+            id("oci-target-1"),
+            id("scanner-1"),
+        )
     ));
     assert_create_success!(client.create_web_application_task(
-        "web",
-        &id("web-target-1"),
-        &id("scanner-1"),
-        CreateWebApplicationTaskOpts::default(),
+        CreateWebApplicationTaskRequest::new("web", id("web-target-1"), id("scanner-1"))
     ));
-    assert_typed_success!(client.move_task(&id("task-1"), Some(&id("slave-1"))));
+    assert_typed_success!(client.move_task(MoveTaskRequest::new(
+        id("task-1"),
+        TaskMoveDestination::Slave(id("slave-1")),
+    )));
 
     let commands = server
         .command_history()
@@ -2139,44 +2140,39 @@ async fn next_only_specialized_task_helpers_reject_before_send() {
     server.clear_history();
 
     assert_unsupported_command!(
-        client.send(create_agent_group_task(
+        client.execute(CreateAgentGroupTaskRequest::new(
             "raw agents",
-            &id("agent-group-1"),
-            &id("scanner-1"),
-            CreateAgentGroupTaskOpts::default(),
+            id("agent-group-1"),
         )),
         "create_agent_group_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.send(create_oci_image_target_task(
+        client.execute(CreateOciImageTargetTaskRequest::new(
             "raw oci",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
+            id("oci-target-1"),
+            id("scanner-1"),
         )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.send(create_container_image_task(
+        client.execute(CreateContainerImageTaskRequest::new(
             "raw container image",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
+            id("oci-target-1"),
+            id("scanner-1"),
         )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.send(create_web_application_task(
+        client.execute(CreateWebApplicationTaskRequest::new(
             "raw web",
-            &id("web-target-1"),
-            &id("scanner-1"),
-            CreateWebApplicationTaskOpts::default(),
+            id("web-target-1"),
+            id("scanner-1"),
         )),
         "create_web_application_task",
         GmpVersion(22, 7),
@@ -2184,45 +2180,40 @@ async fn next_only_specialized_task_helpers_reject_before_send() {
     );
 
     assert_unsupported_command!(
-        client.create_agent_group_task(
+        client.create_agent_group_task(CreateAgentGroupTaskRequest::new(
             "agents",
-            &id("agent-group-1"),
-            &id("scanner-1"),
-            CreateAgentGroupTaskOpts::default(),
-        ),
+            id("agent-group-1"),
+        )),
         "create_agent_group_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.create_oci_image_target_task(
+        client.create_oci_image_target_task(CreateOciImageTargetTaskRequest::new(
             "oci",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        ),
+            id("oci-target-1"),
+            id("scanner-1"),
+        )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.create_container_image_task(
+        client.create_container_image_task(CreateContainerImageTaskRequest::new(
             "container image",
-            &id("oci-target-1"),
-            &id("scanner-1"),
-            CreateOciImageTargetTaskOpts::default(),
-        ),
+            id("oci-target-1"),
+            id("scanner-1"),
+        )),
         "create_oci_image_target_task",
         GmpVersion(22, 7),
         "22.8"
     );
     assert_unsupported_command!(
-        client.create_web_application_task(
+        client.create_web_application_task(CreateWebApplicationTaskRequest::new(
             "web",
-            &id("web-target-1"),
-            &id("scanner-1"),
-            CreateWebApplicationTaskOpts::default(),
-        ),
+            id("web-target-1"),
+            id("scanner-1"),
+        )),
         "create_web_application_task",
         GmpVersion(22, 7),
         "22.8"
@@ -2240,30 +2231,29 @@ async fn audit_variant_helpers_use_typed_execution_and_presend_validation() {
     let mut client = client(&server).await;
     server.clear_history();
 
-    assert_typed_success!(client.get_audits(GetTasksOpts::default()));
-    assert_typed_success!(client.get_audit(&id("audit-1")));
-    assert_create_success!(client.create_audit(
+    assert_typed_success!(client.get_audits(GetAuditsRequest::default()));
+    assert_typed_success!(client.get_audit(GetAuditRequest::new(id("audit-1"))));
+    assert_create_success!(client.create_audit(CreateAuditRequest::new(
         "audit",
-        &id("config-1"),
-        &id("target-1"),
-        &id("scanner-1"),
-        CreateTaskOpts::default(),
-    ));
-    assert_create_success!(client.clone_audit(&id("audit-1")));
-    assert_typed_success!(client.modify_audit(&id("audit-1"), ModifyTaskOpts::default()));
-    assert_typed_success!(client.delete_audit(&id("audit-1")));
+        id("config-1"),
+        id("target-1"),
+        id("scanner-1"),
+    )));
+    assert_create_success!(client.clone_audit(CloneAuditRequest::new(id("audit-1"))));
+    assert_typed_success!(client.modify_audit(ModifyAuditRequest::new(id("audit-1"))));
+    assert_typed_success!(client.delete_audit(DeleteAuditRequest::new(id("audit-1"), false)));
     assert_eq!(
         client
-            .start_audit(&id("audit-1"))
+            .start_audit(StartAuditRequest::new(id("audit-1")))
             .await
             .expect("audit start should parse")
             .status,
         202
     );
-    assert_typed_success!(client.stop_audit(&id("audit-1")));
+    assert_typed_success!(client.stop_audit(StopAuditRequest::new(id("audit-1"))));
     assert_eq!(
         client
-            .resume_audit(&id("audit-1"))
+            .resume_audit(ResumeAuditRequest::new(id("audit-1")))
             .await
             .expect("audit resume should parse")
             .status,
@@ -2291,19 +2281,15 @@ async fn audit_variant_helpers_use_typed_execution_and_presend_validation() {
     );
 
     server.clear_history();
+    let mut invalid = ModifyAuditRequest::new(id("audit-1"));
+    invalid.observer_group_ids = gvm_gmp::types::CollectionUpdate::replace([id("group-1")]);
     let error = client
-        .modify_audit(
-            &id("audit-1"),
-            ModifyTaskOpts {
-                observer_group_ids: gvm_gmp::types::CollectionUpdate::replace([id("group-1")]),
-                ..Default::default()
-            },
-        )
+        .modify_audit(invalid)
         .await
         .expect_err("invalid audit observer update should fail before sending");
     assert!(matches!(
         error,
-        GvmError::ModifyTask(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        GvmError::Request(gvm_gmp::GmpRequestError::InvalidCombination { .. })
     ));
     assert!(server.command_history().is_empty());
     server.shutdown().await;

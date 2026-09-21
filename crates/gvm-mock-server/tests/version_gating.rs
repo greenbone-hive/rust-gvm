@@ -29,7 +29,7 @@ use gvm_gmp::commands::report_configs::{
     GetReportConfigRequest, GetReportConfigsRequest, ModifyReportConfigRequest,
 };
 use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
-use gvm_gmp::commands::tasks::{create_web_application_task, CreateWebApplicationTaskOpts};
+use gvm_gmp::commands::tasks::CreateWebApplicationTaskRequest;
 use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetRequest, GetWebApplicationTargetsRequest,
 };
@@ -363,11 +363,13 @@ async fn version_22_7_rejects_next_commands() {
 
     let response = send_recv(
         &mut stream,
-        create_web_application_task(
-            "Rejected Web Application Task",
-            &id("web-target-1"),
-            &id("scanner-1"),
-            CreateWebApplicationTaskOpts::default(),
+        encode(
+            &CreateWebApplicationTaskRequest::new(
+                "Rejected Web Application Task",
+                id("web-target-1"),
+                id("00000000-0000-4000-8000-000000000011"),
+            ),
+            GmpVersion::V22_7,
         ),
     )
     .await;
@@ -375,9 +377,32 @@ async fn version_22_7_rejects_next_commands() {
     assert!(response
         .status_text()
         .unwrap()
-        .contains("Web application target tasks"));
+        .contains("Specialized task variants"));
 
     assert_credential_store_credentials_rejected_before_next(&mut stream).await;
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn version_22_7_rejects_every_specialized_task_shape() {
+    let Some(server) = stateful_server(GmpVersion::V22_7).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    authenticate_admin(&mut stream).await;
+
+    for request in [
+        br#"<create_task><name>Rejected agent task</name><agent_group id="00000000-0000-4000-8000-000000000001"/></create_task>"#.as_slice(),
+        br#"<create_task><name>Rejected OCI task</name><oci_image_target id="00000000-0000-4000-8000-000000000002"/><scanner id="00000000-0000-4000-8000-000000000010"/></create_task>"#.as_slice(),
+    ] {
+        let response = send_recv(&mut stream, request.to_vec()).await;
+        assert_eq!(response.status_code(), Some(400));
+        assert!(response
+            .status_text()
+            .unwrap()
+            .contains("Specialized task variants"));
+    }
 
     server.shutdown().await;
 }
@@ -637,11 +662,13 @@ async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut Unix
     let web_target_id = id(&web_target_response.id().expect("created web target id"));
     let web_task_response = send_recv(
         stream,
-        create_web_application_task(
-            "Version Gated Web Task",
-            &web_target_id,
-            &id("08b69003-5fc2-4037-a479-93b440211c73"),
-            CreateWebApplicationTaskOpts::default(),
+        encode(
+            &CreateWebApplicationTaskRequest::new(
+                "Version Gated Web Task",
+                web_target_id,
+                id("00000000-0000-4000-8000-000000000011"),
+            ),
+            GmpVersion::V22_8,
         ),
     )
     .await;

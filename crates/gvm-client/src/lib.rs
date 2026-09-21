@@ -51,9 +51,10 @@ use gvm_gmp::commands::reports::{
     get_report_tls_certificates, get_report_vulns, get_scan_report, GetScanReportRequest,
 };
 use gvm_gmp::commands::system::get_timezones;
-use gvm_gmp::commands::tasks::create_agent_group_task;
-use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_target_task;
-use gvm_gmp::commands::tasks::create_web_application_task;
+use gvm_gmp::commands::tasks::{
+    CreateAgentGroupTaskRequest, CreateContainerImageTaskRequest, CreateOciImageTargetTaskRequest,
+    CreateWebApplicationTaskRequest,
+};
 use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
     CloneWebApplicationTargetRequest, CreateWebApplicationTargetRequest,
@@ -62,15 +63,15 @@ use gvm_gmp::commands::web_application_targets::{
 };
 use gvm_gmp::responses::{
     CloneAgentGroupResponse, CreateAgentGroupResponse, CreateCredentialResponse,
-    CreateOciImageTargetResponse, CreateWebApplicationTargetResponse, DeleteAgentGroupResponse,
-    DeleteAgentResponse, DeleteOciImageTargetResponse, DeleteWebApplicationTargetResponse,
-    GetAgentGroupsResponse, GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse,
-    GetAgentsResponse, GetCredentialStoresResponse, GetIntegrationConfigsResponse,
-    GetOciImageTargetsResponse, GetScanReportResponse, GetWebApplicationTargetsResponse,
-    HelpResponse, ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse,
-    ModifyAgentResponse, ModifyCredentialResponse, ModifyIntegrationConfigResponse,
-    ModifyOciImageTargetResponse, ModifyWebApplicationTargetResponse, SyncAgentsResponse,
-    VerifyCredentialStoreResponse,
+    CreateOciImageTargetResponse, CreateTaskResponse, CreateWebApplicationTargetResponse,
+    DeleteAgentGroupResponse, DeleteAgentResponse, DeleteOciImageTargetResponse,
+    DeleteWebApplicationTargetResponse, GetAgentGroupsResponse,
+    GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
+    GetCredentialStoresResponse, GetIntegrationConfigsResponse, GetOciImageTargetsResponse,
+    GetScanReportResponse, GetWebApplicationTargetsResponse, HelpResponse,
+    ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse, ModifyAgentResponse,
+    ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse,
+    ModifyWebApplicationTargetResponse, SyncAgentsResponse, VerifyCredentialStoreResponse,
 };
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
@@ -90,9 +91,6 @@ pub use gvm_gmp::commands::reports::{
     GetReportExportOpts, GetScanReportOpts, ImportReportOpts,
 };
 pub use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
-pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
-pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
-pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
 pub use gvm_gmp::commands::usage_type::UsageType;
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
 pub use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse};
@@ -755,11 +753,8 @@ pub trait GmpNextCommands {
     /// Create a task that scans an agent group.
     async fn create_agent_group_task(
         &mut self,
-        name: &str,
-        agent_group_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateAgentGroupTaskOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateAgentGroupTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Clone an agent group.
     async fn clone_agent_group(
@@ -800,24 +795,15 @@ pub trait GmpNextCommands {
     /// Create a task that scans an OCI image target.
     async fn create_oci_image_target_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateOciImageTargetTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Create a task that scans an OCI image target using python-gvm's
     /// historical container-image helper name.
     async fn create_container_image_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.create_oci_image_target_task(name, oci_image_target_id, scanner_id, opts)
-            .await
-    }
+        request: CreateContainerImageTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Clone an OCI image target.
     async fn clone_oci_image_target(
@@ -888,11 +874,8 @@ pub trait GmpNextCommands {
     /// Create a scan task for a web application target.
     async fn create_web_application_task(
         &mut self,
-        name: &str,
-        web_application_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateWebApplicationTaskOpts,
-    ) -> Result<Response, GvmError>;
+        request: CreateWebApplicationTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError>;
 
     /// Get a single integration configuration.
     async fn get_integration_config(
@@ -1295,19 +1278,9 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_agent_group_task(
         &mut self,
-        name: &str,
-        agent_group_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateAgentGroupTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(create_agent_group_task(
-                name,
-                agent_group_id,
-                scanner_id,
-                opts,
-            ))
-            .await
+        request: CreateAgentGroupTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_agent_group_task(request).await
     }
 
     async fn clone_agent_group(
@@ -1354,19 +1327,16 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_oci_image_target_task(
         &mut self,
-        name: &str,
-        oci_image_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateOciImageTargetTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(build_oci_image_target_task(
-                name,
-                oci_image_target_id,
-                scanner_id,
-                opts,
-            ))
-            .await
+        request: CreateOciImageTargetTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_oci_image_target_task(request).await
+    }
+
+    async fn create_container_image_task(
+        &mut self,
+        request: CreateContainerImageTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_container_image_task(request).await
     }
 
     async fn clone_oci_image_target(
@@ -1448,19 +1418,9 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn create_web_application_task(
         &mut self,
-        name: &str,
-        web_application_target_id: &EntityId,
-        scanner_id: &EntityId,
-        opts: CreateWebApplicationTaskOpts,
-    ) -> Result<Response, GvmError> {
-        self.0
-            .call(create_web_application_task(
-                name,
-                web_application_target_id,
-                scanner_id,
-                opts,
-            ))
-            .await
+        request: CreateWebApplicationTaskRequest,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        self.0.create_web_application_task(request).await
     }
 
     async fn get_integration_config(

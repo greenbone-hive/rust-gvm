@@ -6,7 +6,7 @@
 
 use gvm_client::GmpClient;
 use gvm_connection::UnixSocketConnection;
-use gvm_gmp::commands::tasks::get_audit;
+use gvm_gmp::commands::tasks::GetAuditRequest;
 use gvm_gmp::types::EntityId;
 use gvm_mock_server::{MockGmpServer, ServerMode};
 
@@ -38,11 +38,13 @@ async fn get_audit_sends_audit_scoped_get_tasks_command() {
         .expect("client should connect");
 
     let response = client
-        .call(get_audit(&EntityId::new("audit1").expect("valid id")))
+        .execute(GetAuditRequest::new(
+            EntityId::new("audit1").expect("valid id"),
+        ))
         .await
         .expect("get_audit should send get_tasks command");
 
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
 
     let history = server.command_history();
     let command = history.last().expect("audit get command recorded");

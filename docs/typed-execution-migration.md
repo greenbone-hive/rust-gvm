@@ -203,10 +203,8 @@ client.start_task(StartTaskRequest::new(task.id)).await?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`GetTasksOpts`, `CreateTaskOpts`, and `ModifyTaskOpts` are no longer accepted
-by standard task requests or facades. They remain temporarily public only for
-the audit lifecycle deferred to #660. The nine free standard-task builders
-are removed.
+`GetTasksOpts`, `CreateTaskOpts`, and `ModifyTaskOpts` are removed. The nine
+free standard-task builders are also removed.
 
 Schedule uses `ScalarUpdate` to distinguish preserve, replace, and detach;
 alerts and observers use `CollectionUpdate`. A group update must include an
@@ -217,6 +215,54 @@ override. The stale `hosts_ordering` request input is removed because pinned
 gvmd does not parse it and dropped its database column. Preference values are
 redacted from diagnostics and traces. See the
 [pinned gvmd evidence](task-request-gvmd-evidence.md).
+
+## Specialized tasks and audits
+
+Issue #660 completes the remaining task-family request migration. Import and
+container/import creation own only name and comment. Agent-group creation owns
+its group and optional matching scanner. OCI/container-image and
+web-application creation own the specialized target, required scanner, and
+their supported common creation values. All three true specialized scan
+variants retain their GMP 22.8 semantic gates.
+
+```rust
+use gvm_gmp::commands::tasks::{
+    CreateAgentGroupTaskRequest, CreateAuditRequest,
+    CreateWebApplicationTaskRequest, ModifyAuditRequest, MoveTaskRequest,
+    TaskMoveDestination,
+};
+use gvm_gmp::CollectionUpdate;
+
+let agent = CreateAgentGroupTaskRequest::new("agents", agent_group_id);
+client.create_agent_group_task(agent).await?;
+
+let web = CreateWebApplicationTaskRequest::new(
+    "web", web_target_id, web_scanner_id,
+);
+client.create_web_application_task(web).await?;
+
+client.move_task(MoveTaskRequest::new(
+    task_id,
+    TaskMoveDestination::Master,
+)).await?;
+
+let audit = client.create_audit(CreateAuditRequest::new(
+    "audit", policy_id, target_id, scanner_id,
+)).await?;
+let mut modify = ModifyAuditRequest::new(audit.id);
+modify.observers = CollectionUpdate::Clear;
+modify.observer_group_ids = CollectionUpdate::Clear;
+client.modify_audit(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`move_task` now requires `TaskMoveDestination::Master` or `Slave(id)`; omission
+is not a valid gvmd request. Audit list/detail/create carry audit usage
+identity, while clone inherits it and ID-selected mutation/action requests do
+not invent a parser-unsupported usage child. Audit delete now owns its
+`ultimate` decision. Specialized preference validation follows scanner type,
+and preference values remain redacted from diagnostics and traces. See the
+[pinned gvmd evidence](specialized-task-audit-request-gvmd-evidence.md).
 
 ## Agent family
 

@@ -50,6 +50,7 @@ fn crud_configs() {
 #[test]
 fn crud_scanners() {
     let store = ResourceStore::new();
+    let seeded_scanner_count = store.list("scanner").len();
     let id = store.create(Resource::new("scanner", "Primary Scanner"));
 
     let cloned_id = store
@@ -59,7 +60,7 @@ fn crud_scanners() {
     assert_ne!(id, cloned_id);
     assert!(store.get(&id).is_some());
     assert!(store.get(&cloned_id).is_some());
-    assert_eq!(store.list("scanner").len(), 3);
+    assert_eq!(store.list("scanner").len(), seeded_scanner_count + 2);
 }
 
 #[test]
