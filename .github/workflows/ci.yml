@@ -14,6 +14,9 @@ on:
     # Keep the workflow running for docs-only PRs so branch protection can
     # require the aggregate `CI` status check without waiting forever.
     branches: [main, devel]
+  # Release qualification dispatches this complete workflow at the selected
+  # protected-main commit. The E2E handoff remains restricted to push events.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -141,7 +144,10 @@ jobs:
             -r .github/requirements/coverage.txt
           python -m coverage run --branch \
             --include='scripts/sbom_postprocess.py,scripts/check_sbom_quality.py' \
-            -m unittest tests.test_sbom_postprocess tests.test_sbom_quality
+            -m unittest \
+            tests.test_sbom_postprocess \
+            tests.test_sbom_quality \
+            tests.test_workflow_policy
           python -m coverage report --fail-under=100
           python -m coverage xml -o python-coverage.xml
       - name: Publish coverage reports
