@@ -158,7 +158,7 @@ pub struct ModifyTargetRequest {
     pub target_id: EntityId,
     /// Optional resource name.
     pub name: Option<String>,
-    /// Optional comment text included in the request.
+    /// Comment update: `None` preserves it, while `Some("")` clears it.
     pub comment: Option<String>,
     /// Atomic replacement of included and excluded hosts, or `None` to omit.
     pub hosts: Option<TargetHosts>,
@@ -444,7 +444,9 @@ fn modify_target_command(request: &ModifyTargetRequest) -> XmlCommand {
     let mut cmd =
         XmlCommand::new("modify_target").attribute("target_id", request.target_id.as_str());
     add_text_element(&mut cmd, "name", request.name.as_deref());
-    add_text_element(&mut cmd, "comment", request.comment.as_deref());
+    if let Some(comment) = request.comment.as_deref() {
+        cmd.add_element_with_text("comment", comment);
+    }
     if let Some(hosts) = &request.hosts {
         cmd.add_element_with_text("hosts", &join_hosts(hosts.included()));
         cmd.add_element_with_text("exclude_hosts", &join_hosts(hosts.excluded()));
