@@ -172,8 +172,12 @@ def verify_xml_sbom(path: Path, version: str) -> None:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError, DefusedXmlException) as error:
         raise VerificationError(f"invalid XML SBOM {path.name}: {error}") from error
-    if root.attrib.get("specVersion") != "1.5":
+    expected_root = "{http://cyclonedx.org/schema/bom/1.5}bom"
+    if root.tag != expected_root:
         raise VerificationError(f"{path.name} is not CycloneDX 1.5")
+    declared_version = root.attrib.get("specVersion")
+    if declared_version is not None and declared_version != "1.5":
+        raise VerificationError(f"{path.name} has conflicting CycloneDX version metadata")
     component_version = root.findtext("{*}metadata/{*}component/{*}version")
     if component_version != version:
         raise VerificationError(f"{path.name} primary component is not version {version}")

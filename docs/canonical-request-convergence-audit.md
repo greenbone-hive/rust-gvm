@@ -47,11 +47,11 @@ names to this scope: 165 now accept one canonical request, 32 are removed or
 renamed, and three ticket helpers remain frozen. The complete family and
 exception mappings are in the [v0.7.0 migration guide](v0.7.0-migration.md).
 
-A strict `cargo-semver-checks` comparison is intentionally red for a forced
-patch comparison because v0.7.0 is the documented pre-1.0 breaking release.
-The normal comparison recognizes `0.6.0` to `0.7.0` as a major-compatible
-version step. Strict results were used as an audit input, not treated as a
-release-policy failure.
+`cargo-semver-checks` reports the intentional breaking changes in `gvm-gmp`
+and `gvm-client` for both its normal pre-1.0 comparison and a forced patch
+comparison. That red result is expected for the documented pre-1.0 breaking
+v0.7.0 release; the reports were used as audit inputs rather than treated as a
+release-policy failure. The other three publishable crates remain green.
 
 ## Preserved low-level boundary
 
