@@ -27,7 +27,7 @@ class ReleaseVerificationTests(unittest.TestCase):
 
     def test_xml_sbom_accepts_expected_cyclonedx_metadata(self) -> None:
         valid = """\
-<bom xmlns="http://cyclonedx.org/schema/bom/1.5" specVersion="1.5">
+<bom xmlns="http://cyclonedx.org/schema/bom/1.5" serialNumber="urn:uuid:test" version="1">
   <metadata><component><version>0.7.0</version></component></metadata>
 </bom>
 """
@@ -35,6 +35,30 @@ class ReleaseVerificationTests(unittest.TestCase):
             path = Path(temp) / "valid.cdx.xml"
             path.write_text(valid, encoding="utf-8")
             verify_xml_sbom(path, "0.7.0")
+
+    def test_xml_sbom_rejects_wrong_namespace(self) -> None:
+        invalid = """\
+<bom xmlns="http://cyclonedx.org/schema/bom/1.6">
+  <metadata><component><version>0.7.0</version></component></metadata>
+</bom>
+"""
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "invalid.cdx.xml"
+            path.write_text(invalid, encoding="utf-8")
+            with self.assertRaisesRegex(VerificationError, "not CycloneDX 1.5"):
+                verify_xml_sbom(path, "0.7.0")
+
+    def test_xml_sbom_rejects_conflicting_version_attribute(self) -> None:
+        invalid = """\
+<bom xmlns="http://cyclonedx.org/schema/bom/1.5" specVersion="1.6">
+  <metadata><component><version>0.7.0</version></component></metadata>
+</bom>
+"""
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "invalid.cdx.xml"
+            path.write_text(invalid, encoding="utf-8")
+            with self.assertRaisesRegex(VerificationError, "conflicting"):
+                verify_xml_sbom(path, "0.7.0")
 
     def test_expected_assets_cover_five_binaries_sbom_checksums_and_quality(self) -> None:
         assets = expected_assets()
