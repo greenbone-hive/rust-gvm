@@ -59,7 +59,7 @@ use gvm_gmp::commands::overrides::{
 use gvm_gmp::commands::permissions::*;
 use gvm_gmp::commands::port_lists::{
     ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
-    GetPortListRequest, GetPortListsRequest, ModifyPortListRequest,
+    GetPortListRequest, ModifyPortListRequest,
 };
 use gvm_gmp::commands::report_formats::{CloneReportFormatRequest, ImportReportFormatRequest};
 use gvm_gmp::commands::reports::{
@@ -2494,61 +2494,12 @@ async fn typed_port_list_replacement_round_trip() {
     };
     let mut client = authenticated_client(&server).await;
 
+    let mut create = CreatePortListRequest::new("Old Port List");
+    create.comment = Some("old metadata".into());
     let port_list = client
-        .create_port_list(CreatePortListRequest::new("Old Port List"))
+        .create_port_list(create)
         .await
         .expect("port list creation should succeed");
-    let detail = client
-        .get_port_list(GetPortListRequest::new(port_list.id.clone()))
-        .await
-        .expect("port list detail should succeed");
-    assert_eq!(detail.items.len(), 1);
-    assert_eq!(detail.items[0].meta.id, port_list.id);
-
-    let clone = client
-        .clone_port_list(ClonePortListRequest::new(port_list.id.clone()))
-        .await
-        .expect("port list clone should succeed");
-    let mut rename = ModifyPortListRequest::new(port_list.id.clone());
-    rename.name = Some("Renamed Port List".into());
-    rename.comment = Some("renamed through typed client".into());
-    client
-        .modify_port_list(rename)
-        .await
-        .expect("port list rename should succeed");
-    let port_lists = client
-        .get_port_lists(GetPortListsRequest::default())
-        .await
-        .expect("port list read-back should succeed");
-    let renamed_port_list = port_lists
-        .items
-        .iter()
-        .find(|item| item.meta.id == port_list.id)
-        .expect("renamed port list should be present");
-    assert_eq!(renamed_port_list.meta.name, "Renamed Port List");
-    assert_eq!(
-        renamed_port_list.meta.comment.as_deref(),
-        Some("renamed through typed client")
-    );
-
-    server.clear_history();
-    let mut replace = ModifyPortListRequest::new(port_list.id.clone());
-    replace.name = Some("Name Only".into());
-    client
-        .modify_port_list(replace)
-        .await
-        .expect("port list replacement should succeed");
-    let port_lists = client
-        .get_port_lists(GetPortListsRequest::default())
-        .await
-        .expect("port list read-back should succeed");
-    let replaced_port_list = port_lists
-        .items
-        .iter()
-        .find(|item| item.meta.id == port_list.id)
-        .expect("replaced port list should be present");
-    assert_eq!(replaced_port_list.meta.name, "Name Only");
-    assert_eq!(replaced_port_list.meta.comment, None);
 
     let mut range = CreatePortRangeRequest::new(port_list.id.clone(), PortRangeType::Tcp, 80, 443);
     range.comment = Some("web ports".into());
@@ -2557,6 +2508,73 @@ async fn typed_port_list_replacement_round_trip() {
         .await
         .expect("port range creation should succeed");
     assert_eq!(created_range.status, 201);
+
+    let detail_before_modify = client
+        .get_port_list(GetPortListRequest::new(port_list.id.clone()))
+        .await
+        .expect("port list detail should succeed");
+    assert_eq!(detail_before_modify.items.len(), 1);
+    assert_eq!(detail_before_modify.items[0].meta.id, port_list.id);
+    assert_eq!(detail_before_modify.items[0].port_ranges.len(), 1);
+    let stored_range = detail_before_modify.items[0].port_ranges[0].clone();
+    assert_eq!(stored_range.start, 80);
+    assert_eq!(stored_range.end, 443);
+    assert_eq!(stored_range.range_type, PortRangeType::Tcp);
+    assert_eq!(stored_range.comment, "web ports");
+
+    let mut rename = ModifyPortListRequest::new(port_list.id.clone());
+    rename.name = Some("Renamed Port List".into());
+    rename.comment = Some("renamed through typed client".into());
+    client
+        .modify_port_list(rename)
+        .await
+        .expect("port list rename should succeed");
+    let detail_after_modify = client
+        .get_port_list(GetPortListRequest::new(port_list.id.clone()))
+        .await
+        .expect("port list read-back should succeed");
+    let renamed_port_list = &detail_after_modify.items[0];
+    assert_eq!(renamed_port_list.meta.name, "Renamed Port List");
+    assert_eq!(
+        renamed_port_list.meta.comment.as_deref(),
+        Some("renamed through typed client")
+    );
+    assert_eq!(renamed_port_list.port_ranges, vec![stored_range.clone()]);
+
+    let range_command = server
+        .command_history()
+        .into_iter()
+        .find(|record| record.command_name() == "create_port_range")
+        .expect("range creation should be recorded");
+    assert_eq!(
+        range_command.raw_xml(),
+        format!(
+            "<create_port_range><comment>web ports</comment><port_list id=\"{}\"/><start>80</start><end>443</end><type>TCP</type></create_port_range>",
+            port_list.id
+        )
+        .as_bytes()
+    );
+
+    let clone = client
+        .clone_port_list(ClonePortListRequest::new(port_list.id.clone()))
+        .await
+        .expect("port list clone should succeed");
+
+    server.clear_history();
+    let mut replace = ModifyPortListRequest::new(port_list.id.clone());
+    replace.name = Some("Name Only".into());
+    client
+        .modify_port_list(replace)
+        .await
+        .expect("port list replacement should succeed");
+    let replaced_detail = client
+        .get_port_list(GetPortListRequest::new(port_list.id.clone()))
+        .await
+        .expect("port list read-back should succeed");
+    let replaced_port_list = &replaced_detail.items[0];
+    assert_eq!(replaced_port_list.meta.name, "Name Only");
+    assert_eq!(replaced_port_list.meta.comment, None);
+    assert_eq!(replaced_port_list.port_ranges, vec![stored_range]);
 
     client
         .delete_port_list(DeletePortListRequest::new(clone.id, true))
@@ -2577,17 +2595,8 @@ async fn typed_port_list_replacement_round_trip() {
         )
         .as_bytes()
     );
-    assert_eq!(history[2].command_name(), "create_port_range");
-    assert_eq!(
-        history[2].raw_xml(),
-        format!(
-            "<create_port_range><comment>web ports</comment><port_list id=\"{}\"/><start>80</start><end>443</end><type>TCP</type></create_port_range>",
-            port_list.id
-        )
-        .as_bytes()
-    );
+    assert_eq!(history[2].command_name(), "delete_port_list");
     assert_eq!(history[3].command_name(), "delete_port_list");
-    assert_eq!(history[4].command_name(), "delete_port_list");
 
     server.shutdown().await;
 }

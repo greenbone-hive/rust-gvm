@@ -3356,6 +3356,47 @@ impl ResourceStore {
         resource.to_xml_with_task_reports(current_report, last_report, &last_report_results, false)
     }
 
+    pub(crate) fn render_port_list_xml(&self, port_list: &Resource, details: bool) -> String {
+        let mut xml = port_list.to_xml();
+        if !details {
+            return xml;
+        }
+
+        let port_list_id = port_list.id.to_string();
+        let inner = self.inner.read().expect("store lock poisoned");
+        let mut ranges = inner
+            .resources
+            .values()
+            .filter(|resource| {
+                resource.resource_type == "port_range"
+                    && !resource.trashed
+                    && resource.attr("port_list_id") == Some(port_list_id.as_str())
+            })
+            .collect::<Vec<_>>();
+        ranges.sort_by_key(|range| insertion_order(&inner, range));
+
+        let mut port_ranges = String::from("<port_ranges>");
+        for range in ranges {
+            port_ranges.push_str(&format!(
+                "<port_range id=\"{}\"><start>{}</start><end>{}</end><type>{}</type><comment>{}</comment></port_range>",
+                xml_escape_attr(&range.id.to_string()),
+                xml_escape(range.attr("start").unwrap_or_default()),
+                xml_escape(range.attr("end").unwrap_or_default()),
+                xml_escape(range.attr("type").unwrap_or_default()),
+                xml_escape(&range.comment),
+            ));
+        }
+        port_ranges.push_str("</port_ranges>");
+
+        let closing_tag = "</port_list>";
+        let insertion = xml
+            .len()
+            .checked_sub(closing_tag.len())
+            .expect("port-list XML has a closing tag");
+        xml.insert_str(insertion, &port_ranges);
+        xml
+    }
+
     /// Return the configured user timezone, falling back as gvmd does.
     pub(crate) fn user_timezone(&self) -> String {
         self.list("setting")
