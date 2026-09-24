@@ -1,6 +1,13 @@
 # `next` Development Branch
 
-The long-lived `next` branch is the integration lane for
+> Historical branch-policy record. The canonical request program described
+> here has since been promoted from `next` to protected `main`; current release
+> state and follow-up work are tracked in [ROADMAP.md](ROADMAP.md) and
+> [STATUS.md](STATUS.md). The rules below document the integration lane used
+> during that program rather than asserting the repository's current branch
+> topology.
+
+The long-lived `next` branch was the integration lane for
 [issue #523](https://github.com/greenbone-hive/rust-gvm/issues/523) and related
 forward-looking API work that needs to mature independently from `main`.
 

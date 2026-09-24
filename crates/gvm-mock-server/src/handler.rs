@@ -13,7 +13,7 @@ use base64::Engine as _;
 use gvm_gmp::schedule::{
     parse_icalendar_with_timezone, ScheduleStartObservation, ScheduleTimestamp,
 };
-use gvm_gmp::{AliveTest, TargetHost, TargetHosts, TargetPortRange};
+use gvm_gmp::{AliveTest, PortRangeType, TargetHost, TargetHosts, TargetPortRange};
 use uuid::Uuid;
 
 use crate::command_parser::{parse_command, parse_element_text, ParsedCommand, ParsedElement};
@@ -1160,7 +1160,52 @@ impl SessionHandler {
             (None, None, None)
         };
 
+        let port_range_fields = if resource_type == "port_range" {
+            let port_list_id = match optional_child_uuid(cmd, "port_list") {
+                Ok(Some(port_list_id)) => port_list_id,
+                Ok(None) => {
+                    return error_response(&cmd.name, 400, "Missing required element: port_list");
+                }
+                Err(message) => return error_response(&cmd.name, 400, message),
+            };
+            if store.get_typed(&port_list_id, "port_list").is_none() {
+                return error_response(&cmd.name, 404, "Port list not found");
+            }
+            let Some(start) = cmd
+                .child_text("start")
+                .and_then(|value| value.parse::<u16>().ok())
+                .filter(|value| *value != 0)
+            else {
+                return error_response(&cmd.name, 400, "Invalid port range start");
+            };
+            let Some(end) = cmd
+                .child_text("end")
+                .and_then(|value| value.parse::<u16>().ok())
+                .filter(|value| *value != 0)
+            else {
+                return error_response(&cmd.name, 400, "Invalid port range end");
+            };
+            if start > end {
+                return error_response(&cmd.name, 400, "Port range start exceeds end");
+            }
+            let Some(range_type) = cmd
+                .child_text("type")
+                .and_then(|value| value.parse::<PortRangeType>().ok())
+            else {
+                return error_response(&cmd.name, 400, "Invalid port range type");
+            };
+            Some((port_list_id, start, end, range_type))
+        } else {
+            None
+        };
+
         let mut resource = Resource::new(resource_type, &name);
+        if let Some((port_list_id, start, end, range_type)) = port_range_fields {
+            resource.set_attr("port_list_id", &port_list_id.to_string());
+            resource.set_attr("start", &start.to_string());
+            resource.set_attr("end", &end.to_string());
+            resource.set_attr("type", range_type.as_port_range_type());
+        }
 
         let (target_port_list_id, target_port_range) = if resource_type == "target" {
             let port_list_id = match optional_child_uuid(cmd, "port_list") {
@@ -1777,6 +1822,8 @@ impl SessionHandler {
                     resource.to_integration_config_xml(cmd.attr("details") == Some("1"))
                 } else if cmd.name == "get_targets" {
                     resource.to_xml_with_details(cmd.attr("details") == Some("1"))
+                } else if cmd.name == "get_port_lists" {
+                    store.render_port_list_xml(&resource, cmd.attr("details") == Some("1"))
                 } else {
                     store.render_resource_xml(&resource)
                 };
@@ -1845,6 +1892,12 @@ impl SessionHandler {
             resources
                 .iter()
                 .map(|resource| resource.to_xml_with_details(details))
+                .collect()
+        } else if cmd.name == "get_port_lists" {
+            let details = cmd.attr("details") == Some("1");
+            resources
+                .iter()
+                .map(|resource| store.render_port_list_xml(resource, details))
                 .collect()
         } else {
             resources

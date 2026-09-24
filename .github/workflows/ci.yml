@@ -14,6 +14,9 @@ on:
     # Keep the workflow running for docs-only PRs so branch protection can
     # require the aggregate `CI` status check without waiting forever.
     branches: [main, devel]
+  # Release qualification dispatches this complete workflow at the selected
+  # protected-main commit. The E2E handoff remains restricted to push events.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -120,7 +123,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2
         with:
           tool: cargo-llvm-cov
       - name: Verify the controlled coverage threshold regression
@@ -141,7 +144,10 @@ jobs:
             -r .github/requirements/coverage.txt
           python -m coverage run --branch \
             --include='scripts/sbom_postprocess.py,scripts/check_sbom_quality.py' \
-            -m unittest tests.test_sbom_postprocess tests.test_sbom_quality
+            -m unittest \
+            tests.test_sbom_postprocess \
+            tests.test_sbom_quality \
+            tests.test_workflow_policy
           python -m coverage report --fail-under=100
           python -m coverage xml -o python-coverage.xml
       - name: Publish coverage reports
@@ -156,7 +162,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload coverage to Codecov (advisory)
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: lcov.info,python-coverage.xml
           disable_search: true
@@ -249,3 +255,4 @@ jobs:
           repository: clawosiris/rust-gvm-e2e-tests
           workflow: e2e.yml
           ref: main
+          inputs: '{"rust-gvm-ref":"${{ github.sha }}"}'

@@ -400,13 +400,13 @@ async fn next_client_credential_store_helpers_send_expected_commands() {
 
     server.clear_history();
     let response = client
-        .get_credential_stores_with_opts(GetCredentialStoresRequest {
+        .get_credential_stores(GetCredentialStoresRequest {
             filter_string: Some("name=Local".into()),
             filter_id: Some(EntityId::new("filter-1").expect("valid id")),
             details: Some(false),
         })
         .await
-        .expect("get_credential_stores_with_opts should succeed");
+        .expect("filtered get_credential_stores should succeed");
     assert_eq!(response.status, 200);
 
     let history = server.command_history();

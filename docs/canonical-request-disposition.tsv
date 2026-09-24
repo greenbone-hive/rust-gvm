@@ -536,7 +536,7 @@ facade	crates/gvm-client/src/typed/security.rs	get_cpe	canonical-request	#648 re
 facade	crates/gvm-client/src/typed/security.rs	get_cpes	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
 facade	crates/gvm-client/src/typed/security.rs	get_credential_store	retained-construction	Retained for discoverability; accepts the canonical GetCredentialStoreRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	get_credential_stores	retained-construction	Retained for discoverability; accepts the canonical GetCredentialStoresRequest unchanged.
-facade	crates/gvm-client/src/typed/security.rs	get_credential_stores_with_opts	retained-construction	Retained for compatibility; accepts the canonical GetCredentialStoresRequest unchanged.
+facade	crates/gvm-client/src/typed/security.rs	get_credential_stores_with_opts	removed	Removed by #678 as a duplicate facade; use get_credential_stores with the complete GetCredentialStoresRequest.
 facade	crates/gvm-client/src/typed/security.rs	get_credentials	retained-construction	Retained for discoverability; accepts the canonical GetCredentialsRequest unchanged.
 facade	crates/gvm-client/src/typed/security.rs	get_cve	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
 facade	crates/gvm-client/src/typed/security.rs	get_cves	canonical-request	#648 request-by-value facade delegates unchanged to execute and preserves the canonical request response association.
@@ -1007,8 +1007,8 @@ request	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificateRequest
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	GetTlsCertificatesRequest	canonical-request	Complete list input owns selector, filter, detail, and certificate-data controls with final validation.
 request	crates/gvm-gmp/src/commands/tls_certificates.rs	ModifyTlsCertificateRequest	canonical-request	Complete supported metadata/trust mutation input with clear/preserve semantics and direct encoding.
 request	crates/gvm-gmp/src/commands/trashcan.rs	EmptyTrashcanRequest	canonical-request	Complete #664 cleanup request owns direct metadata, encoding, and its typed response.
-request	crates/gvm-gmp/src/commands/trashcan.rs	RestoreRequest	canonical-request	Complete #664 cleanup request owns the restore identifier, direct metadata, encoding, and its typed response.
 request	crates/gvm-gmp/src/commands/trashcan.rs	RestoreFromTrashcanRequest	removed	Removed by #664 as a byte-identical forwarding alias; pinned gvmd exposes only the restore operation modeled by RestoreRequest.
+request	crates/gvm-gmp/src/commands/trashcan.rs	RestoreRequest	canonical-request	Complete #664 cleanup request owns the restore identifier, direct metadata, encoding, and its typed response.
 request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingRequest	canonical-request	Complete #664 detail request owns its identifier and source-faithful get_settings response association.
 request	crates/gvm-gmp/src/commands/user_settings.rs	GetUserSettingsRequest	canonical-request	Complete #664 list request owns filtering, pagination, sorting, validation, metadata, direct encoding, and its typed response.
 request	crates/gvm-gmp/src/commands/user_settings.rs	ModifyUserSettingRequest	canonical-request	Complete #664 mutation owns its selector, confidential value, validation, shared source-faithful encoding, and typed response.

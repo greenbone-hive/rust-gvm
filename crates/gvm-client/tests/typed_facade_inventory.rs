@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const INTEGRATION_COVERED: &[&str] = &[
     "get_version",
@@ -123,7 +123,6 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_timezones",
     "get_credential_stores",
     "verify_credential_store",
-    "get_credential_stores_with_opts",
     "get_credential_store",
     "get_nvts",
     "get_nvt",
@@ -278,6 +277,16 @@ const INTEGRATION_COVERED: &[&str] = &[
 const COMPILE_ONLY: &[&str] = &[];
 const REQUIRES_INTEGRATION: &[&str] = &[];
 
+const FROZEN_TICKET_HELPERS: [&str; 3] = ["create_ticket", "get_tickets", "modify_ticket"];
+
+#[derive(Debug)]
+struct TypedMethod {
+    name: String,
+    source: PathBuf,
+    signature: String,
+    body: String,
+}
+
 fn typed_facade_sources() -> Vec<(PathBuf, String)> {
     let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut paths = vec![source_root.join("typed.rs")];
@@ -324,6 +333,57 @@ fn public_typed_methods() -> BTreeSet<String> {
     methods
 }
 
+fn method_end(source: &str, body_start: usize, path: &Path, method: &str) -> usize {
+    let mut depth = 0_usize;
+    for (offset, byte) in source.as_bytes()[body_start..].iter().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' => {
+                depth = depth.checked_sub(1).unwrap_or_else(|| {
+                    panic!("unbalanced method body for {method} in {}", path.display())
+                });
+                if depth == 0 {
+                    return body_start + offset + 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!(
+        "unterminated method body for {method} in {}",
+        path.display()
+    );
+}
+
+fn typed_methods() -> Vec<TypedMethod> {
+    let mut methods = Vec::new();
+    for (path, source) in typed_facade_sources() {
+        let mut offset = 0_usize;
+        while let Some(relative_start) = source[offset..].find("pub async fn ") {
+            let start = offset + relative_start;
+            let name_start = start + "pub async fn ".len();
+            let name_end = source[name_start..]
+                .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+                .map(|relative| name_start + relative)
+                .expect("public typed method name should terminate");
+            let name = source[name_start..name_end].to_string();
+            let body_start = source[start..]
+                .find('{')
+                .map(|relative| start + relative)
+                .unwrap_or_else(|| panic!("{name} in {} has no body", path.display()));
+            let end = method_end(&source, body_start, &path, &name);
+            methods.push(TypedMethod {
+                name,
+                source: path.clone(),
+                signature: source[start..body_start].to_string(),
+                body: source[body_start..end].to_string(),
+            });
+            offset = end;
+        }
+    }
+    methods
+}
+
 fn normalized_integration_sources() -> String {
     [
         include_str!("audit_integration.rs"),
@@ -346,7 +406,7 @@ fn normalized_integration_sources() -> String {
 #[test]
 fn every_public_typed_helper_has_exactly_one_enforced_classification() {
     let public = public_typed_methods();
-    assert_eq!(public.len(), 262);
+    assert_eq!(public.len(), 261);
     let mut classified = BTreeSet::new();
 
     for (class, methods) in [
@@ -374,32 +434,69 @@ fn every_public_typed_helper_has_exactly_one_enforced_classification() {
 
 #[test]
 fn execution_paths_preserve_the_typed_facade_contract() {
-    let sources = typed_facade_sources();
-    let direct_execute_count = sources
-        .iter()
-        .map(|(_, source)| source.matches("self.execute(").count())
-        .sum::<usize>();
-    let raw_send_sources = sources
-        .iter()
-        .filter(|(_, source)| source.contains("self.send("))
-        .collect::<Vec<_>>();
-    let raw_send_count = raw_send_sources
-        .iter()
-        .map(|(_, source)| source.matches("self.send(").count())
-        .sum::<usize>();
+    let methods = typed_methods();
+    assert_eq!(methods.len(), 261);
 
-    assert_eq!(direct_execute_count, 259);
-    assert_eq!(raw_send_count, 3);
-    assert_eq!(raw_send_sources.len(), 1);
+    let mut execute_helpers = BTreeSet::new();
+    let mut raw_helpers = BTreeSet::new();
+    for method in &methods {
+        let execute_count = method.body.matches("self.execute(request).await").count();
+        let send_count = method.body.matches("self.send(").count();
+        assert!(
+            !method.body.contains("self.call("),
+            "typed helper {} in {} must not introduce a raw call path",
+            method.name,
+            method.source.display()
+        );
+
+        if FROZEN_TICKET_HELPERS.contains(&method.name.as_str()) {
+            assert_eq!(
+                execute_count, 0,
+                "ticket helper {} migrated unexpectedly",
+                method.name
+            );
+            assert_eq!(
+                send_count, 1,
+                "ticket helper {} must keep one raw send",
+                method.name
+            );
+            assert_eq!(
+                method.source.file_name().and_then(|name| name.to_str()),
+                Some("tickets.rs")
+            );
+            raw_helpers.insert(method.name.clone());
+        } else {
+            assert!(
+                method.signature.contains("request:") && method.signature.contains("Request"),
+                "non-ticket helper {} in {} must accept one canonical request value",
+                method.name,
+                method.source.display()
+            );
+            assert_eq!(
+                execute_count,
+                1,
+                "non-ticket helper {} in {} must delegate exactly once to execute",
+                method.name,
+                method.source.display()
+            );
+            assert_eq!(
+                send_count,
+                0,
+                "non-ticket helper {} in {} must not use raw send",
+                method.name,
+                method.source.display()
+            );
+            execute_helpers.insert(method.name.clone());
+        }
+    }
+
+    assert_eq!(execute_helpers.len(), 258);
     assert_eq!(
-        raw_send_sources[0]
-            .0
-            .file_name()
-            .and_then(|name| name.to_str()),
-        Some("tickets.rs"),
-        "only the frozen ticket facade may bypass typed execution"
+        raw_helpers,
+        FROZEN_TICKET_HELPERS.map(str::to_string).into()
     );
 
+    let sources = typed_facade_sources();
     let scan = sources
         .iter()
         .find(|(path, _)| path.file_name().is_some_and(|name| name == "scan.rs"))

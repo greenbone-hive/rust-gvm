@@ -7,6 +7,11 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `README.md`: public positioning, crate overview, quick-start examples.
 - `docs/ROADMAP.md`: support direction, compatibility policy, and issue tracking.
 - `docs/STATUS.md`: implementation status, version support snapshot, and coverage notes.
+- `docs/canonical-request-convergence-audit.md`: final #602/#678 public-surface
+  counts, v0.6.0 migration baseline, escape-hatch boundary, and reproducible
+  inventory commands.
+- `docs/v0.7.0-migration.md`: complete caller migration from the published
+  v0.6.0 request surface.
 - `docs/gvmd-transport-analysis.md`: gvmd transport model and why GMP is handled as XML over persistent sockets.
 - `docs/target-request-gvmd-evidence.md`: pinned public gvmd schema/source evidence for the canonical target reference slice.
 - `docs/alternate-target-request-gvmd-evidence.md`: pinned gvmd evidence for canonical OCI-image and web-application target requests.
@@ -82,7 +87,8 @@ The main client path is:
 ## Crate Ownership
 
 - `crates/gvm-protocol`: XML command builder, raw response parser, `Request` trait, streaming XML completeness detection.
-- `crates/gvm-gmp`: canonical typed requests, transitional command builders, protocol enums, reusable domain types, and typed response models.
+- `crates/gvm-gmp`: canonical typed requests, the frozen ticket builders,
+  protocol enums, reusable domain types, and typed response models.
 - `crates/gvm-client`: high-level async API, version negotiation, `GmpVersioned`, version-gated traits, typed convenience methods.
 - `crates/gvm-connection`: transport abstraction and concrete Unix/TLS/SSH connections.
 - `crates/gvm-mock-server`: programmable mock gvmd with echo, fixture, stateful, scenario, fault, history, and version behavior.
@@ -142,6 +148,11 @@ Changing client behavior:
 - `crates/gvm-client/src/version.rs`: version parsing, mapping, command minimums, command support checks.
 - `crates/gvm-client/src/error.rs`: high-level error variants and display behavior.
 - Tests live under `crates/gvm-client/tests/`.
+- `canonical_request_surface_inventory.rs` protects the exact 1,026-row
+  disposition, retained rationale, removed-symbol, frozen-ticket, raw escape,
+  and v0.6.0 mapping contracts.
+- `typed_facade_inventory.rs` parses every public typed helper and enforces the
+  258 canonical execute delegates plus three frozen ticket raw paths.
 
 Changing transport behavior:
 
@@ -186,6 +197,9 @@ When fixing a mismatch with real gvmd, check all of these before calling it done
 
 ## Targeted Tests
 
+- README checked examples: `cargo test -p gvm-client --test readme_examples`
+- Canonical request inventory: `cargo test -p gvm-client --test canonical_request_surface_inventory`
+- Typed facade inventory: `cargo test -p gvm-client --test typed_facade_inventory`
 - Command XML only: `cargo test -p gvm-gmp --test test_<domain>`
 - Response model only: `cargo test -p gvm-gmp <response_or_domain_filter>`
 - Client typed API: `cargo test -p gvm-client`
@@ -200,5 +214,6 @@ When fixing a mismatch with real gvmd, check all of these before calling it done
 - GMP is not HTTP. gvmd exposes XML over persistent Unix/TCP/TLS sockets; see `docs/gvmd-transport-analysis.md`.
 - `python-gvm` compatibility is useful, but current GMP/GVMD behavior is the source of truth for protocol modeling.
 - The mock server is a test tool, not proof that behavior matches gvmd.
-- Raw `send`/`call` exists so unsupported or not-yet-modeled GMP details can still be reached without adding premature wrappers.
+- Raw `send`/`call` and custom codecs exist so unsupported or not-yet-modeled
+  GMP details can still be reached without adding premature wrappers.
 - `GmpNext` is the forward-compatible bucket for newer supported versions, not a guarantee that every new command is modeled.
