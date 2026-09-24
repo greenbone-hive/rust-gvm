@@ -134,7 +134,7 @@ pub use permission::{
 };
 pub use port_list::{
     CreatePortListResponse, CreatePortRangeResponse, DeletePortListResponse,
-    DeletePortRangeResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
+    DeletePortRangeResponse, GetPortListsResponse, ModifyPortListResponse, PortList, PortRange,
 };
 pub use preference::{GetPreferencesResponse, Preference, PreferenceNvt};
 pub use report::{

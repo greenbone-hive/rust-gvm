@@ -31,8 +31,8 @@ class SbomPostprocessTests(unittest.TestCase):
             '[workspace]\n[workspace.package]\nrepository = "https://example.com/repo"\n'
         )
 
-        self.assertEqual(load_workspace_supplier(temp_dir / "missing.toml"), "clawosiris")
-        self.assertEqual(load_workspace_supplier(cargo_toml), "clawosiris")
+        self.assertEqual(load_workspace_supplier(temp_dir / "missing.toml"), "greenbone-hive")
+        self.assertEqual(load_workspace_supplier(cargo_toml), "greenbone-hive")
         self.assertEqual(normalize_spec_version(None), "1.5")
         self.assertEqual(normalize_spec_version("1.6"), "1.6")
 
@@ -121,7 +121,7 @@ class SbomPostprocessTests(unittest.TestCase):
         self.assertEqual(nested["licenses"], [{"expression": "AGPL-3.0-or-later"}])
         self.assertEqual(
             nested["externalReferences"],
-            [{"type": "vcs", "url": "https://github.com/clawosiris/rust-gvm"}],
+            [{"type": "vcs", "url": "https://github.com/greenbone-hive/rust-gvm"}],
         )
         self.assertNotIn("compositions", transformed)
 

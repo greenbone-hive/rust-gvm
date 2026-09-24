@@ -1,5 +1,12 @@
 # Phase 4: Response Models Implementation Spec
 
+> [!NOTE]
+> Archived implementation specification. The modules-to-create list, branch,
+> and execution instructions below record completed historical work; they are
+> not current-state guidance. See [`docs/STATUS.md`](docs/STATUS.md),
+> [`docs/agent-code-map.md`](docs/agent-code-map.md), and the current
+> `crates/gvm-gmp/src/responses/` tree.
+
 ## Task
 
 Implement Phase 4 of the response models OpenSpec for rust-gvm. This adds typed response models for all remaining GMP entities.

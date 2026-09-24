@@ -40,15 +40,17 @@ Rather than waiting for Greenbone to change gvmd itself, we can build a gateway 
 
 - `gvm-connection`: Unix socket, verified TLS, and SSH transports
 - `gvm-client`: async client with version negotiation and authentication
-- `gvm-gmp`: typed GMP command builders
-- `gvm-protocol`: response parsing and XML extraction
+- `gvm-gmp`: canonical complete requests, direct codecs, and typed responses
+- `gvm-protocol`: raw response parsing, XML extraction, and bounded framing
 
 A proxy service can stay relatively thin:
 
 1. Accept REST or gRPC requests.
-2. Map them to `gvm-gmp` command builders.
-3. Send them via `gvm-client` and `gvm-connection` to gvmd.
-4. Parse the XML response.
+2. Map them to canonical `gvm-gmp` request values.
+3. Execute them through `gvm-client` over the selected `gvm-connection`
+   transport.
+4. Parse the associated typed response, using the raw escape hatch only where
+   the proxy intentionally exposes an unmodeled detail.
 5. Return structured JSON or Protobuf to the caller.
 
 ## 4. API Frontend Options
@@ -278,7 +280,7 @@ services:
       - gvmd-socket:/run/gvmd
 
   gvm-gateway:
-    image: ghcr.io/clawosiris/gvm-gateway:latest
+    image: ghcr.io/<owner>/gvm-gateway:<version>
     depends_on: [gvmd]
     volumes:
       - gvmd-socket:/run/gvmd:ro

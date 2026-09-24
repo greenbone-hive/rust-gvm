@@ -9,6 +9,42 @@ use std::path::{Path, PathBuf};
 
 const LEDGER_PATH: &str = "docs/canonical-request-disposition.tsv";
 const UPDATE_ENV: &str = "UPDATE_CANONICAL_REQUEST_DISPOSITION";
+const MIGRATION_GUIDE_PATH: &str = "docs/v0.7.0-migration.md";
+
+const V06_REMOVED_FACADES: [&str; 32] = [
+    "clone_oci_image_target_parsed",
+    "clone_web_application_target_parsed",
+    "create_oci_image_target_parsed",
+    "create_report_format",
+    "create_typed_schedule",
+    "create_web_application_target_parsed",
+    "delete_oci_image_target_parsed",
+    "delete_web_application_target_parsed",
+    "get_credential_stores_with_opts",
+    "get_features_parsed",
+    "get_help_with_mode",
+    "get_integration_config_parsed",
+    "get_integration_configs_parsed",
+    "get_oci_image_target_parsed",
+    "get_oci_image_targets_parsed",
+    "get_report_applications_parsed",
+    "get_report_configs_parsed",
+    "get_report_cves_parsed",
+    "get_report_export_with_opts",
+    "get_report_hosts_parsed",
+    "get_report_operating_systems_parsed",
+    "get_report_ports_parsed",
+    "get_report_vulnerabilities",
+    "get_web_application_target_parsed",
+    "get_web_application_targets_parsed",
+    "modify_integration_config_parsed",
+    "modify_oci_image_target_parsed",
+    "modify_typed_schedule",
+    "modify_web_application_target_parsed",
+    "restore_from_trashcan",
+    "sync_config",
+    "sync_scan_config",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Surface {
@@ -157,6 +193,35 @@ fn collect_surfaces(root: &Path) -> BTreeSet<Surface> {
     surfaces
 }
 
+fn expected_ticket_surfaces() -> BTreeSet<Surface> {
+    [
+        ("builder", "clone_ticket"),
+        ("builder", "create_ticket"),
+        ("builder", "delete_ticket"),
+        ("builder", "get_ticket"),
+        ("builder", "get_tickets"),
+        ("builder", "modify_ticket"),
+        ("facade", "create_ticket"),
+        ("facade", "get_tickets"),
+        ("facade", "modify_ticket"),
+        ("options", "CreateTicketOpts"),
+        ("options", "GetTicketsOpts"),
+        ("options", "ModifyTicketOpts"),
+    ]
+    .into_iter()
+    .map(|(kind, symbol)| Surface {
+        kind: kind.to_string(),
+        source: if kind == "facade" {
+            "crates/gvm-client/src/typed/tickets.rs"
+        } else {
+            "crates/gvm-gmp/src/commands/tickets.rs"
+        }
+        .to_string(),
+        symbol: symbol.to_string(),
+    })
+    .collect()
+}
+
 fn parse_ledger(contents: &str) -> BTreeMap<Surface, Disposition> {
     let allowed_kinds = ["builder", "facade", "options", "request"];
     let allowed_dispositions = [
@@ -257,24 +322,10 @@ fn render_ledger(actual: &BTreeSet<Surface>, existing: &BTreeMap<Surface, Dispos
     output
 }
 
-#[test]
-fn every_public_request_surface_has_an_explicit_disposition() {
-    let root = workspace_root();
-    let ledger_path = root.join(LEDGER_PATH);
-    let actual = collect_surfaces(&root);
-
-    if std::env::var(UPDATE_ENV).as_deref() == Ok("1") {
-        let existing = fs::read_to_string(&ledger_path)
-            .ok()
-            .map(|contents| parse_ledger(&contents))
-            .unwrap_or_default();
-        fs::write(&ledger_path, render_ledger(&actual, &existing))
-            .unwrap_or_else(|error| panic!("failed to update {}: {error}", ledger_path.display()));
-    }
-
-    let contents = fs::read_to_string(&ledger_path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", ledger_path.display()));
-    let ledger = parse_ledger(&contents);
+fn assert_source_correspondence(
+    actual: &BTreeSet<Surface>,
+    ledger: &BTreeMap<Surface, Disposition>,
+) {
     let active = ledger
         .iter()
         .filter(|(_, disposition)| disposition.value != "removed")
@@ -294,7 +345,7 @@ fn every_public_request_surface_has_an_explicit_disposition() {
         "public surfaces missing from {LEDGER_PATH}"
     );
     assert_eq!(
-        active.difference(&actual).collect::<Vec<_>>(),
+        active.difference(actual).collect::<Vec<_>>(),
         Vec::<&Surface>::new(),
         "active ledger entries no longer exist; mark them removed with a rationale"
     );
@@ -302,30 +353,164 @@ fn every_public_request_surface_has_an_explicit_disposition() {
         removed_but_present.is_empty(),
         "removed ledger entries still exist in source: {removed_but_present:#?}"
     );
+}
 
-    for (surface, disposition) in &ledger {
-        if surface.source.ends_with("/tickets.rs") {
-            assert_eq!(
-                disposition.value, "frozen-ticket",
-                "the frozen ticket surface cannot migrate under #602: {surface:?}"
+fn assert_retained_surface_contract(ledger: &BTreeMap<Surface, Disposition>) {
+    let frozen = ledger
+        .iter()
+        .filter(|(_, disposition)| disposition.value == "frozen-ticket")
+        .map(|(surface, _)| surface.clone())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(frozen, expected_ticket_surfaces());
+
+    let active_construction = ledger
+        .iter()
+        .filter(|(surface, disposition)| {
+            matches!(surface.kind.as_str(), "builder" | "options") && disposition.value != "removed"
+        })
+        .map(|(surface, _)| (surface.kind.as_str(), surface.symbol.as_str()))
+        .collect::<BTreeSet<_>>();
+    let expected_construction = [
+        ("builder", "clone_ticket"),
+        ("builder", "create_ticket"),
+        ("builder", "delete_ticket"),
+        ("builder", "get_ticket"),
+        ("builder", "get_tickets"),
+        ("builder", "modify_ticket"),
+        ("options", "AgentConfigOpts"),
+        ("options", "CreateTicketOpts"),
+        ("options", "GetTicketsOpts"),
+        ("options", "ModifyTicketOpts"),
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    assert_eq!(active_construction, expected_construction);
+
+    for (surface, disposition) in ledger
+        .iter()
+        .filter(|(_, disposition)| disposition.value == "retained-construction")
+    {
+        assert!(
+            !disposition
+                .rationale
+                .to_ascii_lowercase()
+                .contains("compatibility"),
+            "retention must have a concrete construction/discoverability reason: {surface:?}"
+        );
+        if surface.symbol == "AgentConfigOpts" {
+            assert_eq!(surface.kind, "options");
+            assert!(disposition.rationale.contains("shared"));
+        } else {
+            assert_eq!(surface.kind, "facade");
+            assert!(surface.source.starts_with("crates/gvm-client/src/typed/"));
+            assert!(
+                disposition.rationale.contains("accepts")
+                    || disposition.rationale.contains("Accepts"),
+                "retained facade rationale must record canonical request acceptance: {surface:?}"
             );
+            assert!(disposition
+                .rationale
+                .to_ascii_lowercase()
+                .contains("request"));
         }
     }
+}
 
+fn assert_disposition_counts(ledger: &BTreeMap<Surface, Disposition>) {
     let counts = ledger
         .values()
         .fold(BTreeMap::new(), |mut counts, disposition| {
             *counts.entry(disposition.value.as_str()).or_insert(0_usize) += 1;
             counts
         });
-    assert_eq!(ledger.len(), 1026, "#664 disposition ledger total drifted");
+    assert_eq!(ledger.len(), 1026, "#678 disposition ledger total drifted");
     assert_eq!(
         counts.get("transitional").copied().unwrap_or_default(),
         0,
         "the completed #658-#664 inventory must contain zero transitional rows"
     );
     assert_eq!(counts.get("canonical-request"), Some(&409));
-    assert_eq!(counts.get("removed"), Some(&474));
-    assert_eq!(counts.get("retained-construction"), Some(&131));
+    assert_eq!(counts.get("removed"), Some(&475));
+    assert_eq!(counts.get("retained-construction"), Some(&130));
     assert_eq!(counts.get("frozen-ticket"), Some(&12));
+}
+
+#[test]
+fn every_public_request_surface_has_an_explicit_disposition() {
+    let root = workspace_root();
+    let ledger_path = root.join(LEDGER_PATH);
+    let actual = collect_surfaces(&root);
+
+    if std::env::var(UPDATE_ENV).as_deref() == Ok("1") {
+        let existing = fs::read_to_string(&ledger_path)
+            .ok()
+            .map(|contents| parse_ledger(&contents))
+            .unwrap_or_default();
+        fs::write(&ledger_path, render_ledger(&actual, &existing))
+            .unwrap_or_else(|error| panic!("failed to update {}: {error}", ledger_path.display()));
+    }
+
+    let contents = fs::read_to_string(&ledger_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", ledger_path.display()));
+    let ledger = parse_ledger(&contents);
+    assert_eq!(
+        render_ledger(&actual, &ledger),
+        contents,
+        "{LEDGER_PATH} must be a sorted, reproducibly rendered inventory"
+    );
+    assert_source_correspondence(&actual, &ledger);
+    assert_retained_surface_contract(&ledger);
+    assert_disposition_counts(&ledger);
+}
+
+#[test]
+fn raw_escape_hatches_and_unsupported_sync_boundary_are_explicit() {
+    let root = workspace_root();
+    let client = fs::read_to_string(root.join("crates/gvm-client/src/lib.rs"))
+        .expect("client source should be readable");
+    let protocol_request = fs::read_to_string(root.join("crates/gvm-protocol/src/request.rs"))
+        .expect("protocol request source should be readable");
+    assert!(protocol_request.contains("pub trait Request"));
+    assert_eq!(client.matches("pub async fn send<R: Request>").count(), 2);
+    assert_eq!(client.matches("pub async fn call<R: Request>").count(), 2);
+
+    let actual = collect_surfaces(&root);
+    for unsupported in [
+        "SyncConfigRequest",
+        "RestoreFromTrashcanRequest",
+        "sync_config",
+        "sync_scan_config",
+        "restore_from_trashcan",
+    ] {
+        assert!(
+            actual.iter().all(|surface| surface.symbol != unsupported),
+            "unsupported or redundant surface is still public: {unsupported}"
+        );
+    }
+}
+
+#[test]
+fn v06_removed_facades_have_explicit_migration_mappings() {
+    let guide = fs::read_to_string(workspace_root().join(MIGRATION_GUIDE_PATH))
+        .expect("v0.7 migration guide should be readable");
+    let normalized_guide = guide.split_whitespace().collect::<Vec<_>>().join(" ");
+    for symbol in V06_REMOVED_FACADES {
+        assert!(
+            guide.contains(&format!("`{symbol}`")),
+            "{MIGRATION_GUIDE_PATH} must map removed v0.6.0 facade {symbol}"
+        );
+    }
+    for required_audit_fact in [
+        "417 public command-construction symbols",
+        "407 are removed",
+        "200 typed-facade names",
+        "165 now take one complete request value",
+        "32 are removed or renamed",
+        "three frozen ticket helpers",
+    ] {
+        assert!(
+            normalized_guide.contains(required_audit_fact),
+            "{MIGRATION_GUIDE_PATH} is missing audited baseline fact {required_audit_fact:?}"
+        );
+    }
 }

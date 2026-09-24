@@ -863,12 +863,6 @@ pub trait GmpNextCommands {
         request: VerifyCredentialStoreRequest,
     ) -> Result<VerifyCredentialStoreResponse, GvmError>;
 
-    /// List credential stores with optional filters.
-    async fn get_credential_stores_with_opts(
-        &mut self,
-        request: GetCredentialStoresRequest,
-    ) -> Result<GetCredentialStoresResponse, GvmError>;
-
     /// Get a single credential store.
     async fn get_credential_store(
         &mut self,
@@ -1412,13 +1406,6 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         request: VerifyCredentialStoreRequest,
     ) -> Result<VerifyCredentialStoreResponse, GvmError> {
         self.0.verify_credential_store(request).await
-    }
-
-    async fn get_credential_stores_with_opts(
-        &mut self,
-        request: GetCredentialStoresRequest,
-    ) -> Result<GetCredentialStoresResponse, GvmError> {
-        self.0.get_credential_stores_with_opts(request).await
     }
 
     async fn get_credential_store(

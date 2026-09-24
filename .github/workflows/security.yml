@@ -17,6 +17,9 @@ on:
   schedule:
     # Run weekly on Monday at 06:00 UTC
     - cron: "0 6 * * 1"
+  # Release qualification dispatches this complete workflow at the selected
+  # protected-main commit.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,7 +40,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2
         with:
           tool: cargo-audit@0.22.1
       - name: Run cargo-audit
@@ -53,7 +56,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2
         with:
           tool: cargo-machete@0.9.1
       - name: Run cargo-machete
@@ -66,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # cargo-vet
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # cargo-vet
         with:
           tool: cargo-vet
       - name: Run cargo-vet
@@ -84,14 +87,24 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - name: Install pinned release verification dependencies
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all:
+          -r .github/requirements/release.txt
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2
         with:
           tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
 
-      - name: Test SBOM policy helpers
-        run: python3 -B -m unittest tests.test_sbom_postprocess tests.test_sbom_quality -q
+      - name: Test SBOM and release policy helpers
+        run: >-
+          python3 -B -m unittest
+          tests.test_sbom_postprocess
+          tests.test_sbom_quality
+          tests.test_verify_release
+          tests.test_wait_for_release_run
+          -q
 
       - name: Generate CycloneDX SBOMs
         run: >-
@@ -133,7 +146,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # cargo-geiger
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # cargo-geiger
         with:
           tool: cargo-geiger
       - name: Generate geiger reports (all workspace crates)
@@ -162,7 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # cargo-geiger
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # cargo-geiger
         with:
           tool: cargo-geiger
       - name: Fail if workspace crates use unsafe
@@ -222,7 +235,7 @@ jobs:
         # Making this non-blocking until code scanning is enabled.
         if: always()
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: semgrep.sarif
 

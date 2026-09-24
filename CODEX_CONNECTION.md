@@ -1,5 +1,12 @@
 # Task: Implement gvm-connection Crate (Unix Socket Transport)
 
+> [!NOTE]
+> Archived implementation prompt. Its proposed API, MSRV, and implementation
+> steps describe an earlier development snapshot. See
+> [`docs/agent-code-map.md`](docs/agent-code-map.md),
+> [`docs/STATUS.md`](docs/STATUS.md), and the current crate sources/manifests for
+> v0.7 transport behavior.
+
 ## Context
 
 The `gvm-connection` crate provides async transport for communicating with gvmd. This task implements the Unix socket transport — the most common connection method and the one used by the mock server tests.

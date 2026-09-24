@@ -79,7 +79,8 @@ There is no native HTTP or gRPC transport to implement in `rust-gvm` today becau
 
 ## 5. Practical Recommendations
 
-1. Complete `TlsConnection` support to reach parity with existing gvmd connection modes.
+1. Maintain `TlsConnection` interoperability tests for verified server roots/SANs
+   and optional client identity as rustls and gvmd evolve.
 2. Improve incremental or streaming XML reads so large report responses do not need to be buffered fully in memory.
 3. Keep the transport abstraction centered on gvmd's real interfaces: Unix socket, SSH tunnel, and TLS.
 4. Watch upstream changes in gvmd, especially around newer HTTP-based scanner integrations, but do not assume that implies a client-facing HTTP API.

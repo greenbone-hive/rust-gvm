@@ -113,6 +113,29 @@ fn modify_target_request_preserves_atomic_and_scalar_updates() {
 }
 
 #[test]
+fn modify_target_comment_distinguishes_omission_replacement_and_clear() {
+    let omitted = ModifyTargetRequest::new(id("target-1"));
+    assert_eq!(
+        request_xml(&omitted),
+        "<modify_target target_id=\"target-1\"/>"
+    );
+
+    let mut replacement = ModifyTargetRequest::new(id("target-1"));
+    replacement.comment = Some("primary & <external>".into());
+    assert_eq!(
+        request_xml(&replacement),
+        "<modify_target target_id=\"target-1\"><comment>primary &amp; &lt;external&gt;</comment></modify_target>"
+    );
+
+    let mut clear = ModifyTargetRequest::new(id("target-1"));
+    clear.comment = Some(String::new());
+    assert_eq!(
+        request_xml(&clear),
+        "<modify_target target_id=\"target-1\"><comment></comment></modify_target>"
+    );
+}
+
+#[test]
 fn constructor_values_can_be_mutated_but_final_validation_is_authoritative() {
     let mut create = CreateTargetRequest::new("target", hosts(&["192.0.2.1"], &[]), direct_ports());
     create.ssh_credential_port = Some(ServicePort::new(2222).expect("valid port"));

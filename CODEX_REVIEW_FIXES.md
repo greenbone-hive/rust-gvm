@@ -1,5 +1,11 @@
 # CODEX TASK: Address code review findings
 
+> [!NOTE]
+> Archived review-fix prompt. It preserves the requested changes at that point
+> in development and must not be used as a description of the current reader,
+> connection, response, or client implementations. Start with
+> [`docs/agent-code-map.md`](docs/agent-code-map.md) and the current sources.
+
 Fix all issues identified in the Claude Code review, in priority order.
 
 ## 1. HIGH — Fix O(n²) re-parsing in XmlReader::check_complete

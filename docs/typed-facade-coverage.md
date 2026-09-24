@@ -13,8 +13,11 @@ classes. Its test discovers every Rust source in the private facade module
 directory, extracts every `pub async fn`, rejects duplicate and unknown entries,
 and fails when a new helper is not classified.
 It additionally requires every integration-covered name to appear as a direct
-method call in the client/mock integration suite.
-The enforced surface currently contains 262 names: 259 direct `execute`
+method call in the client/mock integration suite. The execution-path test
+parses each method body: every non-ticket signature must accept a canonical
+request and delegate exactly once to `execute`, while the exact three ticket
+methods must each use one raw `send` and no other helper may do so.
+The enforced surface currently contains 261 names: 258 direct `execute`
 delegates and three frozen ticket raw paths. Unsupported configuration sync and
 operating-system asset modification helpers are not part of the inventory.
 
