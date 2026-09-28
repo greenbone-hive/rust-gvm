@@ -234,9 +234,12 @@ pub struct ReportApplicationSummary {
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReportOperatingSystemSummary {
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub severity: Option<String>,
+    /// The best matching operating-system CPE reported by gvmd.
+    pub best_os_cpe: Option<String>,
+    /// The human-readable best matching operating-system text reported by gvmd.
+    pub best_os_txt: Option<String>,
+    /// Number of report hosts with this best operating-system match.
+    pub hosts_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -576,8 +579,17 @@ macro_rules! impl_report_summary {
 impl_report_summary!(ReportHostSummary);
 impl_report_summary!(ReportPortSummary);
 impl_report_summary!(ReportApplicationSummary);
-impl_report_summary!(ReportOperatingSystemSummary);
 impl_report_summary!(ReportCveSummary);
+
+impl ReportOperatingSystemSummary {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        Ok(Self {
+            best_os_cpe: node.optional_child_text("best_os_cpe"),
+            best_os_txt: node.optional_child_text("best_os_txt"),
+            hosts_count: optional_u32(node, "hosts_count", "operating_system.hosts_count")?,
+        })
+    }
+}
 
 fn report_detail_count_info(
     root: &crate::responses::common::XmlNode,
@@ -722,14 +734,6 @@ impl_report_detail_response!(
     "application_count"
 );
 impl_report_detail_response!(
-    GetReportOperatingSystemsResponse,
-    ReportOperatingSystemSummary,
-    "operating_system",
-    "operating_systems",
-    "report_operating_system_count",
-    "operating_system_count"
-);
-impl_report_detail_response!(
     GetReportCvesResponse,
     ReportCveSummary,
     "cve",
@@ -737,6 +741,31 @@ impl_report_detail_response!(
     "report_cve_count",
     "cve_count"
 );
+
+impl GetReportOperatingSystemsResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let container = root.child("operating_systems");
+        let items = container
+            .into_iter()
+            .flat_map(|container| container.children_named("operating_system"))
+            .map(ReportOperatingSystemSummary::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: report_detail_count_info(
+                &root,
+                "report_operating_system_count",
+                "operating_system_count",
+                container,
+                "operating_systems.count",
+            )?,
+        })
+    }
+}
 
 impl GetReportTlsCertificatesResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
@@ -1399,16 +1428,6 @@ mod tests {
         .expect("applications parse");
         assert_eq!(applications.items[0].name.as_deref(), Some("OpenSSH"));
 
-        let operating_systems =
-            GetReportOperatingSystemsResponse::from_response(&Response::from(
-                r#"<get_report_operating_systems_response status="200" status_text="OK">
-                    <operating_systems><operating_system id="os-1"><name>Debian</name><severity>5.5</severity></operating_system></operating_systems>
-                    <report_operating_system_count>1<filtered>1</filtered></report_operating_system_count>
-                </get_report_operating_systems_response>"#,
-            ))
-            .expect("operating systems parse");
-        assert_eq!(operating_systems.items[0].name.as_deref(), Some("Debian"));
-
         let cves = GetReportCvesResponse::from_response(&Response::from(
             r#"<get_report_cves_response status="200" status_text="OK">
                 <cves><cve id="cve-1"><name>CVE-2026-0001</name><severity>8.0</severity></cve></cves>
@@ -1417,6 +1436,48 @@ mod tests {
         ))
         .expect("cves parse");
         assert_eq!(cves.items[0].name.as_deref(), Some("CVE-2026-0001"));
+    }
+
+    #[test]
+    fn parses_current_report_operating_system_container_shape() {
+        let response = Response::from(
+            r#"<get_report_operating_systems_response status="200" status_text="OK">
+                <operating_systems>
+                    <operating_system>
+                        <best_os_cpe>cpe:/o:debian:debian_linux:12</best_os_cpe>
+                        <best_os_txt>Debian GNU/Linux 12 (bookworm)</best_os_txt>
+                        <hosts_count>2</hosts_count>
+                    </operating_system>
+                </operating_systems>
+                <report_operating_system_count>1<filtered>1</filtered></report_operating_system_count>
+            </get_report_operating_systems_response>"#,
+        );
+
+        let parsed = GetReportOperatingSystemsResponse::from_response(&response)
+            .expect("operating-system projection parses");
+
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(
+            parsed.items[0].best_os_cpe.as_deref(),
+            Some("cpe:/o:debian:debian_linux:12")
+        );
+        assert_eq!(
+            parsed.items[0].best_os_txt.as_deref(),
+            Some("Debian GNU/Linux 12 (bookworm)")
+        );
+        assert_eq!(parsed.items[0].hosts_count, Some(2));
+        assert_eq!(parsed.counts.total, Some(1));
+    }
+
+    #[test]
+    fn rejects_non_numeric_report_operating_system_hosts_count() {
+        let response = Response::from(
+            r#"<get_report_operating_systems_response status="200" status_text="OK">
+                <operating_systems><operating_system><hosts_count>two</hosts_count></operating_system></operating_systems>
+            </get_report_operating_systems_response>"#,
+        );
+
+        assert!(GetReportOperatingSystemsResponse::from_response(&response).is_err());
     }
 
     #[test]
