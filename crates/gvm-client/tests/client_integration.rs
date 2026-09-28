@@ -4662,7 +4662,11 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .get_report_operating_systems(GetReportOperatingSystemsRequest::new(created.id.clone()))
         .await
         .expect("report operating systems should parse");
-    assert_eq!(operating_systems.items[0].name.as_deref(), Some("Debian"));
+    assert_eq!(
+        operating_systems.items[0].best_os_txt.as_deref(),
+        Some("Debian")
+    );
+    assert_eq!(operating_systems.items[0].hosts_count, Some(2));
 
     let cves = client
         .get_report_cves(GetReportCvesRequest::new(created.id.clone()))
