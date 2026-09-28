@@ -456,8 +456,10 @@ mixed, repeated, binary/base64, absent-field, and large bounded report data.
 Projection and synchronous-export operations require GMP 22.8;
 `export_scan_report` requires positive XML-help discovery. Duplicate
 vulnerability names, `_parsed` suffixes, raw projection facades, and forwarding
-option variants are removed. Delta/alert-selected generation and streaming
-redesign remain separate work. See the
+option variants are removed. Operating-system projection rows decode gvmd's
+`best_os_cpe`, `best_os_txt`, and typed `hosts_count` fields rather than a
+generic summary. Delta/alert-selected generation and streaming redesign remain
+separate work. See the
 [pinned evidence](report-request-gvmd-evidence.md).
 
 | Crate | Status | Description |
