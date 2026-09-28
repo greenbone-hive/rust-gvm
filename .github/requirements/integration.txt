@@ -476,9 +476,9 @@ pynacl==1.6.2 \
     --hash=sha256:d29bfe37e20e015a7d8b23cfc8bd6aa7909c92a1b8f41ee416bbb3e79ef182b2 \
     --hash=sha256:fe9847ca47d287af41e82be1dd5e23023d3c31a951da134121ab02e42ac218c9
     # via paramiko
-python-gvm==27.8.0 \
-    --hash=sha256:1829a85d97522a8f6b000fe4b4bac59847ab338e839d868c93ea28326cce4eb4 \
-    --hash=sha256:a0e049e169989fbed97330e494751b4f619551c118ae0f2a830aa34b62a504af
+python-gvm==27.10.0 \
+    --hash=sha256:aca6ee74613a53f8c65d912dca8f58624c179d5a51ade5fff217a3cded2f2d2f \
+    --hash=sha256:c4e8b65586fa161e11aafa5a3aac2ce9a2acf0d5465e21b1324b14abc3a9cd68
     # via -r integration.in
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
