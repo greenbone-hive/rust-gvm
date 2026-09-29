@@ -395,8 +395,10 @@ All projections and synchronous export require GMP 22.8. Asynchronous export
 has a 22.7 lower bound but additionally requires positive XML-help discovery.
 The explicit response codecs preserve projection container/count variants,
 mixed-element order, nested XML, and binary/base64 payloads within the existing
-bounded response limit. Streaming redesign remains tracked separately by #4.
-See the [pinned gvmd evidence](report-request-gvmd-evidence.md).
+bounded response limit. In particular, operating-system projection rows expose
+gvmd's `best_os_cpe`, `best_os_txt`, and typed `hosts_count`, rather than a
+generic `id`/`name`/`severity` summary. Streaming redesign remains tracked
+separately by #4. See the [pinned gvmd evidence](report-request-gvmd-evidence.md).
 
 ## Agent family
 
