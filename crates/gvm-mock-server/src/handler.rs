@@ -3529,9 +3529,9 @@ impl SessionHandler {
             "get_report_operating_systems" => (
                 "operating_system",
                 vec![
-                    "<operating_system id=\"os-1\"><name>Debian</name><severity>5.5</severity></operating_system>"
+                    "<operating_system><best_os_cpe>cpe:/o:debian:debian_linux</best_os_cpe><best_os_txt>Debian</best_os_txt><hosts_count>2</hosts_count></operating_system>"
                         .to_string(),
-                    "<operating_system id=\"os-2\"><name>Ubuntu</name><severity>3.1</severity></operating_system>"
+                    "<operating_system><best_os_cpe>cpe:/o:canonical:ubuntu_linux</best_os_cpe><best_os_txt>Ubuntu</best_os_txt><hosts_count>1</hosts_count></operating_system>"
                         .to_string(),
                 ],
             ),
@@ -3583,6 +3583,9 @@ impl SessionHandler {
             ),
             "get_report_closed_cves" => format!(
                 "<closed_cves>{items}</closed_cves><report_closed_cve_count>{count}<filtered>{count}</filtered></report_closed_cve_count>"
+            ),
+            "get_report_operating_systems" => format!(
+                "<operating_systems>{items}</operating_systems><report_operating_system_count>{count}<filtered>{count}</filtered></report_operating_system_count>"
             ),
             _ => format!(
                 "{items}<{element_name}_count>{count}<filtered>{count}</filtered></{element_name}_count>"
