@@ -348,7 +348,7 @@ impl SessionHandler {
 
         // Record in history
         self.history
-            .record(cmd.name.clone(), xml.to_vec(), self.session_id);
+            .record_slice(cmd.name.clone(), xml, self.session_id);
 
         let mut delay: Option<Duration> = None;
         let mut override_response: Option<Vec<u8>> = None;

@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 
 use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
-use crate::history::{CommandHistory, CommandRecord};
+use crate::history::{CommandHistory, CommandHistoryLimits, CommandHistoryStats, CommandRecord};
 #[cfg(feature = "ssh")]
 use crate::listener::SshTestState;
 use crate::listener::{run_tcp_listener, run_unix_listener, ListenerState};
@@ -37,6 +37,7 @@ pub(crate) struct ServerOptions {
     pub(crate) scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     pub(crate) large_report: Option<LargeReportConfig>,
     pub(crate) max_request_bytes: Option<usize>,
+    pub(crate) command_history_limits: CommandHistoryLimits,
     #[cfg(feature = "ssh")]
     pub(crate) ssh_authorized_keys: Vec<(String, String)>,
     #[cfg(feature = "ssh")]
@@ -96,6 +97,7 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,
             #[cfg(feature = "ssh")]
@@ -114,7 +116,7 @@ impl MockGmpServer {
         }
 
         let listener = UnixListener::bind(&socket_path)?;
-        let history = CommandHistory::new();
+        let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
 
         let state = Arc::new(ListenerState {
@@ -175,6 +177,7 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,
             #[cfg(feature = "ssh")]
@@ -184,7 +187,7 @@ impl MockGmpServer {
         } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
-        let history = CommandHistory::new();
+        let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
 
         let state = Arc::new(ListenerState {
@@ -248,6 +251,7 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,
             #[cfg(feature = "ssh")]
@@ -258,7 +262,7 @@ impl MockGmpServer {
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
         let (acceptor, certificate_pem) = generate_tls_acceptor(client_ca_certificate)?;
-        let history = CommandHistory::new();
+        let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
 
         let state = Arc::new(ListenerState {
@@ -318,6 +322,7 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            command_history_limits,
             ssh_authorized_keys,
             ssh_auth_delay_once,
             ssh_channel_open_delay_once,
@@ -330,7 +335,7 @@ impl MockGmpServer {
             .public_key()
             .to_openssh()
             .map_err(std::io::Error::other)?;
-        let history = CommandHistory::new();
+        let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
 
         let state = Arc::new(ListenerState {
@@ -437,9 +442,17 @@ impl MockGmpServer {
         self.history.all()
     }
 
-    /// Get the number of commands received.
+    /// Get the total number of commands recorded, including evicted records.
     pub fn command_count(&self) -> usize {
-        self.history.len()
+        let stats = self.history.stats();
+        stats
+            .retained_records()
+            .saturating_add(usize::try_from(stats.dropped_records()).unwrap_or(usize::MAX))
+    }
+
+    /// Get command-history retention and eviction statistics.
+    pub fn command_history_stats(&self) -> CommandHistoryStats {
+        self.history.stats()
     }
 
     /// Clear the command history.
