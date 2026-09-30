@@ -718,7 +718,9 @@ mode through `MockGmpServer::builder().scenario(...)`.
 - **Task lifecycle** — deterministic New → Running → Stopped transitions with linked report resumption
 - **Fault injection** — disconnect, delay, malformed XML, error codes, truncated responses
 - **Scenario playback** — deterministic scripted sequences for regression tests
-- **Command history** — inspect what the server received after tests
+- **Bounded command history** — inspect what the server received after tests;
+  the oldest records are evicted after 1,024 entries or 16 MiB of raw XML,
+  with retained/dropped counters available through `command_history_stats()`
 - **Pre-seeding** — populate the store before tests via builder API
 - **Template substitution** — `{{uuid}}`, `{{now}}`, `{{version}}` in fixture responses
 - **Resource filtering** — basic GMP filter string support (`name=foo status=Running`)
