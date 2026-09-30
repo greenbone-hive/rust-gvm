@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use base64::Engine as _;
+use chrono::NaiveDateTime;
 use gvm_gmp::schedule::{
     parse_icalendar_with_timezone, ScheduleStartObservation, ScheduleTimestamp,
 };
@@ -279,29 +280,32 @@ fn asset_filter_matches(candidate: &str, relation: AssetFilterRelation, value: &
 
 fn authoritative_utc_schedule_start(
     observation: &ScheduleStartObservation,
-) -> Option<ScheduleTimestamp> {
+) -> Result<Option<ScheduleTimestamp>, String> {
     match observation {
-        ScheduleStartObservation::Supported(timestamp) => Some(timestamp.clone()),
+        ScheduleStartObservation::Supported(timestamp) => Ok(Some(timestamp.clone())),
         ScheduleStartObservation::Unsupported {
             value,
             timezone: Some(timezone),
         } if timezone.eq_ignore_ascii_case("UTC") => {
             let value = value.strip_suffix('Z').unwrap_or(value);
-            if value.len() != 15 || value.as_bytes().get(8) != Some(&b'T') {
-                return None;
+            let bytes = value.as_bytes();
+            if bytes.len() != 15 || bytes.get(8) != Some(&b'T') {
+                return Ok(None);
             }
-            ScheduleTimestamp::parse(&format!(
-                "{}-{}-{}T{}:{}:{}Z",
-                &value[0..4],
-                &value[4..6],
-                &value[6..8],
-                &value[9..11],
-                &value[11..13],
-                &value[13..15]
-            ))
-            .ok()
+            if !bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| index == 8 || byte.is_ascii_digit())
+            {
+                return Err(format!("invalid UTC DTSTART: {value}"));
+            }
+            let parsed = NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%S")
+                .map_err(|_| format!("invalid UTC DTSTART: {value}"))?;
+            ScheduleTimestamp::parse(&parsed.and_utc().to_rfc3339())
+                .map(Some)
+                .map_err(|_| format!("invalid UTC DTSTART: {value}"))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -1351,7 +1355,11 @@ impl SessionHandler {
             };
             resource.set_attr("icalendar", &icalendar);
             resource.set_attr("timezone", &timezone);
-            if let Some(first_run) = authoritative_utc_schedule_start(&observation.first_run) {
+            let first_run = match authoritative_utc_schedule_start(&observation.first_run) {
+                Ok(first_run) => first_run,
+                Err(error) => return error_response(&cmd.name, 400, &error),
+            };
+            if let Some(first_run) = first_run {
                 resource.set_attr("first_run", first_run.as_str());
                 resource.set_attr("next_run", first_run.as_str());
             }
@@ -2280,7 +2288,10 @@ impl SessionHandler {
                 icalendar,
                 effective_schedule_timezone.as_deref(),
             ) {
-                Ok(observation) => authoritative_utc_schedule_start(&observation.first_run),
+                Ok(observation) => match authoritative_utc_schedule_start(&observation.first_run) {
+                    Ok(first_run) => first_run,
+                    Err(error) => return error_response(&cmd.name, 400, &error),
+                },
                 Err(error) => return error_response(&cmd.name, 400, &error.to_string()),
             },
             None => None,
