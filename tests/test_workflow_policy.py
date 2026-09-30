@@ -55,6 +55,18 @@ def aggregate_needs(source: str, aggregate: str) -> tuple[str, ...]:
 
 
 class ReleaseQualificationWorkflowPolicyTests(unittest.TestCase):
+    def test_release_orchestrator_restores_supported_python_after_pontos(self) -> None:
+        source = workflow("release-orchestrated.yml")
+        pontos = source.index("greenbone/actions/setup-pontos@")
+        setup_python = source.index("actions/setup-python@", pontos)
+        qualification = source.index(
+            "Qualify exact protected-main commit and release version", setup_python
+        )
+
+        self.assertLess(pontos, setup_python)
+        self.assertLess(setup_python, qualification)
+        self.assertIn('python-version: "3.12"', source[setup_python:qualification])
+
     def test_complete_ci_and_security_workflows_support_manual_dispatch(self) -> None:
         for name in ("ci.yml", "security.yml"):
             with self.subTest(workflow=name):
