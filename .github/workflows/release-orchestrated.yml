@@ -43,6 +43,12 @@ jobs:
       - name: Set up Python and pontos
         uses: greenbone/actions/setup-pontos@d79ec6dd087a94ad9ef5211ab86dcf17414b252d # v3.36.19
 
+      # setup-pontos currently leaves Python 3.10 first on PATH, while the
+      # release-version validator uses the Python 3.11+ standard tomllib.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
