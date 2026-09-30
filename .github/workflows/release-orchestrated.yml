@@ -84,6 +84,8 @@ jobs:
             echo "Tag v${RELEASE_VERSION} already exists and will not be moved" >&2
             exit 1
           fi
+          git switch -C main "$RELEASE_SHA"
+          git branch --set-upstream-to=origin/main main
 
       - name: Create release with pontos
         env:

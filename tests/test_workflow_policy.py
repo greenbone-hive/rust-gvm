@@ -67,6 +67,19 @@ class ReleaseQualificationWorkflowPolicyTests(unittest.TestCase):
         self.assertLess(setup_python, qualification)
         self.assertIn('python-version: "3.12"', source[setup_python:qualification])
 
+    def test_release_orchestrator_attaches_qualified_sha_to_main_before_pontos(self) -> None:
+        source = workflow("release-orchestrated.yml")
+        qualification = source.index(
+            "Qualify exact protected-main commit and release version"
+        )
+        create_release = source.index("Create release with pontos", qualification)
+        qualification_block = source[qualification:create_release]
+
+        self.assertIn('git switch -C main "$RELEASE_SHA"', qualification_block)
+        self.assertIn(
+            "git branch --set-upstream-to=origin/main main", qualification_block
+        )
+
     def test_complete_ci_and_security_workflows_support_manual_dispatch(self) -> None:
         for name in ("ci.yml", "security.yml"):
             with self.subTest(workflow=name):
