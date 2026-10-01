@@ -9,6 +9,7 @@ use tempfile::Builder;
 
 use crate::fault::{Fault, FaultEngine};
 use crate::fixtures::FixtureStore;
+use crate::history::CommandHistoryLimits;
 use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
 use crate::server::{MockGmpServer, ServerOptions, UnixSocketBinding};
@@ -30,6 +31,7 @@ pub struct MockGmpServerBuilder {
     scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     large_report: Option<LargeReportConfig>,
     max_request_bytes: Option<usize>,
+    command_history_limits: CommandHistoryLimits,
     asset_input_profile: AssetInputProfile,
     #[cfg(feature = "tls")]
     client_ca_certificate: Option<PathBuf>,
@@ -66,6 +68,7 @@ impl MockGmpServerBuilder {
             scenario_config: None,
             large_report: None,
             max_request_bytes: Some(DEFAULT_MAX_REQUEST_BYTES),
+            command_history_limits: CommandHistoryLimits::default(),
             asset_input_profile: AssetInputProfile::GvmdStrict,
             #[cfg(feature = "tls")]
             client_ca_certificate: None,
@@ -263,6 +266,29 @@ impl MockGmpServerBuilder {
         self
     }
 
+    /// Set command-history retention limits.
+    ///
+    /// When either limit is reached, the oldest records are evicted first.
+    /// Both limits default to 1,024 records and 16 MiB of raw XML. Use
+    /// [`Self::with_unbounded_command_history`] only when a test explicitly
+    /// requires retaining every raw command.
+    #[must_use]
+    pub fn with_command_history_limits(mut self, max_entries: usize, max_bytes: usize) -> Self {
+        self.command_history_limits =
+            CommandHistoryLimits::bounded(Some(max_entries), Some(max_bytes));
+        self
+    }
+
+    /// Explicitly retain command history without entry or byte limits.
+    ///
+    /// This compatibility option can allow an exposed mock listener to exhaust
+    /// process memory. Prefer the bounded default for normal tests and tools.
+    #[must_use]
+    pub fn with_unbounded_command_history(mut self) -> Self {
+        self.command_history_limits = CommandHistoryLimits::unbounded();
+        self
+    }
+
     /// Build and start the mock server.
     ///
     /// # Errors
@@ -279,6 +305,7 @@ impl MockGmpServerBuilder {
             scenario_config,
             large_report,
             max_request_bytes,
+            command_history_limits,
             asset_input_profile,
             #[cfg(feature = "tls")]
             client_ca_certificate,
@@ -294,6 +321,19 @@ impl MockGmpServerBuilder {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "max_request_bytes must be greater than zero or None",
+            ));
+        }
+
+        if command_history_limits.max_entries == Some(0) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "max_history_entries must be greater than zero",
+            ));
+        }
+        if command_history_limits.max_bytes == Some(0) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "max_history_bytes must be greater than zero",
             ));
         }
 
@@ -344,6 +384,7 @@ impl MockGmpServerBuilder {
             scenario_config,
             large_report,
             max_request_bytes,
+            command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,
             #[cfg(feature = "ssh")]

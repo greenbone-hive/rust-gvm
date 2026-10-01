@@ -172,6 +172,55 @@ async fn tcp_multiple_clients() {
 }
 
 #[tokio::test]
+async fn pre_authentication_history_is_bounded_and_evicts_oldest_first() {
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Stateful)
+            .version(GmpVersion::V22_5)
+            .credentials("admin", "secret")
+            .with_command_history_limits(2, 1_024)
+            .tcp("127.0.0.1:0"),
+    )
+    .await
+    else {
+        return;
+    };
+    let address = server.tcp_addr().expect("TCP address");
+    let mut stream = TcpStream::connect(address).await.expect("connect failed");
+
+    for request in [
+        b"<get_version probe=\"first\"/>".as_slice(),
+        b"<get_version probe=\"second\"/>".as_slice(),
+        b"<get_version probe=\"third\"/>".as_slice(),
+    ] {
+        assert_eq!(
+            send_recv(&mut stream, request).await.status_code(),
+            Some(200)
+        );
+    }
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].raw_xml(), b"<get_version probe=\"second\"/>");
+    assert_eq!(history[1].raw_xml(), b"<get_version probe=\"third\"/>");
+
+    let stats = server.command_history_stats();
+    assert_eq!(stats.retained_records(), 2);
+    assert_eq!(
+        stats.retained_bytes(),
+        history[0].raw_xml().len() + history[1].raw_xml().len()
+    );
+    assert_eq!(stats.dropped_records(), 1);
+    assert_eq!(
+        stats.dropped_bytes(),
+        b"<get_version probe=\"first\"/>".len() as u64
+    );
+    assert_eq!(server.command_count(), 3);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn unix_reconnect() {
     let Some(server) = build_server(
         MockGmpServer::builder()
