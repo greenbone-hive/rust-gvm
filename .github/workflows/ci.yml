@@ -14,6 +14,8 @@ on:
     # Keep the workflow running for docs-only PRs so branch protection can
     # require the aggregate `CI` status check without waiting forever.
     branches: [main, devel]
+  merge_group:
+    types: [checks_requested]
   # Release qualification dispatches this complete workflow at the selected
   # protected-main commit. The E2E handoff remains restricted to push events.
   workflow_dispatch:

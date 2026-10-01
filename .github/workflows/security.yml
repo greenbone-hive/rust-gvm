@@ -14,6 +14,8 @@ on:
     # Keep the workflow running for docs-only PRs so branch protection always
     # receives the required `Security` status check.
     branches: [main, devel]
+  merge_group:
+    types: [checks_requested]
   schedule:
     # Run weekly on Monday at 06:00 UTC
     - cron: "0 6 * * 1"
