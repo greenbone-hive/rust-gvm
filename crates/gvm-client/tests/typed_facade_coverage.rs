@@ -84,9 +84,11 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    DeleteAuditReportRequest, DeleteReportRequest, ExportScanReportRequest, GetAuditReportsRequest,
+    CancelReportExportRequest, DeleteAuditReportRequest, DeleteReportRequest,
+    DownloadReportExportRequest, ExportAuditReportRequest, ExportDeltaAuditReportRequest,
+    ExportDeltaScanReportRequest, ExportScanReportRequest, GetAuditReportsRequest,
     GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
-    GetReportErrorsRequest, GetReportExportRequest, GetReportHostsRequest,
+    GetReportErrorsRequest, GetReportExportRequest, GetReportExportsRequest, GetReportHostsRequest,
     GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportRequest,
     GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsRequest,
     GetScanReportRequest, ImportReportRequest,
@@ -3656,6 +3658,109 @@ async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
 
     assert_eq!(response.status, 201);
     assert_eq!(response.export_status, None);
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn report_export_lifecycle_facades_use_discovery_and_typed_responses() {
+    let help = r#"<help_response status="200" status_text="OK"><schema format="XML">
+        <command><name>cancel_report_export</name></command>
+        <command><name>download_report_export</name></command>
+        <command><name>export_audit_report</name></command>
+        <command><name>export_delta_audit_report</name></command>
+        <command><name>export_delta_scan_report</name></command>
+        <command><name>get_report_exports</name></command>
+    </schema></help_response>"#;
+    let export_id = "11111111-1111-1111-1111-111111111111";
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[
+            ("help", help),
+            (
+                "get_report_exports",
+                r#"<get_report_exports_response status="200" status_text="OK"><report_export id="11111111-1111-1111-1111-111111111111"><owner><name>admin</name></owner><name>Report Export</name><comment/><creation_time/><modification_time/><writable>1</writable><in_use>0</in_use><permissions/><type>scan</type><status>done</status><progress>completed</progress><report id="22222222-2222-2222-2222-222222222222"/><report_format id="33333333-3333-3333-3333-333333333333"/><file_size>4</file_size><content_type>application/octet-stream</content_type><extension>bin</extension><error_message/><attempt_count>1</attempt_count><start_time/><end_time/></report_export><report_export_count>1<filtered>1</filtered><page>1</page></report_export_count></get_report_exports_response>"#,
+            ),
+            (
+                "download_report_export",
+                r#"<download_report_export_response status="200" status_text="OK"><report_export id="11111111-1111-1111-1111-111111111111"><type>scan</type><status>done</status><progress>completed</progress><report id="22222222-2222-2222-2222-222222222222"/><report_format id="33333333-3333-3333-3333-333333333333"/><file_size>4</file_size><content_type>application/octet-stream</content_type><extension>bin</extension><content>AP8B/g==</content></report_export></download_report_export_response>"#,
+            ),
+            (
+                "cancel_report_export",
+                r#"<cancel_report_export_response status="200" status_text="OK"/>"#,
+            ),
+            (
+                "export_audit_report",
+                r#"<export_audit_report_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111" export_status="pending"/>"#,
+            ),
+            (
+                "export_delta_audit_report",
+                r#"<export_delta_audit_report_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111" export_status="pending"/>"#,
+            ),
+            (
+                "export_delta_scan_report",
+                r#"<export_delta_scan_report_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111" export_status="pending"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    for command in [
+        "cancel_report_export",
+        "download_report_export",
+        "export_audit_report",
+        "export_delta_audit_report",
+        "export_delta_scan_report",
+        "get_report_exports",
+    ] {
+        assert_eq!(
+            client.command_support(command),
+            CommandSupport::RequiresDiscovery
+        );
+    }
+    client.discover_commands().await.expect("help discovery");
+
+    let export_id = id(export_id);
+    let listed = client
+        .get_report_exports(GetReportExportsRequest::new(export_id.clone()))
+        .await
+        .expect("typed polling response");
+    assert_eq!(listed.items[0].status, "done");
+    let downloaded = client
+        .download_report_export(DownloadReportExportRequest::new(export_id.clone()))
+        .await
+        .expect("typed download response");
+    assert_eq!(downloaded.report_export.bytes, [0, 255, 1, 254]);
+    client
+        .cancel_report_export(CancelReportExportRequest::new(export_id))
+        .await
+        .expect("typed cancel response");
+
+    let report_id = id("22222222-2222-2222-2222-222222222222");
+    let delta_id = id("44444444-4444-4444-4444-444444444444");
+    assert_eq!(
+        client
+            .export_audit_report(ExportAuditReportRequest::new(report_id.clone()))
+            .await
+            .expect("audit export")
+            .export_status
+            .as_deref(),
+        Some("pending")
+    );
+    client
+        .export_delta_audit_report(ExportDeltaAuditReportRequest::new(
+            report_id.clone(),
+            delta_id.clone(),
+        ))
+        .await
+        .expect("delta audit export");
+    client
+        .export_delta_scan_report(ExportDeltaScanReportRequest::new(report_id, delta_id))
+        .await
+        .expect("delta scan export");
+
     server.shutdown().await;
 }
 

@@ -17,7 +17,7 @@ method call in the client/mock integration suite. The execution-path test
 parses each method body: every non-ticket signature must accept a canonical
 request and delegate exactly once to `execute`, while the exact three ticket
 methods must each use one raw `send` and no other helper may do so.
-The enforced surface currently contains 261 names: 258 direct `execute`
+The enforced surface currently contains 267 names: 264 direct `execute`
 delegates and three frozen ticket raw paths. Unsupported configuration sync and
 operating-system asset modification helpers are not part of the inventory.
 

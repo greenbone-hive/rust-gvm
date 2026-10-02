@@ -138,13 +138,16 @@ pub use port_list::{
 };
 pub use preference::{GetPreferencesResponse, Preference, PreferenceNvt};
 pub use report::{
-    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse, GetAuditReportsResponse,
-    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
-    GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, Report, ReportApplicationSummary, ReportClosedCve, ReportCveSummary,
-    ReportError, ReportExport, ReportHostSummary, ReportOperatingSystemSummary, ReportPortSummary,
-    ReportTlsCertificate, ReportVulnerability, ResultCount, Severity,
+    CancelReportExportResponse, CreateReportResponse, DeleteReportResponse,
+    DownloadReportExportResponse, DownloadedReportExport, ExportAuditReportResponse,
+    ExportDeltaAuditReportResponse, ExportDeltaScanReportResponse, ExportScanReportResponse,
+    GetAuditReportsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
+    GetReportCvesResponse, GetReportErrorsResponse, GetReportExportsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse, Report,
+    ReportApplicationSummary, ReportClosedCve, ReportCveSummary, ReportError, ReportExport,
+    ReportExportInfo, ReportExportResponse, ReportHostSummary, ReportOperatingSystemSummary,
+    ReportPortSummary, ReportTlsCertificate, ReportVulnerability, ResultCount, Severity,
 };
 pub use report_config::{
     CreateReportConfigResponse, DeleteReportConfigResponse, GetReportConfigsResponse,

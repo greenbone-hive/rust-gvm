@@ -104,7 +104,9 @@ The grammar also accepts `format_id`, `config_id`, `delta_report_id`, and
 `alert_id`. These switch or specialize report generation rather than the
 ordinary lifecycle response. A format selector produces a synchronous export
 with a different response association and is modeled by
-`GetReportExportRequest`; delta and alert selection remain separate work.
+`GetReportExportRequest`. Asynchronous delta export has a distinct contract
+documented in [report-export lifecycle evidence](report-export-lifecycle-gvmd-evidence.md);
+synchronous delta generation and alert selection remain separate work.
 
 ## Deletion
 

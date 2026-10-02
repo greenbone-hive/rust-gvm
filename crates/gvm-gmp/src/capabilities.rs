@@ -92,6 +92,7 @@ macro_rules! command_capabilities {
 
 command_capabilities! {
     ("authenticate", Stateful, None, PinnedSchema),
+    ("cancel_report_export", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
     ("create_agent_group", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("create_alert", Stateful, None, PinnedSchema),
     ("create_asset", Stateful, None, PinnedSchema),
@@ -142,11 +143,15 @@ command_capabilities! {
     ("delete_target", Stateful, None, PinnedSchema),
     ("delete_task", Stateful, None, PinnedSchema),
     ("delete_ticket", Stateful, None, PinnedSchema),
-    ("delete_tls_certificate", Stateful, None, PublicSourceOnly),
+    ("delete_tls_certificate", Stateful, None, PinnedSchema),
     ("delete_user", Stateful, None, PinnedSchema),
     ("delete_web_application_target", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("describe_auth", EchoOnly, None, PinnedSchema),
+    ("download_report_export", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
     ("empty_trashcan", Stateful, None, PinnedSchema),
+    ("export_audit_report", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
+    ("export_delta_audit_report", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
+    ("export_delta_scan_report", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
     ("export_scan_report", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
     ("get_agent_groups", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("get_agent_installer_instruction", Fixture, Some(GmpVersion(22, 8)), PinnedSchema),
@@ -180,6 +185,7 @@ command_capabilities! {
     ("get_report_configs", Stateful, Some(GmpVersion(22, 6)), PinnedSchema),
     ("get_report_cves", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("get_report_errors", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
+    ("get_report_exports", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
     ("get_report_formats", Stateful, None, PinnedSchema),
     ("get_report_hosts", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("get_report_operating_systems", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
@@ -214,7 +220,7 @@ command_capabilities! {
     ("modify_auth", Stateful, None, PinnedSchema),
     ("modify_config", Stateful, None, PinnedSchema),
     ("modify_credential", Stateful, None, PinnedSchema),
-    ("modify_credential_store", Stateful, Some(GmpVersion(22, 8)), PublicSourceOnly),
+    ("modify_credential_store", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("modify_filter", Stateful, None, PinnedSchema),
     ("modify_group", Stateful, None, PinnedSchema),
     ("modify_integration_config", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
@@ -246,7 +252,7 @@ command_capabilities! {
     ("sync_agents", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("sync_config", Rejected, None, PinnedSchema),
     ("test_alert", EchoOnly, None, PinnedSchema),
-    ("verify_credential_store", Stateful, Some(GmpVersion(22, 8)), PublicSourceOnly),
+    ("verify_credential_store", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("verify_report_format", Stateful, None, PinnedSchema),
     ("verify_scanner", EchoOnly, None, PinnedSchema),
 }
@@ -311,12 +317,22 @@ mod tests {
 
         let reports = command_capability("get_reports").expect("known command");
         assert!(reports.available_in(GmpVersion(22, 4)));
-        let export = command_capability("export_scan_report").expect("known discoverable command");
-        assert!(!export.permitted_in(GmpVersion(22, 6)));
-        assert!(export.permitted_in(GmpVersion(22, 7)));
-        assert!(!export.available_in(GmpVersion(22, 7)));
-        assert!(!export.available_in(GmpVersion(22, 8)));
-        assert!(export.requires_help_discovery);
+        for command in [
+            "cancel_report_export",
+            "download_report_export",
+            "export_audit_report",
+            "export_delta_audit_report",
+            "export_delta_scan_report",
+            "export_scan_report",
+            "get_report_exports",
+        ] {
+            let export = command_capability(command).expect("known discoverable command");
+            assert!(!export.permitted_in(GmpVersion(22, 6)), "{command}");
+            assert!(export.permitted_in(GmpVersion(22, 7)), "{command}");
+            assert!(!export.available_in(GmpVersion(22, 7)), "{command}");
+            assert!(!export.available_in(GmpVersion(22, 8)), "{command}");
+            assert!(export.requires_help_discovery, "{command}");
+        }
         let audit_report =
             command_capability("get_audit_report").expect("known structured audit command");
         assert!(!audit_report.available_in(GmpVersion(22, 6)));
@@ -344,13 +360,6 @@ mod tests {
             .map(|capability| (capability.name, capability.gvmd_evidence))
             .collect();
 
-        assert_eq!(
-            exceptions,
-            [
-                ("delete_tls_certificate", GvmdEvidence::PublicSourceOnly),
-                ("modify_credential_store", GvmdEvidence::PublicSourceOnly),
-                ("verify_credential_store", GvmdEvidence::PublicSourceOnly),
-            ]
-        );
+        assert!(exceptions.is_empty());
     }
 }

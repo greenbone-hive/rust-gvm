@@ -386,6 +386,7 @@ facade	crates/gvm-client/src/typed/identity.rs	modify_group	retained-constructio
 facade	crates/gvm-client/src/typed/identity.rs	modify_permission	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	modify_role	canonical-request	Complete role/permission requests own inputs, validation, semantic metadata and encoding; facade delegates to execute.
 facade	crates/gvm-client/src/typed/identity.rs	modify_user	retained-construction	Retained for discoverability; accepts the canonical ModifyUserRequest unchanged.
+facade	crates/gvm-client/src/typed/reports.rs	cancel_report_export	canonical-request	Accepts CancelReportExportRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	clone_report_config	canonical-request	Accepts CloneReportConfigRequest unchanged and delegates to execute.
 facade	crates/gvm-client/src/typed/reports.rs	clone_report_format	canonical-request	Accepts CloneReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	clone_tls_certificate	canonical-request	Accepts CloneTlsCertificateRequest unchanged and delegates directly to execute.
@@ -399,6 +400,10 @@ facade	crates/gvm-client/src/typed/reports.rs	delete_report_config	canonical-req
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_config_with_opts	removed	Canonical delete facade accepts the complete request without an options variant.
 facade	crates/gvm-client/src/typed/reports.rs	delete_report_format	canonical-request	Accepts DeleteReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	delete_tls_certificate	canonical-request	Accepts permanent DeleteTlsCertificateRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	download_report_export	canonical-request	Accepts DownloadReportExportRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	export_audit_report	canonical-request	Accepts ExportAuditReportRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	export_delta_audit_report	canonical-request	Accepts ExportDeltaAuditReportRequest unchanged and delegates directly to execute.
+facade	crates/gvm-client/src/typed/reports.rs	export_delta_scan_report	canonical-request	Accepts ExportDeltaScanReportRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	export_scan_report	canonical-request	Accepts ExportScanReportRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_report	canonical-request	Accepts GetAuditReportRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_audit_report_hosts	canonical-request	Accepts GetAuditReportHostsRequest unchanged and delegates directly to execute.
@@ -415,6 +420,7 @@ facade	crates/gvm-client/src/typed/reports.rs	get_report_cves_parsed	removed	Rem
 facade	crates/gvm-client/src/typed/reports.rs	get_report_errors	canonical-request	Accepts GetReportErrorsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_export	canonical-request	Accepts GetReportExportRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_export_with_opts	removed	Removed by #662; get_report_export accepts the complete canonical request.
+facade	crates/gvm-client/src/typed/reports.rs	get_report_exports	canonical-request	Accepts GetReportExportsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_format	canonical-request	Accepts GetReportFormatRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_formats	canonical-request	Accepts GetReportFormatsRequest unchanged and delegates directly to execute.
 facade	crates/gvm-client/src/typed/reports.rs	get_report_hosts	canonical-request	Accepts GetReportHostsRequest unchanged and delegates directly to execute.
@@ -855,9 +861,14 @@ request	crates/gvm-gmp/src/commands/report_formats.rs	GetReportFormatsRequest	ca
 request	crates/gvm-gmp/src/commands/report_formats.rs	ImportReportFormatRequest	canonical-request	Opaque canonical import request preserves and validates exactly one exported response envelope.
 request	crates/gvm-gmp/src/commands/report_formats.rs	ModifyReportFormatRequest	canonical-request	Complete canonical mutation owns metadata and one exact base64-carried parameter update.
 request	crates/gvm-gmp/src/commands/report_formats.rs	VerifyReportFormatRequest	canonical-request	Explicit canonical verification request owns selection, validation, and action response association.
+request	crates/gvm-gmp/src/commands/reports.rs	CancelReportExportRequest	canonical-request	Owns the report-export selector and source-faithful asynchronous cancellation response association.
 request	crates/gvm-gmp/src/commands/reports.rs	CreateReportRequest	removed	Removed because its empty task/format/filter shape is rejected by pinned gvmd; use ImportReportRequest for create_report XML imports.
 request	crates/gvm-gmp/src/commands/reports.rs	DeleteAuditReportRequest	canonical-request	Complete audit semantic alias owns the report identifier, 22.6 floor, and source-faithful non-ultimate wire shape.
 request	crates/gvm-gmp/src/commands/reports.rs	DeleteReportRequest	canonical-request	Complete permanent report deletion request owns its identifier and directly encodes delete_report.
+request	crates/gvm-gmp/src/commands/reports.rs	DownloadReportExportRequest	canonical-request	Owns the completed report-export selector and typed destructive-download response association.
+request	crates/gvm-gmp/src/commands/reports.rs	ExportAuditReportRequest	canonical-request	Owns audit identity, optional format/configuration, inline filter, pagination, lean, and inclusion controls with help-discovery gating.
+request	crates/gvm-gmp/src/commands/reports.rs	ExportDeltaAuditReportRequest	canonical-request	Owns audit and delta identities plus optional export controls with help-discovery gating.
+request	crates/gvm-gmp/src/commands/reports.rs	ExportDeltaScanReportRequest	canonical-request	Owns scan and delta identities plus optional export controls with help-discovery gating.
 request	crates/gvm-gmp/src/commands/reports.rs	ExportScanReportRequest	canonical-request	Owns report identity, format/configuration, result filter, pagination, lean, and inclusion controls with help-discovery gating.
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportHostsRequest	canonical-request	Complete 22.7 host-summary request owns audit identity, structured filters, details, lean behavior, and typed response.
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportRequest	canonical-request	Complete 22.7 structured audit request owns identity and filters with its distinct typed response.
@@ -867,6 +878,7 @@ request	crates/gvm-gmp/src/commands/reports.rs	GetReportClosedCvesRequest	canoni
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportCvesRequest	canonical-request	Owns the complete CVE projection and its GMP 22.8 typed response association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportErrorsRequest	canonical-request	Owns the complete error projection and its GMP 22.8 typed response association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportExportRequest	canonical-request	Owns synchronous get_reports export identity, format/configuration, result filters, detail/pagination/lean, and inclusion controls with a GMP 22.8 semantic gate.
+request	crates/gvm-gmp/src/commands/reports.rs	GetReportExportsRequest	canonical-request	Owns optional export identity, inline/saved filter selection, details, polling response association, and help-discovery gating.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportHostsRequest	canonical-request	Owns the complete host projection including its source-specific lean control and GMP 22.8 association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportOperatingSystemsRequest	canonical-request	Owns the complete operating-system projection and its GMP 22.8 typed response association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportPortsRequest	canonical-request	Owns the complete port projection and its GMP 22.8 typed response association.

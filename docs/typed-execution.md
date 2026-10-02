@@ -617,8 +617,9 @@ alone:
   export require GMP 22.8;
 - synchronous export uses `<get_reports ...>` on the wire but declares the
   semantic capability `get_report_export`;
-- asynchronous `export_scan_report` has a GMP 22.7 lower bound but version
-  alone is insufficient; it requires positive XML-help discovery.
+- all seven asynchronous report-export lifecycle commands have a GMP 22.7
+  lower bound, but version alone is insufficient; each requires positive
+  XML-help discovery.
 
 `GmpClient::command_support` exposes the execution gate's actionable state.
 It distinguishes a registered command that still needs discovery from an
