@@ -13,10 +13,12 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    DeleteAuditReportRequest, DeleteReportRequest, ExportScanReportRequest,
-    GetAuditReportHostsRequest, GetAuditReportRequest, GetAuditReportsRequest,
-    GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
-    GetReportErrorsRequest, GetReportExportRequest, GetReportHostsRequest,
+    CancelReportExportRequest, DeleteAuditReportRequest, DeleteReportRequest,
+    DownloadReportExportRequest, ExportAuditReportRequest, ExportDeltaAuditReportRequest,
+    ExportDeltaScanReportRequest, ExportScanReportRequest, GetAuditReportHostsRequest,
+    GetAuditReportRequest, GetAuditReportsRequest, GetReportApplicationsRequest,
+    GetReportClosedCvesRequest, GetReportCvesRequest, GetReportErrorsRequest,
+    GetReportExportRequest, GetReportExportsRequest, GetReportHostsRequest,
     GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportRequest,
     GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsRequest,
     GetScanReportRequest, ImportReportRequest,
@@ -27,12 +29,14 @@ use gvm_gmp::commands::tls_certificates::{
     GetTlsCertificateRequest, GetTlsCertificatesRequest, ModifyTlsCertificateRequest,
 };
 use gvm_gmp::responses::{
-    CreateReportConfigResponse, CreateReportFormatResponse, CreateReportResponse,
-    CreateTlsCertificateResponse, DeleteReportConfigResponse, DeleteReportFormatResponse,
-    DeleteReportResponse, DeleteTlsCertificateResponse, ExportScanReportResponse,
-    GetAuditReportHostsResponse, GetAuditReportResponse, GetAuditReportsResponse,
-    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
-    GetReportCvesResponse, GetReportErrorsResponse, GetReportFormatsResponse,
+    CancelReportExportResponse, CreateReportConfigResponse, CreateReportFormatResponse,
+    CreateReportResponse, CreateTlsCertificateResponse, DeleteReportConfigResponse,
+    DeleteReportFormatResponse, DeleteReportResponse, DeleteTlsCertificateResponse,
+    DownloadReportExportResponse, ExportAuditReportResponse, ExportDeltaAuditReportResponse,
+    ExportDeltaScanReportResponse, ExportScanReportResponse, GetAuditReportHostsResponse,
+    GetAuditReportResponse, GetAuditReportsResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportConfigsResponse, GetReportCvesResponse,
+    GetReportErrorsResponse, GetReportExportsResponse, GetReportFormatsResponse,
     GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
     GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
     GetResultsResponse, GetScanReportResponse, GetTlsCertificatesResponse,
@@ -145,6 +149,83 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         request: ExportScanReportRequest,
     ) -> Result<ExportScanReportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Poll one or more asynchronous report exports.
+    ///
+    /// Call [`GmpClient::discover_commands`] first because the negotiated GMP
+    /// version does not prove that the server implements this command.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn get_report_exports(
+        &mut self,
+        request: GetReportExportsRequest,
+    ) -> Result<GetReportExportsResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Download and consume one completed asynchronous report export.
+    ///
+    /// A successful gvmd download removes the server-side export after the
+    /// complete response has been sent.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, transport, or parsing fails, or if the
+    /// export is not complete and downloadable.
+    pub async fn download_report_export(
+        &mut self,
+        request: DownloadReportExportRequest,
+    ) -> Result<DownloadReportExportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Request cancellation of a pending or running report export.
+    ///
+    /// Pending exports are canceled immediately; running exports may remain
+    /// observable as `cancel_requested` until their worker exits.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, transport, or parsing fails, or if the
+    /// export has already completed or failed.
+    pub async fn cancel_report_export(
+        &mut self,
+        request: CancelReportExportRequest,
+    ) -> Result<CancelReportExportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Queue or reuse an asynchronous audit-report export.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn export_audit_report(
+        &mut self,
+        request: ExportAuditReportRequest,
+    ) -> Result<ExportAuditReportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Queue or reuse an asynchronous delta-audit report export.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn export_delta_audit_report(
+        &mut self,
+        request: ExportDeltaAuditReportRequest,
+    ) -> Result<ExportDeltaAuditReportResponse, GvmError> {
+        self.execute(request).await
+    }
+
+    /// Queue or reuse an asynchronous delta-scan report export.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn export_delta_scan_report(
+        &mut self,
+        request: ExportDeltaScanReportRequest,
+    ) -> Result<ExportDeltaScanReportResponse, GvmError> {
         self.execute(request).await
     }
 

@@ -1,11 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-#![allow(clippy::print_stderr, clippy::unwrap_used, missing_docs)]
+#![allow(
+    clippy::print_stderr,
+    clippy::too_many_lines,
+    clippy::unwrap_used,
+    missing_docs
+)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_gmp::commands::reports::ExportScanReportRequest;
-use gvm_gmp::{EntityId, GmpRequestCodec};
+use gvm_gmp::commands::reports::{
+    CancelReportExportRequest, DownloadReportExportRequest, ExportAuditReportRequest,
+    ExportDeltaAuditReportRequest, ExportDeltaScanReportRequest, ExportScanReportRequest,
+    GetReportExportsRequest,
+};
+use gvm_gmp::responses::{DownloadReportExportResponse, GetReportExportsResponse};
+use gvm_gmp::{EntityId, GmpRequestCodec, GmpResponse};
 use gvm_mock_server::{GmpVersion, MockGmpServer, Resource, ServerMode};
 use gvm_protocol::{Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -15,11 +25,15 @@ use uuid::Uuid;
 const REPORT_ID: &str = "11111111-1111-1111-1111-111111111111";
 const AUDIT_REPORT_ID: &str = "22222222-2222-2222-2222-222222222222";
 const DELTA_REPORT_ID: &str = "33333333-3333-3333-3333-333333333333";
+const SCAN_BASELINE_ID: &str = "55555555-5555-5555-5555-555555555555";
+const AUDIT_BASELINE_ID: &str = "66666666-6666-6666-6666-666666666666";
 
 async fn stateful_server(version: GmpVersion) -> Option<MockGmpServer> {
     let report_id = Uuid::parse_str(REPORT_ID).expect("valid UUID");
     let audit_report_id = Uuid::parse_str(AUDIT_REPORT_ID).expect("valid UUID");
     let delta_report_id = Uuid::parse_str(DELTA_REPORT_ID).expect("valid UUID");
+    let scan_baseline_id = Uuid::parse_str(SCAN_BASELINE_ID).expect("valid UUID");
+    let audit_baseline_id = Uuid::parse_str(AUDIT_BASELINE_ID).expect("valid UUID");
     match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(version)
@@ -32,6 +46,15 @@ async fn stateful_server(version: GmpVersion) -> Option<MockGmpServer> {
             let mut delta_report = Resource::with_id("report", "Delta report", delta_report_id);
             delta_report.set_attr("delta", "1");
             store.create(delta_report);
+            store.create(Resource::with_id(
+                "report",
+                "Scan baseline",
+                scan_baseline_id,
+            ));
+            let mut audit_baseline =
+                Resource::with_id("report", "Audit baseline", audit_baseline_id);
+            audit_baseline.set_attr("usage_type", "audit");
+            store.create(audit_baseline);
         })
         .unix_socket_auto()
         .build()
@@ -61,6 +84,17 @@ async fn send_recv(stream: &mut UnixStream, request: impl Request) -> Response {
 }
 
 async fn send_recv_export(stream: &mut UnixStream, request: &ExportScanReportRequest) -> Response {
+    stream
+        .write_all(&request.encode(gvm_gmp::GmpVersion(22, 8)).expect("encode"))
+        .await
+        .expect("request write");
+    let mut bytes = vec![0; 16 * 1024];
+    let size = stream.read(&mut bytes).await.expect("response read");
+    bytes.truncate(size);
+    Response::new(bytes)
+}
+
+async fn send_recv_codec(stream: &mut UnixStream, request: &impl GmpRequestCodec) -> Response {
     stream
         .write_all(&request.encode(gvm_gmp::GmpVersion(22, 8)).expect("encode"))
         .await
@@ -199,4 +233,131 @@ async fn stateful_mock_rejects_invalid_inputs_and_pre_22_7_command_use() {
     assert_validation_errors(&mut stream).await;
     server.shutdown().await;
     assert_pre_22_7_unsupported().await;
+}
+
+#[tokio::test]
+async fn stateful_mock_models_the_seven_command_export_lifecycle() {
+    let Some(server) = stateful_server(GmpVersion::V22_7).await else {
+        return;
+    };
+    let mut stream = UnixStream::connect(server.socket_path().expect("socket path"))
+        .await
+        .expect("connect");
+    assert_eq!(
+        send_recv(&mut stream, b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>".as_slice())
+            .await
+            .status_code(),
+        Some(200)
+    );
+
+    let scan = send_recv_codec(
+        &mut stream,
+        &ExportScanReportRequest::new(EntityId::new(REPORT_ID).expect("id")),
+    )
+    .await;
+    assert_eq!(scan.status_code(), Some(201));
+    let scan_export_id = EntityId::new(scan.id().expect("export id")).expect("id");
+
+    let audit = send_recv_codec(
+        &mut stream,
+        &ExportAuditReportRequest::new(EntityId::new(AUDIT_REPORT_ID).expect("id")),
+    )
+    .await;
+    assert_eq!(audit.status_code(), Some(201));
+    assert!(audit
+        .as_str()
+        .expect("UTF-8")
+        .contains("export_status=\"pending\""));
+
+    let delta_scan = send_recv_codec(
+        &mut stream,
+        &ExportDeltaScanReportRequest::new(
+            EntityId::new(REPORT_ID).expect("id"),
+            EntityId::new(SCAN_BASELINE_ID).expect("id"),
+        ),
+    )
+    .await;
+    assert_eq!(delta_scan.status_code(), Some(201));
+
+    let delta_audit = send_recv_codec(
+        &mut stream,
+        &ExportDeltaAuditReportRequest::new(
+            EntityId::new(AUDIT_REPORT_ID).expect("id"),
+            EntityId::new(AUDIT_BASELINE_ID).expect("id"),
+        ),
+    )
+    .await;
+    assert_eq!(delta_audit.status_code(), Some(201));
+
+    let poll = GetReportExportsRequest::new(scan_export_id.clone());
+    for expected in ["pending", "running", "done"] {
+        let response = send_recv_codec(&mut stream, &poll).await;
+        let parsed = GetReportExportsResponse::decode(&response, gvm_gmp::GmpVersion(22, 7))
+            .expect("poll response");
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].status, expected);
+    }
+
+    let downloaded = send_recv_codec(
+        &mut stream,
+        &DownloadReportExportRequest::new(scan_export_id.clone()),
+    )
+    .await;
+    let downloaded = DownloadReportExportResponse::decode(&downloaded, gvm_gmp::GmpVersion(22, 7))
+        .expect("download response");
+    assert_eq!(downloaded.report_export.status, "done");
+    assert!(!downloaded.report_export.bytes.is_empty());
+    assert_eq!(
+        send_recv_codec(&mut stream, &poll).await.status_code(),
+        Some(404),
+        "successful download consumes the export"
+    );
+
+    let mut cancel_request =
+        ExportAuditReportRequest::new(EntityId::new(AUDIT_REPORT_ID).expect("audit report id"));
+    cancel_request.filter_string = Some("compliance_levels=y".into());
+    let pending = send_recv_codec(&mut stream, &cancel_request).await;
+    let pending_id = EntityId::new(pending.id().expect("pending id")).expect("id");
+    assert_eq!(
+        send_recv_codec(
+            &mut stream,
+            &CancelReportExportRequest::new(pending_id.clone())
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    let canceled = send_recv_codec(
+        &mut stream,
+        &GetReportExportsRequest::new(pending_id.clone()),
+    )
+    .await;
+    let canceled = GetReportExportsResponse::decode(&canceled, gvm_gmp::GmpVersion(22, 7))
+        .expect("canceled response");
+    assert_eq!(canceled.items[0].status, "canceled");
+
+    let mut running_request =
+        ExportAuditReportRequest::new(EntityId::new(AUDIT_REPORT_ID).expect("audit report id"));
+    running_request.filter_string = Some("compliance_levels=n".into());
+    let running = send_recv_codec(&mut stream, &running_request).await;
+    let running_id = EntityId::new(running.id().expect("running id")).expect("id");
+    let running_poll = GetReportExportsRequest::new(running_id.clone());
+    let _ = send_recv_codec(&mut stream, &running_poll).await;
+    assert_eq!(
+        send_recv_codec(
+            &mut stream,
+            &CancelReportExportRequest::new(running_id.clone())
+        )
+        .await
+        .status_code(),
+        Some(200)
+    );
+    for expected in ["cancel_requested", "canceled"] {
+        let response = send_recv_codec(&mut stream, &running_poll).await;
+        let parsed = GetReportExportsResponse::decode(&response, gvm_gmp::GmpVersion(22, 7))
+            .expect("cancellation poll");
+        assert_eq!(parsed.items[0].status, expected);
+    }
+
+    server.shutdown().await;
 }

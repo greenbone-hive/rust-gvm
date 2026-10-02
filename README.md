@@ -343,8 +343,8 @@ let targets = client
     .await?;
 ```
 
-The final convergence audit classifies all 1,026 request-surface rows and all
-261 public typed facade helpers. It enforces 258 canonical `execute` delegates,
+The final convergence audit classifies all 1,038 request-surface rows and all
+267 public typed facade helpers. It enforces 264 canonical `execute` delegates,
 only three frozen ticket raw paths, zero transitional rows, and the continued
 absence of unsupported configuration synchronization. See the
 [canonical-request convergence audit](docs/canonical-request-convergence-audit.md)

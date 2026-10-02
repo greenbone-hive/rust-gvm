@@ -46,9 +46,57 @@ pub struct SessionHandler {
     store: Option<ResourceStore>,
     scenario_engine: Option<Mutex<ScenarioEngine>>,
     large_report: Option<LargeReportConfig>,
-    scan_report_exports: Mutex<BTreeMap<String, Uuid>>,
+    report_exports: Mutex<MockReportExports>,
     fault_engine: FaultEngine,
     command_count: AtomicUsize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MockReportExportStatus {
+    Pending,
+    Running,
+    Done,
+    CancelRequested,
+    Canceled,
+}
+
+impl MockReportExportStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Done => "done",
+            Self::CancelRequested => "cancel_requested",
+            Self::Canceled => "canceled",
+        }
+    }
+
+    fn progress(self) -> &'static str {
+        match self {
+            Self::Pending => "queued",
+            Self::Running | Self::CancelRequested => "generating",
+            Self::Done | Self::Canceled => "completed",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MockReportExport {
+    id: Uuid,
+    key: String,
+    export_type: &'static str,
+    status: MockReportExportStatus,
+    report_id: Uuid,
+    delta_report_id: Option<Uuid>,
+    report_format_id: Uuid,
+    report_config_id: Option<Uuid>,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+struct MockReportExports {
+    ids_by_key: BTreeMap<String, Uuid>,
+    exports: BTreeMap<Uuid, MockReportExport>,
 }
 
 /// Command handling result for the transport layer.
@@ -333,7 +381,7 @@ impl SessionHandler {
             scenario_engine: scenario_config
                 .map(|(mode, steps)| Mutex::new(ScenarioEngine::new(mode, steps))),
             large_report,
-            scan_report_exports: Mutex::new(BTreeMap::new()),
+            report_exports: Mutex::new(MockReportExports::default()),
             fault_engine,
             command_count: AtomicUsize::new(0),
         }
@@ -524,6 +572,13 @@ impl SessionHandler {
                 crate::stateful_reports::handle_get(cmd, store, self.large_report.as_ref())
             }
             "delete_report" => crate::stateful_reports::handle_delete(cmd, store),
+            "get_report_exports" => self.handle_get_report_exports(cmd),
+            "download_report_export" => self.handle_download_report_export(cmd),
+            "cancel_report_export" => self.handle_cancel_report_export(cmd),
+            "export_scan_report"
+            | "export_audit_report"
+            | "export_delta_scan_report"
+            | "export_delta_audit_report" => self.handle_export_report(cmd, store),
             "create_tls_certificate" => crate::stateful_tls_certificates::handle_create(
                 cmd,
                 store,
@@ -583,14 +638,13 @@ impl SessionHandler {
             "restore" => self.handle_restore(cmd, store),
             // Help
             "help" => render_help_response(cmd, self.version),
-            "export_scan_report" => self.handle_export_scan_report(cmd, store),
             "sync_agents" => b"<sync_agents_response status=\"200\" status_text=\"OK\"/>".to_vec(),
             // Everything else
             _ => echo_response(&cmd.name, self.version.as_str()),
         }
     }
 
-    fn handle_export_scan_report(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+    fn handle_export_report(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
         let Some(report_id) = cmd.attr("report_id") else {
             return error_response(&cmd.name, 400, "Missing or invalid report_id");
         };
@@ -600,23 +654,65 @@ impl SessionHandler {
         let Some(report) = store.get_typed(&report_uuid, "report") else {
             return error_response(&cmd.name, 404, "Failed to find report");
         };
-        if report.attr("usage_type") == Some("audit") || report.attr("delta") == Some("1") {
-            return error_response(&cmd.name, 400, "Report is not a scan report");
+        let (export_type, audit, delta) = match cmd.name.as_str() {
+            "export_scan_report" => ("scan", false, false),
+            "export_audit_report" => ("audit", true, false),
+            "export_delta_scan_report" => ("delta_scan", false, true),
+            "export_delta_audit_report" => ("delta_audit", true, true),
+            _ => return error_response(&cmd.name, 500, "Invalid report export command"),
+        };
+        let report_is_audit = report.attr("usage_type") == Some("audit");
+        if report_is_audit != audit || (!delta && report.attr("delta") == Some("1")) {
+            return error_response(
+                &cmd.name,
+                400,
+                if audit {
+                    "Report is not an audit report"
+                } else {
+                    "Report is not a scan report"
+                },
+            );
+        }
+
+        let delta_report_id = if delta {
+            let Some(delta_report_id) = cmd.attr("delta_report_id") else {
+                return error_response(&cmd.name, 400, "Missing or invalid delta_report_id");
+            };
+            let Ok(delta_report_uuid) = Uuid::parse_str(delta_report_id) else {
+                return error_response(&cmd.name, 400, "Missing or invalid delta_report_id");
+            };
+            let Some(delta_report) = store.get_typed(&delta_report_uuid, "report") else {
+                return error_response(&cmd.name, 404, "Failed to find report");
+            };
+            if (delta_report.attr("usage_type") == Some("audit")) != audit {
+                return error_response(&cmd.name, 400, "Delta report is not valid for the report");
+            }
+            Some(delta_report_uuid)
+        } else {
+            None
+        };
+
+        if !delta && cmd.attr("delta_report_id").is_some() {
+            return error_response(&cmd.name, 400, "Delta reports are not supported");
         }
 
         const XML_REPORT_FORMAT_ID: &str = "a994b278-1f62-11e1-96ac-406186ea4fc5";
         let format_id = cmd.attr("format_id").unwrap_or(XML_REPORT_FORMAT_ID);
-        if Uuid::parse_str(format_id).is_err() {
+        let Ok(report_format_id) = Uuid::parse_str(format_id) else {
             return error_response(&cmd.name, 400, "Invalid format_id");
-        }
-        if let Some(config_id) = cmd.attr("config_id").filter(|value| !value.is_empty()) {
-            if Uuid::parse_str(config_id).is_err() {
-                return error_response(&cmd.name, 400, "Invalid config_id");
-            }
-        }
+        };
+        let report_config_id = match cmd.attr("config_id").filter(|value| !value.is_empty()) {
+            Some(config_id) => match Uuid::parse_str(config_id) {
+                Ok(config_id) => Some(config_id),
+                Err(_) => return error_response(&cmd.name, 400, "Invalid config_id"),
+            },
+            None => None,
+        };
 
         let key = [
+            export_type,
             report_id,
+            cmd.attr("delta_report_id").unwrap_or_default(),
             format_id,
             cmd.attr("config_id").unwrap_or_default(),
             cmd.attr("filter").unwrap_or_default(),
@@ -628,22 +724,144 @@ impl SessionHandler {
         ]
         .join("\u{1f}");
 
-        let Ok(mut exports) = self.scan_report_exports.lock() else {
+        let Ok(mut exports) = self.report_exports.lock() else {
             return error_response(&cmd.name, 500, "Report export state lock poisoned");
         };
-        if let Some(export_id) = exports.get(&key) {
+        if let Some(export_id) = exports.ids_by_key.get(&key) {
+            let status = exports
+                .exports
+                .get(export_id)
+                .map(|export| export.status.as_str())
+                .unwrap_or("pending");
             return format!(
-                "<export_scan_report_response status=\"200\" status_text=\"OK\" id=\"{export_id}\" export_status=\"pending\"/>"
+                "<{}_response status=\"200\" status_text=\"OK\" id=\"{export_id}\" export_status=\"{status}\"/>",
+                cmd.name
             )
             .into_bytes();
         }
 
         let export_id = Uuid::new_v4();
-        exports.insert(key, export_id);
+        let bytes = format!("mock {export_type} report export {export_id}").into_bytes();
+        exports.ids_by_key.insert(key.clone(), export_id);
+        exports.exports.insert(
+            export_id,
+            MockReportExport {
+                id: export_id,
+                key,
+                export_type,
+                status: MockReportExportStatus::Pending,
+                report_id: report_uuid,
+                delta_report_id,
+                report_format_id,
+                report_config_id,
+                bytes,
+            },
+        );
+        if cmd.name == "export_scan_report" {
+            format!(
+                "<export_scan_report_response status=\"201\" status_text=\"OK, resource created\" id=\"{export_id}\"/>"
+            )
+            .into_bytes()
+        } else {
+            format!(
+                "<{}_response status=\"201\" status_text=\"OK\" id=\"{export_id}\" export_status=\"pending\"/>",
+                cmd.name
+            )
+            .into_bytes()
+        }
+    }
+
+    fn handle_get_report_exports(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        let selected_id = match cmd.attr("report_export_id") {
+            Some(id) => match Uuid::parse_str(id) {
+                Ok(id) => Some(id),
+                Err(_) => return error_response(&cmd.name, 400, "Invalid report_export_id"),
+            },
+            None => None,
+        };
+        let Ok(mut exports) = self.report_exports.lock() else {
+            return error_response(&cmd.name, 500, "Report export state lock poisoned");
+        };
+        if selected_id.is_some_and(|id| !exports.exports.contains_key(&id)) {
+            return error_response(&cmd.name, 404, "Failed to find report_export");
+        }
+
+        let ids = exports
+            .exports
+            .keys()
+            .copied()
+            .filter(|id| selected_id.is_none_or(|selected| selected == *id))
+            .collect::<Vec<_>>();
+        let mut body = String::new();
+        for id in &ids {
+            if let Some(export) = exports.exports.get(id) {
+                body.push_str(&render_mock_report_export(export));
+            }
+        }
+        for id in &ids {
+            if let Some(export) = exports.exports.get_mut(id) {
+                export.status = match export.status {
+                    MockReportExportStatus::Pending => MockReportExportStatus::Running,
+                    MockReportExportStatus::Running => MockReportExportStatus::Done,
+                    MockReportExportStatus::CancelRequested => MockReportExportStatus::Canceled,
+                    status => status,
+                };
+            }
+        }
+        let count = ids.len();
         format!(
-            "<export_scan_report_response status=\"201\" status_text=\"OK, resource created\" id=\"{export_id}\"/>"
+            "<get_report_exports_response status=\"200\" status_text=\"OK\">{body}<report_exports start=\"1\" max=\"{count}\"/><report_export_count>{count}<filtered>{count}</filtered><page>{count}</page></report_export_count></get_report_exports_response>"
         )
         .into_bytes()
+    }
+
+    fn handle_cancel_report_export(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        let Some(raw_id) = cmd.attr("report_export_id") else {
+            return error_response(&cmd.name, 400, "Missing or invalid report_export_id");
+        };
+        let Ok(id) = Uuid::parse_str(raw_id) else {
+            return error_response(&cmd.name, 400, "Missing or invalid report_export_id");
+        };
+        let Ok(mut exports) = self.report_exports.lock() else {
+            return error_response(&cmd.name, 500, "Report export state lock poisoned");
+        };
+        let Some(export) = exports.exports.get_mut(&id) else {
+            return error_response(&cmd.name, 404, "Failed to find report_export");
+        };
+        export.status = match export.status {
+            MockReportExportStatus::Pending => MockReportExportStatus::Canceled,
+            MockReportExportStatus::Running => MockReportExportStatus::CancelRequested,
+            MockReportExportStatus::CancelRequested | MockReportExportStatus::Canceled => {
+                export.status
+            }
+            MockReportExportStatus::Done => {
+                return error_response(&cmd.name, 400, "Report export cannot be canceled");
+            }
+        };
+        b"<cancel_report_export_response status=\"200\" status_text=\"OK\"/>".to_vec()
+    }
+
+    fn handle_download_report_export(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        let Some(raw_id) = cmd.attr("report_export_id") else {
+            return error_response(&cmd.name, 400, "Missing or invalid report_export_id");
+        };
+        let Ok(id) = Uuid::parse_str(raw_id) else {
+            return error_response(&cmd.name, 400, "Missing or invalid report_export_id");
+        };
+        let Ok(mut exports) = self.report_exports.lock() else {
+            return error_response(&cmd.name, 500, "Report export state lock poisoned");
+        };
+        let Some(export) = exports.exports.get(&id) else {
+            return error_response(&cmd.name, 404, "Failed to find report_export");
+        };
+        if export.status != MockReportExportStatus::Done {
+            return error_response(&cmd.name, 400, "Report export is not ready for download");
+        }
+        let response = render_mock_report_export_download(export);
+        let key = export.key.clone();
+        exports.exports.remove(&id);
+        exports.ids_by_key.remove(&key);
+        response.into_bytes()
     }
 
     fn handle_authenticate(
@@ -4840,8 +5058,76 @@ fn store_error_response(command_name: &str, error: StoreError) -> Vec<u8> {
     }
 }
 
+fn render_mock_report_export(export: &MockReportExport) -> String {
+    let delta_report = export
+        .delta_report_id
+        .map_or_else(String::new, |id| format!("<delta_report id=\"{id}\"/>"));
+    let report_config = export
+        .report_config_id
+        .map_or_else(String::new, |id| format!("<report_config id=\"{id}\"/>"));
+    let (file_size, content_type, extension, attempt_count, start_time, end_time) =
+        match export.status {
+            MockReportExportStatus::Pending => (0, "", "", 0, "", ""),
+            MockReportExportStatus::Running | MockReportExportStatus::CancelRequested => {
+                (0, "", "", 1, "2026-10-02T00:00:00Z", "")
+            }
+            MockReportExportStatus::Done => (
+                export.bytes.len(),
+                "application/octet-stream",
+                "bin",
+                1,
+                "2026-10-02T00:00:00Z",
+                "2026-10-02T00:00:01Z",
+            ),
+            MockReportExportStatus::Canceled => {
+                (0, "", "", 1, "2026-10-02T00:00:00Z", "2026-10-02T00:00:01Z")
+            }
+        };
+    format!(
+        "<report_export id=\"{}\"><owner><name>admin</name></owner><name>Report Export</name><comment/><creation_time>2026-10-02T00:00:00Z</creation_time><modification_time>2026-10-02T00:00:01Z</modification_time><writable>1</writable><in_use>0</in_use><permissions/><type>{}</type><status>{}</status><progress>{}</progress><report id=\"{}\"/>{delta_report}<report_format id=\"{}\"/>{report_config}<file_size>{file_size}</file_size><content_type>{content_type}</content_type><extension>{extension}</extension><error_message/><attempt_count>{attempt_count}</attempt_count><start_time>{start_time}</start_time><end_time>{end_time}</end_time></report_export>",
+        export.id,
+        export.export_type,
+        export.status.as_str(),
+        export.status.progress(),
+        export.report_id,
+        export.report_format_id,
+    )
+}
+
+fn render_mock_report_export_download(export: &MockReportExport) -> String {
+    let delta_report = export
+        .delta_report_id
+        .map_or_else(String::new, |id| format!("<delta_report id=\"{id}\"/>"));
+    let report_config = export
+        .report_config_id
+        .map_or_else(String::new, |id| format!("<report_config id=\"{id}\"/>"));
+    let content = base64::engine::general_purpose::STANDARD.encode(&export.bytes);
+    format!(
+        "<download_report_export_response status=\"200\" status_text=\"OK\"><report_export id=\"{}\"><type>{}</type><status>done</status><progress>completed</progress><report id=\"{}\"/>{delta_report}<report_format id=\"{}\"/>{report_config}<file_size>{}</file_size><content_type>application/octet-stream</content_type><extension>bin</extension><content>{content}</content></report_export></download_report_export_response>",
+        export.id,
+        export.export_type,
+        export.report_id,
+        export.report_format_id,
+        export.bytes.len(),
+    )
+}
+
 fn render_help_response(cmd: &ParsedCommand, version: GmpVersion) -> Vec<u8> {
-    const COMMANDS: [(&str, &str); 7] = [
+    const COMMANDS: [(&str, &str); 13] = [
+        ("cancel_report_export", "Cancel a report export"),
+        ("download_report_export", "Download a report export"),
+        (
+            "export_audit_report",
+            "Create an asynchronous audit report export",
+        ),
+        (
+            "export_delta_audit_report",
+            "Create an asynchronous delta audit report export",
+        ),
+        (
+            "export_delta_scan_report",
+            "Create an asynchronous delta scan report export",
+        ),
         (
             "export_scan_report",
             "Create an asynchronous scan report export",
@@ -4849,6 +5135,7 @@ fn render_help_response(cmd: &ParsedCommand, version: GmpVersion) -> Vec<u8> {
         ("get_configs", "Get scan configurations"),
         ("get_feeds", "Get feed information"),
         ("get_info", "Get security information"),
+        ("get_report_exports", "Get report exports"),
         ("get_reports", "Get reports"),
         ("get_settings", "Get settings"),
         ("get_tasks", "Get tasks"),

@@ -64,6 +64,9 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   scan/audit retrieval, audit host summaries, all nine drill-downs, synchronous
   and asynchronous exports, irregular response carriers, source defaults, and
   capability gates.
+- `docs/report-export-lifecycle-gvmd-evidence.md`: v26.40.2 and current audit
+  evidence for the seven-command asynchronous report-export lifecycle,
+  discovery gates, state transitions, and destructive download semantics.
 - `docs/system-discovery-request-gvmd-evidence.md`: pinned gvmd and python-gvm
   evidence for pre-authentication version/authentication, help, features,
   feeds/timezones, aggregate shapes, settings, system reports, resource names,
@@ -148,11 +151,11 @@ Changing client behavior:
 - `crates/gvm-client/src/version.rs`: version parsing, mapping, command minimums, command support checks.
 - `crates/gvm-client/src/error.rs`: high-level error variants and display behavior.
 - Tests live under `crates/gvm-client/tests/`.
-- `canonical_request_surface_inventory.rs` protects the exact 1,026-row
+- `canonical_request_surface_inventory.rs` protects the exact 1,038-row
   disposition, retained rationale, removed-symbol, frozen-ticket, raw escape,
   and v0.6.0 mapping contracts.
 - `typed_facade_inventory.rs` parses every public typed helper and enforces the
-  258 canonical execute delegates plus three frozen ticket raw paths.
+  264 canonical execute delegates plus three frozen ticket raw paths.
 
 Changing transport behavior:
 

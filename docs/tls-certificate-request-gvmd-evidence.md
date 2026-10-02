@@ -163,13 +163,14 @@ The preserved schema differs materially from the pinned implementation:
   needs only copy plus optional overrides;
 - modify advertises a copy child that source does not implement;
 - GET omits the supported `details` attribute;
-- no `delete_tls_certificate` schema command exists; and
+- no `delete_tls_certificate` schema command exists at the behavior pin; and
 - common parsing accepts `ignore_pagination`, but it has no effective TLS
   behavior.
 
-Canonical codecs follow pinned source behavior without changing the global
-schema snapshot. Create, get, and modify retain `PinnedSchema` evidence.
-Delete is `PublicSourceOnly`: it is dispatched by
+Canonical codecs follow pinned source behavior. The newer global audit schema
+pin `5385fcb0130bb15230ada02effb78fab74c166b1` includes
+`delete_tls_certificate`, so all four commands have `PinnedSchema` evidence.
+Delete is dispatched by
 [`gmp.c`](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp.c#L5462),
 passes through the
 [`common delete handler`](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp_delete.c#L99),

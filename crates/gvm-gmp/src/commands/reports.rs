@@ -12,10 +12,12 @@ use quick_xml::Reader;
 use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, bool_str, set_optional_bool_attr};
 use crate::responses::{
-    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,
-    GetAuditReportHostsResponse, GetAuditReportResponse, GetAuditReportsResponse,
-    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
-    GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
+    CancelReportExportResponse, CreateReportResponse, DeleteReportResponse,
+    DownloadReportExportResponse, ExportAuditReportResponse, ExportDeltaAuditReportResponse,
+    ExportDeltaScanReportResponse, ExportScanReportResponse, GetAuditReportHostsResponse,
+    GetAuditReportResponse, GetAuditReportsResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
+    GetReportExportsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
     GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
     GetReportsResponse, GetScanReportResponse, ReportExport,
 };
@@ -704,6 +706,352 @@ report_projection_request!(
     "Request for report closed-CVE summaries."
 );
 
+/// Request for polling asynchronous report exports.
+#[derive(Debug, Clone, Default)]
+pub struct GetReportExportsRequest {
+    /// Optional report-export identifier. Omission lists visible exports.
+    pub report_export_id: Option<EntityId>,
+    /// Optional inline report-export filter.
+    pub filter_string: Option<String>,
+    /// Optional saved report-export filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether gvmd includes the resource details selected by its GET layer.
+    pub details: Option<bool>,
+}
+
+impl GetReportExportsRequest {
+    /// Select one report export by identifier.
+    #[must_use]
+    pub fn new(report_export_id: EntityId) -> Self {
+        Self {
+            report_export_id: Some(report_export_id),
+            ..Self::default()
+        }
+    }
+}
+
+impl GmpRequestCodec for GetReportExportsRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("get_report_exports"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        let mut command = XmlCommand::new("get_report_exports");
+        if let Some(report_export_id) = &self.report_export_id {
+            command.set_attribute("report_export_id", report_export_id.as_str());
+        }
+        add_filter_attrs(
+            &mut command,
+            self.filter_string.as_deref(),
+            self.filter_id.as_ref(),
+        );
+        set_optional_bool_attr(&mut command, "details", self.details);
+        Ok(command.to_bytes())
+    }
+}
+
+impl GmpRequest for GetReportExportsRequest {
+    type Response = GetReportExportsResponse;
+}
+
+/// Request for downloading and consuming one completed report export.
+///
+/// A successful gvmd response contains standard-base64 file bytes and removes
+/// the server-side export only after the full response has been sent.
+#[derive(Debug, Clone)]
+pub struct DownloadReportExportRequest {
+    /// Completed report-export identifier.
+    pub report_export_id: EntityId,
+}
+
+impl DownloadReportExportRequest {
+    /// Select a completed export for download.
+    #[must_use]
+    pub fn new(report_export_id: EntityId) -> Self {
+        Self { report_export_id }
+    }
+}
+
+impl GmpRequestCodec for DownloadReportExportRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("download_report_export"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("download_report_export")
+            .attribute("report_export_id", self.report_export_id.as_str())
+            .to_bytes())
+    }
+}
+
+impl GmpRequest for DownloadReportExportRequest {
+    type Response = DownloadReportExportResponse;
+}
+
+/// Request for canceling a pending or running report export.
+///
+/// gvmd cancels pending exports immediately. Running exports first enter
+/// `cancel_requested` and become `canceled` when their worker stops.
+#[derive(Debug, Clone)]
+pub struct CancelReportExportRequest {
+    /// Report-export identifier whose cancellation is requested.
+    pub report_export_id: EntityId,
+}
+
+impl CancelReportExportRequest {
+    /// Select an export for cancellation.
+    #[must_use]
+    pub fn new(report_export_id: EntityId) -> Self {
+        Self { report_export_id }
+    }
+}
+
+impl GmpRequestCodec for CancelReportExportRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("cancel_report_export"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(XmlCommand::new("cancel_report_export")
+            .attribute("report_export_id", self.report_export_id.as_str())
+            .to_bytes())
+    }
+}
+
+impl GmpRequest for CancelReportExportRequest {
+    type Response = CancelReportExportResponse;
+}
+
+/// Request for queuing or reusing an asynchronous audit-report export.
+#[derive(Debug, Clone)]
+pub struct ExportAuditReportRequest {
+    /// Audit-report identifier to export.
+    pub report_id: EntityId,
+    /// Optional report format. Omission selects gvmd's XML format default.
+    pub report_format_id: Option<EntityId>,
+    /// Optional report configuration.
+    pub report_config_id: Option<EntityId>,
+    /// Optional inline compliance/result filter.
+    pub filter_string: Option<String>,
+    /// Whether pagination terms in the filter are ignored.
+    pub ignore_pagination: Option<bool>,
+    /// Whether gvmd may omit selected redundant report fields.
+    pub lean: Option<bool>,
+    /// Whether included notes use detailed output.
+    pub notes_details: Option<bool>,
+    /// Whether included overrides use detailed output.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
+}
+
+impl ExportAuditReportRequest {
+    /// Create an asynchronous audit export with gvmd's omission defaults.
+    #[must_use]
+    pub fn new(report_id: EntityId) -> Self {
+        Self {
+            report_id,
+            report_format_id: None,
+            report_config_id: None,
+            filter_string: None,
+            ignore_pagination: None,
+            lean: None,
+            notes_details: None,
+            overrides_details: None,
+            result_tags: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for ExportAuditReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("export_audit_report"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(report_export_command(
+            "export_audit_report",
+            &self.report_id,
+            None,
+            self.report_format_id.as_ref(),
+            self.report_config_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.ignore_pagination,
+            self.lean,
+            self.notes_details,
+            self.overrides_details,
+            self.result_tags,
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for ExportAuditReportRequest {
+    type Response = ExportAuditReportResponse;
+}
+
+/// Request for queuing or reusing an asynchronous delta-audit export.
+#[derive(Debug, Clone)]
+pub struct ExportDeltaAuditReportRequest {
+    /// Audit-report identifier to export.
+    pub report_id: EntityId,
+    /// Audit report used as the delta baseline.
+    pub delta_report_id: EntityId,
+    /// Optional report format. Omission selects gvmd's XML format default.
+    pub report_format_id: Option<EntityId>,
+    /// Optional report configuration.
+    pub report_config_id: Option<EntityId>,
+    /// Optional inline compliance/result filter.
+    pub filter_string: Option<String>,
+    /// Whether pagination terms in the filter are ignored.
+    pub ignore_pagination: Option<bool>,
+    /// Whether gvmd may omit selected redundant report fields.
+    pub lean: Option<bool>,
+    /// Whether included notes use detailed output.
+    pub notes_details: Option<bool>,
+    /// Whether included overrides use detailed output.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
+}
+
+impl ExportDeltaAuditReportRequest {
+    /// Create a delta-audit export with gvmd's omission defaults.
+    #[must_use]
+    pub fn new(report_id: EntityId, delta_report_id: EntityId) -> Self {
+        Self {
+            report_id,
+            delta_report_id,
+            report_format_id: None,
+            report_config_id: None,
+            filter_string: None,
+            ignore_pagination: None,
+            lean: None,
+            notes_details: None,
+            overrides_details: None,
+            result_tags: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for ExportDeltaAuditReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("export_delta_audit_report"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(report_export_command(
+            "export_delta_audit_report",
+            &self.report_id,
+            Some(&self.delta_report_id),
+            self.report_format_id.as_ref(),
+            self.report_config_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.ignore_pagination,
+            self.lean,
+            self.notes_details,
+            self.overrides_details,
+            self.result_tags,
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for ExportDeltaAuditReportRequest {
+    type Response = ExportDeltaAuditReportResponse;
+}
+
+/// Request for queuing or reusing an asynchronous delta-scan export.
+#[derive(Debug, Clone)]
+pub struct ExportDeltaScanReportRequest {
+    /// Scan-report identifier to export.
+    pub report_id: EntityId,
+    /// Scan report used as the delta baseline.
+    pub delta_report_id: EntityId,
+    /// Optional report format. Omission selects gvmd's XML format default.
+    pub report_format_id: Option<EntityId>,
+    /// Optional report configuration.
+    pub report_config_id: Option<EntityId>,
+    /// Optional inline result filter.
+    pub filter_string: Option<String>,
+    /// Whether pagination terms in the filter are ignored.
+    pub ignore_pagination: Option<bool>,
+    /// Whether gvmd may omit selected redundant report fields.
+    pub lean: Option<bool>,
+    /// Whether included notes use detailed output.
+    pub notes_details: Option<bool>,
+    /// Whether included overrides use detailed output.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
+}
+
+impl ExportDeltaScanReportRequest {
+    /// Create a delta-scan export with gvmd's omission defaults.
+    #[must_use]
+    pub fn new(report_id: EntityId, delta_report_id: EntityId) -> Self {
+        Self {
+            report_id,
+            delta_report_id,
+            report_format_id: None,
+            report_config_id: None,
+            filter_string: None,
+            ignore_pagination: None,
+            lean: None,
+            notes_details: None,
+            overrides_details: None,
+            result_tags: None,
+        }
+    }
+}
+
+impl GmpRequestCodec for ExportDeltaScanReportRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        validate_filter(self.filter_string.as_deref())
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("export_delta_scan_report"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
+        Ok(report_export_command(
+            "export_delta_scan_report",
+            &self.report_id,
+            Some(&self.delta_report_id),
+            self.report_format_id.as_ref(),
+            self.report_config_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.ignore_pagination,
+            self.lean,
+            self.notes_details,
+            self.overrides_details,
+            self.result_tags,
+        )
+        .to_bytes())
+    }
+}
+
+impl GmpRequest for ExportDeltaScanReportRequest {
+    type Response = ExportDeltaScanReportResponse;
+}
+
 /// Request for queuing or reusing an asynchronous scan-report export.
 #[derive(Debug, Clone)]
 pub struct ExportScanReportRequest {
@@ -756,28 +1104,60 @@ impl GmpRequestCodec for ExportScanReportRequest {
 
     fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
         self.validate()?;
-        let mut command =
-            XmlCommand::new("export_scan_report").attribute("report_id", self.report_id.as_str());
-        if let Some(report_format_id) = &self.report_format_id {
-            command.set_attribute("format_id", report_format_id.as_str());
-        }
-        if let Some(report_config_id) = &self.report_config_id {
-            command.set_attribute("config_id", report_config_id.as_str());
-        }
-        if let Some(filter_string) = &self.filter_string {
-            command.set_attribute("filter", filter_string);
-        }
-        set_optional_bool_attr(&mut command, "ignore_pagination", self.ignore_pagination);
-        set_optional_bool_attr(&mut command, "lean", self.lean);
-        set_optional_bool_attr(&mut command, "notes_details", self.notes_details);
-        set_optional_bool_attr(&mut command, "overrides_details", self.overrides_details);
-        set_optional_bool_attr(&mut command, "result_tags", self.result_tags);
-        Ok(command.to_bytes())
+        Ok(report_export_command(
+            "export_scan_report",
+            &self.report_id,
+            None,
+            self.report_format_id.as_ref(),
+            self.report_config_id.as_ref(),
+            self.filter_string.as_deref(),
+            self.ignore_pagination,
+            self.lean,
+            self.notes_details,
+            self.overrides_details,
+            self.result_tags,
+        )
+        .to_bytes())
     }
 }
 
 impl GmpRequest for ExportScanReportRequest {
     type Response = ExportScanReportResponse;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn report_export_command(
+    command_name: &'static str,
+    report_id: &EntityId,
+    delta_report_id: Option<&EntityId>,
+    report_format_id: Option<&EntityId>,
+    report_config_id: Option<&EntityId>,
+    filter_string: Option<&str>,
+    ignore_pagination: Option<bool>,
+    lean: Option<bool>,
+    notes_details: Option<bool>,
+    overrides_details: Option<bool>,
+    result_tags: Option<bool>,
+) -> XmlCommand {
+    let mut command = XmlCommand::new(command_name).attribute("report_id", report_id.as_str());
+    if let Some(delta_report_id) = delta_report_id {
+        command.set_attribute("delta_report_id", delta_report_id.as_str());
+    }
+    if let Some(report_format_id) = report_format_id {
+        command.set_attribute("format_id", report_format_id.as_str());
+    }
+    if let Some(report_config_id) = report_config_id {
+        command.set_attribute("config_id", report_config_id.as_str());
+    }
+    if let Some(filter_string) = filter_string {
+        command.set_attribute("filter", filter_string);
+    }
+    set_optional_bool_attr(&mut command, "ignore_pagination", ignore_pagination);
+    set_optional_bool_attr(&mut command, "lean", lean);
+    set_optional_bool_attr(&mut command, "notes_details", notes_details);
+    set_optional_bool_attr(&mut command, "overrides_details", overrides_details);
+    set_optional_bool_attr(&mut command, "result_tags", result_tags);
+    command
 }
 
 fn import_report_bytes(request: &ImportReportRequest) -> Vec<u8> {

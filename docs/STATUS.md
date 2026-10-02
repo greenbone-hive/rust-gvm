@@ -27,9 +27,9 @@ The canonical-request program in issue #602 is complete. [ADR 0002](adr/0002-can
 separates fallible typed validation/encoding from raw `Request` and fixes
 execution precedence as validate → semantic support → encode → transport →
 decode. Issue #678 audits the complete exported surface: the checked
-[surface disposition ledger](canonical-request-disposition.md) contains 1,026
-classified rows with zero transitional entries, and all 261 public typed
-facades are enforced as 258 canonical `execute` delegates plus three frozen
+[surface disposition ledger](canonical-request-disposition.md) contains 1,038
+classified rows with zero transitional entries, and all 267 public typed
+facades are enforced as 264 canonical `execute` delegates plus three frozen
 ticket raw paths. The [convergence audit](canonical-request-convergence-audit.md)
 records the reproducible counts and v0.6.0 comparison. The standard target
 family remains the converted reference slice: its six complete requests own
@@ -189,8 +189,8 @@ records those contracts. Issue #639 documents why the legacy delete-user
 
 The report-configuration, report-format, TLS-certificate, bounded NVT/SecInfo,
 report retrieval, structured projection, and export families are complete.
-Delta/alert-selected report generation and a streaming redesign remain
-separately tracked work.
+Alert-selected report generation, typed asynchronous export state/subtype
+fields, and a streaming redesign remain separately tracked work.
 
 The sections below retain the bounded delivery history for each migrated
 family. They are milestone snapshots, so transitional phrases such as
@@ -443,7 +443,7 @@ This final #658–#664 family leaves zero transitional rows in the enforced
 disposition inventory; issue #678 completes the retained-surface, removal, and
 exported-facade audit.
 
-Issues #661 and #662 complete the report lifecycle, structured-report,
+Issues #661, #662, and #715 complete the report lifecycle, structured-report,
 drill-down, and export request migration. The lifecycle operations plus all
 nine projections, synchronous report-format export, and asynchronous export
 creation/reuse now own complete canonical values. Pinned gvmd has no empty
@@ -453,14 +453,16 @@ operation.
 Ordinary, audit-list, structured scan, structured audit, and audit-host
 responses retain separate associations and explicit parsers for nested,
 mixed, repeated, binary/base64, absent-field, and large bounded report data.
-Projection and synchronous-export operations require GMP 22.8;
-`export_scan_report` requires positive XML-help discovery. Duplicate
+Projection and synchronous-export operations require GMP 22.8. The seven
+asynchronous report-export creation, polling, download, and cancellation
+commands require a GMP 22.7 lower bound plus positive XML-help discovery. Duplicate
 vulnerability names, `_parsed` suffixes, raw projection facades, and forwarding
 option variants are removed. Operating-system projection rows decode gvmd's
 `best_os_cpe`, `best_os_txt`, and typed `hosts_count` fields rather than a
-generic summary. Delta/alert-selected generation and streaming redesign remain
-separate work. See the
-[pinned evidence](report-request-gvmd-evidence.md).
+generic summary. Alert-selected generation, typed export state/subtype fields,
+and streaming redesign remain separate work. See the
+[report evidence](report-request-gvmd-evidence.md) and
+[asynchronous lifecycle evidence](report-export-lifecycle-gvmd-evidence.md).
 
 | Crate | Status | Description |
 |-------|--------|-------------|
@@ -576,7 +578,7 @@ de-duplication without rewriting otherwise valid host spellings.
 
 ### Stateful CRUD
 
-The stateful handler recognizes all 145 registry roots that are marked
+The stateful handler recognizes all 151 registry roots that are marked
 stateful and combines family-specific handlers with bounded generic resource
 behavior. This is not a claim of complete gvmd semantics for every CRUD verb:
 the exact modeled, partial, and unsupported behavior is maintained in the
@@ -647,7 +649,7 @@ the template count is not the number of GMP commands supported by other modes.
 | `features` command (22.6+) | ✅ | get_features |
 | structured audit-report commands (22.7+) | ✅ | get_audit_report and get_audit_report_hosts |
 | REST-support GMP helpers (22.8+) | ✅ | structured scan report, typed report drill-downs and synchronous export, get_timezones, get_credential_stores |
-| Discoverable asynchronous report export | ✅ | `export_scan_report` requires positive XML-help discovery after its 22.7 lower bound |
+| Discoverable asynchronous report exports | ✅ | All seven lifecycle commands require positive XML-help discovery after their 22.7 lower bound |
 | Version range metadata in responses | ✅ | Status text includes version requirement |
 
 ### CLI (Standalone Binary)
@@ -921,7 +923,7 @@ its explicit raw-send compatibility path.
 | Auto version negotiation | ✅ |
 | `GmpVersioned` enum (V224–VNext) | ✅ |
 | `GvmError` with server/connection/parse/timeout/unsupported | ✅ |
-| Typed convenience methods (261 methods, all GMP domains) | ✅ |
+| Typed convenience methods (267 methods, all GMP domains) | ✅ |
 | Version parsing from XML | ✅ |
 | Bounded resource and lifecycle tests | ✅ |
 | Disconnect + error path tests | ✅ |

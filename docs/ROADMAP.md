@@ -35,7 +35,7 @@ The current `main` branch is the unreleased `0.7.0` development line. It is
 intentionally SemVer-incompatible with `v0.6.0`: issue #602 replaces temporary
 parallel options/builders/facade inputs with canonical complete request values
 before the next downstream-ready release. Issue #678 completes the final
-surface audit with 1,026 classified rows, zero transitional entries, and 261
+surface audit with 1,038 classified rows, zero transitional entries, and 267
 typed facades. The release remains gated on downstream validation and release
 work. See the [convergence audit](canonical-request-convergence-audit.md) and
 [v0.7.0 migration guide](v0.7.0-migration.md).

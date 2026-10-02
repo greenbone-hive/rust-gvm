@@ -105,6 +105,11 @@ const INTEGRATION_COVERED: &[&str] = &[
     "delete_audit_report",
     "get_audit_report",
     "get_audit_report_hosts",
+    "cancel_report_export",
+    "download_report_export",
+    "export_audit_report",
+    "export_delta_audit_report",
+    "export_delta_scan_report",
     "get_report_hosts",
     "get_report_ports",
     "get_report_applications",
@@ -115,6 +120,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_report_errors",
     "get_report_closed_cves",
     "get_report_export",
+    "get_report_exports",
     "export_scan_report",
     "get_results",
     "get_result",
@@ -406,7 +412,7 @@ fn normalized_integration_sources() -> String {
 #[test]
 fn every_public_typed_helper_has_exactly_one_enforced_classification() {
     let public = public_typed_methods();
-    assert_eq!(public.len(), 261);
+    assert_eq!(public.len(), 267);
     let mut classified = BTreeSet::new();
 
     for (class, methods) in [
@@ -435,7 +441,7 @@ fn every_public_typed_helper_has_exactly_one_enforced_classification() {
 #[test]
 fn execution_paths_preserve_the_typed_facade_contract() {
     let methods = typed_methods();
-    assert_eq!(methods.len(), 261);
+    assert_eq!(methods.len(), 267);
 
     let mut execute_helpers = BTreeSet::new();
     let mut raw_helpers = BTreeSet::new();
@@ -490,7 +496,7 @@ fn execution_paths_preserve_the_typed_facade_contract() {
         }
     }
 
-    assert_eq!(execute_helpers.len(), 258);
+    assert_eq!(execute_helpers.len(), 264);
     assert_eq!(
         raw_helpers,
         FROZEN_TICKET_HELPERS.map(str::to_string).into()

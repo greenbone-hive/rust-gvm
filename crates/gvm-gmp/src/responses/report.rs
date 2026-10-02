@@ -10,8 +10,8 @@ use quick_xml::Writer;
 
 use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
-    parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
-    ParseError,
+    parse_entity_meta_optional_name, parse_named_entity, status_from_response, ActionResponse,
+    CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -92,18 +92,95 @@ pub struct CreateReportResponse {
     pub id: crate::EntityId,
 }
 
-/// Response from an asynchronous `export_scan_report` request.
+/// Response from an asynchronous report-export creation or reuse request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ExportScanReportResponse {
+pub struct ReportExportResponse {
     pub status: u16,
     pub status_text: String,
     pub id: crate::EntityId,
-    /// Current processing status for a reused export. Newly created exports
-    /// omit this attribute in current gvmd responses.
+    /// Current processing status. `export_scan_report` omits this for a newly
+    /// created export; the audit and delta commands include it.
     pub export_status: Option<String>,
 }
+
+/// Backward-compatible response name for `export_scan_report`.
+pub type ExportScanReportResponse = ReportExportResponse;
+/// Response from `export_audit_report`.
+pub type ExportAuditReportResponse = ReportExportResponse;
+/// Response from `export_delta_audit_report`.
+pub type ExportDeltaAuditReportResponse = ReportExportResponse;
+/// Response from `export_delta_scan_report`.
+pub type ExportDeltaScanReportResponse = ReportExportResponse;
+
+/// Observable metadata for one asynchronous report export.
+///
+/// Export type, status, and progress stay source-shaped strings in this
+/// protocol phase so clients retain new gvmd values without lossy fallback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReportExportInfo {
+    pub meta: EntityMeta,
+    pub export_type: String,
+    pub status: String,
+    pub progress: String,
+    pub report_id: Option<crate::EntityId>,
+    pub delta_report_id: Option<crate::EntityId>,
+    pub report_format_id: Option<crate::EntityId>,
+    pub report_config_id: Option<crate::EntityId>,
+    pub file_size: u64,
+    pub content_type: Option<String>,
+    pub extension: Option<String>,
+    pub error_message: Option<String>,
+    pub attempt_count: u32,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+}
+
+/// Response from `get_report_exports`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetReportExportsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<ReportExportInfo>,
+    pub counts: CountInfo,
+}
+
+/// Downloaded, standard-base64-decoded report-export file and metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DownloadedReportExport {
+    pub id: crate::EntityId,
+    pub export_type: String,
+    pub status: String,
+    pub progress: String,
+    pub report_id: Option<crate::EntityId>,
+    pub delta_report_id: Option<crate::EntityId>,
+    pub report_format_id: Option<crate::EntityId>,
+    pub report_config_id: Option<crate::EntityId>,
+    pub file_size: u64,
+    pub content_type: Option<String>,
+    pub extension: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
+/// Response from `download_report_export`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DownloadReportExportResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub report_export: DownloadedReportExport,
+}
+
+/// Response from `cancel_report_export`.
+pub type CancelReportExportResponse = ActionResponse;
 
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -424,7 +501,7 @@ impl CreateReportResponse {
     }
 }
 
-impl ExportScanReportResponse {
+impl ReportExportResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
         let root = parse_document(response.data())?;
@@ -442,10 +519,140 @@ impl ExportScanReportResponse {
     }
 }
 
-impl GmpResponse for ExportScanReportResponse {
+impl GmpResponse for ReportExportResponse {
     fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
         Self::from_response(response)
     }
+}
+
+impl ReportExportInfo {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        Ok(Self {
+            meta: parse_entity_meta_optional_name(node)?,
+            export_type: node.required_child_text("type")?,
+            status: node.required_child_text("status")?,
+            progress: node.required_child_text("progress")?,
+            report_id: optional_child_entity_id(node, "report")?,
+            delta_report_id: optional_child_entity_id(node, "delta_report")?,
+            report_format_id: optional_child_entity_id(node, "report_format")?,
+            report_config_id: optional_child_entity_id(node, "report_config")?,
+            file_size: required_child_u64(node, "file_size")?,
+            content_type: node.optional_child_text("content_type"),
+            extension: node.optional_child_text("extension"),
+            error_message: node.optional_child_text("error_message"),
+            attempt_count: required_child_u32(node, "attempt_count")?,
+            start_time: node.optional_child_text("start_time"),
+            end_time: node.optional_child_text("end_time"),
+        })
+    }
+}
+
+impl GetReportExportsResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children_named("report_export")
+            .map(ReportExportInfo::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: count_info(&root, "report_export_count")?,
+        })
+    }
+}
+
+impl GmpResponse for GetReportExportsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
+impl DownloadReportExportResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let node = root
+            .child("report_export")
+            .ok_or_else(|| ParseError::MissingElement("report_export".to_string()))?;
+        let id = parse_entity_id(
+            node.attr("id")
+                .ok_or_else(|| ParseError::MissingElement("report_export.id".to_string()))?,
+            "report_export.id",
+        )?;
+        let encoded = node.required_child_text("content")?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(strip_ascii_whitespace(&encoded))
+            .map_err(|_| ParseError::InvalidValue {
+                field: "report_export.content".to_string(),
+                value: encoded,
+            })?;
+        let report_export = DownloadedReportExport {
+            id,
+            export_type: node.required_child_text("type")?,
+            status: node.required_child_text("status")?,
+            progress: node.required_child_text("progress")?,
+            report_id: optional_child_entity_id(node, "report")?,
+            delta_report_id: optional_child_entity_id(node, "delta_report")?,
+            report_format_id: optional_child_entity_id(node, "report_format")?,
+            report_config_id: optional_child_entity_id(node, "report_config")?,
+            file_size: required_child_u64(node, "file_size")?,
+            content_type: node.optional_child_text("content_type"),
+            extension: node.optional_child_text("extension"),
+            bytes,
+        };
+        Ok(Self {
+            status,
+            status_text,
+            report_export,
+        })
+    }
+}
+
+impl GmpResponse for DownloadReportExportResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
+fn optional_child_entity_id(
+    node: &crate::responses::common::XmlNode,
+    field: &str,
+) -> Result<Option<crate::EntityId>, ParseError> {
+    let Some(child) = node.child(field) else {
+        return Ok(None);
+    };
+    let Some(raw_id) = child.attr("id") else {
+        return Err(ParseError::MissingElement(format!("{field}.id")));
+    };
+    if raw_id.is_empty() {
+        return Ok(None);
+    }
+    parse_entity_id(raw_id, &format!("{field}.id")).map(Some)
+}
+
+fn required_child_u64(
+    node: &crate::responses::common::XmlNode,
+    field: &str,
+) -> Result<u64, ParseError> {
+    let value = node.required_child_text(field)?;
+    value.parse::<u64>().map_err(|_| ParseError::InvalidValue {
+        field: field.to_string(),
+        value,
+    })
+}
+
+fn required_child_u32(
+    node: &crate::responses::common::XmlNode,
+    field: &str,
+) -> Result<u32, ParseError> {
+    let value = node.required_child_text(field)?;
+    value.parse::<u32>().map_err(|_| ParseError::InvalidValue {
+        field: field.to_string(),
+        value,
+    })
 }
 
 macro_rules! impl_report_gmp_response {
@@ -1591,6 +1798,89 @@ mod tests {
             error,
             ParseError::ServerError { status: 400, message }
                 if message == "Missing or invalid report_id"
+        ));
+    }
+
+    #[test]
+    fn parses_report_export_polling_states_and_counts() {
+        let response = Response::from(
+            r#"<get_report_exports_response status="200" status_text="OK">
+                <report_export id="08a382cd-98e8-4983-9650-e16099bb39e6">
+                    <owner><name>admin</name></owner><name>Report Export</name><comment/>
+                    <creation_time>2026-09-01T08:40:50Z</creation_time>
+                    <modification_time>2026-09-01T08:40:51Z</modification_time>
+                    <writable>1</writable><in_use>0</in_use><permissions/>
+                    <type>delta_audit</type><status>cancel_requested</status><progress>generating</progress>
+                    <report id="c2cba4ff-2145-47f1-abe1-33b0c3859d65"/>
+                    <delta_report id="6587438c-4787-41e6-a0a7-765193dcd44f"/>
+                    <report_format id="a994b278-1f62-11e1-96ac-406186ea4fc5"/>
+                    <report_config id="17c13a41-1b32-4e4f-99dd-44e90b360ddc"/>
+                    <file_size>66341</file_size><content_type>text/xml</content_type><extension>xml</extension>
+                    <error_message/><attempt_count>1</attempt_count>
+                    <start_time>2026-09-01T08:40:50Z</start_time><end_time/>
+                </report_export>
+                <report_exports start="1" max="1000"/>
+                <report_export_count>1<filtered>1</filtered><page>1</page></report_export_count>
+            </get_report_exports_response>"#,
+        );
+
+        let parsed = GetReportExportsResponse::from_response(&response).expect("poll parse");
+
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].export_type, "delta_audit");
+        assert_eq!(parsed.items[0].status, "cancel_requested");
+        assert_eq!(parsed.items[0].progress, "generating");
+        assert_eq!(parsed.items[0].file_size, 66_341);
+        assert_eq!(parsed.items[0].attempt_count, 1);
+        assert!(parsed.items[0].delta_report_id.is_some());
+        assert_eq!(parsed.items[0].end_time, None);
+        assert_eq!(parsed.counts.total, Some(1));
+        assert_eq!(parsed.counts.filtered, Some(1));
+        assert_eq!(parsed.counts.page, Some(1));
+    }
+
+    #[test]
+    fn parses_downloaded_report_export_as_arbitrary_bytes() {
+        let response = Response::from(
+            r#"<download_report_export_response status="200" status_text="OK">
+                <report_export id="08a382cd-98e8-4983-9650-e16099bb39e6">
+                    <type>scan</type><status>done</status><progress>completed</progress>
+                    <report id="c2cba4ff-2145-47f1-abe1-33b0c3859d65"/>
+                    <report_format id="c402cc3e-b531-11e1-9163-406186ea4fc5"/>
+                    <file_size>4</file_size><content_type>application/octet-stream</content_type>
+                    <extension>bin</extension><content>AP8B/g==</content>
+                </report_export>
+            </download_report_export_response>"#,
+        );
+
+        let parsed = DownloadReportExportResponse::from_response(&response).expect("download");
+
+        assert_eq!(parsed.report_export.status, "done");
+        assert_eq!(parsed.report_export.progress, "completed");
+        assert_eq!(parsed.report_export.bytes, [0, 255, 1, 254]);
+        assert_eq!(parsed.report_export.file_size, 4);
+        assert_eq!(
+            parsed.report_export.content_type.as_deref(),
+            Some("application/octet-stream")
+        );
+    }
+
+    #[test]
+    fn report_export_download_rejects_invalid_base64_and_non_success() {
+        let invalid = Response::from(
+            r#"<download_report_export_response status="200" status_text="OK"><report_export id="export-1"><type>scan</type><status>done</status><progress>completed</progress><report id="report-1"/><report_format id="format-1"/><file_size>1</file_size><content_type/><extension/><content>***</content></report_export></download_report_export_response>"#,
+        );
+        assert!(matches!(
+            DownloadReportExportResponse::from_response(&invalid),
+            Err(ParseError::InvalidValue { field, .. }) if field == "report_export.content"
+        ));
+
+        let pending = Response::from(
+            r#"<download_report_export_response status="400" status_text="Report export is not ready for download"/>"#,
+        );
+        assert!(matches!(
+            DownloadReportExportResponse::from_response(&pending),
+            Err(ParseError::ServerError { status: 400, .. })
         ));
     }
 
