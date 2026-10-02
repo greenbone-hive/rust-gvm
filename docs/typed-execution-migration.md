@@ -1422,10 +1422,11 @@ handler ignores generic filters, so those fields are absent. Detail-dependent
 flags and timeout context are validated against the final request before I/O.
 
 `GenericInfoType` now contains only pinned `get_info` dispatches:
-`CERT_BUND_ADV`, `CPE`, `CVE`, `DFN_CERT_ADV`, and `NVT`. There is no OVAL,
-operating-system, or vulnerability alias. Use asset OS requests for OS assets
-and `GetVulnsRequest`/`GetVulnerabilityRequest` for observed vulnerabilities.
-The historical `InfoType` is vocabulary only and no longer converts into the
+`CERT_BUND_ADV`, `CPE`, `CVE`, `DFN_CERT_ADV`, `NVT`, and the feature-gated
+`web_application_vt`. There is no OVAL, operating-system, or vulnerability
+alias. Use asset OS requests for OS assets and
+`GetVulnsRequest`/`GetVulnerabilityRequest` for observed vulnerabilities. The
+historical `InfoType` is vocabulary only and no longer converts into the
 canonical enum.
 
 SecInfo typed responses follow authoritative `<info id>` wrappers. Direct typed

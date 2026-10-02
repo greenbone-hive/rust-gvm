@@ -901,11 +901,12 @@ async fn next_client_agent_commands_round_trip() {
     assert_eq!(instruction.language, "en");
     assert!(instruction.instruction.contains("mock agent"));
 
+    server.clear_history();
+    let mut support_bundle_request =
+        GetAgentSupportBundleRequest::new(agent_ids[0].clone(), Some(7));
+    support_bundle_request.encryption = Some(false);
     let bundle = client
-        .get_agent_support_bundle(GetAgentSupportBundleRequest::new(
-            agent_ids[0].clone(),
-            Some(7),
-        ))
+        .get_agent_support_bundle(support_bundle_request)
         .await
         .expect("get_agent_support_bundle should succeed");
     assert_eq!(
@@ -913,6 +914,13 @@ async fn next_client_agent_commands_round_trip() {
         Some("application/octet-stream")
     );
     assert_eq!(bundle.file.content, b"hello-mock");
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].command_name(), "get_agent_support_bundle");
+    assert_eq!(
+        history[0].raw_xml(),
+        br#"<get_agent_support_bundle agent_uuid="00000000-0000-0000-0000-000000000002" days="7" encryption="0"/>"#
+    );
 
     let delete = client
         .delete_agent(DeleteAgentRequest::new(agent_ids))
