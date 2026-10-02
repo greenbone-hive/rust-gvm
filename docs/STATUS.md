@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-21
+Last updated: 2026-10-02
 
 ## Support Direction
 
@@ -807,6 +807,15 @@ responses without an explicit alive-test value report `Scan Config Default`,
 matching gvmd's observation behavior.
 
 ### Public modules and enums
+
+Issue #715 adds five bounded current-schema projections without replacing the
+canonical request/response architecture: optional support-bundle encryption,
+result-NVT type metadata, NVT discovery markers, detailed NVT Markdown
+technical information, and the feature-gated `web_application_vt` generic-info
+payload. Existing constructors remain source-compatible, response additions
+are on non-exhaustive types, and future unknown `get_info` subtype names remain
+observable. See the
+[pinned evidence](typed-schema-projections-gvmd-evidence.md).
 
 The crate exposes 45 command-family modules at this revision, plus shared
 request, response, capability, update, and type modules. Enums are defined both

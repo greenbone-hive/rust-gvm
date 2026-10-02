@@ -67,6 +67,10 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/report-export-lifecycle-gvmd-evidence.md`: v26.40.2 and current audit
   evidence for the seven-command asynchronous report-export lifecycle,
   discovery gates, state transitions, and destructive download semantics.
+- `docs/typed-schema-projections-gvmd-evidence.md`: pinned current gvmd
+  evidence for support-bundle encryption, result/NVT projection fields,
+  detailed NVT technical information, and web-application/future info
+  subtypes.
 - `docs/system-discovery-request-gvmd-evidence.md`: pinned gvmd and python-gvm
   evidence for pre-authentication version/authentication, help, features,
   feeds/timezones, aggregate shapes, settings, system reports, resource names,
