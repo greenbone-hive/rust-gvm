@@ -4,8 +4,8 @@
 > Historical design record. Descriptions headed "Current Architecture," code
 > examples, proposed paths, phases, and open questions below describe the RFC
 > snapshot rather than v0.7. ADR 0002 and issue #602 supersede its input model;
-> use [the typed-execution guide](typed-execution.md) and
-> [current status](STATUS.md) for the implemented API.
+> use [the typed-execution guide](../../typed-execution.md) and
+> [current status](../../STATUS.md) for the implemented API.
 
 ## Problem Statement
 

@@ -3,8 +3,8 @@
 > [!NOTE]
 > Archived test-expansion prompt. Counts, gaps, and suggested APIs below are a
 > historical planning snapshot. Current validation ownership and targeted
-> commands are in [`docs/agent-code-map.md`](docs/agent-code-map.md), while
-> [`docs/STATUS.md`](docs/STATUS.md) describes the v0.7 surface.
+> commands are in [`docs/agent-code-map.md`](../../agent-code-map.md), while
+> [`docs/STATUS.md`](../../STATUS.md) describes the v0.7 surface.
 
 ## Context
 
