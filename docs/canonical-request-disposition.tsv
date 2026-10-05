@@ -737,7 +737,7 @@ request	crates/gvm-gmp/src/commands/agent_groups.rs	ModifyAgentGroupRequest	cano
 request	crates/gvm-gmp/src/commands/agents.rs	DeleteAgentRequest	canonical-request	Complete delete input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/agents.rs	GetAgentInstallerInstructionRequest	canonical-request	Complete installer-instruction input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/agents.rs	GetAgentRequest	canonical-request	Complete detail input with semantic alias metadata, direct encoding, and typed response.
-request	crates/gvm-gmp/src/commands/agents.rs	GetAgentSupportBundleRequest	canonical-request	Complete support-bundle input with direct metadata/encoding and typed response.
+request	crates/gvm-gmp/src/commands/agents.rs	GetAgentSupportBundleRequest	canonical-request	Complete support-bundle input, including optional gvmd encryption selection, with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/agents.rs	GetAgentsRequest	canonical-request	Complete list input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentControlScanConfigRequest	canonical-request	Complete agent-control defaults input with direct metadata/encoding and typed response.
 request	crates/gvm-gmp/src/commands/agents.rs	ModifyAgentRequest	canonical-request	Complete modify input with direct metadata/encoding and typed response.

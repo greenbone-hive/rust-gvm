@@ -177,9 +177,10 @@ pub use schedule::{
     Schedule,
 };
 pub use secinfo::{
-    CertBundAdvisory, Cpe, Cve, DfnCertAdvisory, GenericInfo, GetCertBundAdvisoriesResponse,
-    GetCpesResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetInfoResponse,
-    GetOperatingSystemsResponse, GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
+    CertBundAdvisory, Cpe, Cve, DfnCertAdvisory, GenericInfo, GenericInfoPayload,
+    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse,
+    GetInfoResponse, GetOperatingSystemsResponse, GetVulnerabilitiesResponse, NvtInfo, NvtTechInfo,
+    OperatingSystem, Vulnerability, WebApplicationVtInfo, WebApplicationVtReference,
 };
 pub use system::{
     AuthConfSetting, AuthGroup, CertificateInfo, DescribeAuthResponse, GetSettingsResponse,

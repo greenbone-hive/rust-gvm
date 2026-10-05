@@ -381,17 +381,20 @@ requires a configuration context. NVT preference list/detail requests reuse
 `GetScanConfigPreferencesResponse`, including the scanner-preference empty-OID
 boundary and value-redacting `Debug` implementation.
 
-Pinned `get_info` dispatch supports exactly CERT-Bund, CPE, CVE, DFN-CERT, and
-NVT. Generic and specialized requests share that one root and authoritative
-`<info>` wrapper response shape. Historical OS/vulnerability spellings remain
-documented by `InfoType`, but cannot be converted wholesale into
-`GenericInfoType` and have no canonical request/facade. OS assets use the asset
-family. Observed vulnerabilities use `GetVulnsRequest` or the semantic
-`GetVulnerabilityRequest`, both over `get_vulns`.
+Current pinned `get_info` dispatch supports CERT-Bund, CPE, CVE, DFN-CERT,
+NVT, and feature-gated web-application VTs. Generic and specialized requests
+share that one root and authoritative `<info>` wrapper response shape.
+Historical OS/vulnerability spellings remain documented by `InfoType`, but
+cannot be converted wholesale into `GenericInfoType` and have no canonical
+request/facade. OS assets use the asset family. Observed vulnerabilities use
+`GetVulnsRequest` or the semantic `GetVulnerabilityRequest`, both over
+`get_vulns`.
 
 Response models intentionally expose bounded projections. Generic SecInfo uses
-the wrapper's ID/name and direct payload type; richer payload content and
-observed-vulnerability detail remain available through raw execution. Trace
+the wrapper's ID/name and direct payload type, preserving detailed NVT
+technical information and the complete web-application VT payload. Future
+unknown direct subtype names remain observable. Other richer payload content
+and observed-vulnerability detail remain available through raw execution. Trace
 redaction covers preference value/default/alternative content and attributes,
 while raw responses and serde remain data-bearing. See the
 [pinned evidence and mock qualification](nvt-secinfo-request-gvmd-evidence.md).
