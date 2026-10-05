@@ -320,13 +320,21 @@ pub struct GetAgentSupportBundleRequest {
     pub agent_uuid: EntityId,
     /// Optional number of days to include.
     pub days: Option<u32>,
+    /// Whether gvmd should request an encrypted bundle.
+    ///
+    /// Omission leaves gvmd's encrypted-by-default behavior in effect.
+    pub encryption: Option<bool>,
 }
 
 impl GetAgentSupportBundleRequest {
     /// Create a support-bundle request.
     #[must_use]
     pub fn new(agent_uuid: EntityId, days: Option<u32>) -> Self {
-        Self { agent_uuid, days }
+        Self {
+            agent_uuid,
+            days,
+            encryption: None,
+        }
     }
 }
 
@@ -413,6 +421,9 @@ fn get_agent_support_bundle_command(request: &GetAgentSupportBundleRequest) -> X
         .attribute("agent_uuid", request.agent_uuid.as_str());
     if let Some(days) = request.days {
         cmd.set_attribute("days", &days.to_string());
+    }
+    if let Some(encryption) = request.encryption {
+        cmd.set_attribute("encryption", bool_str(encryption));
     }
     cmd
 }
@@ -565,9 +576,11 @@ mod tests {
             )),
             "<get_agent_installer_instruction language=\"en\" origin_url=\"https://gvmd.example\" scanner_id=\"scanner-1\"/>"
         );
+        let mut support_bundle = GetAgentSupportBundleRequest::new(id("agent-1"), Some(14));
+        support_bundle.encryption = Some(false);
         assert_eq!(
-            request_xml(&GetAgentSupportBundleRequest::new(id("agent-1"), Some(14))),
-            "<get_agent_support_bundle agent_uuid=\"agent-1\" days=\"14\"/>"
+            request_xml(&support_bundle),
+            "<get_agent_support_bundle agent_uuid=\"agent-1\" days=\"14\" encryption=\"0\"/>"
         );
         assert_eq!(
             request_xml(&GetAgentSupportBundleRequest::new(id("agent-1"), None)),
