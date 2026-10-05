@@ -6,7 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, parse_score, status_from_response, CountInfo, ParseError,
+    count_info, parse_bool, parse_document, parse_score, status_from_response, CountInfo,
+    ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -21,6 +22,8 @@ pub struct Nvt {
     pub severity: Option<String>,
     pub tags: Option<String>,
     pub solution_type: Option<String>,
+    /// Whether gvmd marks this NVT as a discovery NVT.
+    pub discovery: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +83,10 @@ impl Nvt {
                 .map(str::to_string)
                 // Explicit compatibility fallback for the historical mock shape.
                 .or_else(|| node.optional_child_text("solution_type")),
+            discovery: node
+                .child_text("discovery")
+                .map(|value| parse_bool(&value, "nvt.discovery"))
+                .transpose()?,
         })
     }
 }
@@ -365,6 +372,27 @@ mod tests {
         let parsed = GetNvtsResponse::from_response(&response).expect("NVT parses");
         assert_eq!(parsed.items[0].solution_type.as_deref(), Some("VendorFix"));
         assert_eq!(parsed.counts, CountInfo::default());
+    }
+
+    #[test]
+    fn preserves_discovery_marker() {
+        let response = Response::from(
+            r#"<get_nvts_response status="200" status_text="OK"><nvt oid="1.3.6.1"><name>Discovery</name><discovery>1</discovery></nvt><nvt oid="1.3.6.2"><name>Non-discovery</name><discovery>0</discovery></nvt><nvt oid="1.3.6.3"><name>Unspecified</name></nvt></get_nvts_response>"#,
+        );
+        let parsed = GetNvtsResponse::from_response(&response).expect("NVTs parse");
+
+        assert_eq!(parsed.items[0].discovery, Some(true));
+        assert_eq!(parsed.items[1].discovery, Some(false));
+        assert_eq!(parsed.items[2].discovery, None);
+    }
+
+    #[test]
+    fn rejects_invalid_discovery_marker() {
+        let response = Response::from(
+            r#"<get_nvts_response status="200" status_text="OK"><nvt oid="1.3.6.1"><name>Invalid</name><discovery>2</discovery></nvt></get_nvts_response>"#,
+        );
+
+        assert!(GetNvtsResponse::from_response(&response).is_err());
     }
 
     #[test]

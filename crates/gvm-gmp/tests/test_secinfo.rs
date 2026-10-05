@@ -7,7 +7,12 @@ mod common;
 
 use common::id;
 use gvm_gmp::commands::secinfo::*;
+use gvm_gmp::responses::{
+    GenericInfoPayload, GetInfoResponse, NvtInfo, NvtTechInfo, WebApplicationVtInfo,
+    WebApplicationVtReference,
+};
 use gvm_gmp::{GmpRequestCodec, GmpVersion};
+use gvm_protocol::Response;
 
 fn xml(request: &impl GmpRequestCodec) -> String {
     String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap()
@@ -92,4 +97,20 @@ fn final_value_validation_rejects_empty_selectors_and_bad_xml() {
     };
     let error = request.validate().expect_err("invalid XML character");
     assert!(!error.to_string().contains("secret"));
+}
+
+#[test]
+fn schema_projection_types_are_public_and_decode_through_the_associated_response() {
+    let response = Response::from(
+        r#"<get_info_response status="200" status_text="OK"><info id="WAPP-1"><name>Advisory</name><web_application_vt><type>advisory</type><description>Web issue</description><solution>Upgrade</solution><severity>8.8</severity><type_metadata>{}</type_metadata><refs><ref type="cve" id="CVE-2026-0001"/></refs></web_application_vt></info></get_info_response>"#,
+    );
+    let parsed = GetInfoResponse::from_response(&response).expect("public response parses");
+    let GenericInfoPayload::WebApplicationVt(vt) = &parsed.items[0].payload else {
+        panic!("expected public web-application VT projection");
+    };
+    let _: &WebApplicationVtInfo = vt;
+    let _: &WebApplicationVtReference = &vt.refs[0];
+
+    fn public_nvt_projection(_: Option<NvtInfo>, _: Option<NvtTechInfo>) {}
+    public_nvt_projection(None, None);
 }

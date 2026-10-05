@@ -37,6 +37,8 @@ pub struct NvtRef {
     pub cvss_base: Option<String>,
     pub cves: Vec<String>,
     pub tags: Option<String>,
+    /// Type-specific metadata emitted by gvmd, commonly a JSON object.
+    pub type_metadata: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +85,7 @@ impl ScanResult {
                         cvss_base: nvt.optional_child_text("cvss_base"),
                         cves: parse_nvt_cves(nvt),
                         tags: nvt.optional_child_text("tags"),
+                        type_metadata: nvt.optional_child_text("type_metadata"),
                     })
                 })
                 .transpose()?,
@@ -246,6 +249,22 @@ mod tests {
             Some(0.0)
         );
         assert_eq!(parsed.items[1].port, None);
+    }
+
+    #[test]
+    fn preserves_result_nvt_type_metadata() {
+        let response = Response::from(
+            r#"<get_results_response status="200" status_text="OK"><result id="res-1"><nvt oid="1.3.6.1"><name>Web finding</name><type_metadata>{&quot;document_type&quot;:&quot;ghsa&quot;,&quot;risk&quot;:&quot;high&quot;}</type_metadata></nvt></result></get_results_response>"#,
+        );
+        let parsed = GetResultsResponse::from_response(&response).expect("result parses");
+
+        assert_eq!(
+            parsed.items[0]
+                .nvt
+                .as_ref()
+                .and_then(|nvt| nvt.type_metadata.as_deref()),
+            Some(r#"{"document_type":"ghsa","risk":"high"}"#)
+        );
     }
 
     #[test]

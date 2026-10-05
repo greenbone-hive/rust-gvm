@@ -63,6 +63,8 @@ pub enum GenericInfoType {
     DfnCertAdvisory,
     /// NVT feed information.
     Nvt,
+    /// Web-application vulnerability tests, when enabled by gvmd.
+    WebApplicationVt,
 }
 
 impl GenericInfoType {
@@ -75,6 +77,7 @@ impl GenericInfoType {
             Self::Cve => "CVE",
             Self::DfnCertAdvisory => "DFN_CERT_ADV",
             Self::Nvt => "NVT",
+            Self::WebApplicationVt => "web_application_vt",
         }
     }
 }
@@ -537,6 +540,10 @@ mod tests {
             "DFN_CERT_ADV"
         );
         assert_eq!(GenericInfoType::Nvt.as_gmp_str(), "NVT");
+        assert_eq!(
+            GenericInfoType::WebApplicationVt.as_gmp_str(),
+            "web_application_vt"
+        );
     }
 
     #[test]
@@ -554,6 +561,13 @@ mod tests {
         assert_eq!(
             xml(&GetInfoRequest::new("CVE-2026-0001", GenericInfoType::Cve)),
             "<get_info details=\"1\" info_id=\"CVE-2026-0001\" type=\"CVE\"/>"
+        );
+        assert_eq!(
+            xml(&GetInfoRequest::new(
+                "WAPP-2026-0001",
+                GenericInfoType::WebApplicationVt
+            )),
+            "<get_info details=\"1\" info_id=\"WAPP-2026-0001\" type=\"web_application_vt\"/>"
         );
     }
 
