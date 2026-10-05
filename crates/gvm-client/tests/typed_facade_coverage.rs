@@ -3603,7 +3603,7 @@ async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
         &[
             (
                 "help",
-                r#"<help_response status="200" status_text="OK"><schema format="XML"><command><name>export_scan_report</name></command></schema></help_response>"#,
+                r#"<help_response status="200" status_text="OK"><schema format="XML"><command><name> EXPORT_SCAN_REPORT </name></command></schema></help_response>"#,
             ),
             (
                 "export_scan_report",
