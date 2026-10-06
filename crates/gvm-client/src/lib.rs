@@ -278,7 +278,7 @@ impl<C: GvmConnection> GmpClient<C> {
             schema
                 .commands
                 .iter()
-                .map(|command| command.name.clone())
+                .map(|command| command.name.trim().to_ascii_lowercase())
                 .collect(),
         );
         Ok(parsed)
@@ -1752,6 +1752,32 @@ mod tests {
         assert_eq!(
             advertised.supports_command("export_scan_report"),
             Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_commands_normalizes_names_for_support_lookup() {
+        let mut client = connected_client_with_response(
+            r#"<help_response status="200" status_text="OK"><schema format="XML"><command><name> EXPORT_SCAN_REPORT </name></command></schema></help_response>"#,
+        )
+        .await;
+
+        let help = client
+            .discover_commands()
+            .await
+            .expect("help discovery succeeds");
+
+        assert_eq!(
+            help.schema.expect("help schema").commands[0].name,
+            "EXPORT_SCAN_REPORT"
+        );
+        assert_eq!(
+            client.command_support("export_scan_report"),
+            CommandSupport::Supported
+        );
+        assert_eq!(
+            client.command_support("get_report_exports"),
+            CommandSupport::NotAdvertised
         );
     }
 
