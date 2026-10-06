@@ -1,5 +1,10 @@
 # rust-gvm — OpenSpec
 
+> [!NOTE]
+> Archived foundational design. It records the original architecture plan and
+> is not the current API contract; see [`../../STATUS.md`](../../STATUS.md) and
+> [`../../agent-code-map.md`](../../agent-code-map.md).
+
 ## 1. Overview
 
 **rust-gvm** is a Rust client library for the **Greenbone Management Protocol (GMP)**, a reimplementation of [python-gvm](https://github.com/greenbone/python-gvm). It provides a type-safe, async-first interface for communicating with Greenbone Vulnerability Manager (gvmd) over Unix sockets, TLS, or SSH.

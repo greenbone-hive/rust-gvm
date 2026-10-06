@@ -3,8 +3,8 @@
 > [!NOTE]
 > Archived implementation specification. The modules-to-create list, branch,
 > and execution instructions below record completed historical work; they are
-> not current-state guidance. See [`docs/STATUS.md`](docs/STATUS.md),
-> [`docs/agent-code-map.md`](docs/agent-code-map.md), and the current
+> not current-state guidance. See [`docs/STATUS.md`](../../STATUS.md),
+> [`docs/agent-code-map.md`](../../agent-code-map.md), and the current
 > `crates/gvm-gmp/src/responses/` tree.
 
 ## Task

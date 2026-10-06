@@ -41,7 +41,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@d79ec6dd087a94ad9ef5211ab86dcf17414b252d # v3.36.19
+        uses: greenbone/actions/setup-pontos@80a38a10bb7eb2b3c12f7f0361532dc6120342d6 # v3.36.20
 
       # setup-pontos currently leaves Python 3.10 first on PATH, while the
       # release-version validator uses the Python 3.11+ standard tomllib.

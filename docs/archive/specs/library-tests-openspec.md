@@ -1,5 +1,9 @@
 # rust-gvm Library Test Specification — OpenSpec
 
+> [!NOTE]
+> Archived test plan. Current validation commands and test ownership are in
+> [`../../agent-code-map.md`](../../agent-code-map.md) and repository CI.
+
 ## 1. Overview
 
 This document specifies the complete test suite for the **rust-gvm** client library itself — the four crates (`gvm-connection`, `gvm-protocol`, `gvm-gmp`, `gvm-client`) that together implement a Rust GMP client.

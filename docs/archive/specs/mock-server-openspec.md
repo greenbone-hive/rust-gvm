@@ -1,5 +1,10 @@
 # gvm-mock-server — OpenSpec
 
+> [!NOTE]
+> Archived original design. Use [`../../STATUS.md`](../../STATUS.md),
+> [`../../mock-server-consumption.md`](../../mock-server-consumption.md), and
+> current sources for implemented behavior.
+
 ## 1. Overview
 
 **gvm-mock-server** is a lightweight, programmable mock implementation of the Greenbone Management Protocol (GMP) server. It accepts GMP XML commands over Unix sockets or TCP/TLS and returns configurable responses, enabling integration testing of GMP client libraries without requiring a real gvmd instance or PostgreSQL database.
