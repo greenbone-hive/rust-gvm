@@ -31,13 +31,13 @@ validation remains a separate follow-up.
 
 ## Compatibility Policy
 
-The current `main` branch is the unreleased `0.7.0` development line. It is
-intentionally SemVer-incompatible with `v0.6.0`: issue #602 replaces temporary
-parallel options/builders/facade inputs with canonical complete request values
-before the next downstream-ready release. Issue #678 completes the final
-surface audit with 1,038 classified rows, zero transitional entries, and 267
-typed facades. The release remains gated on downstream validation and release
-work. See the [convergence audit](canonical-request-convergence-audit.md) and
+Release `v0.7.0` completed the SemVer-incompatible migration from the v0.6
+request surface. Issue #602 replaced temporary parallel
+options/builders/facade inputs with canonical complete request values, and
+issue #678 completed the final surface audit with 1,038 classified rows, zero
+transitional entries, and 267 typed facades. Current `main` is the
+post-`v0.7.0` Technology Preview line. See the
+[convergence audit](canonical-request-convergence-audit.md) and
 [v0.7.0 migration guide](v0.7.0-migration.md).
 
 python-gvm compatibility is a secondary target:
@@ -78,48 +78,33 @@ recorded from
 
 ## Current Tracking
 
-Existing issues:
+Open work:
 
-- [#523](https://github.com/greenbone-hive/rust-gvm/issues/523) tracks the
-  additive typed request/associated-response execution architecture, completed
-  family-by-family migration, protected-`main` promotion, and the remaining
-  release program. [#602](https://github.com/greenbone-hive/rust-gvm/issues/602)
-  is its accepted pre-release canonical-request gate, recorded in
-  [ADR 0002](adr/0002-canonical-request-ownership.md); issue #678 completes its
-  checked public-surface audit.
-- [#172](https://github.com/greenbone-hive/rust-gvm/issues/172) tracks remaining rust-gvm vs gvmd GMP coverage gaps.
-- [#247](https://github.com/greenbone-hive/rust-gvm/issues/247) tracks report option drift where rust-gvm exposes an attribute gvmd ignores.
-- [#251](https://github.com/greenbone-hive/rust-gvm/issues/251) tracks response model drift around user host access and similar XML shape mismatches.
-- [#311](https://github.com/greenbone-hive/rust-gvm/issues/311) tracks generic GMP asset commands alongside typed wrappers.
-- [#313](https://github.com/greenbone-hive/rust-gvm/issues/313) tracks generic GMP config commands alongside scan-config and policy wrappers.
-- [#648](https://github.com/greenbone-hive/rust-gvm/issues/648) completes the
-  bounded canonical NVT/SecInfo discovery slice, including pinned dispatch
-  discrepancies and stateful mock qualification.
-- [#649](https://github.com/greenbone-hive/rust-gvm/issues/649) completes the
-  generic configuration, scan-configuration, and policy lifecycle slice:
-  required copy/import creation, metadata-only modification, bounded stateful
-  behavior, and removal of unsupported GMP synchronization. Issue #658
-  completes the configured preference and NVT/family mutations.
-- [#659](https://github.com/greenbone-hive/rust-gvm/issues/659) and
-  [#660](https://github.com/greenbone-hive/rust-gvm/issues/660) complete the
-  standard and specialized task/audit canonical request surfaces. The latter
-  preserves the GMP 22.8 specialized-task gates, audit usage identity, typed
-  move destinations, confidential preference redaction, and bounded stateful
-  lifecycle/rollback conformance. The later report and system slices complete
-  the ordered #602 family migration.
+- [#715](https://github.com/greenbone-hive/rust-gvm/issues/715) closes the
+  gvmd 26.40 report-export, typed-schema, and real-gvmd E2E parity gaps. The
+  seven report-export commands and five schema projections are present on
+  `main`; downstream exact-revision E2E qualification is the remaining gate.
+- [#524](https://github.com/greenbone-hive/rust-gvm/issues/524) tracks SSH
+  session/exec channel support alongside the existing stream-local transport.
+- [#417](https://github.com/greenbone-hive/rust-gvm/issues/417) tracks replacing
+  the temporary `wnaf` Cargo Vet exemption.
+- [#4](https://github.com/greenbone-hive/rust-gvm/issues/4) tracks a streaming
+  design for very large report responses.
+- [#9](https://github.com/greenbone-hive/rust-gvm/issues/9) tracks possible
+  mock-server record-and-replay support.
 
-Follow-up issues or milestones should cover:
-
-- Add real gvmd end-to-end or conformance validation for supported versions.
-- Document python-gvm migration compatibility expectations and known differences.
+The completed #523/#602 canonical-request program, #678 surface audit, and
+#172 protocol-gap program remain documented in [STATUS.md](STATUS.md), the
+ADRs, migration guide, and gvmd evidence documents rather than as open roadmap
+items.
 
 ## Near-Term Implementation Order
 
-1. Validate the audited canonical surface once through `rust-gvm-api#457`.
-2. Complete the remaining #523 release gate: versioned release, artifact
-   verification, and downstream pinning. Protected-`main` CI already dispatches
-   downstream E2E with the exact successful rust-gvm commit SHA; a branch name
-   is not substituted for that revision.
-3. Finish the remaining high-value GMP coverage gaps from #172 and known
-   protocol drift.
-4. Expand real-gvmd conformance and python-gvm migration documentation.
+1. Complete #715 exact-revision real-gvmd qualification for report export,
+   schema projections, EPSS fields, and validation/error behavior.
+2. Keep protected-`main` downstream dispatch pinned to the exact successful
+   rust-gvm commit SHA and preserve immutable runtime evidence.
+3. Address the remaining transport, dependency-vetting, and large-response
+   work tracked by #524, #417, and #4.
+4. Expand real-gvmd conformance and python-gvm migration documentation as new
+   protocol differences are discovered.
