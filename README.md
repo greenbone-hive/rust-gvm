@@ -305,9 +305,10 @@ integration-configuration families use the same execution contract, including
 binary/base64 support bundles. Generic configuration and port-list/port-range
 lifecycles and the report-configuration, report-format, and TLS-certificate
 lifecycles are also fully migrated. NVT/SecInfo discovery uses 19 complete
-request values and request-by-value facades; pinned `get_info` supports only
-CERT-Bund, CPE, CVE, DFN-CERT, and NVT, while observed vulnerabilities use
-`get_vulns`. See the
+request values and request-by-value facades; current `get_info` supports
+CERT-Bund, CPE, CVE, DFN-CERT, NVT, and the feature-gated
+`web_application_vt` subtype, while observed vulnerabilities use `get_vulns`.
+See the
 [pinned NVT/SecInfo evidence](docs/nvt-secinfo-request-gvmd-evidence.md).
 Configuration lifecycle calls likewise use complete request values. Named
 creation requires an explicit base; import validates and embeds one exported
@@ -814,8 +815,8 @@ cargo build --release -p gvm-mock-server
 
 | Workflow | Trigger | What it does |
 |----------|---------|-------------|
-| **CI** | Relevant pushes to `main`; PRs to `main`/`devel` | Format, clippy, default/all-feature tests, docs, deny, coverage, MSRV, python-gvm integration |
-| **Security** | Relevant pushes; PRs to `main`/`devel`; weekly schedule | Audit, vetting, unused-dependency checks, SBOM quality, unsafe-code gates, and Semgrep |
+| **CI** | Relevant pushes and pull requests to `main` | Format, clippy, default/all-feature tests, docs, deny, coverage, MSRV, python-gvm integration |
+| **Security** | Relevant pushes and pull requests to `main`; weekly schedule | Audit, vetting, unused-dependency checks, SBOM quality, unsafe-code gates, and Semgrep |
 | **OpenSSF Scorecard** | `main` pushes, weekly schedule, or manual dispatch; public repositories only | Supply-chain posture report and SARIF upload |
 | **Journal PR Automation** | Eligible `journal/*` PRs to `journal-main` | Restricts changed paths and automates the journal-only review flow |
 | **Orchestrated Release** | Manual dispatch from the exact protected `main` head | Qualifies version/lockfile/notes, creates the tag/release, and waits for the exact-SHA release run |
@@ -847,15 +848,21 @@ arm64. The workflow publishes only the immutable release tag, not `latest`.
 
 See [docs/mock-server-consumption.md](docs/mock-server-consumption.md) for downstream CI usage guidance.
 
-## Specs
+## Documentation
 
-Design specifications live in [`spec/`](spec/):
+Start with the documents that describe the current implementation:
 
-- [`openspec.md`](spec/openspec.md) — Full library architecture and crate specs
-- [`mock-server-openspec.md`](spec/mock-server-openspec.md) — Mock server design and API
-- [`mock-server-tests-openspec.md`](spec/mock-server-tests-openspec.md) — Test plan
-- [`library-tests-openspec.md`](spec/library-tests-openspec.md) — Library test plan
-- [`mcp-server-integration-spec.md`](spec/mcp-server-integration-spec.md) — MCP server integration testing
+- [`STATUS.md`](docs/STATUS.md) — implemented command, response, and client surface
+- [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) — qualified GMP versions and command gates
+- [`ROADMAP.md`](docs/ROADMAP.md) — support direction and current follow-up work
+- [`typed-execution.md`](docs/typed-execution.md) — current typed request/response model
+- [`v0.7.0-migration.md`](docs/v0.7.0-migration.md) — migration from the v0.6 request surface
+- [`agent-code-map.md`](docs/agent-code-map.md) — code ownership and contributor orientation
+
+Forward-looking specifications that are still active remain in [`spec/`](spec/).
+Completed plans, implementation prompts, and superseded design snapshots are
+retained under [`docs/archive/`](docs/archive/README.md) for historical context;
+they are not current API or contributor guidance.
 
 ## License
 

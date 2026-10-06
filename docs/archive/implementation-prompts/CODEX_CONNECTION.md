@@ -3,8 +3,8 @@
 > [!NOTE]
 > Archived implementation prompt. Its proposed API, MSRV, and implementation
 > steps describe an earlier development snapshot. See
-> [`docs/agent-code-map.md`](docs/agent-code-map.md),
-> [`docs/STATUS.md`](docs/STATUS.md), and the current crate sources/manifests for
+> [`docs/agent-code-map.md`](../../agent-code-map.md),
+> [`docs/STATUS.md`](../../STATUS.md), and the current crate sources/manifests for
 > v0.7 transport behavior.
 
 ## Context

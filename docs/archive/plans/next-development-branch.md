@@ -2,8 +2,8 @@
 
 > Historical branch-policy record. The canonical request program described
 > here has since been promoted from `next` to protected `main`; current release
-> state and follow-up work are tracked in [ROADMAP.md](ROADMAP.md) and
-> [STATUS.md](STATUS.md). The rules below document the integration lane used
+> state and follow-up work are tracked in [ROADMAP.md](../../ROADMAP.md) and
+> [STATUS.md](../../STATUS.md). The rules below document the integration lane used
 > during that program rather than asserting the repository's current branch
 > topology.
 

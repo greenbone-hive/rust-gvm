@@ -3,9 +3,9 @@
 > [!NOTE]
 > Archived implementation prompt. It records the original task and is not the
 > current contributor guide or API contract. See
-> [`docs/agent-code-map.md`](docs/agent-code-map.md),
-> [`docs/STATUS.md`](docs/STATUS.md), and
-> [`docs/typed-execution.md`](docs/typed-execution.md) for the v0.7 codebase.
+> [`docs/agent-code-map.md`](../../agent-code-map.md),
+> [`docs/STATUS.md`](../../STATUS.md), and
+> [`docs/typed-execution.md`](../../typed-execution.md) for the v0.7 codebase.
 
 ## Context
 
@@ -14,7 +14,8 @@ Implement `crates/gvm-client` as the high-level async GMP client that combines:
 - `gvm-protocol` (response parsing)
 - `gvm-gmp` (typed command builders)
 
-Spec source: `spec/openspec.md` section 3.4.
+Historical spec source: [`rust-gvm-openspec.md`](../specs/rust-gvm-openspec.md),
+section 3.4.
 
 ## Required API
 

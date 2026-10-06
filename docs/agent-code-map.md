@@ -78,7 +78,8 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/system-admin-cleanup-request-gvmd-evidence.md`: pinned gvmd and
   python-gvm evidence for authentication/license/setting/wizard mutations,
   user-setting queries, and transactional trashcan empty/restore behavior.
-- `docs/response-models-rfc.md`: response parsing/modeling direction.
+- `docs/archive/design/response-models-rfc.md`: historical response-model RFC;
+  use `docs/typed-execution.md` and current response sources for implemented behavior.
 
 ## Request Flow
 

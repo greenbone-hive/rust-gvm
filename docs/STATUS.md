@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-02
+Last updated: 2026-10-05
 
 ## Support Direction
 
@@ -294,9 +294,10 @@ supersedes the additive NVT-and-SecInfo wrappers from #563. Nineteen complete
 canonical requests now own their public fields, validation, semantic metadata,
 direct encoding, and response association; their facades take those requests
 unchanged. Redundant options, builders, wrappers, and unsupported SecInfo OS
-and vulnerability facades are removed. Pinned `get_info` dispatch supports
-only CERT-Bund, CPE, CVE, DFN-CERT, and NVT; operating-system assets remain in
-the asset family and observed vulnerabilities use `get_vulns`. Source-shaped
+and vulnerability facades are removed. Current `get_info` dispatch supports
+CERT-Bund, CPE, CVE, DFN-CERT, NVT, and the feature-gated
+`web_application_vt` subtype; operating-system assets remain in the asset
+family and observed vulnerabilities use `get_vulns`. Source-shaped
 `<info>` parsing, NVT family/solution parsing, scanner-preference boundaries,
 preference diagnostics/trace redaction, and a bounded stateful mock are covered
 by the [NVT/SecInfo evidence](nvt-secinfo-request-gvmd-evidence.md).
