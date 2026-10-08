@@ -4120,6 +4120,24 @@ impl ResourceStore {
                     "type" => {
                         results.retain(|r| r.resource_type == value);
                     }
+                    "tag_id" => {
+                        let resource_ids = Uuid::parse_str(value)
+                            .ok()
+                            .and_then(|tag_id| inner.resources.get(&tag_id))
+                            .filter(|tag| {
+                                tag.resource_type == "tag"
+                                    && !tag.trashed
+                                    && tag.attr("tag_resource_type") == Some(resource_type)
+                            })
+                            .and_then(|tag| tag.attr("tag_resource_ids"))
+                            .map(|ids| {
+                                ids.split(',')
+                                    .filter_map(|id| Uuid::parse_str(id).ok())
+                                    .collect::<BTreeSet<_>>()
+                            })
+                            .unwrap_or_default();
+                        results.retain(|resource| resource_ids.contains(&resource.id));
+                    }
                     _ => {
                         // Check attrs
                         let key = key.to_string();
