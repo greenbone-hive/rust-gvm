@@ -31,17 +31,35 @@ criteria = "safe-to-deploy"
 delta = "4.6.4 -> 4.6.6"
 notes = "Reviewed full crate delta: library changes are documentation-only; remaining changes are examples, snapshots, and dependency metadata."
 
+[[audits.clap]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "4.6.6 -> 4.6.7"
+notes = "Reviewed the complete crate delta: runtime source changes are documentation-only, with the remainder limited to examples, tests, lints, and package metadata. No unsafe code or ambient capabilities were added."
+
 [[audits.clap_builder]]
 who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "4.6.2 -> 4.6.6"
 notes = "Reviewed full source delta: internal conflict-field rename, corrected optional-value usage rendering, a read-only usage getter, and docs/tests; no unsafe or ambient capability additions."
 
+[[audits.clap_builder]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "4.6.6 -> 4.6.7"
+notes = "Reviewed the complete source delta: implementation edits mechanically replace explicit type names with Self, while other changes update tests, documentation, lints, and metadata. Behavior, unsafe surface, and ambient capabilities are unchanged."
+
 [[audits.clap_derive]]
 who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "4.6.0 -> 4.6.1"
 notes = "Reviewed local diff: proc-macro changes are limited to package-name token handling and dependency bumps; no unsafe code added."
+
+[[audits.clap_derive]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "4.6.4 -> 4.6.7"
+notes = "Reviewed the complete proc-macro delta: it validates the new defer attribute for Parser/Subcommand enums and emits deferred subcommand construction while preserving the surrounding augmentation order; other source edits are mechanical Self conversions. No unsafe code or ambient capabilities were added."
 
 [[audits.num-bigint]]
 who = "Thoth"
@@ -97,6 +115,12 @@ criteria = "safe-to-deploy"
 delta = "0.63.1 -> 0.63.3"
 notes = "Reviewed the complete security-release delta: bounds rekey-phase reply queues, rejects connection-layer traffic after peer KEXINIT, preserves packet ordering across rekeys, fixes Pageant response bounds and sensitive debug output, makes RSA-without-feature failure explicit, fixes PTY mode framing, and enforces inactivity timeouts during stalled writes and shutdown. Added network use is test-only, no executable unsafe blocks were added, and the existing transport capabilities are unchanged."
 
+[[audits.rustix]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.1.4 -> 1.1.5"
+notes = "Reviewed the complete source delta: it raises MSRV to 1.65, corrects target cfgs and platform types, adds Apple open flags, centralizes timeval rounding with carry and overflow checks, and limits build probing cleanup to its known OUT_DIR artifact. Unsafe code remains within the existing syscall and pointer abstractions, and no new ambient capability was added."
+
 [[audits.rustls]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -120,6 +144,12 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "0.23.44 -> 0.23.45"
 notes = "Reviewed the complete 0.23.44 -> 0.23.45 delta: fixes RUSTSEC-2026-0285 by keeping handshake-deframer alignment synchronized after message consumption, enforces second-ClientHello cipher-suite and retained-PSK invariants after HelloRetryRequest, and zeroizes temporary private-key DER. No unsafe code or ambient filesystem, process, or network capabilities were added."
+
+[[audits.rustls]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.23.45 -> 0.23.46"
+notes = "Reviewed the complete security-release delta: redacts TLS master secrets and resumption PSKs from Debug output (RUSTSEC-2026-0346), prevents buffered application data escaping after ECH rejection (RUSTSEC-2026-0347), uses strict bounded Brotli certificate decompression (RUSTSEC-2026-0348), and stores key-exchange hints only after handshake authentication (RUSTSEC-2026-0349). It also hardens record limits, key updates, ECH/PSK invariants, and cache arithmetic. No unsafe code or ambient capabilities were added."
 
 [[audits.rustls-webpki]]
 who = "Thoth"
@@ -151,11 +181,23 @@ criteria = "safe-to-deploy"
 delta = "2.0.19 -> 2.0.20"
 notes = "Reviewed full crate delta: version/docs and compiler-diagnostic fixture updates only; runtime source is unchanged."
 
+[[audits.thiserror]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "2.0.20 -> 2.0.21"
+notes = "Reviewed the complete crate delta: runtime source changes only update displayed documentation versions; remaining changes update compiler-diagnostic fixtures and metadata. No unsafe code or ambient capabilities were added."
+
 [[audits.thiserror-impl]]
 who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "2.0.19 -> 2.0.20"
 notes = "Reviewed full crate delta: adds a Clippy allowance to generated From implementations; emitted behavior and capability surface are unchanged."
+
+[[audits.thiserror-impl]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "2.0.20 -> 2.0.21"
+notes = "Reviewed the complete proc-macro delta: expression parsing now tracks nested turbofish delimiters and distinguishes path separators and hyphen punctuation when generating Display implementations. It adds no unsafe code or ambient capability; MSRV rises from 1.71 to 1.77."
 
 [[audits.tokio]]
 who = "Thoth"
@@ -169,6 +211,12 @@ criteria = "safe-to-deploy"
 delta = "1.52.2 -> 1.52.3"
 notes = "Reviewed upstream changelog and local diff: bugfix-only changes in mpsc bookkeeping and RwLock guard behavior, plus targeted regression tests; no new APIs or privilege-expanding behavior."
 
+[[audits.tokio]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.53.1 -> 1.53.2"
+notes = "Reviewed the complete source delta: fixes mpsc index wraparound, semaphore cleanup across tracing panics, Windows child-handle teardown order, io_uring length/completion handling, timer and waker reentrancy, lock-order deadlocks, and shutdown/task-dump wakeups. Unsafe changes preserve existing pointer, queue, and OS-handle invariants, and no new ambient capabilities were added."
+
 [[audits.tokio-macros]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -181,11 +229,23 @@ criteria = "safe-to-deploy"
 delta = "0.26.4 -> 0.26.5"
 notes = "Reviewed the complete runtime-source delta: AsyncRead now drains additional already-decrypted records into the caller's remaining buffer while deferring non-transient follow-up errors to the next poll, plus rustdoc/formatting changes. Published-package test keys and fixtures were removed. No unsafe code or ambient capabilities were added."
 
+[[audits.tokio-rustls]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.26.5 -> 0.26.6"
+notes = "Reviewed the complete source delta: client and server streams preserve a non-transient error encountered while batch-draining decrypted data and return it on the next read poll. The change adds no unsafe code or ambient capability."
+
 [[audits.tokio-stream]]
 who = "Thoth"
 criteria = "safe-to-run"
 delta = "0.1.18 -> 0.1.19"
 notes = "Reviewed full source delta: cooperative scheduling, FusedStream implementations, collection support, size-hint hardening, and a JoinSet wrapper; no unsafe or ambient capability additions."
+
+[[audits.tokio-test]]
+who = "Thoth"
+criteria = "safe-to-run"
+delta = "0.4.5 -> 0.4.6"
+notes = "Reviewed the complete source delta: fixes a WouldBlock timer race in the mock writer, adds a bounded poll-until-idle test helper, and updates macros and dependency paths. No unsafe code or ambient capabilities were added."
 
 [[audits.uuid]]
 who = "Thoth"
@@ -204,3 +264,9 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.25.0 -> 1.26.1"
 notes = "Reviewed the complete source delta: version-7 counter bits are placed below the version nibble while preserving ordering, configurable sub-millisecond precision is capped at 12 bits, and overflowing Timestamp-to-SystemTime conversion no longer panics. No unsafe code or ambient capabilities were added."
+
+[[audits.uuid]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.26.1 -> 1.28.0"
+notes = "Reviewed the complete source delta: parsing accepts a case-insensitive fixed-length URN prefix, optional Serde adapters cover existing UUID representations, and version-7 context preserves monotonicity across regressed timestamps. No unsafe code or ambient capabilities were added; MSRV rises to 1.89, matching the workspace."
