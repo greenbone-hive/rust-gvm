@@ -166,10 +166,10 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         self.execute(request).await
     }
 
-    /// Download and consume one completed asynchronous report export.
+    /// Download one completed asynchronous report export.
     ///
-    /// A successful gvmd download removes the server-side export after the
-    /// complete response has been sent.
+    /// Current gvmd keeps the terminal export available for repeatable downloads
+    /// until its retention cleanup removes it.
     ///
     /// # Errors
     /// Returns an error if discovery, transport, or parsing fails, or if the

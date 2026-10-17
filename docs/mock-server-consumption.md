@@ -4,10 +4,10 @@
 
 - `ghcr.io/greenbone-hive/gvm-mock-server:<v-prefixed-tag>`
 
-Use an immutable tag shown by the repository's GitHub Releases page. At the
-commit documented here, v0.7.0 is prepared but not yet tagged; do not assume its
-image exists until the qualified release completes. The workflow does not
-publish `latest` or an unprefixed version tag.
+Use an immutable tag shown by the repository's GitHub Releases page. Do not
+assume that a version present on `main` has a corresponding image until its
+qualified release completes. The workflow does not publish `latest` or an
+unprefixed version tag.
 
 ## Why use the image
 

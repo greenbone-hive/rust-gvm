@@ -43,7 +43,7 @@ commit with that exact version.
 
 The workflow accepts the exact semantic version already merged to `main`,
 without a leading `v`. Versions containing a pre-release suffix, such as
-`0.7.0-alpha.1` or `0.7.0-rc.1`, are published as GitHub pre-releases
+`0.8.0-alpha.1` or `0.8.0-rc.1`, are published as GitHub pre-releases
 automatically. There is no separate scheduled nightly workflow.
 
 ## Do NOT
@@ -73,7 +73,7 @@ Each release includes:
 
 ```bash
 gh attestation verify gvm-mock-server-linux-amd64.tar.gz --owner greenbone-hive
-gh attestation verify oci://ghcr.io/greenbone-hive/gvm-mock-server:v0.7.0 \
+gh attestation verify oci://ghcr.io/greenbone-hive/gvm-mock-server:vX.Y.Z \
   --repo greenbone-hive/rust-gvm
 ```
 
