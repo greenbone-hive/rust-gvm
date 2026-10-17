@@ -83,7 +83,6 @@ impl MockReportExportStatus {
 #[derive(Debug, Clone)]
 struct MockReportExport {
     id: Uuid,
-    key: String,
     export_type: &'static str,
     status: MockReportExportStatus,
     report_id: Uuid,
@@ -747,7 +746,6 @@ impl SessionHandler {
             export_id,
             MockReportExport {
                 id: export_id,
-                key,
                 export_type,
                 status: MockReportExportStatus::Pending,
                 report_id: report_uuid,
@@ -848,7 +846,7 @@ impl SessionHandler {
         let Ok(id) = Uuid::parse_str(raw_id) else {
             return error_response(&cmd.name, 400, "Missing or invalid report_export_id");
         };
-        let Ok(mut exports) = self.report_exports.lock() else {
+        let Ok(exports) = self.report_exports.lock() else {
             return error_response(&cmd.name, 500, "Report export state lock poisoned");
         };
         let Some(export) = exports.exports.get(&id) else {
@@ -857,11 +855,7 @@ impl SessionHandler {
         if export.status != MockReportExportStatus::Done {
             return error_response(&cmd.name, 400, "Report export is not ready for download");
         }
-        let response = render_mock_report_export_download(export);
-        let key = export.key.clone();
-        exports.exports.remove(&id);
-        exports.ids_by_key.remove(&key);
-        response.into_bytes()
+        render_mock_report_export_download(export).into_bytes()
     }
 
     fn handle_authenticate(

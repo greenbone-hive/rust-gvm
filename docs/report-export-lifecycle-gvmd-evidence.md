@@ -1,8 +1,9 @@
 # Asynchronous report-export lifecycle: pinned gvmd evidence
 
 This note records the externally observable protocol contract used by the
-canonical seven-command asynchronous report-export lifecycle. It intentionally
-does not define the later enum/subtype modeling phase.
+canonical seven-command asynchronous report-export lifecycle. It includes the
+repeatable-download amendment merged after the original v26.40 audit and does
+not define the later enum/subtype modeling phase.
 
 ## Pins and integrity
 
@@ -12,6 +13,13 @@ The contract was checked at both required public gvmd revisions:
   [`99503647e445c799b65483817d5cd87bbbf004b4`](https://github.com/greenbone/gvmd/commit/99503647e445c799b65483817d5cd87bbbf004b4);
 - audit commit
   [`5385fcb0130bb15230ada02effb78fab74c166b1`](https://github.com/greenbone/gvmd/commit/5385fcb0130bb15230ada02effb78fab74c166b1).
+
+The current download/retention contract is pinned to gvmd PR
+[#3181](https://github.com/greenbone/gvmd/pull/3181), merged as
+[`5faecf2f48f291f51245f6262e7a80aac1494ad6`](https://github.com/greenbone/gvmd/commit/5faecf2f48f291f51245f6262e7a80aac1494ad6).
+That revision makes successful downloads repeatable and leaves deletion to the
+existing 30-day terminal-export retention cleanup. No gvmd release tag contains
+this amendment at the time of the v0.8.0 rust-gvm qualification.
 
 The five report-export handler files are byte-identical at both revisions:
 
@@ -72,7 +80,7 @@ The v26.40.2 schema contains the same command contracts at lines 3870, 8952,
 | Command | Request | Successful response |
 |---|---|---|
 | `get_report_exports` | Optional `report_export_id`, `filter`, `filt_id`, and `details` attributes. | Repeated `report_export` resources plus standard GET filter/sort/page/count metadata. Each resource carries common metadata, string `type`, `status`, and `progress`, report/format/config IDs, file metadata, error/attempt fields, and start/end times. |
-| `download_report_export` | Required `report_export_id`. | One `report_export` with `done`/`completed` state, IDs and file metadata, and standard-base64 `content`. After the complete response is sent, gvmd removes the export and generated file. |
+| `download_report_export` | Required `report_export_id`. | One `report_export` with `done`/`completed` state, IDs and file metadata, and standard-base64 `content`. Current gvmd keeps the export and generated file available for repeatable download until retention cleanup removes them. |
 | `cancel_report_export` | Required `report_export_id`. | Status-only response. Pending exports become `canceled` immediately; running exports become `cancel_requested` until the worker finishes cancellation. Already requested/canceled is idempotent; done/error exports cannot be canceled. |
 | `export_scan_report` | Required `report_id`; optional `format_id`, `config_id`, inline `filter`, `ignore_pagination`, `lean`, `notes_details`, `overrides_details`, and `result_tags`. | Created ID with status 201 (without `export_status` in current source), or reused ID with status 200 and `export_status`. |
 | `export_audit_report` | Same controls as scan export, with an audit `report_id`. | Created/reused ID and `export_status`; status 201 for create and 200 for reuse. |
@@ -87,10 +95,11 @@ requiredness differs from behavior:
   [line 297](https://github.com/greenbone/gvmd/blob/5385fcb0130bb15230ada02effb78fab74c166b1/src/gmp_report_exports.c#L297),
   streams base64 at
   [line 502](https://github.com/greenbone/gvmd/blob/5385fcb0130bb15230ada02effb78fab74c166b1/src/gmp_report_exports.c#L502),
-  deletes only after sending at
-  [line 563](https://github.com/greenbone/gvmd/blob/5385fcb0130bb15230ada02effb78fab74c166b1/src/gmp_report_exports.c#L563),
   and implements cancellation at
   [lines 637–730](https://github.com/greenbone/gvmd/blob/5385fcb0130bb15230ada02effb78fab74c166b1/src/gmp_report_exports.c#L637).
+  Those original pins deleted the export after delivery; gvmd PR #3181 removed
+  that deletion and its file unlink, superseding the destructive-download
+  behavior while leaving request and response shapes unchanged.
 - The four creation parsers are
   [`scan`](https://github.com/greenbone/gvmd/blob/5385fcb0130bb15230ada02effb78fab74c166b1/src/gmp_scan_report_exports.c#L77),
   [`audit`](https://github.com/greenbone/gvmd/blob/5385fcb0130bb15230ada02effb78fab74c166b1/src/gmp_audit_report_exports.c#L77),

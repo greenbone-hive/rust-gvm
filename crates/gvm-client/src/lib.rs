@@ -1061,7 +1061,10 @@ impl<C: GvmConnection> GmpVersioned<C> {
         self.inner_mut().execute(request).await
     }
 
-    /// Download and consume one completed report export after discovery.
+    /// Download one completed report export after discovery.
+    ///
+    /// Current gvmd keeps the terminal export available for repeatable downloads
+    /// until its retention cleanup removes it.
     ///
     /// # Errors
     /// Returns an error if discovery, transport, or parsing fails.
