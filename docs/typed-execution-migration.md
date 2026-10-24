@@ -395,8 +395,10 @@ All projections and synchronous export require GMP 22.8. Asynchronous export
 has a 22.7 lower bound but additionally requires positive XML-help discovery.
 The explicit response codecs preserve projection container/count variants,
 mixed-element order, nested XML, and binary/base64 payloads within the existing
-bounded response limit. Streaming redesign remains tracked separately by #4.
-See the [pinned gvmd evidence](report-request-gvmd-evidence.md).
+bounded response limit. In particular, operating-system projection rows expose
+gvmd's `best_os_cpe`, `best_os_txt`, and typed `hosts_count`, rather than a
+generic `id`/`name`/`severity` summary. Streaming redesign remains tracked
+separately by #4. See the [pinned gvmd evidence](report-request-gvmd-evidence.md).
 
 ## Agent family
 
@@ -1420,10 +1422,11 @@ handler ignores generic filters, so those fields are absent. Detail-dependent
 flags and timeout context are validated against the final request before I/O.
 
 `GenericInfoType` now contains only pinned `get_info` dispatches:
-`CERT_BUND_ADV`, `CPE`, `CVE`, `DFN_CERT_ADV`, and `NVT`. There is no OVAL,
-operating-system, or vulnerability alias. Use asset OS requests for OS assets
-and `GetVulnsRequest`/`GetVulnerabilityRequest` for observed vulnerabilities.
-The historical `InfoType` is vocabulary only and no longer converts into the
+`CERT_BUND_ADV`, `CPE`, `CVE`, `DFN_CERT_ADV`, `NVT`, and the feature-gated
+`web_application_vt`. There is no OVAL, operating-system, or vulnerability
+alias. Use asset OS requests for OS assets and
+`GetVulnsRequest`/`GetVulnerabilityRequest` for observed vulnerabilities. The
+historical `InfoType` is vocabulary only and no longer converts into the
 canonical enum.
 
 SecInfo typed responses follow authoritative `<info id>` wrappers. Direct typed
@@ -1499,13 +1502,13 @@ The actionable command-support correction adds error variants and therefore
 requires the next pre-1.0 minor release as described above. The legacy
 `supports_command` signature remains available during migration.
 
-The facade inventory locks all 261 current public async methods: 258 delegate
+The facade inventory locks all 267 current public async methods: 264 delegate
 directly to `execute`, three frozen ticket helpers keep their explicit raw
 compatibility path. Unsupported `sync_config` and its deprecated per-config
 delegate are absent.
 
 The final [convergence audit](canonical-request-convergence-audit.md) also
-locks the 1,026-row disposition inventory, retained-construction rationales,
+locks the 1,038-row disposition inventory, retained-construction rationales,
 v0.6.0 removal mappings, raw escape hatches, and reproducible regeneration.
 
 The existing rust-gvm GMP ticket surface is frozen: it remains supported for

@@ -10,8 +10,11 @@ use gvm_gmp::commands::tags::{
     CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsRequest,
     ModifyTagRequest, TagResourceAction, TagResourceUpdate, TagResources,
 };
-use gvm_gmp::{EntityId, EntityType};
+use gvm_gmp::commands::targets::CreateTargetRequest;
+use gvm_gmp::commands::tasks::{CreateTaskRequest, GetTasksRequest};
+use gvm_gmp::{EntityId, EntityType, TargetHost, TargetHosts, TargetPortSelection};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
+use std::collections::HashSet;
 
 fn id(value: &str) -> EntityId {
     EntityId::new(value).expect("valid entity id")
@@ -30,6 +33,123 @@ async fn stateful_server() -> Option<MockGmpServer> {
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
         Err(error) => panic!("server should start: {error}"),
     }
+}
+
+async fn create_task(client: &mut GmpClient<UnixSocketConnection>, name: &str) -> EntityId {
+    let hosts = TargetHosts::new(["127.0.0.1".parse::<TargetHost>().expect("valid host")], [])
+        .expect("valid target hosts");
+    let target = client
+        .create_target(CreateTargetRequest::new(
+            format!("{name} target"),
+            hosts,
+            TargetPortSelection::PortRange("T:1-65535".parse().expect("valid port range")),
+        ))
+        .await
+        .expect("target creation should succeed");
+    client
+        .create_task(CreateTaskRequest::new(
+            name,
+            id("daba56c8-73ec-11df-a475-002264764cea"),
+            target.id,
+            id("08b69003-5fc2-4037-a479-93b440211c73"),
+        ))
+        .await
+        .expect("task creation should succeed")
+        .id
+}
+
+async fn tasks_for_tag(
+    client: &mut GmpClient<UnixSocketConnection>,
+    tag_id: &EntityId,
+) -> Vec<EntityId> {
+    client
+        .get_tasks(GetTasksRequest {
+            filter_string: Some(format!("tag_id={tag_id}")),
+            ..Default::default()
+        })
+        .await
+        .expect("filtered task listing should succeed")
+        .items
+        .into_iter()
+        .map(|task| task.meta.id)
+        .collect()
+}
+
+#[tokio::test]
+async fn task_tag_filter_resolves_exact_tag_membership() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = GmpClient::connect(UnixSocketConnection::with_path(
+        server.socket_path().expect("Unix socket path"),
+    ))
+    .await
+    .expect("client should connect");
+    client
+        .authenticate(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authentication should succeed");
+
+    let created_member = create_task(&mut client, "Create member").await;
+    let added_member = create_task(&mut client, "Added member").await;
+    let unattached = create_task(&mut client, "Unattached").await;
+    let other_tag_member = create_task(&mut client, "Other tag member").await;
+
+    let mut initial_resources = TagResources::new(EntityType::Task);
+    initial_resources.resource_ids = vec![created_member.clone()];
+    let mut primary_tag_request = CreateTagRequest::new("Shared tag name", initial_resources);
+    primary_tag_request.active = Some(true);
+    let primary_tag = client
+        .create_tag(primary_tag_request)
+        .await
+        .expect("primary tag creation should succeed");
+
+    let mut other_resources = TagResources::new(EntityType::Task);
+    other_resources.resource_ids = vec![other_tag_member.clone()];
+    client
+        .create_tag(CreateTagRequest::new("Shared tag name", other_resources))
+        .await
+        .expect("same-name tag creation should succeed");
+
+    let empty_tag = client
+        .create_tag(CreateTagRequest::new(
+            "Empty tag",
+            TagResources::new(EntityType::Task),
+        ))
+        .await
+        .expect("empty tag creation should succeed");
+
+    assert_eq!(
+        tasks_for_tag(&mut client, &primary_tag.id).await,
+        vec![created_member.clone()]
+    );
+
+    for _ in 0..2 {
+        let mut resources = TagResources::new(EntityType::Task);
+        resources.resource_ids = vec![added_member.clone()];
+        let mut add = ModifyTagRequest::new(primary_tag.id.clone());
+        add.resource_update = Some(TagResourceUpdate {
+            resources,
+            action: Some(TagResourceAction::Add),
+        });
+        client
+            .modify_tag(add)
+            .await
+            .expect("additive tag attachment should succeed");
+    }
+
+    let actual = tasks_for_tag(&mut client, &primary_tag.id).await;
+    assert_eq!(actual.len(), 2);
+    let actual = actual.into_iter().collect::<HashSet<_>>();
+    let expected = HashSet::from([created_member, added_member]);
+    assert_eq!(actual, expected);
+    assert!(!actual.contains(&unattached));
+    assert!(!actual.contains(&other_tag_member));
+    assert!(tasks_for_tag(&mut client, &empty_tag.id).await.is_empty());
+
+    server.shutdown().await;
 }
 
 #[tokio::test]

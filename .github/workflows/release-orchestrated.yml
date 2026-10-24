@@ -29,7 +29,7 @@ jobs:
     name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
     steps:
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,7 +41,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@1e7f352e793c3815c54aebe8f9da50d7a80e6f41 # v3.36.18
+        uses: greenbone/actions/setup-pontos@80a38a10bb7eb2b3c12f7f0361532dc6120342d6 # v3.36.20
+
+      # setup-pontos currently leaves Python 3.10 first on PATH, while the
+      # release-version validator uses the Python 3.11+ standard tomllib.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
 
       - name: Configure git
         run: |
@@ -78,6 +84,8 @@ jobs:
             echo "Tag v${RELEASE_VERSION} already exists and will not be moved" >&2
             exit 1
           fi
+          git switch -C main "$RELEASE_SHA"
+          git branch --set-upstream-to=origin/main main
 
       - name: Create release with pontos
         env:

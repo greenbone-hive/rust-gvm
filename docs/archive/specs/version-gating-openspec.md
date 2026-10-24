@@ -1,5 +1,9 @@
 # OpenSpec: Version-Specific GMP Behavior
 
+> [!NOTE]
+> Archived planning snapshot. Use [`../../SUPPORT_MATRIX.md`](../../SUPPORT_MATRIX.md)
+> and the current version-gating sources for implemented behavior.
+
 **Issue:** [#16](https://github.com/clawosiris/rust-gvm/issues/16)
 **Status:** Draft
 **Author:** Thoth (Architect)

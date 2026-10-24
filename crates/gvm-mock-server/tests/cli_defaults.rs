@@ -19,6 +19,14 @@ fn cli_help_publishes_the_22_7_default() {
         stdout.contains("--version <VERSION>") && stdout.contains("[default: 22.7]"),
         "unexpected CLI help: {stdout}"
     );
+    assert!(
+        stdout.contains("--max-history-entries <MAX_HISTORY_ENTRIES>")
+            && stdout.contains("[default: 1024]")
+            && stdout.contains("--max-history-bytes <MAX_HISTORY_BYTES>")
+            && stdout.contains("[default: 16777216]")
+            && stdout.contains("--unbounded-command-history"),
+        "history retention controls missing from CLI help: {stdout}"
+    );
 }
 
 #[test]

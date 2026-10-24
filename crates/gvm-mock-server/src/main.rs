@@ -6,7 +6,9 @@
 #![allow(clippy::print_stderr, clippy::print_stdout)]
 
 use clap::Parser;
-use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
+use gvm_mock_server::{
+    GmpVersion, MockGmpServer, ServerMode, DEFAULT_MAX_HISTORY_BYTES, DEFAULT_MAX_HISTORY_ENTRIES,
+};
 use std::io::Write as _;
 #[cfg(feature = "tls")]
 use std::path::PathBuf;
@@ -42,6 +44,21 @@ struct Args {
     /// Maximum size of one XML request in bytes
     #[arg(long, default_value_t = 64 * 1024 * 1024)]
     max_request_bytes: usize,
+
+    /// Maximum number of command-history records to retain
+    #[arg(long, default_value_t = DEFAULT_MAX_HISTORY_ENTRIES)]
+    max_history_entries: usize,
+
+    /// Maximum raw XML bytes to retain in command history
+    #[arg(long, default_value_t = DEFAULT_MAX_HISTORY_BYTES)]
+    max_history_bytes: usize,
+
+    /// Retain unlimited command history (unsafe for exposed listeners)
+    #[arg(
+        long,
+        conflicts_with_all = ["max_history_entries", "max_history_bytes"]
+    )]
+    unbounded_command_history: bool,
 
     /// TLS address using a generated self-signed certificate (e.g., 127.0.0.1:9390)
     #[cfg(feature = "tls")]
@@ -91,6 +108,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .mode(mode)
         .version(version)
         .with_max_request_bytes(Some(args.max_request_bytes));
+    builder = if args.unbounded_command_history {
+        builder.with_unbounded_command_history()
+    } else {
+        builder.with_command_history_limits(args.max_history_entries, args.max_history_bytes)
+    };
 
     let transport_count = usize::from(args.socket.is_some()) + usize::from(args.tcp.is_some());
     #[cfg(feature = "tls")]

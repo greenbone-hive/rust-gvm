@@ -104,7 +104,9 @@ The grammar also accepts `format_id`, `config_id`, `delta_report_id`, and
 `alert_id`. These switch or specialize report generation rather than the
 ordinary lifecycle response. A format selector produces a synchronous export
 with a different response association and is modeled by
-`GetReportExportRequest`; delta and alert selection remain separate work.
+`GetReportExportRequest`. Asynchronous delta export has a distinct contract
+documented in [report-export lifecycle evidence](report-export-lifecycle-gvmd-evidence.md);
+synchronous delta generation and alert selection remain separate work.
 
 ## Deletion
 
@@ -157,10 +159,17 @@ are direct children, while ports, applications, operating systems, CVEs,
 vulnerabilities, TLS certificates, errors, and closed CVEs use named
 containers. GET metadata uses `report_host_count`, `report_port_count`, and the
 corresponding `report_*_count` names. Explicit parsers recognize those pinned
-shapes, retain legacy flat fixtures, use container `<count>` when GET metadata
-is absent, and preserve the original order when vulnerability or closed-CVE
-element spellings are mixed. Missing optional fields remain `None`; repeated
-rows remain repeated.
+shapes, use container `<count>` when GET metadata is absent, and preserve the
+original order when vulnerability or closed-CVE element spellings are mixed.
+Missing optional fields remain `None`; repeated rows remain repeated.
+
+`get_report_operating_systems` is not a generic `id`/`name`/`severity`
+projection. In pinned gvmd
+[`gmp_report_operating_systems.c`](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/src/gmp_report_operating_systems.c),
+each `<operating_systems>` row is
+`<operating_system><best_os_cpe>…</best_os_cpe><best_os_txt>…</best_os_txt><hosts_count>N</hosts_count></operating_system>`.
+The typed response preserves those values as `best_os_cpe`, `best_os_txt`, and
+typed `hosts_count`; unsupported generic row fields are not retained.
 
 `get_report_vulns` is the sole canonical vulnerability name because it is the
 actual command. The old `get_report_vulnerabilities` builder/facade was a

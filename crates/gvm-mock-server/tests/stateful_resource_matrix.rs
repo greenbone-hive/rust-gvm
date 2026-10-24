@@ -900,6 +900,73 @@ async fn schedules_default_timezone_and_require_calendar_on_modify() {
 }
 
 #[tokio::test]
+async fn create_schedule_rejects_non_ascii_value_date_without_panicking() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let create_resp = send_recv(
+        &mut stream,
+        "<create_schedule><name>Invalid Date</name><icalendar>BEGIN:VCALENDAR&#10;BEGIN:VEVENT&#10;DTSTART;VALUE=DATE:éaéaéT123456&#10;END:VEVENT&#10;END:VCALENDAR</icalendar><timezone>UTC</timezone></create_schedule>"
+            .as_bytes(),
+    )
+    .await;
+    assert_eq!(create_resp.status_code(), Some(400));
+    assert!(create_resp
+        .as_str()
+        .expect("valid utf8")
+        .contains("invalid UTC DTSTART"));
+
+    let get_resp = send_recv(&mut stream, b"<get_schedules/>").await;
+    assert_eq!(get_resp.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn modify_schedule_rejects_non_ascii_value_date_without_panicking() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let schedule_id = create_and_get_id(
+        &mut stream,
+        b"<create_schedule><name>Valid Schedule</name><icalendar>BEGIN:VCALENDAR&#10;BEGIN:VEVENT&#10;DTSTART:20300101T000000Z&#10;END:VEVENT&#10;END:VCALENDAR</icalendar><timezone>UTC</timezone></create_schedule>",
+        "create_schedule",
+    )
+    .await;
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_schedule schedule_id=\"{schedule_id}\"><icalendar>BEGIN:VCALENDAR&#10;BEGIN:VEVENT&#10;DTSTART;VALUE=DATE:éaéaéT123456&#10;END:VEVENT&#10;END:VCALENDAR</icalendar><timezone>UTC</timezone></modify_schedule>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(400));
+    assert!(modify_resp
+        .as_str()
+        .expect("valid utf8")
+        .contains("invalid UTC DTSTART"));
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_schedules schedule_id=\"{schedule_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains("<first_run>2030-01-01T00:00:00Z</first_run>"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn matrix_tags_create_and_empty_trashcan() {
     let Some(server) = stateful_server().await else {
         return;

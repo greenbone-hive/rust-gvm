@@ -4,7 +4,7 @@
 > Archived review-fix prompt. It preserves the requested changes at that point
 > in development and must not be used as a description of the current reader,
 > connection, response, or client implementations. Start with
-> [`docs/agent-code-map.md`](docs/agent-code-map.md) and the current sources.
+> [`docs/agent-code-map.md`](../../agent-code-map.md) and the current sources.
 
 Fix all issues identified in the Claude Code review, in priority order.
 

@@ -423,13 +423,13 @@ fn assert_disposition_counts(ledger: &BTreeMap<Surface, Disposition>) {
             *counts.entry(disposition.value.as_str()).or_insert(0_usize) += 1;
             counts
         });
-    assert_eq!(ledger.len(), 1026, "#678 disposition ledger total drifted");
+    assert_eq!(ledger.len(), 1038, "disposition ledger total drifted");
     assert_eq!(
         counts.get("transitional").copied().unwrap_or_default(),
         0,
         "the completed #658-#664 inventory must contain zero transitional rows"
     );
-    assert_eq!(counts.get("canonical-request"), Some(&409));
+    assert_eq!(counts.get("canonical-request"), Some(&421));
     assert_eq!(counts.get("removed"), Some(&475));
     assert_eq!(counts.get("retained-construction"), Some(&130));
     assert_eq!(counts.get("frozen-ticket"), Some(&12));

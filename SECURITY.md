@@ -4,11 +4,12 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.6.x   | ✅ Latest published minor |
-| 0.5.x and older | Critical fixes only, at maintainer discretion |
+| Latest published minor | ✅ Security fixes |
+| Earlier minors | Critical fixes only, at maintainer discretion |
 
-The `main` branch currently identifies itself as `0.7.0`, but it is an
-unreleased Technology Preview until the qualified `v0.7.0` release completes.
+The GitHub Releases page is authoritative for the latest published minor. The
+`main` branch can identify itself as the next version while that version is
+still undergoing release qualification.
 
 We support the latest minor release with security patches. Once a new minor or major version is published, prior versions receive patches only for critical vulnerabilities at maintainer discretion.
 

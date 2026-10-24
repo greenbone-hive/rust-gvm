@@ -46,11 +46,13 @@ use gvm_gmp::commands::oci_image_targets::{
     GetOciImageTargetRequest, GetOciImageTargetsRequest, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::reports::{
-    DeleteAuditReportRequest, ExportScanReportRequest, GetAuditReportHostsRequest,
-    GetAuditReportRequest, GetAuditReportsRequest, GetReportApplicationsRequest,
-    GetReportClosedCvesRequest, GetReportCvesRequest, GetReportErrorsRequest,
-    GetReportHostsRequest, GetReportOperatingSystemsRequest, GetReportPortsRequest,
-    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetScanReportRequest,
+    CancelReportExportRequest, DeleteAuditReportRequest, DownloadReportExportRequest,
+    ExportAuditReportRequest, ExportDeltaAuditReportRequest, ExportDeltaScanReportRequest,
+    ExportScanReportRequest, GetAuditReportHostsRequest, GetAuditReportRequest,
+    GetAuditReportsRequest, GetReportApplicationsRequest, GetReportClosedCvesRequest,
+    GetReportCvesRequest, GetReportErrorsRequest, GetReportExportsRequest, GetReportHostsRequest,
+    GetReportOperatingSystemsRequest, GetReportPortsRequest, GetReportTlsCertificatesRequest,
+    GetReportVulnsRequest, GetScanReportRequest,
 };
 use gvm_gmp::commands::system::GetTimezonesRequest;
 use gvm_gmp::commands::tasks::{
@@ -64,14 +66,16 @@ use gvm_gmp::commands::web_application_targets::{
     GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
 use gvm_gmp::responses::{
-    CloneAgentGroupResponse, CreateAgentGroupResponse, CreateCredentialResponse,
-    CreateOciImageTargetResponse, CreateTaskResponse, CreateWebApplicationTargetResponse,
-    DeleteAgentGroupResponse, DeleteAgentResponse, DeleteOciImageTargetResponse,
-    DeleteWebApplicationTargetResponse, ExportScanReportResponse, GetAgentGroupsResponse,
-    GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
-    GetAuditReportsResponse, GetCredentialStoresResponse, GetFeaturesResponse,
-    GetIntegrationConfigsResponse, GetOciImageTargetsResponse, GetReportApplicationsResponse,
-    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
+    CancelReportExportResponse, CloneAgentGroupResponse, CreateAgentGroupResponse,
+    CreateCredentialResponse, CreateOciImageTargetResponse, CreateTaskResponse,
+    CreateWebApplicationTargetResponse, DeleteAgentGroupResponse, DeleteAgentResponse,
+    DeleteOciImageTargetResponse, DeleteWebApplicationTargetResponse, DownloadReportExportResponse,
+    ExportAuditReportResponse, ExportDeltaAuditReportResponse, ExportDeltaScanReportResponse,
+    ExportScanReportResponse, GetAgentGroupsResponse, GetAgentInstallerInstructionResponse,
+    GetAgentSupportBundleResponse, GetAgentsResponse, GetAuditReportsResponse,
+    GetCredentialStoresResponse, GetFeaturesResponse, GetIntegrationConfigsResponse,
+    GetOciImageTargetsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
+    GetReportCvesResponse, GetReportErrorsResponse, GetReportExportsResponse,
     GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
     GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetScanReportResponse,
     GetTimezonesResponse, GetWebApplicationTargetsResponse, HelpResponse,
@@ -259,8 +263,8 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Query the server's XML `help` command listing and cache the advertised
     /// command names.
     ///
-    /// This is required before invoking commands whose availability cannot be
-    /// proven by the negotiated GMP version, including `export_scan_report`.
+    /// This is required before invoking report-export lifecycle commands whose
+    /// availability cannot be proven by the negotiated GMP version.
     ///
     /// # Errors
     /// Returns an error if the request fails, the response cannot be parsed,
@@ -274,7 +278,7 @@ impl<C: GvmConnection> GmpClient<C> {
             schema
                 .commands
                 .iter()
-                .map(|command| command.name.clone())
+                .map(|command| command.name.trim().to_ascii_lowercase())
                 .collect(),
         );
         Ok(parsed)
@@ -1046,6 +1050,75 @@ impl<C: GvmConnection> GmpVersioned<C> {
         self.inner_mut().execute(request).await
     }
 
+    /// Poll one or more asynchronous report exports after command discovery.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn get_report_exports(
+        &mut self,
+        request: GetReportExportsRequest,
+    ) -> Result<GetReportExportsResponse, GvmError> {
+        self.inner_mut().execute(request).await
+    }
+
+    /// Download one completed report export after discovery.
+    ///
+    /// Current gvmd keeps the terminal export available for repeatable downloads
+    /// until its retention cleanup removes it.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, transport, or parsing fails.
+    pub async fn download_report_export(
+        &mut self,
+        request: DownloadReportExportRequest,
+    ) -> Result<DownloadReportExportResponse, GvmError> {
+        self.inner_mut().execute(request).await
+    }
+
+    /// Request cancellation of one report export after discovery.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, transport, or parsing fails.
+    pub async fn cancel_report_export(
+        &mut self,
+        request: CancelReportExportRequest,
+    ) -> Result<CancelReportExportResponse, GvmError> {
+        self.inner_mut().execute(request).await
+    }
+
+    /// Queue or reuse an asynchronous audit-report export after discovery.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn export_audit_report(
+        &mut self,
+        request: ExportAuditReportRequest,
+    ) -> Result<ExportAuditReportResponse, GvmError> {
+        self.inner_mut().execute(request).await
+    }
+
+    /// Queue or reuse an asynchronous delta-audit export after discovery.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn export_delta_audit_report(
+        &mut self,
+        request: ExportDeltaAuditReportRequest,
+    ) -> Result<ExportDeltaAuditReportResponse, GvmError> {
+        self.inner_mut().execute(request).await
+    }
+
+    /// Queue or reuse an asynchronous delta-scan export after discovery.
+    ///
+    /// # Errors
+    /// Returns an error if discovery, validation, transport, or parsing fails.
+    pub async fn export_delta_scan_report(
+        &mut self,
+        request: ExportDeltaScanReportRequest,
+    ) -> Result<ExportDeltaScanReportResponse, GvmError> {
+        self.inner_mut().execute(request).await
+    }
+
     /// Execute a semantic request and decode its statically associated response.
     ///
     /// # Errors
@@ -1682,6 +1755,32 @@ mod tests {
         assert_eq!(
             advertised.supports_command("export_scan_report"),
             Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_commands_normalizes_names_for_support_lookup() {
+        let mut client = connected_client_with_response(
+            r#"<help_response status="200" status_text="OK"><schema format="XML"><command><name> EXPORT_SCAN_REPORT </name></command></schema></help_response>"#,
+        )
+        .await;
+
+        let help = client
+            .discover_commands()
+            .await
+            .expect("help discovery succeeds");
+
+        assert_eq!(
+            help.schema.expect("help schema").commands[0].name,
+            "EXPORT_SCAN_REPORT"
+        );
+        assert_eq!(
+            client.command_support("export_scan_report"),
+            CommandSupport::Supported
+        );
+        assert_eq!(
+            client.command_support("get_report_exports"),
+            CommandSupport::NotAdvertised
         );
     }
 

@@ -283,12 +283,23 @@ mod tests {
 
     #[test]
     fn help_discovered_command_is_not_proven_by_version() {
-        assert_eq!(
-            minimum_version_for_command("export_scan_report"),
-            Some(GmpVersion(22, 7))
-        );
-        assert!(!command_supported("export_scan_report", GmpVersion(22, 7)));
-        assert!(!command_supported("export_scan_report", GmpVersion(22, 8)));
+        for command in [
+            "cancel_report_export",
+            "download_report_export",
+            "export_audit_report",
+            "export_delta_audit_report",
+            "export_delta_scan_report",
+            "export_scan_report",
+            "get_report_exports",
+        ] {
+            assert_eq!(
+                minimum_version_for_command(command),
+                Some(GmpVersion(22, 7)),
+                "{command}"
+            );
+            assert!(!command_supported(command, GmpVersion(22, 7)), "{command}");
+            assert!(!command_supported(command, GmpVersion(22, 8)), "{command}");
+        }
     }
 
     #[test]

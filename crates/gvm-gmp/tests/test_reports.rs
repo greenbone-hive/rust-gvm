@@ -293,6 +293,65 @@ fn test_export_scan_report_allows_source_default_format() {
 }
 
 #[test]
+fn test_report_export_lifecycle_selectors_match_gvmd() {
+    let request = GetReportExportsRequest {
+        report_export_id: Some(id("export-1")),
+        filter_string: Some("status=running & rows=10".into()),
+        filter_id: Some(id("filter-1")),
+        details: Some(true),
+    };
+    assert_eq!(
+        String::from_utf8(request.encode(GmpVersion(22, 7)).unwrap()).unwrap(),
+        "<get_report_exports details=\"1\" filt_id=\"filter-1\" filter=\"status=running &amp; rows=10\" report_export_id=\"export-1\"/>"
+    );
+    assert_eq!(
+        String::from_utf8(
+            DownloadReportExportRequest::new(id("export-1"))
+                .encode(GmpVersion(22, 7))
+                .unwrap()
+        )
+        .unwrap(),
+        "<download_report_export report_export_id=\"export-1\"/>"
+    );
+    assert_eq!(
+        String::from_utf8(
+            CancelReportExportRequest::new(id("export-1"))
+                .encode(GmpVersion(22, 7))
+                .unwrap()
+        )
+        .unwrap(),
+        "<cancel_report_export report_export_id=\"export-1\"/>"
+    );
+}
+
+#[test]
+fn test_audit_and_delta_export_requests_encode_distinct_required_inputs() {
+    let mut audit = ExportAuditReportRequest::new(id("audit-report"));
+    audit.report_format_id = Some(id("format"));
+    audit.filter_string = Some("compliance_levels=yniu".into());
+    audit.ignore_pagination = Some(true);
+    assert_eq!(
+        String::from_utf8(audit.encode(GmpVersion(22, 7)).unwrap()).unwrap(),
+        "<export_audit_report filter=\"compliance_levels=yniu\" format_id=\"format\" ignore_pagination=\"1\" report_id=\"audit-report\"/>"
+    );
+
+    let mut delta_audit =
+        ExportDeltaAuditReportRequest::new(id("audit-report"), id("audit-baseline"));
+    delta_audit.notes_details = Some(true);
+    assert_eq!(
+        String::from_utf8(delta_audit.encode(GmpVersion(22, 7)).unwrap()).unwrap(),
+        "<export_delta_audit_report delta_report_id=\"audit-baseline\" notes_details=\"1\" report_id=\"audit-report\"/>"
+    );
+
+    let mut delta_scan = ExportDeltaScanReportRequest::new(id("scan-report"), id("scan-baseline"));
+    delta_scan.result_tags = Some(false);
+    assert_eq!(
+        String::from_utf8(delta_scan.encode(GmpVersion(22, 7)).unwrap()).unwrap(),
+        "<export_delta_scan_report delta_report_id=\"scan-baseline\" report_id=\"scan-report\" result_tags=\"0\"/>"
+    );
+}
+
+#[test]
 fn test_report_helper_commands() {
     let mut hosts = GetReportHostsRequest::new(id("r1"));
     hosts.filter_string = Some("severity>5".into());

@@ -101,6 +101,26 @@ async fn builder_rejects_zero_request_limit() {
 }
 
 #[tokio::test]
+async fn builder_rejects_zero_history_limits() {
+    for (entries, bytes) in [(0, 1), (1, 0)] {
+        let result = MockGmpServer::builder()
+            .with_command_history_limits(entries, bytes)
+            .unix_socket_auto()
+            .build()
+            .await;
+        let error = match result {
+            Ok(server) => {
+                server.shutdown().await;
+                panic!("zero history limit must be rejected");
+            }
+            Err(error) => error,
+        };
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+}
+
+#[tokio::test]
 async fn builder_requires_a_transport() {
     let result = MockGmpServer::builder().build().await;
     let error = match result {

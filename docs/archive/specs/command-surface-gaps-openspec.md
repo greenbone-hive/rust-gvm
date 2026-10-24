@@ -1,5 +1,10 @@
 # python-gvm Command-Surface Gaps — OpenSpec
 
+> [!NOTE]
+> Archived planning snapshot. The gap program is complete; current command
+> coverage is documented in [`../../STATUS.md`](../../STATUS.md) and
+> [`../../SUPPORT_MATRIX.md`](../../SUPPORT_MATRIX.md).
+
 **Issue**: #23  
 **Status**: Draft  
 **Date**: 2026-03-17

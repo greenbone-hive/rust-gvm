@@ -1,9 +1,10 @@
 # Extracted top-level GMP commands from public gvmd source.
 # Repository: https://github.com/greenbone/gvmd
-# Commit: 55e5d4c657c48ce52ee340c2439680418bfe1a4d
+# Commit: 5385fcb0130bb15230ada02effb78fab74c166b1
 # Path: src/schema_formats/XML/GMP.xml.in
-# GMP.xml.in SHA-256: ee7054ffffbdce859f90086b28cdc876eebb8225a2a53ad0f7e8100084e1e0b0
+# GMP.xml.in SHA-256: 9b9520ab75fb123f200dba26bd196153fb2eb685c448e7ded44ef8457e407559
 authenticate
+cancel_report_export
 create_agent_group
 create_alert
 create_asset
@@ -54,10 +55,15 @@ delete_tag
 delete_target
 delete_task
 delete_ticket
+delete_tls_certificate
 delete_user
 delete_web_application_target
 describe_auth
+download_report_export
 empty_trashcan
+export_audit_report
+export_delta_audit_report
+export_delta_scan_report
 export_scan_report
 get_agent_groups
 get_agent_installer_instruction
@@ -91,6 +97,7 @@ get_report_closed_cves
 get_report_configs
 get_report_cves
 get_report_errors
+get_report_exports
 get_report_formats
 get_report_hosts
 get_report_operating_systems
@@ -125,6 +132,7 @@ modify_asset
 modify_auth
 modify_config
 modify_credential
+modify_credential_store
 modify_filter
 modify_group
 modify_integration_config
@@ -156,5 +164,6 @@ stop_task
 sync_agents
 sync_config
 test_alert
+verify_credential_store
 verify_report_format
 verify_scanner

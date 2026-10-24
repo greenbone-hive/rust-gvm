@@ -12,6 +12,8 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   inventory commands.
 - `docs/v0.7.0-migration.md`: complete caller migration from the published
   v0.6.0 request surface.
+- `docs/v0.8.0-migration.md`: post-v0.7 report-export and typed-projection
+  additions, compatibility notes, and upgrade examples.
 - `docs/gvmd-transport-analysis.md`: gvmd transport model and why GMP is handled as XML over persistent sockets.
 - `docs/target-request-gvmd-evidence.md`: pinned public gvmd schema/source evidence for the canonical target reference slice.
 - `docs/alternate-target-request-gvmd-evidence.md`: pinned gvmd evidence for canonical OCI-image and web-application target requests.
@@ -64,6 +66,13 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   scan/audit retrieval, audit host summaries, all nine drill-downs, synchronous
   and asynchronous exports, irregular response carriers, source defaults, and
   capability gates.
+- `docs/report-export-lifecycle-gvmd-evidence.md`: v26.40.2 and current audit
+  evidence for the seven-command asynchronous report-export lifecycle,
+  discovery gates, state transitions, and destructive download semantics.
+- `docs/typed-schema-projections-gvmd-evidence.md`: pinned current gvmd
+  evidence for support-bundle encryption, result/NVT projection fields,
+  detailed NVT technical information, and web-application/future info
+  subtypes.
 - `docs/system-discovery-request-gvmd-evidence.md`: pinned gvmd and python-gvm
   evidence for pre-authentication version/authentication, help, features,
   feeds/timezones, aggregate shapes, settings, system reports, resource names,
@@ -71,7 +80,8 @@ This is a fast orientation guide for coding agents. It points to ownership bound
 - `docs/system-admin-cleanup-request-gvmd-evidence.md`: pinned gvmd and
   python-gvm evidence for authentication/license/setting/wizard mutations,
   user-setting queries, and transactional trashcan empty/restore behavior.
-- `docs/response-models-rfc.md`: response parsing/modeling direction.
+- `docs/archive/design/response-models-rfc.md`: historical response-model RFC;
+  use `docs/typed-execution.md` and current response sources for implemented behavior.
 
 ## Request Flow
 
@@ -148,11 +158,11 @@ Changing client behavior:
 - `crates/gvm-client/src/version.rs`: version parsing, mapping, command minimums, command support checks.
 - `crates/gvm-client/src/error.rs`: high-level error variants and display behavior.
 - Tests live under `crates/gvm-client/tests/`.
-- `canonical_request_surface_inventory.rs` protects the exact 1,026-row
+- `canonical_request_surface_inventory.rs` protects the exact 1,038-row
   disposition, retained rationale, removed-symbol, frozen-ticket, raw escape,
   and v0.6.0 mapping contracts.
 - `typed_facade_inventory.rs` parses every public typed helper and enforces the
-  258 canonical execute delegates plus three frozen ticket raw paths.
+  264 canonical execute delegates plus three frozen ticket raw paths.
 
 Changing transport behavior:
 

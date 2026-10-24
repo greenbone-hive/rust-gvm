@@ -1,5 +1,10 @@
 # gvm-mock-server Test Specification — OpenSpec
 
+> [!NOTE]
+> Archived test plan. Current mock-server behavior and validation ownership are
+> described in [`../../STATUS.md`](../../STATUS.md) and
+> [`../../agent-code-map.md`](../../agent-code-map.md).
+
 ## 1. Overview
 
 This document specifies the complete test suite for **gvm-mock-server**. It covers the mock server's own correctness (does it behave like a GMP server?) and its role as test infrastructure for rust-gvm and python-gvm.

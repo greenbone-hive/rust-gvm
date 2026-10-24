@@ -247,13 +247,29 @@ mod tests {
     }
 
     #[test]
-    fn help_discovered_export_has_a_version_floor_without_version_proof() {
-        assert!(!command_available("export_scan_report", GmpVersion::V22_6));
-        assert!(command_available("export_scan_report", GmpVersion::V22_7));
-        let capability =
-            gvm_gmp::capabilities::command_capability("export_scan_report").expect("known command");
-        assert!(capability.requires_help_discovery);
-        assert!(!capability.available_in(gvm_gmp::GmpVersion(22, 7)));
-        assert!(!capability.available_in(gvm_gmp::GmpVersion(22, 8)));
+    fn help_discovered_exports_have_a_version_floor_without_version_proof() {
+        for command in [
+            "cancel_report_export",
+            "download_report_export",
+            "export_audit_report",
+            "export_delta_audit_report",
+            "export_delta_scan_report",
+            "export_scan_report",
+            "get_report_exports",
+        ] {
+            assert!(!command_available(command, GmpVersion::V22_6), "{command}");
+            assert!(command_available(command, GmpVersion::V22_7), "{command}");
+            let capability =
+                gvm_gmp::capabilities::command_capability(command).expect("known command");
+            assert!(capability.requires_help_discovery, "{command}");
+            assert!(
+                !capability.available_in(gvm_gmp::GmpVersion(22, 7)),
+                "{command}"
+            );
+            assert!(
+                !capability.available_in(gvm_gmp::GmpVersion(22, 8)),
+                "{command}"
+            );
+        }
     }
 }

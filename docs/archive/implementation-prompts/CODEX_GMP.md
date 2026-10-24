@@ -3,13 +3,14 @@
 > [!NOTE]
 > Archived implementation prompt. The builder inventory and completion steps
 > below are historical, not the current v0.7 command surface. See
-> [`docs/agent-code-map.md`](docs/agent-code-map.md),
-> [`docs/STATUS.md`](docs/STATUS.md), and
-> [`docs/typed-execution.md`](docs/typed-execution.md).
+> [`docs/agent-code-map.md`](../../agent-code-map.md),
+> [`docs/STATUS.md`](../../STATUS.md), and
+> [`docs/typed-execution.md`](../../typed-execution.md).
 
 ## Context
 
-You are implementing `crates/gvm-gmp/` — the typed GMP command builder crate for the rust-gvm workspace. The full spec is in `spec/openspec.md` section 3.3.
+You are implementing `crates/gvm-gmp/` — the typed GMP command builder crate for the rust-gvm workspace. The historical spec is
+[`rust-gvm-openspec.md`](../specs/rust-gvm-openspec.md), section 3.3.
 
 The crate depends on `gvm-protocol` (same workspace) which provides `XmlCommand`, `Request` trait, and `Response`.
 

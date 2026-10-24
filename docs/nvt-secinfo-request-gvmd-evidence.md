@@ -41,9 +41,10 @@ There is one response-expansion drift that matters to compatibility. Current
 NVT rendering accepts an internal `include_tech_info` argument. Generic
 `get_info type="NVT"` passes its `details` value, while dedicated `get_nvts`
 passes false. This is not a new wire request attribute, and this crate does not
-claim byte-identical current responses. The response codecs tolerate unknown
-technical-information extensions while continuing to project the modeled
-fields.
+claim byte-identical current responses. The #715 follow-up now preserves
+`tech_info/description_md` in generic detailed NVT information and preserves
+the NVT discovery marker; see the
+[current pinned evidence](typed-schema-projections-gvmd-evidence.md#nvt-discovery-and-technical-information).
 
 ## Schema/source discrepancies
 
@@ -64,7 +65,7 @@ source-derived behavior and retain textual identities where the source does.
 | `get_nvts` | `nvt_oid` and `family` are distinct selectors; config-scoped lists require a family; `config_id` restricts list membership while detail selection does not; `preferences_config_id` changes preference values without membership filtering; detail-dependent flags and timeout context are validated; the dedicated parser does not consume generic `filter`/`filt_id`. |
 | `get_nvt_families` | The command owns only family sorting. The response uses `<families><family>` with `max_nvt_count`; `-1` means unknown rather than an unsigned value. |
 | `get_preferences` | Optional NVT restriction and the exact suffix after the stored key's second colon are supported. Rows retain stored-key order, detail selection returns the first match, timeout/internal preferences are excluded, radio alternatives are preserved, and password values/defaults are blank. An empty NVT marker is a scanner preference; a missing OID or an empty OID with a nonempty NVT name is malformed. |
-| `get_info` | A type is required. Pinned dispatch supports only `CERT_BUND_ADV`, `CPE`, `CVE`, `DFN_CERT_ADV`, and `NVT`. List `name` and detail `info_id` are distinct. Inline/saved filters and details are preserved. Responses are authoritative repeated `<info id>` wrappers with direct typed payload children and an `info_count`. |
+| `get_info` | A type is required. The original #648 pin supports `CERT_BUND_ADV`, `CPE`, `CVE`, `DFN_CERT_ADV`, and `NVT`; the #715 current pin additionally dispatches feature-gated `web_application_vt`. List `name` and detail `info_id` are distinct. Inline/saved filters and details are preserved. Responses are authoritative repeated `<info id>` wrappers with direct typed payload children and an `info_count`. |
 | `get_vulns` | This is the observed-vulnerability query, separate from SecInfo. It supports `vuln_id`, inline/saved filters, and richer severity, QoD, result-count, host-count, and context data while the typed response intentionally keeps a compact identity projection. |
 
 The response decoder gives the enclosing `<info>` wrapper authority over
@@ -79,8 +80,11 @@ mixed shapes cannot double-count.
 The historical Rust `InfoType` spellings for operating systems (`os`), OVAL
 definitions (`OVALDEF`), and vulnerabilities (`vuln` or `vulnerability`) do
 not correspond to branches in pinned or current `handle_get_info`.
-Consequently `GenericInfoType` exposes only the five supported branches, and
-the former OS/vulnerability `get_info` requests and facades are removed.
+Consequently `GenericInfoType` exposes the six implemented branches at the
+#715 pin, including feature-gated `web_application_vt`; the former
+OS/vulnerability `get_info` requests and facades remain removed. Generic
+responses preserve the typed web-application payload and retain an unknown
+future direct subtype's name instead of dropping its enclosing info item.
 
 Operating-system assets remain owned by the asset commands. Observed
 vulnerabilities remain owned by `get_vulns`; `GetVulnsRequest` and the semantic
@@ -124,6 +128,11 @@ SecInfo/vulnerability IDs. Public seed controls cover NVTs, SecInfo,
 vulnerabilities, config membership/preference overrides, saved filters,
 user-default filter resolution, database/feed availability, and SecInfo read
 permission.
+
+The bounded mock's SecInfo catalogue remains limited to the five original
+#648 types. The #715 web-application payload and detailed technical fields use
+source-shaped response fixtures; support-bundle facade coverage uses command
+history only and does not invent encryption backend behavior.
 
 The mock models exact selector/context distinctions, requested NVT detail
 expansions, family sorting, preference suffix/order/redaction behavior,

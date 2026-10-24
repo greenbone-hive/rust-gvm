@@ -138,13 +138,16 @@ pub use port_list::{
 };
 pub use preference::{GetPreferencesResponse, Preference, PreferenceNvt};
 pub use report::{
-    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse, GetAuditReportsResponse,
-    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
-    GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, Report, ReportApplicationSummary, ReportClosedCve, ReportCveSummary,
-    ReportError, ReportExport, ReportHostSummary, ReportOperatingSystemSummary, ReportPortSummary,
-    ReportTlsCertificate, ReportVulnerability, ResultCount, Severity,
+    CancelReportExportResponse, CreateReportResponse, DeleteReportResponse,
+    DownloadReportExportResponse, DownloadedReportExport, ExportAuditReportResponse,
+    ExportDeltaAuditReportResponse, ExportDeltaScanReportResponse, ExportScanReportResponse,
+    GetAuditReportsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
+    GetReportCvesResponse, GetReportErrorsResponse, GetReportExportsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse, Report,
+    ReportApplicationSummary, ReportClosedCve, ReportCveSummary, ReportError, ReportExport,
+    ReportExportInfo, ReportExportResponse, ReportHostSummary, ReportOperatingSystemSummary,
+    ReportPortSummary, ReportTlsCertificate, ReportVulnerability, ResultCount, Severity,
 };
 pub use report_config::{
     CreateReportConfigResponse, DeleteReportConfigResponse, GetReportConfigsResponse,
@@ -174,9 +177,10 @@ pub use schedule::{
     Schedule,
 };
 pub use secinfo::{
-    CertBundAdvisory, Cpe, Cve, DfnCertAdvisory, GenericInfo, GetCertBundAdvisoriesResponse,
-    GetCpesResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetInfoResponse,
-    GetOperatingSystemsResponse, GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
+    CertBundAdvisory, Cpe, Cve, DfnCertAdvisory, GenericInfo, GenericInfoPayload,
+    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse,
+    GetInfoResponse, GetOperatingSystemsResponse, GetVulnerabilitiesResponse, NvtInfo, NvtTechInfo,
+    OperatingSystem, Vulnerability, WebApplicationVtInfo, WebApplicationVtReference,
 };
 pub use system::{
     AuthConfSetting, AuthGroup, CertificateInfo, DescribeAuthResponse, GetSettingsResponse,

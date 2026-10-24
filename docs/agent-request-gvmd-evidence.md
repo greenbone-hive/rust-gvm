@@ -50,3 +50,13 @@ mock evidence:
 The mock is not claimed as real-gvmd interoperability proof. The existing
 post-merge Community E2E dispatch remains the deployed runtime check against
 gvmd; this pinned evidence is reviewable before that main-branch-only gate.
+
+## Issue #715 projection follow-up
+
+Current audit pin
+[`5385fcb0130bb15230ada02effb78fab74c166b1`](https://github.com/greenbone/gvmd/commit/5385fcb0130bb15230ada02effb78fab74c166b1)
+adds source/schema evidence for the optional support-bundle `encryption`
+attribute. It is parsed strictly as integer `0` or `1` and defaults to `1`
+when omitted. The canonical request now exposes `Option<bool>` without
+changing its constructor. See the
+[typed projection evidence](typed-schema-projections-gvmd-evidence.md#agent-support-bundle-encryption).
