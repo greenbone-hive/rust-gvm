@@ -3299,7 +3299,7 @@ impl SessionHandler {
 
         match store.start_task(&uuid) {
             Ok(report_id) => format!(
-                "<start_task_response status=\"202\" status_text=\"OK\">\
+                "<start_task_response status=\"202\" status_text=\"OK, request submitted\">\
                      <report_id>{report_id}</report_id>\
                      </start_task_response>"
             )

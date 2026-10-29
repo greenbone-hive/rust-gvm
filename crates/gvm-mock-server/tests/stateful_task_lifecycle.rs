@@ -396,6 +396,10 @@ async fn task_start_returns_report_id() {
     )
     .await;
     assert_eq!(start_resp.status_code(), Some(202));
+    assert_eq!(
+        start_resp.status_text().as_deref(),
+        Some("OK, request submitted")
+    );
 
     let start_text = start_resp.as_str().expect("valid utf8");
     let report_id = extract_report_id(start_text);
@@ -405,6 +409,15 @@ async fn task_start_returns_report_id() {
         4,
         "report_id should contain UUID hyphens"
     );
+    let task_resp = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(task_resp
+        .as_str()
+        .expect("valid utf8")
+        .contains(&format!("<current_report><report id=\"{report_id}\">")));
 
     println!("TASK_LIFECYCLE_DONE");
 
