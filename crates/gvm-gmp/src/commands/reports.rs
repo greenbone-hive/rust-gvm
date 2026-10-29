@@ -759,10 +759,10 @@ impl GmpRequest for GetReportExportsRequest {
     type Response = GetReportExportsResponse;
 }
 
-/// Request for downloading and consuming one completed report export.
+/// Request for downloading one completed report export.
 ///
-/// A successful gvmd response contains standard-base64 file bytes and removes
-/// the server-side export only after the full response has been sent.
+/// A successful current-gvmd response contains standard-base64 file bytes and
+/// leaves the terminal export available for retry until retention cleanup.
 #[derive(Debug, Clone)]
 pub struct DownloadReportExportRequest {
     /// Completed report-export identifier.

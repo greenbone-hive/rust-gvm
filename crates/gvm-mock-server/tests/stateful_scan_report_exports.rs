@@ -298,20 +298,33 @@ async fn stateful_mock_models_the_seven_command_export_lifecycle() {
         assert_eq!(parsed.items[0].status, expected);
     }
 
-    let downloaded = send_recv_codec(
+    let first_download = send_recv_codec(
         &mut stream,
         &DownloadReportExportRequest::new(scan_export_id.clone()),
     )
     .await;
-    let downloaded = DownloadReportExportResponse::decode(&downloaded, gvm_gmp::GmpVersion(22, 7))
-        .expect("download response");
-    assert_eq!(downloaded.report_export.status, "done");
-    assert!(!downloaded.report_export.bytes.is_empty());
-    assert_eq!(
-        send_recv_codec(&mut stream, &poll).await.status_code(),
-        Some(404),
-        "successful download consumes the export"
-    );
+    let first_download =
+        DownloadReportExportResponse::decode(&first_download, gvm_gmp::GmpVersion(22, 7))
+            .expect("first download response");
+    assert_eq!(first_download.report_export.status, "done");
+    assert!(!first_download.report_export.bytes.is_empty());
+
+    let second_download = send_recv_codec(
+        &mut stream,
+        &DownloadReportExportRequest::new(scan_export_id.clone()),
+    )
+    .await;
+    let second_download =
+        DownloadReportExportResponse::decode(&second_download, gvm_gmp::GmpVersion(22, 7))
+            .expect("second download response");
+    assert_eq!(second_download, first_download);
+
+    let retained = send_recv_codec(&mut stream, &poll).await;
+    let retained = GetReportExportsResponse::decode(&retained, gvm_gmp::GmpVersion(22, 7))
+        .expect("retained export response");
+    assert_eq!(retained.items.len(), 1);
+    assert_eq!(retained.items[0].status, "done");
+    assert_eq!(retained.items[0].progress, "completed");
 
     let mut cancel_request =
         ExportAuditReportRequest::new(EntityId::new(AUDIT_REPORT_ID).expect("audit report id"));
