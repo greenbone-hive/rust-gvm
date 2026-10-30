@@ -73,6 +73,35 @@ def job_block(source: str, job: str) -> str:
     return match.group("body")
 
 
+def job_needs(source: str, job: str) -> tuple[str, ...]:
+    block = job_block(source, job)
+    inline = re.search(r"(?m)^    needs: (?P<needs>.+)$", block)
+    if inline is not None:
+        value = inline.group("needs").strip()
+        if value.startswith("[") and value.endswith("]"):
+            return tuple(item.strip() for item in value[1:-1].split(","))
+        return (value,)
+
+    multiline = re.search(
+        r"(?m)^    needs:\n(?P<needs>(?:      - [a-z0-9-]+\n)+)", block
+    )
+    if multiline is None:
+        return ()
+    return tuple(re.findall(r"(?m)^      - ([a-z0-9-]+)$", multiline.group("needs")))
+
+
+def job_names(source: str) -> tuple[str, ...]:
+    jobs = source.split("\njobs:\n", 1)[1]
+    return tuple(re.findall(r"(?m)^  ([a-z0-9-]+):$", jobs))
+
+
+def depends_on(source: str, job: str, required: str) -> bool:
+    direct = job_needs(source, job)
+    return required in direct or any(
+        depends_on(source, dependency, required) for dependency in direct
+    )
+
+
 def aggregate_needs(source: str, aggregate: str) -> tuple[str, ...]:
     match = re.search(
         r"^    needs:\n(?P<needs>(?:      - .+\n)+).*?^    steps:",
@@ -93,6 +122,24 @@ def aggregate_script(source: str, aggregate: str) -> str:
 
 
 class WorkflowPolicyTests(unittest.TestCase):
+    def test_release_write_jobs_require_protected_main_qualification(self) -> None:
+        source = workflow("release.yml")
+        qualification = job_block(source, "qualify")
+        self.assertIn(
+            '"+refs/heads/main:refs/remotes/origin/main"', qualification
+        )
+        self.assertIn("python3 scripts/check_release_commit.py", qualification)
+
+        write_jobs = tuple(
+            job
+            for job in job_names(source)
+            if re.search(r"(?m)^      [a-z-]+: write$", job_block(source, job))
+        )
+        self.assertTrue(write_jobs)
+        for job in write_jobs:
+            with self.subTest(job=job):
+                self.assertTrue(depends_on(source, job, "qualify"))
+
     def test_release_orchestrator_restores_supported_python_after_pontos(self) -> None:
         source = workflow("release-orchestrated.yml")
         pontos = source.index("greenbone/actions/setup-pontos@")
