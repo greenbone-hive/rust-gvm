@@ -12,6 +12,8 @@ use quick_xml::{Reader, XmlVersion};
 
 use crate::{EntityId, GmpResponse, GmpVersion};
 
+const DEFAULT_MAX_XML_DEPTH: usize = 256;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error("invalid XML: {0}")]
@@ -24,6 +26,8 @@ pub enum ParseError {
     ServerError { status: u16, message: String },
     #[error("invalid UTF-8: {0}")]
     Utf8(#[from] str::Utf8Error),
+    #[error("XML nesting exceeds configured limit of {max_depth}")]
+    NestingLimitExceeded { max_depth: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +174,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
     loop {
         match reader.read_event()? {
             Event::Start(event) => {
+                enforce_xml_depth(stack.len())?;
                 stack.push(XmlNode {
                     name: event.name().as_ref().to_string(),
                     attributes: collect_attributes(&event)?,
@@ -179,6 +184,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                 });
             }
             Event::Empty(event) => {
+                enforce_xml_depth(stack.len())?;
                 let node = XmlNode {
                     name: event.name().as_ref().to_string(),
                     attributes: collect_attributes(&event)?,
@@ -244,6 +250,15 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
             Event::Decl(_) | Event::PI(_) | Event::DocType(_) | Event::Comment(_) => {}
         }
     }
+}
+
+fn enforce_xml_depth(current_depth: usize) -> Result<(), ParseError> {
+    if current_depth.saturating_add(1) > DEFAULT_MAX_XML_DEPTH {
+        return Err(ParseError::NestingLimitExceeded {
+            max_depth: DEFAULT_MAX_XML_DEPTH,
+        });
+    }
+    Ok(())
 }
 
 fn collect_attributes(
