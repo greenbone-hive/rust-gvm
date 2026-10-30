@@ -8,10 +8,13 @@
 use clap::Parser;
 use gvm_mock_server::{
     GmpVersion, MockGmpServer, ServerMode, DEFAULT_MAX_HISTORY_BYTES, DEFAULT_MAX_HISTORY_ENTRIES,
+    DEFAULT_MAX_SESSIONS, DEFAULT_REQUEST_TIMEOUT,
 };
 use std::io::Write as _;
+use std::net::SocketAddr;
 #[cfg(feature = "tls")]
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(
@@ -44,6 +47,18 @@ struct Args {
     /// Maximum size of one XML request in bytes
     #[arg(long, default_value_t = 64 * 1024 * 1024)]
     max_request_bytes: usize,
+
+    /// Maximum number of concurrently active sessions
+    #[arg(long, default_value_t = DEFAULT_MAX_SESSIONS)]
+    max_sessions: usize,
+
+    /// Deadline in seconds for receiving one complete XML request
+    #[arg(long, default_value_t = DEFAULT_REQUEST_TIMEOUT.as_secs())]
+    request_timeout_seconds: u64,
+
+    /// Explicitly allow a TCP or TLS listener to bind beyond loopback
+    #[arg(long)]
+    allow_non_loopback: bool,
 
     /// Maximum number of command-history records to retain
     #[arg(long, default_value_t = DEFAULT_MAX_HISTORY_ENTRIES)]
@@ -107,7 +122,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = MockGmpServer::builder()
         .mode(mode)
         .version(version)
-        .with_max_request_bytes(Some(args.max_request_bytes));
+        .with_max_request_bytes(Some(args.max_request_bytes))
+        .with_max_sessions(args.max_sessions)
+        .with_request_timeout(Duration::from_secs(args.request_timeout_seconds));
     builder = if args.unbounded_command_history {
         builder.with_unbounded_command_history()
     } else {
@@ -123,6 +140,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(not(feature = "tls"))]
         eprintln!("Specify exactly one of --socket or --tcp");
         std::process::exit(1);
+    }
+
+    let network_bind = args.tcp.as_deref();
+    #[cfg(feature = "tls")]
+    let network_bind = network_bind.or(args.tls.as_deref());
+    if network_bind.is_some_and(requires_non_loopback_acknowledgement) && !args.allow_non_loopback {
+        return Err("non-loopback TCP/TLS binds require --allow-non-loopback".into());
     }
 
     if let Some(socket) = args.socket {
@@ -159,6 +183,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn requires_non_loopback_acknowledgement(address: &str) -> bool {
+    address
+        .parse::<SocketAddr>()
+        .map_or(true, |address| !address.ip().is_loopback())
+}
+
 #[cfg(feature = "tls")]
 fn announce_tls(
     server: &MockGmpServer,
@@ -184,6 +214,15 @@ fn announce_tls(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn network_exposure_detection_requires_literal_loopback() {
+        assert!(!requires_non_loopback_acknowledgement("127.0.0.1:9390"));
+        assert!(!requires_non_loopback_acknowledgement("[::1]:9390"));
+        assert!(requires_non_loopback_acknowledgement("0.0.0.0:9390"));
+        assert!(requires_non_loopback_acknowledgement("[::]:9390"));
+        assert!(requires_non_loopback_acknowledgement("example.test:9390"));
+    }
 
     #[tokio::test]
     async fn tls_announcement_exports_certificate_and_ignores_other_transports() {

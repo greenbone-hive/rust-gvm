@@ -697,6 +697,10 @@ gvm-mock-server --mode stateful --version 22.7 --tcp 127.0.0.1:9390
 
 # Override the default 64 MiB per-request XML limit
 gvm-mock-server --mode echo --tcp 127.0.0.1:9390 --max-request-bytes 1048576
+
+# Tune concurrent sessions and the deadline for completing one XML request
+gvm-mock-server --mode echo --tcp 127.0.0.1:9390 \
+  --max-sessions 32 --request-timeout-seconds 15
 ```
 
 The mock library and CLI default to GMP 22.7. Select 22.8 explicitly when
@@ -704,6 +708,10 @@ testing agent, container-scanning, or other feature-enabled 22.8 surfaces.
 
 The request-size limit applies independently to each XML command. XML nesting
 is always limited to 256 elements, including when the byte limit is disabled.
+The standalone server also limits active sessions to 64 and closes incomplete
+requests after 30 seconds by default. Non-loopback TCP/TLS listeners require
+`--allow-non-loopback` so deterministic test credentials are not exposed by
+accident.
 
 Then connect with python-gvm:
 
@@ -751,6 +759,8 @@ mode through `MockGmpServer::builder().scenario(...)`.
 - **4 server modes** — echo, fixture, bounded stateful behavior, and library-only scenario playback
 - **Unix socket, TCP, and feature-gated TLS listeners** — TLS uses a generated certificate and can optionally require a trusted client certificate; the default-feature release image exposes Unix/TCP only
 - **Per-session authentication** — supports python-gvm's two-connection flow (version probe + auth session)
+- **Bounded session lifecycle** — shared session/channel capacity, total
+  incomplete-request deadlines, authentication cleanup, and draining shutdown
 - **Task lifecycle** — deterministic New → Running → Stopped transitions with linked report resumption
 - **Fault injection** — disconnect, delay, malformed XML, error codes, truncated responses
 - **Scenario playback** — deterministic scripted sequences for regression tests

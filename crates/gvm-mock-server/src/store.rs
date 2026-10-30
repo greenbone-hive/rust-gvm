@@ -2223,6 +2223,18 @@ impl ResourceStore {
         inner.authenticated_sessions.contains_key(&session_id)
     }
 
+    /// End a transport session and remove any authenticated principal it held.
+    pub fn end_session(&self, session_id: u64) {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        inner.authenticated_sessions.remove(&session_id);
+    }
+
+    /// Return the number of currently authenticated sessions.
+    pub fn authenticated_session_count(&self) -> usize {
+        let inner = self.inner.read().expect("store lock poisoned");
+        inner.authenticated_sessions.len()
+    }
+
     /// Return the principal recorded for an authenticated session.
     pub(crate) fn authenticated_principal(&self, session_id: u64) -> Option<String> {
         let inner = self.inner.read().expect("store lock poisoned");
@@ -4400,6 +4412,12 @@ mod tests {
         assert!(store.is_authenticated(3));
         assert!(!store.authenticate_token(4, "wrong-token"));
         assert!(!store.is_authenticated(4));
+        assert_eq!(store.authenticated_session_count(), 2);
+        store.end_session(1);
+        assert!(!store.is_authenticated(1));
+        assert_eq!(store.authenticated_session_count(), 1);
+        store.end_session(3);
+        assert_eq!(store.authenticated_session_count(), 0);
     }
 
     #[test]

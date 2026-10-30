@@ -9,8 +9,10 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 use tokio::net::{TcpListener, UnixListener};
-use tokio::sync::Notify;
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
@@ -37,6 +39,8 @@ pub(crate) struct ServerOptions {
     pub(crate) scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     pub(crate) large_report: Option<LargeReportConfig>,
     pub(crate) max_request_bytes: Option<usize>,
+    pub(crate) max_sessions: usize,
+    pub(crate) request_timeout: std::time::Duration,
     pub(crate) command_history_limits: CommandHistoryLimits,
     #[cfg(feature = "ssh")]
     pub(crate) ssh_authorized_keys: Vec<(String, String)>,
@@ -80,8 +84,14 @@ pub struct MockGmpServer {
     ssh_test: Arc<SshTestState>,
     /// Command history shared with all sessions.
     history: CommandHistory,
+    /// Stateful resource store, retained for lifecycle observability.
+    store: Option<ResourceStore>,
+    /// Shared active-session capacity.
+    session_slots: Arc<Semaphore>,
+    /// Configured maximum active-session count.
+    max_sessions: usize,
     /// Shutdown signal.
-    shutdown: Arc<Notify>,
+    cancellation: CancellationToken,
     /// Background listener task handle.
     listener_handle: JoinHandle<()>,
 }
@@ -106,6 +116,8 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            max_sessions,
+            request_timeout,
             command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,
@@ -132,7 +144,9 @@ impl MockGmpServer {
 
         let listener = UnixListener::bind(&socket_path)?;
         let history = CommandHistory::with_limits(command_history_limits);
-        let shutdown = Arc::new(Notify::new());
+        let cancellation = CancellationToken::new();
+        let session_slots = Arc::new(Semaphore::new(max_sessions));
+        let session_tasks = TaskTracker::new();
         #[cfg(feature = "ssh")]
         let ssh_test = Arc::new(SshTestState::new(
             ssh_authorized_keys,
@@ -143,6 +157,7 @@ impl MockGmpServer {
             ssh_close_exec_once,
         ));
 
+        let server_store = store.clone();
         let state = Arc::new(ListenerState {
             mode,
             version,
@@ -153,10 +168,13 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            request_timeout,
+            session_slots: Arc::clone(&session_slots),
+            session_tasks,
             fault_engine: fault_engine.clone(),
             #[cfg(feature = "ssh")]
             ssh_test: Arc::clone(&ssh_test),
-            shutdown: Arc::clone(&shutdown),
+            cancellation: cancellation.clone(),
         });
 
         let handle = tokio::spawn(async move {
@@ -180,7 +198,10 @@ impl MockGmpServer {
             #[cfg(feature = "ssh")]
             ssh_test,
             history,
-            shutdown,
+            store: server_store,
+            session_slots,
+            max_sessions,
+            cancellation,
             listener_handle: handle,
         })
     }
@@ -199,6 +220,8 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            max_sessions,
+            request_timeout,
             command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,
@@ -216,7 +239,9 @@ impl MockGmpServer {
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
         let history = CommandHistory::with_limits(command_history_limits);
-        let shutdown = Arc::new(Notify::new());
+        let cancellation = CancellationToken::new();
+        let session_slots = Arc::new(Semaphore::new(max_sessions));
+        let session_tasks = TaskTracker::new();
         #[cfg(feature = "ssh")]
         let ssh_test = Arc::new(SshTestState::new(
             ssh_authorized_keys,
@@ -227,6 +252,7 @@ impl MockGmpServer {
             ssh_close_exec_once,
         ));
 
+        let server_store = store.clone();
         let state = Arc::new(ListenerState {
             mode,
             version,
@@ -237,10 +263,13 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            request_timeout,
+            session_slots: Arc::clone(&session_slots),
+            session_tasks,
             fault_engine: fault_engine.clone(),
             #[cfg(feature = "ssh")]
             ssh_test: Arc::clone(&ssh_test),
-            shutdown: Arc::clone(&shutdown),
+            cancellation: cancellation.clone(),
         });
 
         let handle = tokio::spawn(async move {
@@ -264,7 +293,10 @@ impl MockGmpServer {
             #[cfg(feature = "ssh")]
             ssh_test,
             history,
-            shutdown,
+            store: server_store,
+            session_slots,
+            max_sessions,
+            cancellation,
             listener_handle: handle,
         })
     }
@@ -286,6 +318,8 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            max_sessions,
+            request_timeout,
             command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,
@@ -304,7 +338,9 @@ impl MockGmpServer {
         let local_addr = listener.local_addr()?;
         let (acceptor, certificate_pem) = generate_tls_acceptor(client_ca_certificate)?;
         let history = CommandHistory::with_limits(command_history_limits);
-        let shutdown = Arc::new(Notify::new());
+        let cancellation = CancellationToken::new();
+        let session_slots = Arc::new(Semaphore::new(max_sessions));
+        let session_tasks = TaskTracker::new();
         #[cfg(feature = "ssh")]
         let ssh_test = Arc::new(SshTestState::new(
             ssh_authorized_keys,
@@ -315,6 +351,7 @@ impl MockGmpServer {
             ssh_close_exec_once,
         ));
 
+        let server_store = store.clone();
         let state = Arc::new(ListenerState {
             mode,
             version,
@@ -325,10 +362,13 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            request_timeout,
+            session_slots: Arc::clone(&session_slots),
+            session_tasks,
             fault_engine: fault_engine.clone(),
             #[cfg(feature = "ssh")]
             ssh_test: Arc::clone(&ssh_test),
-            shutdown: Arc::clone(&shutdown),
+            cancellation: cancellation.clone(),
         });
 
         let handle = tokio::spawn(async move {
@@ -350,7 +390,10 @@ impl MockGmpServer {
             #[cfg(feature = "ssh")]
             ssh_test,
             history,
-            shutdown,
+            store: server_store,
+            session_slots,
+            max_sessions,
+            cancellation,
             listener_handle: handle,
         })
     }
@@ -370,6 +413,8 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            max_sessions,
+            request_timeout,
             command_history_limits,
             ssh_authorized_keys,
             ssh_auth_delay_once,
@@ -387,7 +432,9 @@ impl MockGmpServer {
             .to_openssh()
             .map_err(std::io::Error::other)?;
         let history = CommandHistory::with_limits(command_history_limits);
-        let shutdown = Arc::new(Notify::new());
+        let cancellation = CancellationToken::new();
+        let session_slots = Arc::new(Semaphore::new(max_sessions));
+        let session_tasks = TaskTracker::new();
         let ssh_test = Arc::new(SshTestState::new(
             ssh_authorized_keys,
             ssh_auth_delay_once,
@@ -397,6 +444,7 @@ impl MockGmpServer {
             ssh_close_exec_once,
         ));
 
+        let server_store = store.clone();
         let state = Arc::new(ListenerState {
             mode,
             version,
@@ -407,9 +455,12 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            request_timeout,
+            session_slots: Arc::clone(&session_slots),
+            session_tasks,
             fault_engine: fault_engine.clone(),
             ssh_test: Arc::clone(&ssh_test),
-            shutdown: Arc::clone(&shutdown),
+            cancellation: cancellation.clone(),
         });
 
         let handle = tokio::spawn(async move {
@@ -431,7 +482,10 @@ impl MockGmpServer {
             ssh_host_public_key: Some(public_key),
             ssh_test,
             history,
-            shutdown,
+            store: server_store,
+            session_slots,
+            max_sessions,
+            cancellation,
             listener_handle: handle,
         })
     }
@@ -519,6 +573,19 @@ impl MockGmpServer {
         self.history.stats()
     }
 
+    /// Return the number of active transport sessions or SSH GMP channels.
+    pub fn active_session_count(&self) -> usize {
+        self.max_sessions
+            .saturating_sub(self.session_slots.available_permits())
+    }
+
+    /// Return the number of authenticated stateful sessions.
+    pub fn authenticated_session_count(&self) -> usize {
+        self.store
+            .as_ref()
+            .map_or(0, ResourceStore::authenticated_session_count)
+    }
+
     /// Clear the command history.
     pub fn clear_history(&self) {
         self.history.clear();
@@ -526,7 +593,7 @@ impl MockGmpServer {
 
     /// Shut down the server and clean up resources.
     pub async fn shutdown(self) {
-        self.shutdown.notify_one();
+        self.cancellation.cancel();
         let _ = self.listener_handle.await;
 
         // Clean up Unix socket

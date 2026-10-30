@@ -64,11 +64,21 @@ where
     S: AsyncRead + Unpin,
 {
     let mut byte = [0_u8; 1];
-    let n = tokio::time::timeout(std::time::Duration::from_secs(2), stream.read(&mut byte))
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), stream.read(&mut byte))
         .await
-        .expect("connection close timeout")
-        .expect("read after rejection");
-    assert_eq!(n, 0, "rejected connection must be closed");
+        .expect("connection close timeout");
+    match result {
+        Ok(0) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::UnexpectedEof
+            ) => {}
+        Ok(_) => panic!("rejected connection must be closed"),
+        Err(error) => panic!("unexpected read error after rejection: {error}"),
+    }
 }
 
 async fn tcp_echo_server() -> Option<MockGmpServer> {
@@ -520,6 +530,146 @@ async fn request_limit_is_exact_and_oversize_does_not_stop_listener() {
 
     server.shutdown().await;
 }
+
+async fn wait_for_session_count(server: &MockGmpServer, expected: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if server.active_session_count() == expected {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("session count should converge");
+}
+
+#[tokio::test]
+async fn session_limit_defers_parser_allocation_until_capacity_is_reclaimed() {
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .with_max_sessions(1)
+            .tcp("127.0.0.1:0"),
+    )
+    .await
+    else {
+        return;
+    };
+    let address = server.tcp_addr().expect("TCP address");
+
+    let mut first = TcpStream::connect(address).await.expect("first connection");
+    first
+        .write_all(b"<get_version")
+        .await
+        .expect("partial request");
+    wait_for_session_count(&server, 1).await;
+
+    let mut waiting = TcpStream::connect(address)
+        .await
+        .expect("waiting connection");
+    waiting
+        .write_all(b"<get_version/>")
+        .await
+        .expect("queued request");
+    let mut byte = [0_u8; 1];
+    assert!(
+        tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            waiting.read(&mut byte)
+        )
+        .await
+        .is_err(),
+        "a saturated listener must not process another request"
+    );
+
+    drop(first);
+    let response = read_frames(&mut waiting, 1).await;
+    assert_eq!(Response::new(response[0].clone()).status_code(), Some(200));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn partial_request_deadline_closes_session_and_reclaims_capacity() {
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .with_max_sessions(1)
+            .with_request_timeout(std::time::Duration::from_millis(100))
+            .tcp("127.0.0.1:0"),
+    )
+    .await
+    else {
+        return;
+    };
+    let mut stream = TcpStream::connect(server.tcp_addr().expect("TCP address"))
+        .await
+        .expect("connection");
+    stream
+        .write_all(b"<get_version")
+        .await
+        .expect("partial request");
+    assert_stream_closed(&mut stream).await;
+    wait_for_session_count(&server, 0).await;
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn authenticated_sessions_are_removed_after_every_disconnect() {
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Stateful)
+            .credentials("admin", "secret")
+            .tcp("127.0.0.1:0"),
+    )
+    .await
+    else {
+        return;
+    };
+    let address = server.tcp_addr().expect("TCP address");
+
+    for _ in 0..3 {
+        let mut stream = TcpStream::connect(address).await.expect("connection");
+        let response = send_recv(
+            &mut stream,
+            b"<authenticate><credentials><username>admin</username><password>secret</password></credentials></authenticate>",
+        )
+        .await;
+        assert_eq!(response.status_code(), Some(200));
+        assert_eq!(server.authenticated_session_count(), 1);
+        drop(stream);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while server.authenticated_session_count() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("authentication state should be removed");
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn shutdown_cancels_and_drains_live_sessions() {
+    let Some(server) = tcp_echo_server().await else {
+        return;
+    };
+    let mut stream = TcpStream::connect(server.tcp_addr().expect("TCP address"))
+        .await
+        .expect("connection");
+    stream
+        .write_all(b"<get_version")
+        .await
+        .expect("partial request");
+    wait_for_session_count(&server, 1).await;
+
+    tokio::time::timeout(std::time::Duration::from_secs(1), server.shutdown())
+        .await
+        .expect("shutdown should cancel live sessions");
+    assert_stream_closed(&mut stream).await;
+}
+
 async fn build_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
     match builder.build().await {
         Ok(server) => Some(server),

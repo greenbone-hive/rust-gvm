@@ -105,22 +105,29 @@ pub async fn run_tls_listener(
     loop {
         tokio::select! {
             (stream, address) = accept_tls_socket(|| listener.accept()) => {
+                let Some(permit) = state.acquire_session_slot().await else {
+                    break;
+                };
                 let acceptor = acceptor.clone();
                 let state = Arc::clone(&state);
-                tokio::spawn(handle_tls_stream(
-                    stream,
-                    address,
-                    acceptor,
-                    state,
-                    HANDSHAKE_TIMEOUT,
-                ));
+                state.session_tasks.clone().spawn(async move {
+                    let _permit = permit;
+                    handle_tls_stream(
+                        stream,
+                        address,
+                        acceptor,
+                        state,
+                        HANDSHAKE_TIMEOUT,
+                    ).await;
+                });
             }
-            () = state.shutdown.notified() => {
+            () = state.cancellation.cancelled() => {
                 tracing::debug!("TLS listener shutting down");
                 break;
             }
         }
     }
+    state.drain_sessions().await;
 }
 
 async fn accept_tls_socket<F, Fut>(mut accept: F) -> (TcpStream, std::net::SocketAddr)
@@ -144,7 +151,11 @@ async fn handle_tls_stream(
     state: Arc<ListenerState>,
     handshake_timeout: Duration,
 ) {
-    match tokio::time::timeout(handshake_timeout, acceptor.accept(stream)).await {
+    let accepted = tokio::select! {
+        () = state.cancellation.cancelled() => return,
+        result = tokio::time::timeout(handshake_timeout, acceptor.accept(stream)) => result,
+    };
+    match accepted {
         Ok(Ok(stream)) => {
             tracing::debug!(%address, "TLS connection established");
             handle_stream(stream, &state).await;
@@ -209,7 +220,9 @@ mod tests {
     use crate::history::CommandHistory;
     use crate::version::GmpVersion;
     use crate::ServerMode;
-    use tokio::sync::Notify;
+    use tokio::sync::Semaphore;
+    use tokio_util::sync::CancellationToken;
+    use tokio_util::task::TaskTracker;
 
     fn listener_state() -> Arc<ListenerState> {
         Arc::new(ListenerState {
@@ -222,6 +235,9 @@ mod tests {
             scenario_config: None,
             large_report: None,
             max_request_bytes: Some(64 * 1024 * 1024),
+            request_timeout: crate::DEFAULT_REQUEST_TIMEOUT,
+            session_slots: Arc::new(Semaphore::new(1)),
+            session_tasks: TaskTracker::new(),
             fault_engine: FaultEngine::none(),
             #[cfg(feature = "ssh")]
             ssh_test: std::sync::Arc::new(crate::listener::SshTestState::new(
@@ -232,7 +248,7 @@ mod tests {
                 false,
                 false,
             )),
-            shutdown: Arc::new(Notify::new()),
+            cancellation: CancellationToken::new(),
         })
     }
 

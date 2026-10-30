@@ -11,9 +11,11 @@ use russh::keys::ssh_key::HashAlg;
 use russh::server::{self, Auth, Server as _, Session};
 use russh::{Channel, ChannelId, ChannelMsg};
 use tokio::net::TcpListener;
+use tokio::sync::OwnedSemaphorePermit;
+use tokio::time::Instant;
 
 use crate::handler::SessionHandler;
-use crate::listener::{try_extract_command, CommandResult, ListenerState};
+use crate::listener::{try_extract_command, CommandResult, ListenerState, SessionGuard};
 
 #[derive(Clone)]
 struct MockSshServer {
@@ -41,37 +43,72 @@ impl server::Server for MockSshServer {
 
 struct MockSshHandler {
     state: Arc<ListenerState>,
-    pending_sessions: HashMap<ChannelId, Channel<server::Msg>>,
+    pending_sessions: HashMap<ChannelId, (Channel<server::Msg>, OwnedSemaphorePermit)>,
 }
 
-fn spawn_gmp_channel(mut channel: Channel<server::Msg>, state: Arc<ListenerState>) {
-    let session_id = state.next_session_id();
-    let handler = SessionHandler::new(
-        state.mode,
-        state.version,
-        state.history.clone(),
-        session_id,
-        state.fixtures.clone(),
-        state.store.clone(),
-        state.scenario_config.clone(),
-        state.large_report,
-        state.fault_engine.fork(),
-    );
-
-    tokio::spawn(async move {
+fn spawn_gmp_channel(
+    mut channel: Channel<server::Msg>,
+    state: Arc<ListenerState>,
+    permit: OwnedSemaphorePermit,
+) {
+    state.session_tasks.clone().spawn(async move {
+        let _permit = permit;
+        let session_id = state.next_session_id();
+        let _session_guard = SessionGuard::new(state.store.clone(), session_id);
+        let handler = SessionHandler::new(
+            state.mode,
+            state.version,
+            state.history.clone(),
+            session_id,
+            state.fixtures.clone(),
+            state.store.clone(),
+            state.scenario_config.clone(),
+            state.large_report,
+            state.fault_engine.fork(),
+        );
         let mut xml_reader = gvm_protocol::XmlReader::with_buffer_limit(state.max_request_bytes);
+        let mut request_deadline = None;
 
-        while let Some(msg) = channel.wait().await {
+        loop {
+            let message = if let Some(deadline) = request_deadline {
+                tokio::select! {
+                    () = state.cancellation.cancelled() => break,
+                    result = tokio::time::timeout_at(deadline, channel.wait()) => {
+                        match result {
+                            Ok(message) => message,
+                            Err(_) => {
+                                tracing::debug!(
+                                    "Request deadline exceeded on SSH session {session_id}"
+                                );
+                                let _ = channel.close().await;
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                tokio::select! {
+                    () = state.cancellation.cancelled() => break,
+                    message = channel.wait() => message,
+                }
+            };
+            let Some(msg) = message else {
+                break;
+            };
             match msg {
                 ChannelMsg::Data { data } => {
                     let mut offset = 0;
                     while offset < data.len() {
+                        if xml_reader.data().is_empty() {
+                            request_deadline = Some(Instant::now() + state.request_timeout);
+                        }
                         let (consumed, result) =
                             try_extract_command(&mut xml_reader, &data[offset..], &handler);
                         offset = offset.saturating_add(consumed);
 
                         match result {
                             CommandResult::Response { bytes, delay } => {
+                                request_deadline = None;
                                 if let Some(delay) = delay {
                                     tokio::time::sleep(delay).await;
                                 }
@@ -225,13 +262,16 @@ impl server::Handler for MockSshHandler {
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
         tracing::debug!("SSH direct-streamlocal open for {socket_path}");
+        let Some(permit) = self.state.acquire_session_slot().await else {
+            return Ok(());
+        };
         reply.accept().await;
 
         if let Some(delay) = self.state.ssh_test.take_channel_open_delay() {
             tokio::time::sleep(delay).await;
         }
 
-        spawn_gmp_channel(channel, Arc::clone(&self.state));
+        spawn_gmp_channel(channel, Arc::clone(&self.state), permit);
 
         Ok(())
     }
@@ -242,13 +282,17 @@ impl server::Handler for MockSshHandler {
         reply: server::ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
+        let Some(permit) = self.state.acquire_session_slot().await else {
+            return Ok(());
+        };
         reply.accept().await;
 
         if let Some(delay) = self.state.ssh_test.take_channel_open_delay() {
             tokio::time::sleep(delay).await;
         }
 
-        self.pending_sessions.insert(channel.id(), channel);
+        self.pending_sessions
+            .insert(channel.id(), (channel, permit));
         Ok(())
     }
 
@@ -264,7 +308,7 @@ impl server::Handler for MockSshHandler {
             tokio::time::sleep(delay).await;
         }
 
-        let Some(open_channel) = self.pending_sessions.remove(&channel) else {
+        let Some((open_channel, permit)) = self.pending_sessions.remove(&channel) else {
             session.channel_failure(channel)?;
             return Ok(());
         };
@@ -280,7 +324,7 @@ impl server::Handler for MockSshHandler {
         }
 
         session.channel_success(channel)?;
-        spawn_gmp_channel(open_channel, Arc::clone(&self.state));
+        spawn_gmp_channel(open_channel, Arc::clone(&self.state), permit);
         Ok(())
     }
 
@@ -319,16 +363,24 @@ pub async fn run_ssh_listener(
         ..server::Config::default()
     });
 
-    let shutdown = Arc::clone(&state.shutdown);
-    let mut server = MockSshServer { state };
+    let cancellation = state.cancellation.clone();
+    let mut server = MockSshServer {
+        state: Arc::clone(&state),
+    };
     let mut running = server.run_on_socket(config, &listener);
     let shutdown_handle = running.handle();
 
-    tokio::select! {
-        result = &mut running => result,
-        () = shutdown.notified() => {
+    let result = tokio::select! {
+        result = &mut running => Some(result),
+        () = cancellation.cancelled() => {
             shutdown_handle.shutdown("mock ssh listener shutting down".to_string());
-            Ok(())
+            None
         }
-    }
+    };
+    let result = match result {
+        Some(result) => result,
+        None => running.await,
+    };
+    state.drain_sessions().await;
+    result
 }

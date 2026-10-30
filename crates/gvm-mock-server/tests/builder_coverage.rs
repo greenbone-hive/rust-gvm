@@ -101,6 +101,25 @@ async fn builder_rejects_zero_request_limit() {
 }
 
 #[tokio::test]
+async fn builder_rejects_zero_session_safety_limits() {
+    for builder in [
+        MockGmpServer::builder().with_max_sessions(0),
+        MockGmpServer::builder().with_request_timeout(std::time::Duration::ZERO),
+    ] {
+        let result = builder.unix_socket_auto().build().await;
+        let error = match result {
+            Ok(server) => {
+                server.shutdown().await;
+                panic!("zero session safety limit must be rejected");
+            }
+            Err(error) => error,
+        };
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+}
+
+#[tokio::test]
 async fn builder_rejects_zero_history_limits() {
     for (entries, bytes) in [(0, 1), (1, 0)] {
         let result = MockGmpServer::builder()

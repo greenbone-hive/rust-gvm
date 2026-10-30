@@ -30,6 +30,7 @@ base64.workspace = true
 gvm-gmp.workspace = true
 gvm-protocol.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 quick-xml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
