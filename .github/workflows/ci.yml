@@ -25,6 +25,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_DENY_VERSION: "0.20.2"
 
 jobs:
   fmt:
@@ -106,7 +107,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny@${{ env.CARGO_DENY_VERSION }} --locked
       - name: Run cargo deny
         run: cargo deny check
 

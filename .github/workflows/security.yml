@@ -28,6 +28,8 @@ permissions:
 
 env:
   CARGO_CYCLONEDX_VERSION: "0.5.9"
+  CARGO_GEIGER_VERSION: "0.14.0"
+  CARGO_VET_VERSION: "0.10.3"
   SBOMQS_VERSION: "v2.0.5"
   SBOM_QUALITY_THRESHOLD: "8.3"
 
@@ -71,9 +73,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # cargo-vet
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2
         with:
-          tool: cargo-vet
+          tool: cargo-vet@${{ env.CARGO_VET_VERSION }}
       - name: Run cargo-vet
         run: cargo vet
 
@@ -149,9 +151,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # cargo-geiger
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2
         with:
-          tool: cargo-geiger
+          tool: cargo-geiger@${{ env.CARGO_GEIGER_VERSION }}
       - name: Generate geiger reports (all workspace crates)
         shell: bash
         run: |
@@ -178,9 +180,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # cargo-geiger
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2
         with:
-          tool: cargo-geiger
+          tool: cargo-geiger@${{ env.CARGO_GEIGER_VERSION }}
       - name: Fail if workspace crates use unsafe
         run: python3 scripts/check_workspace_unsafe.py
 

@@ -18,7 +18,8 @@ env:
   CARGO_CYCLONEDX_VERSION: "0.5.9"
   SBOMQS_VERSION: "v2.0.5"
   SBOM_QUALITY_THRESHOLD: "8.3"
-  CROSS_VERSION: "v0.2.5"
+  # Peeled commit for the reviewed cross v0.2.5 release tag.
+  CROSS_REV: "88f49ff79e777bef6d3564531636ee4d3cc2f8d2"
 
 jobs:
   qualify:
@@ -174,7 +175,11 @@ jobs:
       # Install cross-compilation tools for Linux ARM64
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross --tag ${{ env.CROSS_VERSION }}
+        run: >-
+          cargo install cross
+          --git https://github.com/cross-rs/cross
+          --rev ${{ env.CROSS_REV }}
+          --locked
 
       # Install musl tools for static Linux builds
       - name: Install musl-tools

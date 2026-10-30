@@ -122,6 +122,37 @@ def aggregate_script(source: str, aggregate: str) -> str:
 
 
 class WorkflowPolicyTests(unittest.TestCase):
+    def test_workflow_installed_tools_are_immutable_and_locked(self) -> None:
+        release = workflow("release.yml")
+        cross_install = re.search(
+            r"(?ms)^      - name: Install cross\n(?P<step>.*?)(?=^      - name:)",
+            release,
+        )
+        self.assertIsNotNone(cross_install)
+        cross_step = cross_install.group("step")
+        self.assertRegex(release, r'(?m)^  CROSS_REV: "[0-9a-f]{40}"$')
+        self.assertIn("--rev ${{ env.CROSS_REV }}", cross_step)
+        self.assertIn("--locked", cross_step)
+        self.assertNotIn("--tag", cross_step)
+
+        ci = workflow("ci.yml")
+        self.assertRegex(ci, r'(?m)^  CARGO_DENY_VERSION: "\d+\.\d+\.\d+"$')
+        self.assertIn(
+            "cargo install cargo-deny@${{ env.CARGO_DENY_VERSION }} --locked",
+            ci,
+        )
+
+        security = workflow("security.yml")
+        for tool in ("CARGO_VET_VERSION", "CARGO_GEIGER_VERSION"):
+            with self.subTest(tool=tool):
+                self.assertRegex(
+                    security, rf'(?m)^  {tool}: "\d+\.\d+\.\d+"$'
+                )
+        self.assertIn("cargo-vet@${{ env.CARGO_VET_VERSION }}", security)
+        self.assertEqual(
+            security.count("cargo-geiger@${{ env.CARGO_GEIGER_VERSION }}"), 2
+        )
+
     def test_release_write_jobs_require_protected_main_qualification(self) -> None:
         source = workflow("release.yml")
         qualification = job_block(source, "qualify")
