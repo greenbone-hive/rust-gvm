@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-//! SSH transport for gvmd over a remote Unix socket.
+//! SSH transport for gvmd over a remote Unix socket or session exec channel.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -118,6 +118,44 @@ impl SshConfig {
     pub fn with_host_key_policy(mut self, host_key_policy: SshHostKeyPolicy) -> Self {
         self.host_key_policy = host_key_policy;
         self
+    }
+}
+
+/// SSH channel topology used after authentication.
+///
+/// Direct stream-local forwarding remains the default for existing callers. Session exec mode is
+/// intended for appliances and dedicated SSH accounts that expose GMP through a server-side
+/// forced command instead of allowing Unix-socket forwarding.
+#[derive(Clone, PartialEq, Eq)]
+pub enum SshChannelMode {
+    /// Open an OpenSSH `direct-streamlocal@openssh.com` channel to a remote Unix socket.
+    DirectStreamLocal {
+        /// Remote gvmd Unix socket path.
+        remote_socket: String,
+    },
+    /// Open a standard SSH session channel and send an exec request.
+    ///
+    /// The command is passed to the SSH server unchanged. The server decides how to interpret it;
+    /// a configured forced command can ignore or replace it. An empty command is supported and is
+    /// the compatibility mode used by current Greenbone appliance tooling.
+    Exec {
+        /// Opaque command bytes encoded as UTF-8 for the SSH exec request.
+        command: String,
+    },
+}
+
+impl std::fmt::Debug for SshChannelMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DirectStreamLocal { remote_socket } => f
+                .debug_struct("DirectStreamLocal")
+                .field("remote_socket", remote_socket)
+                .finish(),
+            Self::Exec { .. } => f
+                .debug_struct("Exec")
+                .field("command", &"<redacted>")
+                .finish(),
+        }
     }
 }
 
@@ -370,9 +408,10 @@ impl client::Handler for SshServerKeyVerifier {
     }
 }
 
-/// SSH connection to a remote gvmd Unix socket.
+/// SSH connection to gvmd through stream-local forwarding or a session exec channel.
 pub struct SshConnection {
     config: SshConfig,
+    channel_mode: SshChannelMode,
     session: Option<client::Handle<SshServerKeyVerifier>>,
     channel: Option<Channel<client::Msg>>,
     response_reader: gvm_protocol::XmlReader,
@@ -383,6 +422,7 @@ impl std::fmt::Debug for SshConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SshConnection")
             .field("config", &self.config)
+            .field("channel_mode", &self.channel_mode)
             .field("connected", &self.is_connected())
             .finish()
     }
@@ -394,13 +434,34 @@ impl SshConnection {
     pub fn new(config: SshConfig) -> Self {
         let response_reader = gvm_protocol::XmlReader::with_buffer_limit(config.max_response_bytes);
         let pending_read = Vec::with_capacity(config.read_buffer_size);
+        let channel_mode = SshChannelMode::DirectStreamLocal {
+            remote_socket: config.remote_socket.clone(),
+        };
         Self {
             config,
+            channel_mode,
             session: None,
             channel: None,
             response_reader,
             pending_read,
         }
+    }
+
+    /// Select the SSH channel topology used after authentication.
+    ///
+    /// Existing callers that do not call this builder continue to use direct stream-local
+    /// forwarding to [`SshConfig::remote_socket`]. Set [`SshChannelMode::Exec`] before connecting
+    /// for GOS-compatible session exec behavior.
+    #[must_use]
+    pub fn with_channel_mode(mut self, channel_mode: SshChannelMode) -> Self {
+        self.channel_mode = channel_mode;
+        self
+    }
+
+    /// Return the configured SSH channel topology.
+    #[must_use]
+    pub fn channel_mode(&self) -> &SshChannelMode {
+        &self.channel_mode
     }
 
     fn connect_error(error: impl std::fmt::Display) -> ConnectionError {
@@ -425,6 +486,70 @@ impl SshConnection {
         self.session.take();
         self.response_reader.reset();
         self.pending_read.clear();
+    }
+
+    async fn open_exec_channel(
+        session: &client::Handle<SshServerKeyVerifier>,
+        command: &str,
+        timeout: Duration,
+        max_response_bytes: Option<usize>,
+    ) -> Result<(Channel<client::Msg>, Vec<u8>)> {
+        let mut channel = tokio::time::timeout(timeout, session.channel_open_session())
+            .await
+            .map_err(|_| ConnectionError::Timeout(timeout))?
+            .map_err(Self::connect_error)?;
+
+        tokio::time::timeout(timeout, channel.exec(true, command.as_bytes()))
+            .await
+            .map_err(|_| ConnectionError::Timeout(timeout))?
+            .map_err(Self::connect_error)?;
+
+        let mut pending_read = Vec::new();
+        let acknowledgement_deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let remaining = acknowledgement_deadline
+                .checked_duration_since(tokio::time::Instant::now())
+                .ok_or(ConnectionError::Timeout(timeout))?;
+            let message = tokio::time::timeout(remaining, channel.wait())
+                .await
+                .map_err(|_| ConnectionError::Timeout(timeout))?;
+            match message {
+                Some(ChannelMsg::Success) => return Ok((channel, pending_read)),
+                Some(ChannelMsg::Failure) => {
+                    return Err(ConnectionError::ConnectFailed(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "ssh exec request rejected",
+                    )));
+                }
+                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    if max_response_bytes
+                        .is_some_and(|limit| pending_read.len().saturating_add(data.len()) > limit)
+                    {
+                        return Err(Self::connect_error(
+                            "ssh exec channel sent too much data before request acknowledgement",
+                        ));
+                    }
+                    pending_read.extend_from_slice(&data);
+                }
+                Some(ChannelMsg::WindowAdjusted { .. }) => {}
+                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
+                    return Err(ConnectionError::ConnectFailed(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "ssh exec channel closed before request acknowledgement",
+                    )));
+                }
+                Some(ChannelMsg::OpenFailure(error)) => {
+                    return Err(Self::connect_error(format!(
+                        "ssh exec channel open failed: {error:?}"
+                    )));
+                }
+                Some(other) => {
+                    return Err(Self::connect_error(format!(
+                        "unexpected ssh exec acknowledgement message: {other:?}"
+                    )));
+                }
+            }
+        }
     }
 
     async fn authenticate(
@@ -585,16 +710,31 @@ impl GvmConnection for SshConnection {
 
         Self::authenticate(&self.config, &mut session).await?;
 
-        let channel = tokio::time::timeout(
-            self.config.timeout,
-            session.channel_open_direct_streamlocal(self.config.remote_socket.clone()),
-        )
-        .await
-        .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
-        .map_err(Self::connect_error)?;
+        let (channel, pending_read) = match &self.channel_mode {
+            SshChannelMode::DirectStreamLocal { remote_socket } => {
+                let channel = tokio::time::timeout(
+                    self.config.timeout,
+                    session.channel_open_direct_streamlocal(remote_socket.clone()),
+                )
+                .await
+                .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
+                .map_err(Self::connect_error)?;
+                (channel, Vec::new())
+            }
+            SshChannelMode::Exec { command } => {
+                Self::open_exec_channel(
+                    &session,
+                    command,
+                    self.config.timeout,
+                    self.config.max_response_bytes,
+                )
+                .await?
+            }
+        };
 
         self.session = Some(session);
         self.channel = Some(channel);
+        self.pending_read = pending_read;
         tracing::debug!(
             "connected to {}:{} via ssh",
             self.config.hostname,
@@ -793,6 +933,32 @@ mod tests {
     fn test_not_connected_initially() {
         let conn = SshConnection::new(SshConfig::default());
         assert!(!conn.is_connected());
+        assert_eq!(
+            conn.channel_mode(),
+            &SshChannelMode::DirectStreamLocal {
+                remote_socket: "/run/gvmd/gvmd.sock".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_exec_channel_mode_redacts_command() {
+        let command = "sensitive forced-command argument";
+        let connection =
+            SshConnection::new(SshConfig::default()).with_channel_mode(SshChannelMode::Exec {
+                command: command.to_string(),
+            });
+
+        assert_eq!(
+            connection.channel_mode(),
+            &SshChannelMode::Exec {
+                command: command.to_string()
+            }
+        );
+        let debug = format!("{connection:?}");
+        assert!(debug.contains("Exec"));
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains(command));
     }
 
     #[test]

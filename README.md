@@ -571,7 +571,8 @@ names remain available through raw `send`/`call` for custom commands.
 
 #### SSH transport
 
-Connect to a remote gvmd over SSH tunnel:
+Connect to a remote gvmd over SSH. Existing callers use OpenSSH stream-local
+forwarding to the remote gvmd Unix socket by default:
 
 `SshConnection` is available when the direct `gvm-connection` dependency enables
 its `ssh` feature. Transport features are owned by `gvm-connection`; they are not
@@ -589,6 +590,40 @@ let conn = SshConnection::new(config);
 let mut client = GmpClient::connect(conn).await?;
 // Same API as Unix socket — connect/call/disconnect
 ```
+
+Current Greenbone appliances and SSH accounts configured with a server-side
+forced command use a standard session channel plus an exec request instead.
+Select that topology explicitly; an empty command matches the current GOS and
+`python-gvm` connection behavior:
+
+```rust
+use gvm_connection::{SshAuth, SshChannelMode, SshConfig, SshConnection};
+
+let config = SshConfig::new("appliance.example.com", "gmp", SshAuth::Password(
+    std::env::var("GMP_SSH_PASSWORD")?,
+));
+let conn = SshConnection::new(config).with_channel_mode(SshChannelMode::Exec {
+    command: String::new(),
+});
+```
+
+The exec command is sent unchanged as an opaque SSH request value. `rust-gvm`
+does not run a local shell, interpolate arguments, or add quoting. The SSH server
+controls interpretation and may replace the requested value with `ForceCommand`
+or an `authorized_keys` `command="..."` restriction. Shell requests are a
+different SSH topology and are not implied by exec mode.
+
+For a dedicated generic OpenSSH account, a restricted key can bridge standard
+input/output to gvmd while disabling unrelated SSH capabilities, for example:
+
+```text
+restrict,command="socat STDIO UNIX-CONNECT:/run/gvmd/gvmd.sock" ssh-ed25519 AAAA...
+```
+
+This example requires `socat` on the server. Keep the account and key dedicated
+to GMP, restrict filesystem and process privileges around the forced command,
+retain GMP authentication, and verify the SSH host key. The SSH administrator—not
+`rust-gvm`—owns command parsing, executable selection, and Unix-socket access.
 
 SSH verifies the server key against `~/.ssh/known_hosts` by default, including
 the configured port. Use `SshHostKeyPolicy::KnownHostsFile` for a nonstandard

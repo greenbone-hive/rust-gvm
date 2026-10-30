@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gvm_connection::{
-    ConnectionError, GvmConnection, SshAuth, SshConfig, SshConnection, SshHostKeyPolicy,
+    ConnectionError, GvmConnection, SshAuth, SshChannelMode, SshConfig, SshConnection,
+    SshHostKeyPolicy,
 };
 use gvm_mock_server::{GmpVersion, MockGmpServer, ScenarioMode, ScenarioStep, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
@@ -142,6 +143,12 @@ fn config_with_auth(server: &MockGmpServer, username: &str, auth: SshAuth) -> Ss
         ))
 }
 
+fn exec_connection(server: &MockGmpServer, command: impl Into<String>) -> SshConnection {
+    SshConnection::new(config_for(server)).with_channel_mode(SshChannelMode::Exec {
+        command: command.into(),
+    })
+}
+
 async fn start_key_mock(username: &str, key: &PrivateKey) -> MockGmpServer {
     MockGmpServer::builder()
         .mode(ServerMode::Stateful)
@@ -214,8 +221,139 @@ async fn ssh_connect_and_get_version() {
     let response = Response::new(conn.read().await.expect("read failed"));
     assert_eq!(response.status_code(), Some(200));
     assert_eq!(response.child_text("version").as_deref(), Some("22.5"));
+    assert!(server.ssh_exec_requests().is_empty());
 
     conn.disconnect().await.expect("disconnect failed");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_empty_exec_connects_and_completes_gmp_version_and_authentication() {
+    let server = start_mock().await.expect("start SSH mock");
+    let mut connection = exec_connection(&server, "");
+
+    connection.connect().await.expect("connect with empty exec");
+    assert_eq!(server.ssh_exec_requests(), vec![Vec::<u8>::new()]);
+
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send get_version");
+    let version = Response::new(connection.read().await.expect("read get_version"));
+    assert_eq!(version.status_code(), Some(200));
+    assert_eq!(version.child_text("version").as_deref(), Some("22.5"));
+
+    connection
+        .send(b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>")
+        .await
+        .expect("send authenticate");
+    assert_eq!(
+        Response::new(connection.read().await.expect("read authenticate")).status_code(),
+        Some(200)
+    );
+
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_nonempty_exec_is_opaque_and_recorded() {
+    let server = start_mock().await.expect("start SSH mock");
+    let command = "forced-gmp --profile appliance";
+    let mut connection = exec_connection(&server, command);
+
+    assert_connected_round_trip(&mut connection).await;
+    assert_eq!(
+        server.ssh_exec_requests(),
+        vec![command.as_bytes().to_vec()]
+    );
+
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_rejected_exec_fails_cleanly_and_reconnects() {
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .credentials("admin", "admin")
+        .ssh_reject_exec_once()
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+        .expect("start rejecting SSH mock");
+    let mut connection = exec_connection(&server, "");
+
+    let error = connection
+        .connect()
+        .await
+        .expect_err("exec should be rejected");
+    assert!(matches!(
+        error,
+        ConnectionError::ConnectFailed(ref source)
+            if source.kind() == ErrorKind::PermissionDenied
+    ));
+    assert_clean_failed_connection(&mut connection).await;
+
+    assert_connected_round_trip(&mut connection).await;
+    assert_eq!(server.ssh_exec_requests(), vec![Vec::new(), Vec::new()]);
+
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_exec_acknowledgement_timeout_fails_cleanly_and_reconnects() {
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .credentials("admin", "admin")
+        .ssh_exec_delay_once(Duration::from_millis(1_500))
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+        .expect("start delayed-exec SSH mock");
+    let timeout = Duration::from_millis(500);
+    let mut connection = SshConnection::new(config_for(&server).with_timeout(timeout))
+        .with_channel_mode(SshChannelMode::Exec {
+            command: String::new(),
+        });
+
+    assert!(matches!(
+        connection.connect().await,
+        Err(ConnectionError::Timeout(duration)) if duration == timeout
+    ));
+    assert_clean_failed_connection(&mut connection).await;
+
+    assert_connected_round_trip(&mut connection).await;
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_exec_early_close_fails_cleanly_and_reconnects() {
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .credentials("admin", "admin")
+        .ssh_close_exec_once()
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+        .expect("start closing SSH mock");
+    let mut connection = exec_connection(&server, "");
+
+    let error = connection
+        .connect()
+        .await
+        .expect_err("exec channel should close early");
+    assert!(matches!(
+        error,
+        ConnectionError::ConnectFailed(ref source)
+            if source.kind() == ErrorKind::UnexpectedEof
+    ));
+    assert_clean_failed_connection(&mut connection).await;
+
+    assert_connected_round_trip(&mut connection).await;
+    connection.disconnect().await.expect("disconnect");
     server.shutdown().await;
 }
 
@@ -485,6 +623,33 @@ async fn ssh_channel_open_timeout_leaves_clean_state_and_retry_succeeds() {
         .expect("start delayed-channel SSH mock");
     let timeout = Duration::from_millis(500);
     let mut connection = SshConnection::new(config_for(&server).with_timeout(timeout));
+
+    assert!(matches!(
+        connection.connect().await,
+        Err(ConnectionError::Timeout(duration)) if duration == timeout
+    ));
+    assert_clean_failed_connection(&mut connection).await;
+
+    assert_connected_round_trip(&mut connection).await;
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_session_channel_open_timeout_leaves_clean_state_and_retry_succeeds() {
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .credentials("admin", "admin")
+        .ssh_channel_open_delay_once(Duration::from_millis(1_500))
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+        .expect("start delayed-session SSH mock");
+    let timeout = Duration::from_millis(500);
+    let mut connection = SshConnection::new(config_for(&server).with_timeout(timeout))
+        .with_channel_mode(SshChannelMode::Exec {
+            command: String::new(),
+        });
 
     assert!(matches!(
         connection.connect().await,

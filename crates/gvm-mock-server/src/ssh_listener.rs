@@ -3,12 +3,13 @@
 
 //! SSH listener for the mock GMP server.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use russh::keys::ssh_key::rand_core::{TryCryptoRng, TryRng, UnwrapErr};
 use russh::keys::ssh_key::HashAlg;
 use russh::server::{self, Auth, Server as _, Session};
-use russh::{Channel, ChannelMsg};
+use russh::{Channel, ChannelId, ChannelMsg};
 use tokio::net::TcpListener;
 
 use crate::handler::SessionHandler;
@@ -29,6 +30,7 @@ impl server::Server for MockSshServer {
 
         MockSshHandler {
             state: Arc::clone(&self.state),
+            pending_sessions: HashMap::new(),
         }
     }
 
@@ -39,6 +41,91 @@ impl server::Server for MockSshServer {
 
 struct MockSshHandler {
     state: Arc<ListenerState>,
+    pending_sessions: HashMap<ChannelId, Channel<server::Msg>>,
+}
+
+fn spawn_gmp_channel(mut channel: Channel<server::Msg>, state: Arc<ListenerState>) {
+    let session_id = state.next_session_id();
+    let handler = SessionHandler::new(
+        state.mode,
+        state.version,
+        state.history.clone(),
+        session_id,
+        state.fixtures.clone(),
+        state.store.clone(),
+        state.scenario_config.clone(),
+        state.large_report,
+        state.fault_engine.fork(),
+    );
+
+    tokio::spawn(async move {
+        let mut xml_reader = gvm_protocol::XmlReader::with_buffer_limit(state.max_request_bytes);
+
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => {
+                    let mut offset = 0;
+                    while offset < data.len() {
+                        let (consumed, result) =
+                            try_extract_command(&mut xml_reader, &data[offset..], &handler);
+                        offset = offset.saturating_add(consumed);
+
+                        match result {
+                            CommandResult::Response { bytes, delay } => {
+                                if let Some(delay) = delay {
+                                    tokio::time::sleep(delay).await;
+                                }
+
+                                if let Err(error) = channel.data(&bytes[..]).await {
+                                    tracing::debug!(
+                                        "SSH write error on session {session_id}: {error}"
+                                    );
+                                    return;
+                                }
+                            }
+                            CommandResult::NeedMore => break,
+                            CommandResult::Disconnect => {
+                                tracing::debug!("Fault: disconnecting SSH session {session_id}");
+                                let _ = channel.close().await;
+                                return;
+                            }
+                            CommandResult::Reject { bytes, reason } => {
+                                tracing::debug!(
+                                    "Rejecting SSH session {session_id} input: {reason}"
+                                );
+                                let _ = channel.data(&bytes[..]).await;
+                                let _ = channel.close().await;
+                                return;
+                            }
+                        }
+                    }
+                }
+                ChannelMsg::Eof | ChannelMsg::Close => break,
+                ChannelMsg::OpenFailure(error) => {
+                    tracing::debug!("SSH channel open failure on session {session_id}: {error:?}");
+                    break;
+                }
+                ChannelMsg::ExtendedData { .. }
+                | ChannelMsg::RequestPty { .. }
+                | ChannelMsg::RequestShell { .. }
+                | ChannelMsg::Exec { .. }
+                | ChannelMsg::Signal { .. }
+                | ChannelMsg::RequestSubsystem { .. }
+                | ChannelMsg::RequestX11 { .. }
+                | ChannelMsg::SetEnv { .. }
+                | ChannelMsg::WindowChange { .. }
+                | ChannelMsg::AgentForward { .. }
+                | ChannelMsg::Open { .. }
+                | ChannelMsg::XonXoff { .. }
+                | ChannelMsg::ExitStatus { .. }
+                | ChannelMsg::ExitSignal { .. }
+                | ChannelMsg::WindowAdjusted { .. }
+                | ChannelMsg::Success
+                | ChannelMsg::Failure => {}
+                _ => {}
+            }
+        }
+    });
 }
 
 struct SystemRng;
@@ -132,7 +219,7 @@ impl server::Handler for MockSshHandler {
 
     async fn channel_open_direct_streamlocal(
         &mut self,
-        mut channel: Channel<server::Msg>,
+        channel: Channel<server::Msg>,
         socket_path: &str,
         reply: server::ChannelOpenHandle,
         _session: &mut Session,
@@ -144,95 +231,74 @@ impl server::Handler for MockSshHandler {
             tokio::time::sleep(delay).await;
         }
 
-        let state = Arc::clone(&self.state);
-        let session_id = state.next_session_id();
+        spawn_gmp_channel(channel, Arc::clone(&self.state));
 
-        let handler = SessionHandler::new(
-            state.mode,
-            state.version,
-            state.history.clone(),
-            session_id,
-            state.fixtures.clone(),
-            state.store.clone(),
-            state.scenario_config.clone(),
-            state.large_report,
-            state.fault_engine.fork(),
-        );
+        Ok(())
+    }
 
-        tokio::spawn(async move {
-            let mut xml_reader =
-                gvm_protocol::XmlReader::with_buffer_limit(state.max_request_bytes);
+    async fn channel_open_session(
+        &mut self,
+        channel: Channel<server::Msg>,
+        reply: server::ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
 
-            while let Some(msg) = channel.wait().await {
-                match msg {
-                    ChannelMsg::Data { data } => {
-                        let mut offset = 0;
-                        while offset < data.len() {
-                            let (consumed, result) =
-                                try_extract_command(&mut xml_reader, &data[offset..], &handler);
-                            offset = offset.saturating_add(consumed);
+        if let Some(delay) = self.state.ssh_test.take_channel_open_delay() {
+            tokio::time::sleep(delay).await;
+        }
 
-                            match result {
-                                CommandResult::Response { bytes, delay } => {
-                                    if let Some(delay) = delay {
-                                        tokio::time::sleep(delay).await;
-                                    }
+        self.pending_sessions.insert(channel.id(), channel);
+        Ok(())
+    }
 
-                                    if let Err(error) = channel.data(&bytes[..]).await {
-                                        tracing::debug!(
-                                            "SSH write error on session {session_id}: {error}"
-                                        );
-                                        return;
-                                    }
-                                }
-                                CommandResult::NeedMore => break,
-                                CommandResult::Disconnect => {
-                                    tracing::debug!(
-                                        "Fault: disconnecting SSH session {session_id}"
-                                    );
-                                    let _ = channel.close().await;
-                                    return;
-                                }
-                                CommandResult::Reject { bytes, reason } => {
-                                    tracing::debug!(
-                                        "Rejecting SSH session {session_id} input: {reason}"
-                                    );
-                                    let _ = channel.data(&bytes[..]).await;
-                                    let _ = channel.close().await;
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    ChannelMsg::Eof | ChannelMsg::Close => break,
-                    ChannelMsg::OpenFailure(error) => {
-                        tracing::debug!(
-                            "SSH channel open failure on session {session_id}: {error:?}"
-                        );
-                        break;
-                    }
-                    ChannelMsg::ExtendedData { .. }
-                    | ChannelMsg::RequestPty { .. }
-                    | ChannelMsg::RequestShell { .. }
-                    | ChannelMsg::Exec { .. }
-                    | ChannelMsg::Signal { .. }
-                    | ChannelMsg::RequestSubsystem { .. }
-                    | ChannelMsg::RequestX11 { .. }
-                    | ChannelMsg::SetEnv { .. }
-                    | ChannelMsg::WindowChange { .. }
-                    | ChannelMsg::AgentForward { .. }
-                    | ChannelMsg::Open { .. }
-                    | ChannelMsg::XonXoff { .. }
-                    | ChannelMsg::ExitStatus { .. }
-                    | ChannelMsg::ExitSignal { .. }
-                    | ChannelMsg::WindowAdjusted { .. }
-                    | ChannelMsg::Success
-                    | ChannelMsg::Failure => {}
-                    _ => {}
-                }
-            }
-        });
+    async fn exec_request(
+        &mut self,
+        channel: ChannelId,
+        command: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.state.ssh_test.record_exec_request(command);
 
+        if let Some(delay) = self.state.ssh_test.take_exec_delay() {
+            tokio::time::sleep(delay).await;
+        }
+
+        let Some(open_channel) = self.pending_sessions.remove(&channel) else {
+            session.channel_failure(channel)?;
+            return Ok(());
+        };
+
+        if self.state.ssh_test.take_close_exec() {
+            session.close(channel)?;
+            return Ok(());
+        }
+
+        if self.state.ssh_test.take_reject_exec() {
+            session.channel_failure(channel)?;
+            return Ok(());
+        }
+
+        session.channel_success(channel)?;
+        spawn_gmp_channel(open_channel, Arc::clone(&self.state));
+        Ok(())
+    }
+
+    async fn channel_close(
+        &mut self,
+        channel: ChannelId,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.pending_sessions.remove(&channel);
+        Ok(())
+    }
+
+    async fn channel_eof(
+        &mut self,
+        channel: ChannelId,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.pending_sessions.remove(&channel);
         Ok(())
     }
 }

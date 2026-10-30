@@ -168,7 +168,7 @@ Changing transport behavior:
 
 - `crates/gvm-connection/src/connection.rs`: transport trait.
 - `crates/gvm-connection/src/unix.rs`: Unix socket transport.
-- `crates/gvm-connection/src/ssh.rs`: SSH streamlocal tunnel transport.
+- `crates/gvm-connection/src/ssh.rs`: SSH stream-local and session/exec transports.
 - `crates/gvm-connection/src/tls.rs`: verified TLS transport and optional client identity.
 - `crates/gvm-connection/src/error.rs`: transport error mapping.
 - Tests live under `crates/gvm-connection/tests/`.

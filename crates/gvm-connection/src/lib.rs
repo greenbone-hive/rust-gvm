@@ -27,7 +27,7 @@ pub use error::{ConnectionError, Result};
 pub use unix::{UnixSocketConfig, UnixSocketConnection};
 
 #[cfg(feature = "ssh")]
-pub use ssh::{SshAuth, SshConfig, SshConnection, SshHostKeyPolicy};
+pub use ssh::{SshAuth, SshChannelMode, SshConfig, SshConnection, SshHostKeyPolicy};
 
 #[cfg(feature = "tls")]
 pub use tls::{TlsClientIdentity, TlsConfig, TlsConnection};

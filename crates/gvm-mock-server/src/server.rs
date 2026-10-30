@@ -44,6 +44,12 @@ pub(crate) struct ServerOptions {
     pub(crate) ssh_auth_delay_once: Option<std::time::Duration>,
     #[cfg(feature = "ssh")]
     pub(crate) ssh_channel_open_delay_once: Option<std::time::Duration>,
+    #[cfg(feature = "ssh")]
+    pub(crate) ssh_exec_delay_once: Option<std::time::Duration>,
+    #[cfg(feature = "ssh")]
+    pub(crate) ssh_reject_exec_once: bool,
+    #[cfg(feature = "ssh")]
+    pub(crate) ssh_close_exec_once: bool,
 }
 
 /// A running mock GMP server.
@@ -69,6 +75,9 @@ pub struct MockGmpServer {
     /// The SSH host public key in OpenSSH format.
     #[cfg(feature = "ssh")]
     ssh_host_public_key: Option<String>,
+    /// SSH-only deterministic request state.
+    #[cfg(feature = "ssh")]
+    ssh_test: Arc<SshTestState>,
     /// Command history shared with all sessions.
     history: CommandHistory,
     /// Shutdown signal.
@@ -104,6 +113,12 @@ impl MockGmpServer {
             ssh_auth_delay_once,
             #[cfg(feature = "ssh")]
             ssh_channel_open_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_exec_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_reject_exec_once,
+            #[cfg(feature = "ssh")]
+            ssh_close_exec_once,
         } = options;
         let UnixSocketBinding {
             path: socket_path,
@@ -118,6 +133,15 @@ impl MockGmpServer {
         let listener = UnixListener::bind(&socket_path)?;
         let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
+        #[cfg(feature = "ssh")]
+        let ssh_test = Arc::new(SshTestState::new(
+            ssh_authorized_keys,
+            ssh_auth_delay_once,
+            ssh_channel_open_delay_once,
+            ssh_exec_delay_once,
+            ssh_reject_exec_once,
+            ssh_close_exec_once,
+        ));
 
         let state = Arc::new(ListenerState {
             mode,
@@ -131,11 +155,7 @@ impl MockGmpServer {
             max_request_bytes,
             fault_engine: fault_engine.clone(),
             #[cfg(feature = "ssh")]
-            ssh_test: SshTestState::new(
-                ssh_authorized_keys,
-                ssh_auth_delay_once,
-                ssh_channel_open_delay_once,
-            ),
+            ssh_test: Arc::clone(&ssh_test),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -157,6 +177,8 @@ impl MockGmpServer {
             ssh_host_key_fingerprint: None,
             #[cfg(feature = "ssh")]
             ssh_host_public_key: None,
+            #[cfg(feature = "ssh")]
+            ssh_test,
             history,
             shutdown,
             listener_handle: handle,
@@ -184,11 +206,26 @@ impl MockGmpServer {
             ssh_auth_delay_once,
             #[cfg(feature = "ssh")]
             ssh_channel_open_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_exec_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_reject_exec_once,
+            #[cfg(feature = "ssh")]
+            ssh_close_exec_once,
         } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
         let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
+        #[cfg(feature = "ssh")]
+        let ssh_test = Arc::new(SshTestState::new(
+            ssh_authorized_keys,
+            ssh_auth_delay_once,
+            ssh_channel_open_delay_once,
+            ssh_exec_delay_once,
+            ssh_reject_exec_once,
+            ssh_close_exec_once,
+        ));
 
         let state = Arc::new(ListenerState {
             mode,
@@ -202,11 +239,7 @@ impl MockGmpServer {
             max_request_bytes,
             fault_engine: fault_engine.clone(),
             #[cfg(feature = "ssh")]
-            ssh_test: SshTestState::new(
-                ssh_authorized_keys,
-                ssh_auth_delay_once,
-                ssh_channel_open_delay_once,
-            ),
+            ssh_test: Arc::clone(&ssh_test),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -228,6 +261,8 @@ impl MockGmpServer {
             ssh_host_key_fingerprint: None,
             #[cfg(feature = "ssh")]
             ssh_host_public_key: None,
+            #[cfg(feature = "ssh")]
+            ssh_test,
             history,
             shutdown,
             listener_handle: handle,
@@ -258,12 +293,27 @@ impl MockGmpServer {
             ssh_auth_delay_once,
             #[cfg(feature = "ssh")]
             ssh_channel_open_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_exec_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_reject_exec_once,
+            #[cfg(feature = "ssh")]
+            ssh_close_exec_once,
         } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
         let (acceptor, certificate_pem) = generate_tls_acceptor(client_ca_certificate)?;
         let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
+        #[cfg(feature = "ssh")]
+        let ssh_test = Arc::new(SshTestState::new(
+            ssh_authorized_keys,
+            ssh_auth_delay_once,
+            ssh_channel_open_delay_once,
+            ssh_exec_delay_once,
+            ssh_reject_exec_once,
+            ssh_close_exec_once,
+        ));
 
         let state = Arc::new(ListenerState {
             mode,
@@ -277,11 +327,7 @@ impl MockGmpServer {
             max_request_bytes,
             fault_engine: fault_engine.clone(),
             #[cfg(feature = "ssh")]
-            ssh_test: SshTestState::new(
-                ssh_authorized_keys,
-                ssh_auth_delay_once,
-                ssh_channel_open_delay_once,
-            ),
+            ssh_test: Arc::clone(&ssh_test),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -301,6 +347,8 @@ impl MockGmpServer {
             ssh_host_key_fingerprint: None,
             #[cfg(feature = "ssh")]
             ssh_host_public_key: None,
+            #[cfg(feature = "ssh")]
+            ssh_test,
             history,
             shutdown,
             listener_handle: handle,
@@ -326,6 +374,9 @@ impl MockGmpServer {
             ssh_authorized_keys,
             ssh_auth_delay_once,
             ssh_channel_open_delay_once,
+            ssh_exec_delay_once,
+            ssh_reject_exec_once,
+            ssh_close_exec_once,
         } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
@@ -337,6 +388,14 @@ impl MockGmpServer {
             .map_err(std::io::Error::other)?;
         let history = CommandHistory::with_limits(command_history_limits);
         let shutdown = Arc::new(Notify::new());
+        let ssh_test = Arc::new(SshTestState::new(
+            ssh_authorized_keys,
+            ssh_auth_delay_once,
+            ssh_channel_open_delay_once,
+            ssh_exec_delay_once,
+            ssh_reject_exec_once,
+            ssh_close_exec_once,
+        ));
 
         let state = Arc::new(ListenerState {
             mode,
@@ -349,11 +408,7 @@ impl MockGmpServer {
             large_report,
             max_request_bytes,
             fault_engine: fault_engine.clone(),
-            ssh_test: SshTestState::new(
-                ssh_authorized_keys,
-                ssh_auth_delay_once,
-                ssh_channel_open_delay_once,
-            ),
+            ssh_test: Arc::clone(&ssh_test),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -374,6 +429,7 @@ impl MockGmpServer {
             ssh_addr: Some(local_addr),
             ssh_host_key_fingerprint: Some(fingerprint),
             ssh_host_public_key: Some(public_key),
+            ssh_test,
             history,
             shutdown,
             listener_handle: handle,
@@ -435,6 +491,14 @@ impl MockGmpServer {
     #[cfg(feature = "ssh")]
     pub fn ssh_host_public_key(&self) -> Option<&str> {
         self.ssh_host_public_key.as_deref()
+    }
+
+    /// Return the SSH exec request payloads observed by the mock listener.
+    ///
+    /// Commands are retained for deterministic assertions but are never emitted through tracing.
+    #[cfg(feature = "ssh")]
+    pub fn ssh_exec_requests(&self) -> Vec<Vec<u8>> {
+        self.ssh_test.exec_requests()
     }
 
     /// Get the command history.

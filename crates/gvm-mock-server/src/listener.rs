@@ -23,12 +23,22 @@ use crate::version::GmpVersion;
 use crate::ServerMode;
 
 #[cfg(feature = "ssh")]
+const MAX_RECORDED_SSH_EXEC_REQUESTS: usize = 64;
+
+#[cfg(feature = "ssh")]
 pub(crate) struct SshTestState {
     pub(crate) authorized_keys: Vec<(String, String)>,
     auth_delay_once: Option<std::time::Duration>,
     channel_open_delay_once: Option<std::time::Duration>,
+    exec_delay_once: Option<std::time::Duration>,
+    reject_exec_once: bool,
+    close_exec_once: bool,
     auth_delay_used: AtomicBool,
     channel_open_delay_used: AtomicBool,
+    exec_delay_used: AtomicBool,
+    reject_exec_used: AtomicBool,
+    close_exec_used: AtomicBool,
+    exec_requests: std::sync::Mutex<Vec<Vec<u8>>>,
 }
 
 #[cfg(feature = "ssh")]
@@ -37,13 +47,23 @@ impl SshTestState {
         authorized_keys: Vec<(String, String)>,
         auth_delay_once: Option<std::time::Duration>,
         channel_open_delay_once: Option<std::time::Duration>,
+        exec_delay_once: Option<std::time::Duration>,
+        reject_exec_once: bool,
+        close_exec_once: bool,
     ) -> Self {
         Self {
             authorized_keys,
             auth_delay_once,
             channel_open_delay_once,
+            exec_delay_once,
+            reject_exec_once,
+            close_exec_once,
             auth_delay_used: AtomicBool::new(false),
             channel_open_delay_used: AtomicBool::new(false),
+            exec_delay_used: AtomicBool::new(false),
+            reject_exec_used: AtomicBool::new(false),
+            close_exec_used: AtomicBool::new(false),
+            exec_requests: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -61,6 +81,46 @@ impl SshTestState {
                 .channel_open_delay_used
                 .swap(true, std::sync::atomic::Ordering::Relaxed)
         })
+    }
+
+    pub(crate) fn take_exec_delay(&self) -> Option<std::time::Duration> {
+        self.exec_delay_once.filter(|_| {
+            !self
+                .exec_delay_used
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+        })
+    }
+
+    pub(crate) fn take_reject_exec(&self) -> bool {
+        self.reject_exec_once
+            && !self
+                .reject_exec_used
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn take_close_exec(&self) -> bool {
+        self.close_exec_once
+            && !self
+                .close_exec_used
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn record_exec_request(&self, command: &[u8]) {
+        let mut requests = self
+            .exec_requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if requests.len() == MAX_RECORDED_SSH_EXEC_REQUESTS {
+            requests.remove(0);
+        }
+        requests.push(command.to_vec());
+    }
+
+    pub(crate) fn exec_requests(&self) -> Vec<Vec<u8>> {
+        self.exec_requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -88,7 +148,7 @@ pub struct ListenerState {
     pub(crate) fault_engine: FaultEngine,
     /// SSH-only deterministic authentication and channel test controls.
     #[cfg(feature = "ssh")]
-    pub(crate) ssh_test: SshTestState,
+    pub(crate) ssh_test: Arc<SshTestState>,
     /// Shutdown signal.
     pub(crate) shutdown: Arc<Notify>,
 }
