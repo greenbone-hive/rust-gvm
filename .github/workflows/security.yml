@@ -104,6 +104,7 @@ jobs:
           python3 -B -m unittest
           tests.test_sbom_postprocess
           tests.test_sbom_quality
+          tests.test_release_commit
           tests.test_verify_release
           tests.test_wait_for_release_run
           -q

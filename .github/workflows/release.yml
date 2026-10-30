@@ -32,7 +32,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-      - name: Verify exact tag, commit, workspace versions, and lockfile
+      - name: Verify protected-main tag, commit, workspace versions, and lockfile
         shell: bash
         env:
           RELEASE_SHA: ${{ github.sha }}
@@ -44,14 +44,11 @@ jobs:
             exit 1
           fi
           version="${RELEASE_TAG#v}"
-          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" ]]; then
-            echo "Checkout does not match release event SHA $RELEASE_SHA" >&2
-            exit 1
-          fi
-          if [[ "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" != "$RELEASE_SHA" ]]; then
-            echo "Tag $RELEASE_TAG does not resolve to release event SHA $RELEASE_SHA" >&2
-            exit 1
-          fi
+          git fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main"
+          python3 scripts/check_release_commit.py \
+            --sha "$RELEASE_SHA" \
+            --tag "$RELEASE_TAG"
           python3 scripts/check_release_version.py "$version"
 
   # Run full test suite before building release artifacts
