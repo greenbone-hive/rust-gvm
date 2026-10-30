@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-05
+Last updated: 2026-10-30
 
 ## Support Direction
 
@@ -688,7 +688,7 @@ the template count is not the number of GMP commands supported by other modes.
 | Transport | Status | Feature Flag | Notes |
 |-----------|--------|-------------|-------|
 | Unix socket | ✅ | `unix` (default) | `UnixSocketConnection` with configurable path, timeout, buffer size |
-| SSH tunnel | ✅ | `ssh` | `SshConnection` via `russh` — `direct-streamlocal` to remote gvmd socket |
+| SSH | ✅ | `ssh` | `SshConnection` via `russh` — stream-local forwarding by default, or explicit GOS-compatible session exec |
 | TLS (TCP) | ✅ | `tls` | `TlsConnection` via `tokio-rustls`, verified server SAN/roots, optional client identity |
 
 ### UnixSocketConfig
@@ -713,6 +713,13 @@ the template count is not the number of GMP commands supported by other modes.
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 | `host_key_policy` | `KnownHosts` | Standard or custom `known_hosts`, pinned SHA-256 fingerprint, or explicit insecure opt-out |
+
+`SshConnection::with_channel_mode` selects an additive topology after SSH
+authentication. `SshChannelMode::DirectStreamLocal` is derived from
+`SshConfig::remote_socket` by default. `SshChannelMode::Exec` opens a session,
+sends the configured command (including an explicitly supported empty value),
+and requires the server to acknowledge the request before `connect()` succeeds.
+The same timeout covers session opening and exec acknowledgement.
 
 ### TlsConfig
 

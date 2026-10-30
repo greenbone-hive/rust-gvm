@@ -41,6 +41,12 @@ pub struct MockGmpServerBuilder {
     ssh_auth_delay_once: Option<std::time::Duration>,
     #[cfg(feature = "ssh")]
     ssh_channel_open_delay_once: Option<std::time::Duration>,
+    #[cfg(feature = "ssh")]
+    ssh_exec_delay_once: Option<std::time::Duration>,
+    #[cfg(feature = "ssh")]
+    ssh_reject_exec_once: bool,
+    #[cfg(feature = "ssh")]
+    ssh_close_exec_once: bool,
 }
 
 enum Transport {
@@ -78,6 +84,12 @@ impl MockGmpServerBuilder {
             ssh_auth_delay_once: None,
             #[cfg(feature = "ssh")]
             ssh_channel_open_delay_once: None,
+            #[cfg(feature = "ssh")]
+            ssh_exec_delay_once: None,
+            #[cfg(feature = "ssh")]
+            ssh_reject_exec_once: false,
+            #[cfg(feature = "ssh")]
+            ssh_close_exec_once: false,
         }
     }
 
@@ -182,7 +194,7 @@ impl MockGmpServerBuilder {
         self
     }
 
-    /// Delay the first SSH direct-streamlocal channel open.
+    /// Delay the first SSH channel open.
     ///
     /// The delay is consumed once across all connections to the server so a
     /// client can retry after a channel-open timeout.
@@ -190,6 +202,32 @@ impl MockGmpServerBuilder {
     #[must_use]
     pub fn ssh_channel_open_delay_once(mut self, delay: std::time::Duration) -> Self {
         self.ssh_channel_open_delay_once = Some(delay);
+        self
+    }
+
+    /// Delay the first SSH exec-request response.
+    ///
+    /// This deterministic test control is consumed once across all connections.
+    #[cfg(feature = "ssh")]
+    #[must_use]
+    pub fn ssh_exec_delay_once(mut self, delay: std::time::Duration) -> Self {
+        self.ssh_exec_delay_once = Some(delay);
+        self
+    }
+
+    /// Reject the first SSH exec request and accept later requests.
+    #[cfg(feature = "ssh")]
+    #[must_use]
+    pub fn ssh_reject_exec_once(mut self) -> Self {
+        self.ssh_reject_exec_once = true;
+        self
+    }
+
+    /// Close the first SSH exec channel before acknowledging the request.
+    #[cfg(feature = "ssh")]
+    #[must_use]
+    pub fn ssh_close_exec_once(mut self) -> Self {
+        self.ssh_close_exec_once = true;
         self
     }
 
@@ -315,6 +353,12 @@ impl MockGmpServerBuilder {
             ssh_auth_delay_once,
             #[cfg(feature = "ssh")]
             ssh_channel_open_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_exec_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_reject_exec_once,
+            #[cfg(feature = "ssh")]
+            ssh_close_exec_once,
         } = self;
 
         if max_request_bytes == Some(0) {
@@ -391,6 +435,12 @@ impl MockGmpServerBuilder {
             ssh_auth_delay_once,
             #[cfg(feature = "ssh")]
             ssh_channel_open_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_exec_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_reject_exec_once,
+            #[cfg(feature = "ssh")]
+            ssh_close_exec_once,
         };
 
         match transport {

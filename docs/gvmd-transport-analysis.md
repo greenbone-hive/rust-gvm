@@ -23,13 +23,13 @@ rust-gvm client ──[ XML bytes ]──▶ [ Unix socket | TLS+TCP :9390 ] ─
 |----------|-----------|------|-------|
 | Unix socket | `AF_UNIX` / `SOCK_STREAM` | Filesystem permissions + GMP `<authenticate>` | Default in container deployments. Owner, group, and mode are configurable via `--listen-owner`, `--listen-group`, `--listen-mode`. |
 | TLS over TCP | `AF_INET`/`AF_INET6` on port 9390 by default | GnuTLS mutual TLS + GMP `<authenticate>` | Enabled via `--listen <address>` and `--port <port>`. Supports DH params via `--dh-params` and priority strings via `--gnutls-priorities`. Client cert is optional. |
-| SSH tunnel | Not native to gvmd | SSH handles transport; gvmd still sees a Unix socket | `python-gvm` uses `direct-streamlocal@openssh.com` to tunnel to the remote Unix socket. |
+| SSH bridge | Not native to gvmd | SSH handles transport; gvmd still sees a Unix socket | Current `python-gvm` opens a session channel and sends an empty exec request for server-side forced-command deployments; stream-local forwarding remains another supported client topology. |
 
 gvmd can listen on two sockets simultaneously via `--listen` and `--listen2`, for example one Unix socket and one TLS listener.
 
 ### Protocol flow
 
-1. Client connects over Unix socket or TLS.
+1. Client connects over Unix socket, TLS, or an SSH bridge to one of those sockets.
 2. Client sends `<get_version/>`, which is available before authentication.
 3. Client sends `<authenticate><credentials>...</credentials></authenticate>`.
 4. Client sends GMP commands as XML elements; gvmd responds with XML elements.
@@ -51,7 +51,9 @@ This is not an HTTP interface for GMP. It is gvmd's internal client for connecti
 `rust-gvm` currently implements the correct transport model for gvmd as it exists today:
 
 - `UnixSocketConnection` for primary containerized deployments
-- `SshConnection` for remote access via SSH tunnel
+- `SshConnection` for remote access via stream-local forwarding or an explicit
+  session exec request, including the empty exec used by current Greenbone
+  appliance tooling
 - `TlsConnection` for verified direct TLS+TCP on port 9390, with optional client identity
 
 There is no native HTTP or gRPC transport to implement in `rust-gvm` today because gvmd does not expose either interface.
@@ -82,7 +84,7 @@ There is no native HTTP or gRPC transport to implement in `rust-gvm` today becau
 1. Maintain `TlsConnection` interoperability tests for verified server roots/SANs
    and optional client identity as rustls and gvmd evolve.
 2. Improve incremental or streaming XML reads so large report responses do not need to be buffered fully in memory.
-3. Keep the transport abstraction centered on gvmd's real interfaces: Unix socket, SSH tunnel, and TLS.
+3. Keep the transport abstraction centered on gvmd's real interfaces: Unix socket, SSH bridges, and TLS. Treat SSH exec commands as opaque server-interpreted values and keep shell requests a separate topology.
 4. Watch upstream changes in gvmd, especially around newer HTTP-based scanner integrations, but do not assume that implies a client-facing HTTP API.
 5. Treat any REST or gRPC exposure as a separate proxy or gateway concern rather than part of the direct `rust-gvm` transport layer.
 

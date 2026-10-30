@@ -85,7 +85,11 @@ Open work:
   seven report-export commands and five schema projections are present on
   `main`; downstream exact-revision E2E qualification is the remaining gate.
 - [#524](https://github.com/greenbone-hive/rust-gvm/issues/524) tracks SSH
-  session/exec channel support alongside the existing stream-local transport.
+  session/exec channel support and GOS qualification alongside the existing
+  stream-local transport.
+- [#768](https://github.com/greenbone-hive/rust-gvm/issues/768) separately
+  tracks whether supported deployment evidence requires an explicit SSH
+  session/shell mode; shell and exec are not treated as interchangeable.
 - [#417](https://github.com/greenbone-hive/rust-gvm/issues/417) tracks replacing
   the temporary `wnaf` Cargo Vet exemption.
 - [#4](https://github.com/greenbone-hive/rust-gvm/issues/4) tracks a streaming

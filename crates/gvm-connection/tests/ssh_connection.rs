@@ -7,7 +7,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use gvm_connection::{GvmConnection, SshAuth, SshConfig, SshConnection, SshHostKeyPolicy};
+use gvm_connection::{
+    GvmConnection, SshAuth, SshChannelMode, SshConfig, SshConnection, SshHostKeyPolicy,
+};
 
 #[test]
 fn test_default_config() {
@@ -69,6 +71,26 @@ fn test_custom_host_key_policies() {
 fn test_not_connected_initially() {
     let conn = SshConnection::new(SshConfig::default());
     assert!(!conn.is_connected());
+    assert_eq!(
+        conn.channel_mode(),
+        &SshChannelMode::DirectStreamLocal {
+            remote_socket: "/run/gvmd/gvmd.sock".to_string()
+        }
+    );
+}
+
+#[test]
+fn test_exec_channel_mode_construction() {
+    let conn = SshConnection::new(SshConfig::default()).with_channel_mode(SshChannelMode::Exec {
+        command: String::new(),
+    });
+
+    assert_eq!(
+        conn.channel_mode(),
+        &SshChannelMode::Exec {
+            command: String::new()
+        }
+    );
 }
 
 #[test]

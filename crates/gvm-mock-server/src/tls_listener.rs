@@ -224,7 +224,14 @@ mod tests {
             max_request_bytes: Some(64 * 1024 * 1024),
             fault_engine: FaultEngine::none(),
             #[cfg(feature = "ssh")]
-            ssh_test: crate::listener::SshTestState::new(Vec::new(), None, None),
+            ssh_test: std::sync::Arc::new(crate::listener::SshTestState::new(
+                Vec::new(),
+                None,
+                None,
+                None,
+                false,
+                false,
+            )),
             shutdown: Arc::new(Notify::new()),
         })
     }
