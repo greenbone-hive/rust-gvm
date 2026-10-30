@@ -106,6 +106,8 @@ pub enum HandleResult {
         bytes: Vec<u8>,
         /// Optional delay before sending.
         delay: Option<Duration>,
+        /// Optional delay between one-byte response chunks.
+        chunk_delay: Option<Duration>,
     },
     /// Close the connection immediately (fault injection).
     Disconnect,
@@ -392,6 +394,7 @@ impl SessionHandler {
             return HandleResult::Respond {
                 bytes: error_response("unknown", 400, "Could not parse command"),
                 delay: None,
+                chunk_delay: None,
             };
         };
 
@@ -402,6 +405,7 @@ impl SessionHandler {
             .record_slice(cmd.name.clone(), xml, self.session_id);
 
         let mut delay: Option<Duration> = None;
+        let mut chunk_delay: Option<Duration> = None;
         let mut override_response: Option<Vec<u8>> = None;
 
         // Check fault engine (compose all matching faults)
@@ -422,12 +426,19 @@ impl SessionHandler {
                     FaultAction::Delay(d) => {
                         delay = Some(delay.map_or(d, |cur| cur.max(d)));
                     }
+                    FaultAction::DripResponse(d) => {
+                        chunk_delay = Some(chunk_delay.map_or(d, |cur| cur.max(d)));
+                    }
                 }
             }
         }
 
         let bytes = override_response.unwrap_or_else(|| self.normal_response(&cmd, xml));
-        HandleResult::Respond { bytes, delay }
+        HandleResult::Respond {
+            bytes,
+            delay,
+            chunk_delay,
+        }
     }
 
     fn normal_response(&self, cmd: &ParsedCommand, xml: &[u8]) -> Vec<u8> {

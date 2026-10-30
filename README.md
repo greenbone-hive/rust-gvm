@@ -662,6 +662,9 @@ let mut client = GmpClient::connect(conn).await?;
 
 Client certificates are optional. Disabling platform roots never disables
 verification; configure at least one custom root when platform roots are off.
+For Unix, TLS, and SSH transports, the configured timeout is a total deadline
+for receiving one complete XML response; periodic response chunks do not reset
+that deadline.
 
 ### Mock Server (library usage)
 

@@ -12,7 +12,9 @@ use gvm_connection::{
     ConnectionError, GvmConnection, SshAuth, SshChannelMode, SshConfig, SshConnection,
     SshHostKeyPolicy,
 };
-use gvm_mock_server::{GmpVersion, MockGmpServer, ScenarioMode, ScenarioStep, ServerMode};
+use gvm_mock_server::{
+    Fault, FaultKind, GmpVersion, MockGmpServer, ScenarioMode, ScenarioStep, ServerMode,
+};
 use gvm_protocol::{Request, Response, XmlCommand};
 use russh::keys::agent::client::AgentClient;
 use russh::keys::ssh_key::rand_core::{TryCryptoRng, TryRng, UnwrapErr};
@@ -780,6 +782,47 @@ async fn ssh_response_timeout_invalidates_connection() {
     );
     connection.disconnect().await.expect("disconnect");
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_trickling_response_cannot_extend_the_total_deadline() {
+    let timeout = Duration::from_millis(500);
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Echo)
+        .inject_fault(Fault::on_command(
+            "get_tasks",
+            FaultKind::DripResponse(Duration::from_millis(100)),
+        ))
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+        .expect("SSH mock server");
+    let mut connection = SshConnection::new(config_for(&server).with_timeout(timeout));
+    connection.connect().await.expect("connect");
+    connection
+        .send(b"<get_tasks/>")
+        .await
+        .expect("send request");
+
+    let started = tokio::time::Instant::now();
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::Timeout(duration)) if duration == timeout
+    ));
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_clean_failed_connection(&mut connection).await;
+
+    connection.connect().await.expect("clean reconnect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("fresh request");
+    assert_eq!(
+        Response::new(connection.read().await.expect("fresh response")).status_code(),
+        Some(200)
+    );
+    connection.disconnect().await.expect("disconnect");
     server.shutdown().await;
 }
 

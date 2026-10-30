@@ -43,6 +43,8 @@ pub enum FaultKind {
     },
     /// Delay the response by the specified duration.
     Delay(Duration),
+    /// Send the response one byte at a time with this delay between bytes.
+    DripResponse(Duration),
     /// Return malformed (non-XML) data.
     MalformedXml,
     /// Return a truncated response (cut off mid-XML).
@@ -140,6 +142,7 @@ impl FaultEngine {
                 message: message.clone(),
             },
             FaultKind::Delay(d) => FaultAction::Delay(*d),
+            FaultKind::DripResponse(d) => FaultAction::DripResponse(*d),
             FaultKind::MalformedXml => FaultAction::MalformedResponse,
             FaultKind::TruncatedResponse => FaultAction::TruncatedResponse,
             FaultKind::Disconnect => FaultAction::Disconnect,
@@ -164,6 +167,8 @@ pub enum FaultAction {
     },
     /// Delay before sending the normal response.
     Delay(Duration),
+    /// Send the response one byte at a time with the given inter-byte delay.
+    DripResponse(Duration),
     /// Send malformed (non-XML) bytes.
     MalformedResponse,
     /// Send a truncated XML response.
@@ -261,6 +266,15 @@ mod tests {
         )))]);
         let action = engine.check("get_tasks", 0);
         assert!(matches!(action, Some(FaultAction::Delay(_))));
+    }
+
+    #[test]
+    fn test_drip_response_fault() {
+        let engine = FaultEngine::new(vec![Fault::always(FaultKind::DripResponse(
+            Duration::from_millis(10),
+        ))]);
+        let action = engine.check("get_tasks", 0);
+        assert!(matches!(action, Some(FaultAction::DripResponse(_))));
     }
 
     #[test]

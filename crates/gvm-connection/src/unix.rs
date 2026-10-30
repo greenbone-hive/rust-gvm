@@ -17,7 +17,7 @@ use crate::error::{ConnectionError, Result};
 pub struct UnixSocketConfig {
     /// Path to the Unix socket.
     pub path: PathBuf,
-    /// Connect, request-write/flush, and response-read timeout.
+    /// Connect and request-write/flush timeout, and total response-read deadline.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -46,7 +46,7 @@ impl UnixSocketConfig {
         }
     }
 
-    /// Set the transport operation timeout.
+    /// Set the transport operation timeout and total response-read deadline.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -181,11 +181,12 @@ impl GvmConnection for UnixSocketConnection {
         }
 
         let mut buf = vec![0_u8; self.config.read_buffer_size];
+        let response_deadline = tokio::time::Instant::now() + self.config.timeout;
 
         loop {
             let read_result = {
                 let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
-                tokio::time::timeout(self.config.timeout, stream.read(&mut buf)).await
+                tokio::time::timeout_at(response_deadline, stream.read(&mut buf)).await
             };
             let n = match read_result {
                 Ok(Ok(n)) => n,

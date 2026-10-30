@@ -324,12 +324,24 @@ where
             offset = offset.saturating_add(consumed);
 
             match result {
-                CommandResult::Response { bytes, delay } => {
+                CommandResult::Response {
+                    bytes,
+                    delay,
+                    chunk_delay,
+                } => {
                     request_deadline = None;
                     if let Some(d) = delay {
-                        tokio::time::sleep(d).await;
+                        tokio::select! {
+                            () = state.cancellation.cancelled() => return,
+                            () = tokio::time::sleep(d) => {}
+                        }
                     }
-                    if let Err(e) = stream.write_all(&bytes).await {
+                    let write = write_response(&mut stream, &bytes, chunk_delay);
+                    let result = tokio::select! {
+                        () = state.cancellation.cancelled() => return,
+                        result = write => result,
+                    };
+                    if let Err(e) = result {
                         tracing::debug!("Write error on session {session_id}: {e}");
                         return;
                     }
@@ -355,6 +367,7 @@ pub(crate) enum CommandResult {
     Response {
         bytes: Vec<u8>,
         delay: Option<std::time::Duration>,
+        chunk_delay: Option<std::time::Duration>,
     },
     /// Need more data.
     NeedMore,
@@ -398,8 +411,36 @@ pub(crate) fn try_extract_command(
     };
 
     let result = match handler.handle_command(&command_xml) {
-        HandleResult::Respond { bytes, delay } => CommandResult::Response { bytes, delay },
+        HandleResult::Respond {
+            bytes,
+            delay,
+            chunk_delay,
+        } => CommandResult::Response {
+            bytes,
+            delay,
+            chunk_delay,
+        },
         HandleResult::Disconnect => CommandResult::Disconnect,
     };
     (consumed, result)
+}
+
+async fn write_response<W>(
+    stream: &mut W,
+    bytes: &[u8],
+    chunk_delay: Option<std::time::Duration>,
+) -> std::io::Result<()>
+where
+    W: AsyncWriteExt + Unpin,
+{
+    let Some(delay) = chunk_delay else {
+        return stream.write_all(bytes).await;
+    };
+    for (index, byte) in bytes.iter().enumerate() {
+        stream.write_all(std::slice::from_ref(byte)).await?;
+        if index + 1 < bytes.len() {
+            tokio::time::sleep(delay).await;
+        }
+    }
+    Ok(())
 }
