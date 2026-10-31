@@ -10,7 +10,10 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UnixListener};
-use tokio::sync::Notify;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
@@ -144,18 +147,57 @@ pub struct ListenerState {
     pub(crate) large_report: Option<LargeReportConfig>,
     /// Maximum size of one XML request.
     pub(crate) max_request_bytes: Option<usize>,
+    /// Deadline for receiving one complete XML request.
+    pub(crate) request_timeout: std::time::Duration,
+    /// Shared capacity for active transport sessions/channels.
+    pub(crate) session_slots: Arc<Semaphore>,
+    /// Tasks serving accepted sessions.
+    pub(crate) session_tasks: TaskTracker,
     /// Fault injection engine.
     pub(crate) fault_engine: FaultEngine,
     /// SSH-only deterministic authentication and channel test controls.
     #[cfg(feature = "ssh")]
     pub(crate) ssh_test: Arc<SshTestState>,
-    /// Shutdown signal.
-    pub(crate) shutdown: Arc<Notify>,
+    /// Shutdown signal shared by listeners and session tasks.
+    pub(crate) cancellation: CancellationToken,
 }
 
 impl ListenerState {
     pub(crate) fn next_session_id(&self) -> u64 {
         self.session_counter.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub(crate) async fn acquire_session_slot(&self) -> Option<OwnedSemaphorePermit> {
+        let slots = Arc::clone(&self.session_slots);
+        tokio::select! {
+            () = self.cancellation.cancelled() => None,
+            permit = slots.acquire_owned() => permit.ok(),
+        }
+    }
+
+    pub(crate) async fn drain_sessions(&self) {
+        self.session_tasks.close();
+        self.session_tasks.wait().await;
+    }
+}
+
+/// Removes stateful authentication when a transport session ends or is cancelled.
+pub(crate) struct SessionGuard {
+    store: Option<ResourceStore>,
+    session_id: u64,
+}
+
+impl SessionGuard {
+    pub(crate) fn new(store: Option<ResourceStore>, session_id: u64) -> Self {
+        Self { store, session_id }
+    }
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        if let Some(store) = &self.store {
+            store.end_session(self.session_id);
+        }
     }
 }
 
@@ -166,8 +208,12 @@ pub async fn run_unix_listener(listener: UnixListener, state: Arc<ListenerState>
             accept = listener.accept() => {
                 match accept {
                     Ok((stream, _addr)) => {
+                        let Some(permit) = state.acquire_session_slot().await else {
+                            break;
+                        };
                         let state = Arc::clone(&state);
-                        tokio::spawn(async move {
+                        state.session_tasks.clone().spawn(async move {
+                            let _permit = permit;
                             handle_stream(stream, &state).await;
                         });
                     }
@@ -176,12 +222,13 @@ pub async fn run_unix_listener(listener: UnixListener, state: Arc<ListenerState>
                     }
                 }
             }
-            () = state.shutdown.notified() => {
+            () = state.cancellation.cancelled() => {
                 tracing::debug!("Unix listener shutting down");
                 break;
             }
         }
     }
+    state.drain_sessions().await;
 }
 
 /// Run a TCP listener.
@@ -192,8 +239,12 @@ pub async fn run_tcp_listener(listener: TcpListener, state: Arc<ListenerState>) 
                 match accept {
                     Ok((stream, addr)) => {
                         tracing::debug!("TCP connection from {addr}");
+                        let Some(permit) = state.acquire_session_slot().await else {
+                            break;
+                        };
                         let state = Arc::clone(&state);
-                        tokio::spawn(async move {
+                        state.session_tasks.clone().spawn(async move {
+                            let _permit = permit;
                             handle_stream(stream, &state).await;
                         });
                     }
@@ -202,12 +253,13 @@ pub async fn run_tcp_listener(listener: TcpListener, state: Arc<ListenerState>) 
                     }
                 }
             }
-            () = state.shutdown.notified() => {
+            () = state.cancellation.cancelled() => {
                 tracing::debug!("TCP listener shutting down");
                 break;
             }
         }
     }
+    state.drain_sessions().await;
 }
 
 /// Handle a single client connection (works for both Unix and TCP streams).
@@ -216,6 +268,7 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     let session_id = state.next_session_id();
+    let _session_guard = SessionGuard::new(state.store.clone(), session_id);
     let handler = SessionHandler::new(
         state.mode,
         state.version,
@@ -230,9 +283,29 @@ where
 
     let mut buf = vec![0u8; 16 * 1024];
     let mut xml_reader = gvm_protocol::XmlReader::with_buffer_limit(state.max_request_bytes);
+    let mut request_deadline = None;
 
     loop {
-        let n = match stream.read(&mut buf).await {
+        let read_result = if let Some(deadline) = request_deadline {
+            tokio::select! {
+                () = state.cancellation.cancelled() => return,
+                result = tokio::time::timeout_at(deadline, stream.read(&mut buf)) => {
+                    match result {
+                        Ok(result) => result,
+                        Err(_) => {
+                            tracing::debug!("Request deadline exceeded on session {session_id}");
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            tokio::select! {
+                () = state.cancellation.cancelled() => return,
+                result = stream.read(&mut buf) => result,
+            }
+        };
+        let n = match read_result {
             Ok(0) => break, // Connection closed
             Ok(n) => n,
             Err(e) => {
@@ -243,12 +316,16 @@ where
 
         let mut offset = 0;
         while offset < n {
+            if xml_reader.data().is_empty() {
+                request_deadline = Some(Instant::now() + state.request_timeout);
+            }
             let (consumed, result) =
                 try_extract_command(&mut xml_reader, &buf[offset..n], &handler);
             offset = offset.saturating_add(consumed);
 
             match result {
                 CommandResult::Response { bytes, delay } => {
+                    request_deadline = None;
                     if let Some(d) = delay {
                         tokio::time::sleep(d).await;
                     }

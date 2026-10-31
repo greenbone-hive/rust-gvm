@@ -576,6 +576,9 @@ de-duplication without rewriting otherwise valid host spellings.
 | Pre-seeding | ✅ | `.seed(\|store\| { ... })` |
 | Fault injection | ✅ | `.inject_fault(Fault::once(FaultKind::Disconnect))` |
 | Scenario steps | ✅ | `.scenario(ScenarioMode::Strict, steps)` |
+| Session limit | ✅ | `.with_max_sessions(64)`; capacity is shared by active transport sessions/channels |
+| Request deadline | ✅ | `.with_request_timeout(Duration::from_secs(30))`; applies from first byte until one complete XML request |
+| Draining shutdown | ✅ | Cancels and joins live session work and removes stateful authentication principals |
 
 ### Stateful CRUD
 
@@ -662,6 +665,9 @@ the template count is not the number of GMP commands supported by other modes.
 | `--socket <path>` | ✅ |
 | `--tcp <addr:port>` | ✅ |
 | `--max-request-bytes <bytes>` | ✅ (64 MiB default) |
+| `--max-sessions <count>` | ✅ (64 default) |
+| `--request-timeout-seconds <seconds>` | ✅ (30-second default for incomplete XML) |
+| `--allow-non-loopback` | ✅ (required acknowledgement for non-loopback TCP/TLS binds) |
 | XML nesting limit | ✅ (256 elements per frame; enforced across protocol, client, and mock readers) |
 | `--tls <addr:port>` | ✅ (`tls` feature) |
 | `--tls-client-ca <path>` | ✅ (`tls` feature) |

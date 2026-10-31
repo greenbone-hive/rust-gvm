@@ -4,6 +4,7 @@
 //! Builder for configuring and starting a [`MockGmpServer`].
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use tempfile::Builder;
 
@@ -17,7 +18,11 @@ use crate::store::{AssetInputProfile, ResourceStore};
 use crate::version::GmpVersion;
 use crate::ServerMode;
 
-const DEFAULT_MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const DEFAULT_MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+/// Default maximum number of concurrently active mock sessions.
+pub const DEFAULT_MAX_SESSIONS: usize = 64;
+/// Default deadline for receiving one complete XML request.
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Builder for [`MockGmpServer`].
 pub struct MockGmpServerBuilder {
@@ -31,6 +36,8 @@ pub struct MockGmpServerBuilder {
     scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     large_report: Option<LargeReportConfig>,
     max_request_bytes: Option<usize>,
+    max_sessions: usize,
+    request_timeout: Duration,
     command_history_limits: CommandHistoryLimits,
     asset_input_profile: AssetInputProfile,
     #[cfg(feature = "tls")]
@@ -74,6 +81,8 @@ impl MockGmpServerBuilder {
             scenario_config: None,
             large_report: None,
             max_request_bytes: Some(DEFAULT_MAX_REQUEST_BYTES),
+            max_sessions: DEFAULT_MAX_SESSIONS,
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
             command_history_limits: CommandHistoryLimits::default(),
             asset_input_profile: AssetInputProfile::GvmdStrict,
             #[cfg(feature = "tls")]
@@ -304,6 +313,27 @@ impl MockGmpServerBuilder {
         self
     }
 
+    /// Set the maximum number of concurrently active client sessions.
+    ///
+    /// Capacity is acquired before a transport allocates a request parser and
+    /// is reclaimed on every disconnect, error, timeout, and shutdown path.
+    #[must_use]
+    pub fn with_max_sessions(mut self, max_sessions: usize) -> Self {
+        self.max_sessions = max_sessions;
+        self
+    }
+
+    /// Set the deadline for receiving one complete XML request.
+    ///
+    /// The deadline starts when the first byte of a request arrives and is not
+    /// extended by later chunks. Idle connections between requests are not
+    /// affected.
+    #[must_use]
+    pub fn with_request_timeout(mut self, request_timeout: Duration) -> Self {
+        self.request_timeout = request_timeout;
+        self
+    }
+
     /// Set command-history retention limits.
     ///
     /// When either limit is reached, the oldest records are evicted first.
@@ -343,6 +373,8 @@ impl MockGmpServerBuilder {
             scenario_config,
             large_report,
             max_request_bytes,
+            max_sessions,
+            request_timeout,
             command_history_limits,
             asset_input_profile,
             #[cfg(feature = "tls")]
@@ -365,6 +397,19 @@ impl MockGmpServerBuilder {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "max_request_bytes must be greater than zero or None",
+            ));
+        }
+
+        if max_sessions == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "max_sessions must be greater than zero",
+            ));
+        }
+        if request_timeout.is_zero() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "request_timeout must be greater than zero",
             ));
         }
 
@@ -428,6 +473,8 @@ impl MockGmpServerBuilder {
             scenario_config,
             large_report,
             max_request_bytes,
+            max_sessions,
+            request_timeout,
             command_history_limits,
             #[cfg(feature = "ssh")]
             ssh_authorized_keys,

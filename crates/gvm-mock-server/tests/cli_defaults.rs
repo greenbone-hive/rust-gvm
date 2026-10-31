@@ -27,6 +27,14 @@ fn cli_help_publishes_the_22_7_default() {
             && stdout.contains("--unbounded-command-history"),
         "history retention controls missing from CLI help: {stdout}"
     );
+    assert!(
+        stdout.contains("--max-sessions <MAX_SESSIONS>")
+            && stdout.contains("[default: 64]")
+            && stdout.contains("--request-timeout-seconds <REQUEST_TIMEOUT_SECONDS>")
+            && stdout.contains("[default: 30]")
+            && stdout.contains("--allow-non-loopback"),
+        "session safety controls missing from CLI help: {stdout}"
+    );
 }
 
 #[test]
@@ -39,5 +47,19 @@ fn cli_publishes_the_package_build_version_without_shadowing_gmp_version() {
     assert_eq!(
         String::from_utf8(output.stdout).expect("version is UTF-8"),
         format!("gvm-mock-server {}\n", env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
+fn cli_rejects_non_loopback_bind_without_explicit_acknowledgement() {
+    let output = Command::new(BINARY)
+        .args(["--tcp", "0.0.0.0:0"])
+        .output()
+        .expect("run mock server with exposed bind");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr is UTF-8");
+    assert!(
+        stderr.contains("--allow-non-loopback"),
+        "unexpected CLI error: {stderr}"
     );
 }

@@ -66,7 +66,7 @@ pub mod tls_listener;
 pub(crate) mod util;
 pub mod version;
 
-pub use builder::MockGmpServerBuilder;
+pub use builder::{MockGmpServerBuilder, DEFAULT_MAX_SESSIONS, DEFAULT_REQUEST_TIMEOUT};
 pub use fault::{Fault, FaultEngine, FaultKind};
 pub use history::{
     CommandHistoryStats, CommandRecord, DEFAULT_MAX_HISTORY_BYTES, DEFAULT_MAX_HISTORY_ENTRIES,
