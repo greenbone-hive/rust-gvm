@@ -107,13 +107,26 @@ fn spawn_gmp_channel(
                         offset = offset.saturating_add(consumed);
 
                         match result {
-                            CommandResult::Response { bytes, delay } => {
+                            CommandResult::Response {
+                                bytes,
+                                delay,
+                                chunk_delay,
+                            } => {
                                 request_deadline = None;
                                 if let Some(delay) = delay {
-                                    tokio::time::sleep(delay).await;
+                                    tokio::select! {
+                                        () = state.cancellation.cancelled() => return,
+                                        () = tokio::time::sleep(delay) => {}
+                                    }
                                 }
 
-                                if let Err(error) = channel.data(&bytes[..]).await {
+                                let write =
+                                    write_channel_response(&mut channel, &bytes, chunk_delay);
+                                let result = tokio::select! {
+                                    () = state.cancellation.cancelled() => return,
+                                    result = write => result,
+                                };
+                                if let Err(error) = result {
                                     tracing::debug!(
                                         "SSH write error on session {session_id}: {error}"
                                     );
@@ -163,6 +176,23 @@ fn spawn_gmp_channel(
             }
         }
     });
+}
+
+async fn write_channel_response(
+    channel: &mut Channel<server::Msg>,
+    bytes: &[u8],
+    chunk_delay: Option<std::time::Duration>,
+) -> Result<(), russh::Error> {
+    let Some(delay) = chunk_delay else {
+        return channel.data(bytes).await;
+    };
+    for (index, byte) in bytes.iter().enumerate() {
+        channel.data(std::slice::from_ref(byte)).await?;
+        if index + 1 < bytes.len() {
+            tokio::time::sleep(delay).await;
+        }
+    }
+    Ok(())
 }
 
 struct SystemRng;

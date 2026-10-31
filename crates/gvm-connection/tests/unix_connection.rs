@@ -170,6 +170,53 @@ async fn response_timeout_invalidates_connection() {
 }
 
 #[tokio::test]
+async fn trickling_response_cannot_extend_the_total_deadline() {
+    let timeout = Duration::from_millis(120);
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Echo)
+        .inject_fault(Fault::on_command(
+            "get_tasks",
+            FaultKind::DripResponse(Duration::from_millis(20)),
+        ))
+        .unix_socket_auto()
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("mock server start failed: {error}"),
+    };
+    let config =
+        UnixSocketConfig::new(server.socket_path().expect("socket path")).with_timeout(timeout);
+    let mut connection = UnixSocketConnection::new(config);
+    connection.connect().await.expect("connect");
+    connection
+        .send(b"<get_tasks/>")
+        .await
+        .expect("send request");
+
+    let started = tokio::time::Instant::now();
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::Timeout(duration)) if duration == timeout
+    ));
+    assert!(started.elapsed() < Duration::from_millis(300));
+    assert!(!connection.is_connected());
+
+    connection.connect().await.expect("clean reconnect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("fresh request");
+    assert_eq!(
+        Response::new(connection.read().await.expect("fresh response")).status_code(),
+        Some(200)
+    );
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn outbound_timeout_invalidates_connection_and_allows_clean_reconnect() {
     let directory = tempfile::tempdir().expect("temporary directory");
     let socket_path = directory.path().join("outbound-timeout.sock");

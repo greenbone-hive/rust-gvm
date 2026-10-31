@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use gvm_connection::{ConnectionError, GvmConnection, TlsClientIdentity, TlsConfig, TlsConnection};
-use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
+use gvm_mock_server::{Fault, FaultKind, GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use p256::ecdsa::{DerSignature, SigningKey};
 use p256::elliptic_curve::Generate;
@@ -493,6 +493,40 @@ async fn response_timeout_and_size_limit_are_reported() {
     assert!(!size_limited.is_connected());
     size_limited.disconnect().await.expect("disconnect");
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn trickling_tls_response_cannot_extend_the_total_deadline() {
+    let timeout = Duration::from_millis(150);
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Echo)
+        .inject_fault(Fault::on_command(
+            "get_tasks",
+            FaultKind::DripResponse(Duration::from_millis(20)),
+        ))
+        .tls("127.0.0.1:0")
+        .build()
+        .await
+        .expect("TLS mock server");
+    let mut connection = TlsConnection::new(config_for(&server).with_timeout(timeout));
+    connection.connect().await.expect("connect");
+    connection
+        .send(b"<get_tasks/>")
+        .await
+        .expect("send request");
+
+    let started = tokio::time::Instant::now();
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::Timeout(duration)) if duration == timeout
+    ));
+    assert!(started.elapsed() < Duration::from_millis(350));
+    assert!(!connection.is_connected());
+
+    connection.connect().await.expect("clean reconnect");
+    assert_eq!(get_version(&mut connection).await.status_code(), Some(200));
+    connection.disconnect().await.expect("disconnect");
     server.shutdown().await;
 }
 

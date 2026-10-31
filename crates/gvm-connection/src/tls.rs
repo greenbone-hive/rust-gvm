@@ -87,7 +87,7 @@ pub struct TlsConfig {
     pub port: u16,
     /// DNS name or IP address required in the server certificate SAN.
     pub server_name: String,
-    /// TCP connect, TLS handshake, request-write/flush, and response-read timeout.
+    /// TCP connect, TLS handshake, and request-write/flush timeout, plus total response deadline.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -175,7 +175,7 @@ impl TlsConfig {
         self
     }
 
-    /// Set the transport operation timeout.
+    /// Set the transport operation timeout and total response-read deadline.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -360,11 +360,12 @@ impl GvmConnection for TlsConnection {
         }
 
         let mut buffer = vec![0_u8; self.config.read_buffer_size];
+        let response_deadline = tokio::time::Instant::now() + self.config.timeout;
 
         loop {
             let read_result = {
                 let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
-                tokio::time::timeout(self.config.timeout, stream.read(&mut buffer)).await
+                tokio::time::timeout_at(response_deadline, stream.read(&mut buffer)).await
             };
             let read = match read_result {
                 Ok(Ok(read)) => read,

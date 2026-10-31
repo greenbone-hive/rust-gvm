@@ -31,7 +31,7 @@ pub struct SshConfig {
     pub auth: SshAuth,
     /// Remote gvmd Unix socket path.
     pub remote_socket: String,
-    /// Connect, authentication, channel, request-write/flush, and response-read timeout.
+    /// Connect/auth/channel/write timeout and total response-read deadline.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -99,7 +99,7 @@ impl SshConfig {
         self
     }
 
-    /// Set the operation timeout.
+    /// Set the operation timeout and total response-read deadline.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -796,10 +796,11 @@ impl GvmConnection for SshConnection {
             debug_assert!(self.pending_read.is_empty());
         }
 
+        let response_deadline = tokio::time::Instant::now() + self.config.timeout;
         loop {
             let wait_result = {
                 let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
-                tokio::time::timeout(self.config.timeout, channel.wait()).await
+                tokio::time::timeout_at(response_deadline, channel.wait()).await
             };
             let message = match wait_result {
                 Ok(message) => message,

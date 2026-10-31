@@ -702,7 +702,7 @@ the template count is not the number of GMP commands supported by other modes.
 | Field | Default | Notes |
 |-------|---------|-------|
 | `path` | `/run/gvmd/gvmd.sock` | Configurable |
-| `timeout` | 60s | Connect, request write/flush, and response-read timeout |
+| `timeout` | 60s | Connect and request write/flush timeout; total deadline for one complete response |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 
@@ -715,7 +715,7 @@ the template count is not the number of GMP commands supported by other modes.
 | `username` | `root` | SSH user |
 | `auth` | `Agent` | `Password`, `PrivateKey { key_path, passphrase }`, or `Agent` |
 | `remote_socket` | `/run/gvmd/gvmd.sock` | Path to gvmd socket on remote host |
-| `timeout` | 60s | Connect/auth/channel, request write/flush, and response-read timeout |
+| `timeout` | 60s | Connect/auth/channel and request write/flush timeout; total deadline for one complete response |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 | `host_key_policy` | `KnownHosts` | Standard or custom `known_hosts`, pinned SHA-256 fingerprint, or explicit insecure opt-out |
@@ -737,7 +737,7 @@ The same timeout covers session opening and exec acknowledgement.
 | `use_native_roots` | `true` | Platform trust store; disabling does not disable verification |
 | custom roots | None | PEM roots can be supplied in memory or from a file |
 | client identity | None | Optional PEM certificate chain plus unencrypted private key for mTLS |
-| `timeout` | 60s | TCP connect, TLS handshake, request write/flush, and response-read timeout |
+| `timeout` | 60s | TCP connect, TLS handshake, and request write/flush timeout; total deadline for one complete response |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 
 ### Error Types
