@@ -47,17 +47,17 @@ reproducible evidence.
 
 - run: go install github.com/interlynk-io/sbomqs@v2.0.5
 
-- run: cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.5
+- run: cargo install cross --git https://github.com/cross-rs/cross --rev 88f49ff79e777bef6d3564531636ee4d3cc2f8d2 --locked
 
 # ❌ Wrong - unpinned
 - run: cargo install cargo-audit
 - run: go install github.com/example/tool@latest
 ```
 
-Current release tooling pins `cargo-cyclonedx`, `sbomqs`, and `cross`; Security
-pins `cargo-audit` and `cargo-machete`. The current CI `cargo-deny` install and
-Security `cargo-vet`/`cargo-geiger` installs are known unpinned exceptions. Do
-not describe those jobs as reproducible until their workflows are updated.
+Current release tooling pins `cargo-cyclonedx`, `sbomqs`, and `cross`; CI pins
+`cargo-deny`; and Security pins `cargo-audit`, `cargo-machete`, `cargo-vet`, and
+`cargo-geiger`. Git-based Cargo installs use an immutable commit and the
+reviewed upstream lockfile.
 
 ## Runtime Monitoring
 
@@ -133,7 +133,6 @@ Every tagged release includes CycloneDX 1.5 JSON and XML SBOMs:
 
 ## Future Improvements
 
-- [ ] Pin the remaining `cargo-deny`, `cargo-vet`, and `cargo-geiger` installs
 - [ ] Extend Harden-Runner coverage to the remaining networked jobs
 - [ ] Switch Harden-Runner to `block` mode after baseline
 - [ ] Define an isolation policy before introducing self-hosted runners
