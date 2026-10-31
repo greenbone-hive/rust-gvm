@@ -866,6 +866,10 @@ criteria = "safe-to-run"
 version = "0.4.5"
 criteria = "safe-to-run"
 
+[[exemptions.tokio-util]]
+version = "0.7.20"
+criteria = "safe-to-deploy"
+
 [[exemptions.toml_datetime]]
 version = "1.1.1+spec-1.1.0"
 criteria = "safe-to-run"
