@@ -14,6 +14,8 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   v0.6.0 request surface.
 - `docs/v0.8.0-migration.md`: post-v0.7 report-export and typed-projection
   additions, compatibility notes, and upgrade examples.
+- `docs/v0.9.0-migration.md`: post-v0.8 SSH session/exec support, bounded
+  parsing/session behavior, and timeout migration notes.
 - `docs/gvmd-transport-analysis.md`: gvmd transport model and why GMP is handled as XML over persistent sockets.
 - `docs/target-request-gvmd-evidence.md`: pinned public gvmd schema/source evidence for the canonical target reference slice.
 - `docs/alternate-target-request-gvmd-evidence.md`: pinned gvmd evidence for canonical OCI-image and web-application target requests.
