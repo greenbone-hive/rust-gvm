@@ -43,7 +43,7 @@ commit with that exact version.
 
 The workflow accepts the exact semantic version already merged to `main`,
 without a leading `v`. Versions containing a pre-release suffix, such as
-`0.8.0-alpha.1` or `0.8.0-rc.1`, are published as GitHub pre-releases
+`0.9.0-alpha.1` or `0.9.0-rc.1`, are published as GitHub pre-releases
 automatically. There is no separate scheduled nightly workflow.
 
 ## Do NOT
