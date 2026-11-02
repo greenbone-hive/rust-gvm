@@ -106,7 +106,6 @@ pub struct EpssCve {
     /// CVE identifier from the `<cve id="...">` attribute.
     pub id: String,
     /// Raw CVE severity text, omitted by gvmd when severity is unavailable.
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub severity: Option<String>,
 }
 
@@ -382,11 +381,13 @@ fn parse_epss_selection(node: &XmlNode, name: &str) -> Result<EpssSelection, Par
         .child(name)
         .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}")))?;
     let score = selection
-        .child_text("score")
-        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.score")))?;
+        .child_raw_text("score")
+        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.score")))?
+        .to_string();
     let percentile = selection
-        .child_text("percentile")
-        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.percentile")))?;
+        .child_raw_text("percentile")
+        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.percentile")))?
+        .to_string();
     let cve = selection
         .child("cve")
         .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.cve")))?;
@@ -400,7 +401,7 @@ fn parse_epss_selection(node: &XmlNode, name: &str) -> Result<EpssSelection, Par
         percentile,
         cve: EpssCve {
             id,
-            severity: cve.optional_child_text("severity"),
+            severity: cve.child_raw_text("severity").map(ToString::to_string),
         },
     })
 }
@@ -692,6 +693,31 @@ mod tests {
         assert_eq!(epss.max_epss.cve.severity, None);
     }
 
+    #[test]
+    fn parse_epss_preserves_padded_and_empty_numeric_text() {
+        let root = parse_document(
+            br#"<nvt><epss><max_severity><score> 0.10000 </score><percentile>&#x20;10.00000&#x20;</percentile><cve id="CVE-2026-0001"><severity> 9.8 </severity></cve></max_severity><max_epss><score></score><percentile/><cve id="CVE-2026-0002"><severity/></cve></max_epss></epss></nvt>"#,
+        )
+        .expect("padded and empty EPSS XML parses");
+        let epss = parse_epss(&root)
+            .expect("EPSS projection parses")
+            .expect("EPSS is present");
+
+        assert_eq!(epss.max_severity.score, " 0.10000 ");
+        assert_eq!(epss.max_severity.percentile, " 10.00000 ");
+        assert_eq!(epss.max_severity.cve.severity.as_deref(), Some(" 9.8 "));
+        assert_eq!(epss.max_severity.score_value(), None);
+        assert_eq!(epss.max_severity.percentile_value(), None);
+        assert_eq!(epss.max_severity.cve.severity_score(), None);
+
+        assert_eq!(epss.max_epss.score, "");
+        assert_eq!(epss.max_epss.percentile, "");
+        assert_eq!(epss.max_epss.cve.severity.as_deref(), Some(""));
+        assert_eq!(epss.max_epss.score_value(), None);
+        assert_eq!(epss.max_epss.percentile_value(), None);
+        assert_eq!(epss.max_epss.cve.severity_score(), None);
+    }
+
     #[cfg(feature = "serde")]
     #[test]
     fn epss_serde_round_trip_preserves_both_selections() {
@@ -709,7 +735,7 @@ mod tests {
                 percentile: "99.50000".to_string(),
                 cve: EpssCve {
                     id: "CVE-2026-0002".to_string(),
-                    severity: None,
+                    severity: Some("7.5".to_string()),
                 },
             },
         };
@@ -718,6 +744,19 @@ mod tests {
         let decoded = quick_xml::de::from_str::<Epss>(&xml).expect("EPSS deserializes");
 
         assert_eq!(decoded, epss);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn epss_serde_encodes_missing_severity() {
+        let cve = EpssCve {
+            id: "CVE-2026-0001".to_string(),
+            severity: None,
+        };
+
+        let xml = quick_xml::se::to_string(&cve).expect("EPSS CVE serializes");
+
+        assert!(xml.contains("<severity/>"));
     }
 
     #[test]
