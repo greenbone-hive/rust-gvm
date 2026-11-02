@@ -7,7 +7,8 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_entity_meta_optional_name, parse_entity_ref,
-    parse_score, status_from_response, CountInfo, EntityMeta, NamedEntity, ParseError,
+    parse_epss, parse_score, status_from_response, CountInfo, EntityMeta, Epss, NamedEntity,
+    ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -39,6 +40,8 @@ pub struct NvtRef {
     pub tags: Option<String>,
     /// Type-specific metadata emitted by gvmd, commonly a JSON object.
     pub type_metadata: Option<String>,
+    /// EPSS metadata when gvmd has EPSS data for this NVT.
+    pub epss: Option<Epss>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +89,7 @@ impl ScanResult {
                         cves: parse_nvt_cves(nvt),
                         tags: nvt.optional_child_text("tags"),
                         type_metadata: nvt.optional_child_text("type_metadata"),
+                        epss: parse_epss(nvt)?,
                     })
                 })
                 .transpose()?,
@@ -268,6 +272,27 @@ mod tests {
     }
 
     #[test]
+    fn projects_source_shaped_epss_from_result_nvt() {
+        let response = Response::from(
+            r#"<get_results_response status="200" status_text="OK"><result id="res-1"><nvt oid="1.3.6.1"><name>EPSS finding</name><epss><max_severity><score>0.12345</score><percentile>98.76500</percentile><cve id="CVE-2026-0001"><severity>9.8</severity></cve></max_severity><max_epss><score>0.54321</score><percentile>99.50000</percentile><cve id="CVE-2026-0002"><severity>7.5</severity></cve></max_epss></epss></nvt></result></get_results_response>"#,
+        );
+        let parsed = GetResultsResponse::from_response(&response).expect("result parses");
+        let epss = parsed.items[0]
+            .nvt
+            .as_ref()
+            .and_then(|nvt| nvt.epss.as_ref())
+            .expect("EPSS is projected");
+
+        assert_eq!(epss.max_severity.cve.id, "CVE-2026-0001");
+        assert_eq!(epss.max_severity.score_value(), Some(0.12345));
+        assert_eq!(epss.max_severity.percentile_value(), Some(98.765));
+        assert_eq!(epss.max_severity.cve.severity_score(), Some(9.8));
+        assert_eq!(epss.max_epss.cve.id, "CVE-2026-0002");
+        assert_eq!(epss.max_epss.score, "0.54321");
+        assert_eq!(epss.max_epss.percentile, "99.50000");
+    }
+
+    #[test]
     fn parses_empty_results() {
         let response = Response::from(
             r#"<get_results_response status="200" status_text="OK"><result_count>0<filtered>0</filtered></result_count></get_results_response>"#,
@@ -303,6 +328,7 @@ mod tests {
             result.nvt.as_ref().and_then(|nvt| nvt.name.as_deref()),
             Some("HTTP Server Detection")
         );
+        assert_eq!(result.nvt.as_ref().and_then(|nvt| nvt.epss.as_ref()), None);
     }
 
     #[test]

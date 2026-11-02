@@ -75,6 +75,9 @@ This is a fast orientation guide for coding agents. It points to ownership bound
   evidence for support-bundle encryption, result/NVT projection fields,
   detailed NVT technical information, and web-application/future info
   subtypes.
+- `docs/epss-projection-gvmd-evidence.md`: pinned current gvmd evidence for
+  shared result/NVT EPSS response shapes, omission, percentile units, and the
+  report-vulnerability boundary.
 - `docs/system-discovery-request-gvmd-evidence.md`: pinned gvmd and python-gvm
   evidence for pre-authentication version/authentication, help, features,
   feeds/timezones, aggregate shapes, settings, system reports, resource names,

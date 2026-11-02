@@ -45,6 +45,11 @@ claim byte-identical current responses. The #715 follow-up now preserves
 `tech_info/description_md` in generic detailed NVT information and preserves
 the NVT discovery marker; see the
 [current pinned evidence](typed-schema-projections-gvmd-evidence.md#nvt-discovery-and-technical-information).
+Detailed dedicated NVT responses also expose the optional shared `Epss`
+projection, retaining both CVE selections and gvmd's backend-native percentile
+percentage value. Compact responses and older gvmd releases omit the subtree
+and decode as `None`; see the
+[EPSS projection evidence](epss-projection-gvmd-evidence.md).
 
 ## Schema/source discrepancies
 

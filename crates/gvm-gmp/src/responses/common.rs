@@ -54,6 +54,70 @@ pub struct NvtReference {
     pub type_: Option<String>,
 }
 
+/// EPSS metadata for the highest-severity and highest-EPSS CVEs of an NVT.
+///
+/// gvmd reports percentiles in its backend-native percentage unit. Callers
+/// should not normalize the raw values in this protocol projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Epss {
+    /// EPSS data for the NVT's CVE with the highest severity.
+    pub max_severity: EpssSelection,
+    /// EPSS data for the NVT's CVE with the highest EPSS score.
+    pub max_epss: EpssSelection,
+}
+
+/// One CVE selection from an NVT's EPSS metadata.
+///
+/// Numeric text is retained exactly as decoded so serialization and
+/// diagnostics do not lose gvmd's precision or formatting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct EpssSelection {
+    /// Raw EPSS score text emitted by gvmd.
+    pub score: String,
+    /// Raw backend-native EPSS percentile text emitted by gvmd.
+    pub percentile: String,
+    /// The CVE selected for this maximum.
+    pub cve: EpssCve,
+}
+
+impl EpssSelection {
+    /// Returns the EPSS score as a finite number, or `None` for invalid text.
+    #[must_use]
+    pub fn score_value(&self) -> Option<f64> {
+        parse_score(&self.score)
+    }
+
+    /// Returns the percentile as a finite backend-native percentage value.
+    #[must_use]
+    pub fn percentile_value(&self) -> Option<f64> {
+        parse_score(&self.percentile)
+    }
+}
+
+/// CVE identity and optional severity attached to one EPSS selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct EpssCve {
+    /// CVE identifier from the `<cve id="...">` attribute.
+    pub id: String,
+    /// Raw CVE severity text, omitted by gvmd when severity is unavailable.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub severity: Option<String>,
+}
+
+impl EpssCve {
+    /// Returns the CVE severity as a finite number when present and valid.
+    #[must_use]
+    pub fn severity_score(&self) -> Option<f64> {
+        self.severity.as_deref().and_then(parse_score)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -302,6 +366,45 @@ pub(crate) fn parse_nvt_reference(
         .transpose()
 }
 
+pub(crate) fn parse_epss(node: &XmlNode) -> Result<Option<Epss>, ParseError> {
+    node.child("epss")
+        .map(|epss| {
+            Ok(Epss {
+                max_severity: parse_epss_selection(epss, "max_severity")?,
+                max_epss: parse_epss_selection(epss, "max_epss")?,
+            })
+        })
+        .transpose()
+}
+
+fn parse_epss_selection(node: &XmlNode, name: &str) -> Result<EpssSelection, ParseError> {
+    let selection = node
+        .child(name)
+        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}")))?;
+    let score = selection
+        .child_text("score")
+        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.score")))?;
+    let percentile = selection
+        .child_text("percentile")
+        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.percentile")))?;
+    let cve = selection
+        .child("cve")
+        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.cve")))?;
+    let id = cve
+        .attr("id")
+        .ok_or_else(|| ParseError::MissingElement(format!("epss.{name}.cve.id")))?
+        .to_string();
+
+    Ok(EpssSelection {
+        score,
+        percentile,
+        cve: EpssCve {
+            id,
+            severity: cve.optional_child_text("severity"),
+        },
+    })
+}
+
 pub(crate) fn parse_bool(value: &str, field: &str) -> Result<bool, ParseError> {
     match value {
         "1" | "true" => Ok(true),
@@ -543,6 +646,78 @@ mod tests {
         assert_eq!(parse_score("NaN"), None);
         assert_eq!(parse_score("inf"), None);
         assert_eq!(parse_score("-inf"), None);
+    }
+
+    #[test]
+    fn parse_epss_preserves_raw_values_and_rejects_invalid_numeric_accessors() {
+        let root = parse_document(
+            br#"<nvt><epss><max_severity><score>0.12345</score><percentile>98.76500</percentile><cve id="CVE-2026-0001"><severity>9.8</severity><future>ignored</future></cve></max_severity><max_epss><score>NaN</score><percentile>inf</percentile><cve id="CVE-2026-0002"><severity>-inf</severity></cve></max_epss><future>ignored</future></epss></nvt>"#,
+        )
+        .expect("source-shaped EPSS XML parses");
+
+        let epss = parse_epss(&root)
+            .expect("EPSS projection parses")
+            .expect("EPSS is present");
+
+        assert_eq!(epss.max_severity.score, "0.12345");
+        assert_eq!(epss.max_severity.percentile, "98.76500");
+        assert_eq!(epss.max_severity.cve.id, "CVE-2026-0001");
+        assert_eq!(epss.max_severity.cve.severity.as_deref(), Some("9.8"));
+        assert_eq!(epss.max_severity.score_value(), Some(0.12345));
+        assert_eq!(epss.max_severity.percentile_value(), Some(98.765));
+        assert_eq!(epss.max_severity.cve.severity_score(), Some(9.8));
+
+        assert_eq!(epss.max_epss.score, "NaN");
+        assert_eq!(epss.max_epss.percentile, "inf");
+        assert_eq!(epss.max_epss.cve.severity.as_deref(), Some("-inf"));
+        assert_eq!(epss.max_epss.score_value(), None);
+        assert_eq!(epss.max_epss.percentile_value(), None);
+        assert_eq!(epss.max_epss.cve.severity_score(), None);
+    }
+
+    #[test]
+    fn parse_epss_distinguishes_absence_and_optional_cve_severity() {
+        let absent = parse_document(br#"<nvt><name>Older gvmd</name></nvt>"#)
+            .expect("NVT without EPSS parses");
+        assert_eq!(parse_epss(&absent).expect("absence is valid"), None);
+
+        let root = parse_document(
+            br#"<nvt><epss><max_severity><score>0.10000</score><percentile>10.00000</percentile><cve id="CVE-2026-0001"/></max_severity><max_epss><score>0.20000</score><percentile>20.00000</percentile><cve id="CVE-2026-0002"/></max_epss></epss></nvt>"#,
+        )
+        .expect("EPSS without severity parses");
+        let epss = parse_epss(&root)
+            .expect("EPSS projection parses")
+            .expect("EPSS is present");
+        assert_eq!(epss.max_severity.cve.severity, None);
+        assert_eq!(epss.max_epss.cve.severity, None);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn epss_serde_round_trip_preserves_both_selections() {
+        let epss = Epss {
+            max_severity: EpssSelection {
+                score: "0.12345".to_string(),
+                percentile: "98.76500".to_string(),
+                cve: EpssCve {
+                    id: "CVE-2026-0001".to_string(),
+                    severity: Some("9.8".to_string()),
+                },
+            },
+            max_epss: EpssSelection {
+                score: "0.54321".to_string(),
+                percentile: "99.50000".to_string(),
+                cve: EpssCve {
+                    id: "CVE-2026-0002".to_string(),
+                    severity: None,
+                },
+            },
+        };
+
+        let xml = quick_xml::se::to_string(&epss).expect("EPSS serializes");
+        let decoded = quick_xml::de::from_str::<Epss>(&xml).expect("EPSS deserializes");
+
+        assert_eq!(decoded, epss);
     }
 
     #[test]

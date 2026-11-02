@@ -7,10 +7,18 @@ mod common;
 
 use common::id;
 use gvm_gmp::commands::nvts::*;
+use gvm_gmp::responses::{Epss, EpssCve, EpssSelection};
 use gvm_gmp::{GmpRequestCodec, GmpVersion, SortOrder};
 
 fn xml(request: &impl GmpRequestCodec) -> String {
     String::from_utf8(request.encode(GmpVersion(22, 4)).unwrap()).unwrap()
+}
+
+#[test]
+fn shared_epss_types_are_public_on_the_response_surface() {
+    let _: Option<Epss> = None;
+    let _: Option<EpssSelection> = None;
+    let _: Option<EpssCve> = None;
 }
 
 #[test]

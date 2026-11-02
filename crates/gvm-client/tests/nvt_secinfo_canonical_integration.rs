@@ -45,6 +45,27 @@ async fn fixture(version: MockVersion) -> MockGmpServer {
         .expect("fixture server starts")
 }
 
+async fn epss_fixture() -> MockGmpServer {
+    MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .version(MockVersion::V22_8)
+        .override_response(
+            "get_nvts",
+            r#"<get_nvts_response status="200" status_text="OK">
+                <nvt oid="1.3.6.1.4.1.25623.1.0.1"><name>EPSS NVT</name><epss>
+                    <max_severity><score>0.12345</score><percentile>98.76500</percentile><cve id="CVE-2026-0001"><severity>9.8</severity></cve></max_severity>
+                    <max_epss><score>0.54321</score><percentile>99.50000</percentile><cve id="CVE-2026-0002"/></max_epss>
+                </epss></nvt>
+                <nvt oid="1.3.6.1.4.1.25623.1.0.2"><name>Older NVT</name></nvt>
+                <nvt_count>2<filtered>2</filtered><page>2</page></nvt_count>
+            </get_nvts_response>"#,
+        )
+        .unix_socket_auto()
+        .build()
+        .await
+        .expect("EPSS fixture server starts")
+}
+
 async fn execute_all_direct(client: &mut GmpClient<UnixSocketConnection>) {
     client.execute(GetNvtsRequest::default()).await.unwrap();
     client.execute(GetNvtRequest::new(NVT_OID)).await.unwrap();
@@ -190,6 +211,28 @@ async fn nineteen_direct_requests_and_value_facades_emit_identical_wire() {
         assert_eq!(&history[..19], &history[19..]);
         server.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn typed_client_projects_present_and_absent_nvt_epss() {
+    let server = epss_fixture().await;
+    let mut client = GmpClient::connect(connection(&server)).await.unwrap();
+    let response = client
+        .get_nvts(GetNvtsRequest {
+            details: Some(true),
+            ..GetNvtsRequest::default()
+        })
+        .await
+        .unwrap();
+    let epss = response.items[0].epss.as_ref().expect("EPSS is projected");
+
+    assert_eq!(epss.max_severity.cve.id, "CVE-2026-0001");
+    assert_eq!(epss.max_severity.percentile, "98.76500");
+    assert_eq!(epss.max_epss.cve.id, "CVE-2026-0002");
+    assert_eq!(epss.max_epss.cve.severity, None);
+    assert_eq!(epss.max_epss.score_value(), Some(0.54321));
+    assert_eq!(response.items[1].epss, None);
+    server.shutdown().await;
 }
 
 #[tokio::test]

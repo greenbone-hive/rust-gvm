@@ -75,7 +75,9 @@ remain ignored, preserving the response parser's additive-field tolerance.
 
 ## Deliberate boundary
 
-This layer does not add EPSS projections, live-gvmd E2E coverage, or the
-separate error-regression phase. The existing mock accepts and records the
-new support-bundle attribute without inventing backend encryption behavior;
-the response projections are proven with source-shaped parser fixtures.
+This #715 layer did not add EPSS projections, live-gvmd E2E coverage, or the
+separate error-regression phase. EPSS was added later by #792 with its own
+[pinned evidence](epss-projection-gvmd-evidence.md). The existing mock accepts
+and records the new support-bundle attribute without inventing backend
+encryption behavior; the response projections are proven with source-shaped
+parser fixtures.
