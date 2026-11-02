@@ -29,7 +29,7 @@ jobs:
     name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
     steps:
-      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,7 +41,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@135c9afb4657e195cfb0bbdbffbb136cc72f8bc8 # v3.36.22
+        uses: greenbone/actions/setup-pontos@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3.36.23
 
       # setup-pontos currently leaves Python 3.10 first on PATH, while the
       # release-version validator uses the Python 3.11+ standard tomllib.
