@@ -297,7 +297,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                 };
                 let raw_text = std::mem::take(&mut node.text);
                 let trimmed_text = raw_text.trim();
-                if node.children.is_empty() && trimmed_text.len() != raw_text.len() {
+                if trimmed_text.len() != raw_text.len() {
                     node.text = trimmed_text.to_string();
                     node.raw_text = Some(raw_text.into_boxed_str());
                 } else {
@@ -718,6 +718,24 @@ mod tests {
         assert_eq!(epss.max_epss.cve.severity_score(), None);
     }
 
+    #[test]
+    fn parse_epss_preserves_padded_numeric_text_with_additive_children() {
+        let root = parse_document(
+            br#"<nvt><epss><max_severity><score> 0.10000 <future/></score><percentile>&#x20;10.00000&#x20;<future/></percentile><cve id="CVE-2026-0001"><severity> 9.8 <future/></severity></cve></max_severity><max_epss><score>0.20000</score><percentile>20.00000</percentile><cve id="CVE-2026-0002"/></max_epss></epss></nvt>"#,
+        )
+        .expect("EPSS XML with additive children parses");
+        let epss = parse_epss(&root)
+            .expect("EPSS projection parses")
+            .expect("EPSS is present");
+
+        assert_eq!(epss.max_severity.score, " 0.10000 ");
+        assert_eq!(epss.max_severity.percentile, " 10.00000 ");
+        assert_eq!(epss.max_severity.cve.severity.as_deref(), Some(" 9.8 "));
+        assert_eq!(epss.max_severity.score_value(), None);
+        assert_eq!(epss.max_severity.percentile_value(), None);
+        assert_eq!(epss.max_severity.cve.severity_score(), None);
+    }
+
     #[cfg(feature = "serde")]
     #[test]
     fn epss_serde_round_trip_preserves_both_selections() {
@@ -771,11 +789,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_document_retains_original_padded_leaf_text() {
+    fn parse_document_retains_original_padded_text() {
         let root = parse_document(
-            br#"<root><plain> up </plain><reference>&#x20;up&#x20;</reference><cdata><![CDATA[ up ]]></cdata><clean>up</clean><empty/></root>"#,
+            br#"<root><plain> up </plain><reference>&#x20;up&#x20;</reference><cdata><![CDATA[ up ]]></cdata><nested> up <future/></nested><clean>up</clean><empty/></root>"#,
         )
-        .expect("padded leaf text should parse");
+        .expect("padded text should parse");
 
         assert_eq!(root.child_text("plain").as_deref(), Some("up"));
         assert_eq!(root.child_raw_text("plain"), Some(" up "));
@@ -783,6 +801,8 @@ mod tests {
         assert_eq!(root.child_raw_text("reference"), Some(" up "));
         assert_eq!(root.child_text("cdata").as_deref(), Some("up"));
         assert_eq!(root.child_raw_text("cdata"), Some(" up "));
+        assert_eq!(root.child_text("nested").as_deref(), Some("up"));
+        assert_eq!(root.child_raw_text("nested"), Some(" up "));
         assert_eq!(root.child_raw_text("clean"), Some("up"));
         assert_eq!(root.child_raw_text("empty"), Some(""));
     }
