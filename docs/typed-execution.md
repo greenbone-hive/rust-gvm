@@ -446,7 +446,12 @@ The typed response accepts source-shaped top-level results, optional result
 names, ID-only report references, and absent count blocks. Nested notes,
 overrides, tickets, detections, tags, delta data, and original severity remain
 outside `ScanResult`; raw `send`/`call` preserves access to the complete
-XML. See the [pinned result evidence](result-request-gvmd-evidence.md).
+XML. Result `NvtRef::epss` uses the same raw-preserving `Epss` model as
+dedicated NVT responses. It retains independent maximum-severity and
+maximum-EPSS selections, exposes finite numeric accessors, and preserves
+gvmd's percentile percentage unit. Absence remains `None`. See the
+[pinned result evidence](result-request-gvmd-evidence.md) and
+[EPSS projection evidence](epss-projection-gvmd-evidence.md).
 
 ## Report configurations
 

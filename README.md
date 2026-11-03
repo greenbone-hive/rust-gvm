@@ -403,7 +403,12 @@ controls, while the corresponding detail flags only change expansion richness.
 Counts may be absent. Nested expansion payloads remain available through raw
 `send`/`call`, outside the current `ScanResult` projection. See the
 [result migration](docs/v0.7.0-migration.md#results) and
-[pinned gvmd evidence](docs/result-request-gvmd-evidence.md).
+[pinned gvmd evidence](docs/result-request-gvmd-evidence.md). Result NVT
+references and detailed NVT responses share an optional raw-preserving `Epss`
+projection for the independent maximum-severity and maximum-EPSS CVEs. Numeric
+accessors accept only finite values, and percentiles retain gvmd's native
+percentage unit; see the
+[EPSS evidence](docs/epss-projection-gvmd-evidence.md).
 
 Report configurations use six complete lifecycle requests. Direct creation
 uses the gvmd-supported format reference, and parameter assignments distinguish

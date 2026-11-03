@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-30
+Last updated: 2026-11-02
 
 ## Support Direction
 
@@ -830,6 +830,15 @@ payload. Existing constructors remain source-compatible, response additions
 are on non-exhaustive types, and future unknown `get_info` subtype names remain
 observable. See the
 [pinned evidence](typed-schema-projections-gvmd-evidence.md).
+
+Issue #792 adds one raw-preserving `Epss` model shared by result `NvtRef` and
+catalog/detail `Nvt` responses. Both the maximum-severity and maximum-EPSS CVE
+selections retain source score, backend-native percentage percentile, CVE ID,
+and optional severity text; finite-number accessors reject malformed and
+non-finite values. An absent subtree remains `None` for older gvmd releases.
+`ReportVulnerability` remains unchanged because current gvmd does not emit
+EPSS on that response. See the
+[pinned EPSS evidence](epss-projection-gvmd-evidence.md).
 
 The crate exposes 45 command-family modules at this revision, plus shared
 request, response, capability, update, and type modules. Enums are defined both

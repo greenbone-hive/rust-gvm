@@ -84,6 +84,10 @@ Open work:
   gvmd 26.40 report-export, typed-schema, and real-gvmd E2E parity gaps. The
   seven report-export commands and five schema projections are present on
   `main`; downstream exact-revision E2E qualification is the remaining gate.
+- [#792](https://github.com/greenbone-hive/rust-gvm/issues/792) adds the shared
+  typed EPSS projection for result and detailed-NVT responses. Exact-revision
+  real-gvmd qualification remains tracked in
+  [`rust-gvm-e2e-tests#231`](https://github.com/clawosiris/rust-gvm-e2e-tests/issues/231).
 - [#524](https://github.com/greenbone-hive/rust-gvm/issues/524) tracks SSH
   session/exec channel support and GOS qualification alongside the existing
   stream-local transport.
@@ -105,10 +109,12 @@ items.
 ## Near-Term Implementation Order
 
 1. Complete #715 exact-revision real-gvmd qualification for report export,
-   schema projections, EPSS fields, and validation/error behavior.
-2. Keep protected-`main` downstream dispatch pinned to the exact successful
+   schema projections, and validation/error behavior.
+2. Qualify #792 EPSS projection behavior against the pinned gvmd revision in
+   `rust-gvm-e2e-tests#231`.
+3. Keep protected-`main` downstream dispatch pinned to the exact successful
    rust-gvm commit SHA and preserve immutable runtime evidence.
-3. Address the remaining transport, dependency-vetting, and large-response
+4. Address the remaining transport, dependency-vetting, and large-response
    work tracked by #524, #417, and #4.
-4. Expand real-gvmd conformance and python-gvm migration documentation as new
+5. Expand real-gvmd conformance and python-gvm migration documentation as new
    protocol differences are discovered.

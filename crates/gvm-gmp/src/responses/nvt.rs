@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_bool, parse_document, parse_score, status_from_response, CountInfo,
-    ParseError,
+    count_info, parse_bool, parse_document, parse_document_with_epss_raw_text, parse_epss,
+    parse_score, status_from_response, CountInfo, Epss, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -24,6 +24,8 @@ pub struct Nvt {
     pub solution_type: Option<String>,
     /// Whether gvmd marks this NVT as a discovery NVT.
     pub discovery: Option<bool>,
+    /// EPSS metadata when gvmd has EPSS data for this NVT.
+    pub epss: Option<Epss>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,6 +89,7 @@ impl Nvt {
                 .child_text("discovery")
                 .map(|value| parse_bool(&value, "nvt.discovery"))
                 .transpose()?,
+            epss: parse_epss(node)?,
         })
     }
 }
@@ -123,7 +126,7 @@ fn parse_family_max(node: &crate::responses::common::XmlNode) -> Result<Option<u
 impl GetNvtsResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
+        let root = parse_document_with_epss_raw_text(response.data())?;
         let items = root
             .children_named("nvt")
             .map(Nvt::from_node)
@@ -281,6 +284,7 @@ mod tests {
         assert_eq!(nvt.severity, None);
         assert_eq!(nvt.tags, None);
         assert_eq!(nvt.solution_type, None);
+        assert_eq!(nvt.epss, None);
         assert_eq!(nvt.cvss_base_score(), None);
         assert_eq!(nvt.severity_score(), None);
     }
@@ -302,6 +306,22 @@ mod tests {
 
         assert_eq!(nvt.cvss_base_score(), Some(7.5));
         assert_eq!(nvt.severity_score(), Some(9.8));
+    }
+
+    #[test]
+    fn projects_source_shaped_epss_from_detailed_nvt() {
+        let response = Response::from(
+            r#"<get_nvts_response status="200" status_text="OK"><nvt oid="1.3.6.1"><name>EPSS NVT</name><epss><max_severity><score>0.12345</score><percentile>98.76500</percentile><cve id="CVE-2026-0001"><severity>9.8</severity></cve></max_severity><max_epss><score>0.54321</score><percentile>99.50000</percentile><cve id="CVE-2026-0002"/></max_epss></epss></nvt></get_nvts_response>"#,
+        );
+        let parsed = GetNvtsResponse::from_response(&response).expect("NVT parses");
+        let epss = parsed.items[0].epss.as_ref().expect("EPSS is projected");
+
+        assert_eq!(epss.max_severity.cve.id, "CVE-2026-0001");
+        assert_eq!(epss.max_severity.cve.severity_score(), Some(9.8));
+        assert_eq!(epss.max_epss.cve.id, "CVE-2026-0002");
+        assert_eq!(epss.max_epss.cve.severity, None);
+        assert_eq!(epss.max_epss.score_value(), Some(0.54321));
+        assert_eq!(epss.max_epss.percentile_value(), Some(99.5));
     }
 
     #[test]

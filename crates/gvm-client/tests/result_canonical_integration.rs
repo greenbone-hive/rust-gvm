@@ -17,6 +17,20 @@ const RESULT_RESPONSE: &str = r#"<get_results_response status="200" status_text=
     <result_count>7<filtered>3</filtered><page>1</page></result_count>
 </get_results_response>"#;
 
+const EPSS_RESULT_RESPONSE: &str = r#"<get_results_response status="200" status_text="OK">
+    <result id="result-epss">
+        <nvt oid="1.3.6.1.4.1.25623.1.0.1">
+            <name>EPSS finding</name>
+            <epss>
+                <max_severity><score>0.12345</score><percentile>98.76500</percentile><cve id="CVE-2026-0001"><severity>9.8</severity></cve></max_severity>
+                <max_epss><score>0.54321</score><percentile>99.50000</percentile><cve id="CVE-2026-0002"><severity>7.5</severity></cve></max_epss>
+            </epss>
+        </nvt>
+    </result>
+    <result id="result-legacy"><nvt oid="1.3.6.1.4.1.25623.1.0.2"><name>Older finding</name></nvt></result>
+    <result_count>2<filtered>2</filtered><page>2</page></result_count>
+</get_results_response>"#;
+
 fn id(value: &str) -> EntityId {
     EntityId::new(value).expect("valid id")
 }
@@ -111,6 +125,36 @@ async fn exercise_direct_and_facade_paths(version: MockVersion) {
 async fn direct_and_both_facades_work_on_baseline_and_newer_versions() {
     exercise_direct_and_facade_paths(MockVersion::V22_4).await;
     exercise_direct_and_facade_paths(MockVersion::V22_8).await;
+}
+
+#[tokio::test]
+async fn typed_client_projects_present_and_absent_result_epss() {
+    let server = fixture_server(MockVersion::V22_8, EPSS_RESULT_RESPONSE).await;
+    let mut client = client(&server).await;
+
+    let response = client
+        .get_results(GetResultsRequest::default())
+        .await
+        .expect("typed result execution succeeds");
+    let epss = response.items[0]
+        .nvt
+        .as_ref()
+        .and_then(|nvt| nvt.epss.as_ref())
+        .expect("EPSS is projected");
+
+    assert_eq!(epss.max_severity.cve.id, "CVE-2026-0001");
+    assert_eq!(epss.max_severity.score_value(), Some(0.12345));
+    assert_eq!(epss.max_severity.percentile_value(), Some(98.765));
+    assert_eq!(epss.max_epss.cve.id, "CVE-2026-0002");
+    assert_eq!(epss.max_epss.score_value(), Some(0.54321));
+    assert_eq!(
+        response.items[1]
+            .nvt
+            .as_ref()
+            .and_then(|nvt| nvt.epss.as_ref()),
+        None
+    );
+    server.shutdown().await;
 }
 
 #[tokio::test]
