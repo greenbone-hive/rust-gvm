@@ -6,9 +6,9 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_entity_meta_optional_name, parse_entity_ref,
-    parse_epss, parse_score, status_from_response, CountInfo, EntityMeta, Epss, NamedEntity,
-    ParseError,
+    count_info, optional_u32, parse_document_with_epss_raw_text, parse_entity_meta_optional_name,
+    parse_entity_ref, parse_epss, parse_score, status_from_response, CountInfo, EntityMeta, Epss,
+    NamedEntity, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -142,7 +142,7 @@ fn parse_nvt_cves(node: &crate::responses::common::XmlNode) -> Vec<String> {
 impl GetResultsResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
+        let root = parse_document_with_epss_raw_text(response.data())?;
         let items = root
             .children_named("result")
             .map(ScanResult::from_node)

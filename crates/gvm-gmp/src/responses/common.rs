@@ -227,6 +227,17 @@ pub(crate) fn status_from_response(response: &Response) -> Result<(u16, String),
 }
 
 pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
+    parse_document_with_non_leaf_raw_text(data, &[])
+}
+
+pub(crate) fn parse_document_with_epss_raw_text(data: &[u8]) -> Result<XmlNode, ParseError> {
+    parse_document_with_non_leaf_raw_text(data, &["score", "percentile", "severity"])
+}
+
+fn parse_document_with_non_leaf_raw_text(
+    data: &[u8],
+    non_leaf_raw_text_fields: &[&str],
+) -> Result<XmlNode, ParseError> {
     let text = str::from_utf8(data)?;
     let mut reader = Reader::from_str(text);
     // Trimming each event loses significant whitespace when quick-xml splits
@@ -297,7 +308,9 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                 };
                 let raw_text = std::mem::take(&mut node.text);
                 let trimmed_text = raw_text.trim();
-                if trimmed_text.len() != raw_text.len() {
+                let retain_raw_text = node.children.is_empty()
+                    || non_leaf_raw_text_fields.contains(&node.name.as_str());
+                if retain_raw_text && trimmed_text.len() != raw_text.len() {
                     node.text = trimmed_text.to_string();
                     node.raw_text = Some(raw_text.into_boxed_str());
                 } else {
@@ -720,7 +733,7 @@ mod tests {
 
     #[test]
     fn parse_epss_preserves_padded_numeric_text_with_additive_children() {
-        let root = parse_document(
+        let root = parse_document_with_epss_raw_text(
             br#"<nvt><epss><max_severity><score> 0.10000 <future/></score><percentile>&#x20;10.00000&#x20;<future/></percentile><cve id="CVE-2026-0001"><severity> 9.8 <future/></severity></cve></max_severity><max_epss><score>0.20000</score><percentile>20.00000</percentile><cve id="CVE-2026-0002"/></max_epss></epss></nvt>"#,
         )
         .expect("EPSS XML with additive children parses");
@@ -789,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_document_retains_original_padded_text() {
+    fn parse_document_retains_original_padded_leaf_text() {
         let root = parse_document(
             br#"<root><plain> up </plain><reference>&#x20;up&#x20;</reference><cdata><![CDATA[ up ]]></cdata><nested> up <future/></nested><clean>up</clean><empty/></root>"#,
         )
@@ -802,9 +815,28 @@ mod tests {
         assert_eq!(root.child_text("cdata").as_deref(), Some("up"));
         assert_eq!(root.child_raw_text("cdata"), Some(" up "));
         assert_eq!(root.child_text("nested").as_deref(), Some("up"));
-        assert_eq!(root.child_raw_text("nested"), Some(" up "));
+        assert_eq!(root.child_raw_text("nested"), Some("up"));
+        assert_eq!(
+            root.child("nested")
+                .and_then(|node| node.raw_text.as_deref()),
+            None
+        );
         assert_eq!(root.child_raw_text("clean"), Some("up"));
         assert_eq!(root.child_raw_text("empty"), Some(""));
+    }
+
+    #[test]
+    fn parse_document_can_retain_raw_text_for_selected_non_leaf_fields() {
+        let root = parse_document_with_non_leaf_raw_text(
+            br#"<root><selected> up <future/></selected><ordinary> down <future/></ordinary></root>"#,
+            &["selected"],
+        )
+        .expect("selected non-leaf raw text should parse");
+
+        assert_eq!(root.child_text("selected").as_deref(), Some("up"));
+        assert_eq!(root.child_raw_text("selected"), Some(" up "));
+        assert_eq!(root.child_text("ordinary").as_deref(), Some("down"));
+        assert_eq!(root.child_raw_text("ordinary"), Some("down"));
     }
 
     #[test]

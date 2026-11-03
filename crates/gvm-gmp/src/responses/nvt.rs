@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_bool, parse_document, parse_epss, parse_score, status_from_response,
-    CountInfo, Epss, ParseError,
+    count_info, parse_bool, parse_document, parse_document_with_epss_raw_text, parse_epss,
+    parse_score, status_from_response, CountInfo, Epss, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -126,7 +126,7 @@ fn parse_family_max(node: &crate::responses::common::XmlNode) -> Result<Option<u
 impl GetNvtsResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
+        let root = parse_document_with_epss_raw_text(response.data())?;
         let items = root
             .children_named("nvt")
             .map(Nvt::from_node)
