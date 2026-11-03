@@ -9,7 +9,9 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-use crate::connection::{write_all_and_flush_with_timeout, GvmConnection};
+use crate::connection::{
+    prepend_pending, write_all_and_flush_with_timeout, GvmConnection, GvmStreamingConnection,
+};
 use crate::error::{ConnectionError, Result};
 
 /// Configuration for Unix socket connections.
@@ -231,6 +233,60 @@ impl GvmConnection for UnixSocketConnection {
     }
 }
 
+#[async_trait::async_trait]
+impl GvmStreamingConnection for UnixSocketConnection {
+    fn response_timeout(&self) -> Duration {
+        self.config.timeout
+    }
+
+    fn max_response_bytes(&self) -> Option<usize> {
+        self.config.max_response_bytes
+    }
+
+    async fn read_stream_chunk(&mut self, deadline: tokio::time::Instant) -> Result<Vec<u8>> {
+        if self.stream.is_none() {
+            return Err(ConnectionError::NotConnected);
+        }
+        if !self.pending_read.is_empty() {
+            return Ok(std::mem::take(&mut self.pending_read));
+        }
+
+        let mut buffer = vec![0_u8; self.config.read_buffer_size.max(1)];
+        let read_result = {
+            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
+            tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await
+        };
+        let read = match read_result {
+            Ok(Ok(read)) => read,
+            Ok(Err(error)) => {
+                self.invalidate_connection();
+                return Err(ConnectionError::ReadFailed(error));
+            }
+            Err(_) => {
+                self.invalidate_connection();
+                return Err(ConnectionError::Timeout(self.config.timeout));
+            }
+        };
+        if read == 0 {
+            self.invalidate_connection();
+            return Err(ConnectionError::ReadFailed(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "connection closed",
+            )));
+        }
+        buffer.truncate(read);
+        Ok(buffer)
+    }
+
+    fn retain_stream_tail(&mut self, tail: Vec<u8>) {
+        prepend_pending(&mut self.pending_read, tail);
+    }
+
+    fn invalidate_stream(&mut self) {
+        self.invalidate_connection();
+    }
+}
+
 fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
     ConnectionError::ReadFailed(std::io::Error::new(
         std::io::ErrorKind::InvalidData,
@@ -241,6 +297,9 @@ fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gvm_protocol::StreamingXmlReader;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::UnixListener;
 
     #[test]
     fn test_default_config() {
@@ -276,5 +335,70 @@ mod tests {
         assert!(!debug.contains("secret"));
         assert!(!debug.contains("do-not-log"));
         assert!(debug.contains("connected"));
+    }
+
+    #[test]
+    fn streaming_tail_precedes_transport_buffered_bytes() {
+        let mut connection = UnixSocketConnection::with_path("/tmp/test.sock");
+        connection.pending_read.extend_from_slice(b"later");
+
+        connection.retain_stream_tail(b"tail".to_vec());
+
+        assert_eq!(connection.pending_read, b"taillater");
+    }
+
+    #[tokio::test]
+    async fn streaming_chunks_preserve_exact_frame_tail_and_reuse() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let socket_path = directory.path().join("streaming.sock");
+        let listener = match UnixListener::bind(&socket_path) {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+            Err(error) => panic!("bind socket: {error}"),
+        };
+        let first = b"<first_response status=\"200\"><body>exact</body></first_response>";
+        let second = b"<second_response status=\"200\"/>";
+        let mut coalesced = first.to_vec();
+        coalesced.extend_from_slice(second);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept connection");
+            let mut request = [0_u8; 64];
+            let _ = stream.read(&mut request).await.expect("read first request");
+            stream
+                .write_all(&coalesced)
+                .await
+                .expect("write coalesced responses");
+            let _ = stream
+                .read(&mut request)
+                .await
+                .expect("read second request");
+        });
+
+        let mut config = UnixSocketConfig::new(&socket_path);
+        config.read_buffer_size = 7;
+        let mut connection = UnixSocketConnection::new(config);
+        connection.connect().await.expect("connect");
+        connection.send(b"<first/>").await.expect("send first");
+
+        let deadline = tokio::time::Instant::now() + connection.response_timeout();
+        let mut framer = StreamingXmlReader::with_buffer_limit(connection.max_response_bytes());
+        let mut observed = Vec::new();
+        while !framer.is_complete() {
+            let mut chunk = connection
+                .read_stream_chunk(deadline)
+                .await
+                .expect("stream chunk");
+            let consumed = framer.feed_frame(&chunk).expect("valid frame");
+            let tail = chunk.split_off(consumed);
+            observed.extend_from_slice(&chunk);
+            connection.retain_stream_tail(tail);
+        }
+        assert_eq!(observed, first);
+
+        connection.send(b"<second/>").await.expect("send second");
+        assert_eq!(connection.read().await.expect("read second"), second);
+        assert!(connection.is_connected());
+        connection.disconnect().await.expect("disconnect");
+        server.await.expect("server task");
     }
 }

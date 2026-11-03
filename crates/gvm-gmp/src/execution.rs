@@ -252,3 +252,46 @@ pub trait GmpResponse: Sized {
     /// Returns the response model's existing parse or server-status error.
     fn decode(response: &Response, version: GmpVersion) -> Result<Self, ParseError>;
 }
+
+/// Incremental decoder for the small typed result of a streamed GMP response.
+///
+/// The client supplies the exact response bytes in wire order. Implementations
+/// should retain only the bounded state needed for completion metadata; the
+/// potentially large response body belongs to the caller's byte stream.
+pub trait GmpStreamDecoder: Send {
+    /// Small typed metadata returned after the complete response is validated.
+    type Completion: Send;
+
+    /// Observe one exact, ordered response chunk.
+    ///
+    /// # Errors
+    /// Returns a response-model error when incremental decoding cannot continue.
+    fn feed(&mut self, chunk: &[u8]) -> Result<(), ParseError>;
+
+    /// Complete decoding after the XML framer validates exactly one response.
+    ///
+    /// Implementations must reject non-success GMP statuses consistently with
+    /// [`GmpResponse::decode`].
+    ///
+    /// # Errors
+    /// Returns a response-model or server-status error when completion metadata
+    /// is absent, malformed, or reports a non-success status.
+    fn finish(self) -> Result<Self::Completion, ParseError>;
+}
+
+/// Opt-in capability for responses that support exact-byte streaming.
+///
+/// Merely implementing [`GmpResponse`] does not enable streaming. A request can
+/// be passed to the client's streaming entry point only when its statically
+/// associated response implements this trait, preventing runtime command-name
+/// or response-type switches.
+pub trait GmpStreamingResponse: GmpResponse {
+    /// Small typed metadata returned at successful stream completion.
+    type Completion: Send;
+
+    /// Incremental decoder used for this response model.
+    type Decoder: GmpStreamDecoder<Completion = Self::Completion>;
+
+    /// Start response-specific incremental decoding for a negotiated GMP version.
+    fn stream_decoder(version: GmpVersion) -> Self::Decoder;
+}

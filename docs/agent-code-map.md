@@ -94,9 +94,9 @@ The main client path is:
 
 1. Application code calls `gvm-client`.
 2. `gvm-client` negotiates version with `get_version`, checks version gates, and calls typed or raw GMP requests.
-3. `gvm-gmp` builds typed GMP XML commands and parses typed response models.
-4. `gvm-protocol` serializes commands, parses raw responses, and frames XML messages from byte streams.
-5. `gvm-connection` sends and reads bytes over Unix sockets, verified TLS, or SSH tunnels.
+3. `gvm-gmp` builds typed GMP XML commands, parses typed response models, and owns streaming response opt-in metadata/decoders.
+4. `gvm-protocol` serializes commands, parses raw responses, and frames buffered or incrementally streamed XML messages from byte streams.
+5. `gvm-connection` sends and reads buffered or bounded streaming chunks over Unix sockets, verified TLS, or SSH tunnels.
 6. `gvm-mock-server` can stand in for gvmd in unit/integration tests.
 
 ## Crate Ownership
@@ -162,6 +162,7 @@ Changing client behavior:
 - `crates/gvm-client/src/typed.rs`: private module root for the typed facade.
 - `crates/gvm-client/src/version.rs`: version parsing, mapping, command minimums, command support checks.
 - `crates/gvm-client/src/error.rs`: high-level error variants and display behavior.
+- `crates/gvm-client/src/streaming.rs`: borrowed exact-byte response stream, completion, drain, copy-to-sink, and invalidation lifecycle.
 - Tests live under `crates/gvm-client/tests/`.
 - `canonical_request_surface_inventory.rs` protects the exact 1,038-row
   disposition, retained rationale, removed-symbol, frozen-ticket, raw escape,

@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gvm_connection::{
-    ConnectionError, GvmConnection, SshAuth, SshChannelMode, SshConfig, SshConnection,
-    SshHostKeyPolicy,
+    ConnectionError, GvmConnection, GvmStreamingConnection, SshAuth, SshChannelMode, SshConfig,
+    SshConnection, SshHostKeyPolicy,
 };
 use gvm_mock_server::{
     Fault, FaultKind, GmpVersion, MockGmpServer, ScenarioMode, ScenarioStep, ServerMode,
 };
-use gvm_protocol::{Request, Response, XmlCommand};
+use gvm_protocol::{Request, Response, StreamingXmlReader, XmlCommand};
 use russh::keys::agent::client::AgentClient;
 use russh::keys::ssh_key::rand_core::{TryCryptoRng, TryRng, UnwrapErr};
 use russh::keys::{Algorithm, PrivateKey};
@@ -226,6 +226,50 @@ async fn ssh_connect_and_get_version() {
     assert!(server.ssh_exec_requests().is_empty());
 
     conn.disconnect().await.expect("disconnect failed");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_streaming_chunks_complete_and_leave_connection_reusable() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let mut config = config_for(&server);
+    config.read_buffer_size = 5;
+    let mut connection = SshConnection::new(config);
+    connection.connect().await.expect("SSH connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send streamed get_version");
+
+    let deadline = tokio::time::Instant::now() + connection.response_timeout();
+    let mut framer = StreamingXmlReader::with_buffer_limit(connection.max_response_bytes());
+    let mut streamed = Vec::new();
+    while !framer.is_complete() {
+        let mut chunk = connection
+            .read_stream_chunk(deadline)
+            .await
+            .expect("SSH stream chunk");
+        let consumed = framer.feed_frame(&chunk).expect("valid XML frame");
+        let tail = chunk.split_off(consumed);
+        streamed.extend_from_slice(&chunk);
+        connection.retain_stream_tail(tail);
+    }
+
+    let response = Response::new(streamed);
+    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.child_text("version").as_deref(), Some("22.5"));
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send follow-up get_version");
+    assert_eq!(
+        Response::new(connection.read().await.expect("follow-up response")).status_code(),
+        Some(200)
+    );
+    connection.disconnect().await.expect("disconnect");
     server.shutdown().await;
 }
 

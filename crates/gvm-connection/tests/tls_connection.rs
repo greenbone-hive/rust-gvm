@@ -10,9 +10,12 @@ use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
 
-use gvm_connection::{ConnectionError, GvmConnection, TlsClientIdentity, TlsConfig, TlsConnection};
+use gvm_connection::{
+    ConnectionError, GvmConnection, GvmStreamingConnection, TlsClientIdentity, TlsConfig,
+    TlsConnection,
+};
 use gvm_mock_server::{Fault, FaultKind, GmpVersion, MockGmpServer, ServerMode};
-use gvm_protocol::Response;
+use gvm_protocol::{Response, StreamingXmlReader};
 use p256::ecdsa::{DerSignature, SigningKey};
 use p256::elliptic_curve::Generate;
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
@@ -159,6 +162,51 @@ async fn verified_tls_round_trip_and_reconnect() {
         Err(ConnectionError::AlreadyConnected)
     ));
     connection.disconnect().await.expect("second disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn verified_tls_streaming_chunks_complete_and_leave_connection_reusable() {
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(GmpVersion::V22_5)
+        .credentials("admin", "admin")
+        .tls("127.0.0.1:0")
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("TLS mock server: {error}"),
+    };
+    let mut config = config_for(&server);
+    config.read_buffer_size = 5;
+    let mut connection = TlsConnection::new(config);
+    connection.connect().await.expect("verified TLS connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send streamed get_version");
+
+    let deadline = tokio::time::Instant::now() + connection.response_timeout();
+    let mut framer = StreamingXmlReader::with_buffer_limit(connection.max_response_bytes());
+    let mut streamed = Vec::new();
+    while !framer.is_complete() {
+        let mut chunk = connection
+            .read_stream_chunk(deadline)
+            .await
+            .expect("TLS stream chunk");
+        let consumed = framer.feed_frame(&chunk).expect("valid XML frame");
+        let tail = chunk.split_off(consumed);
+        streamed.extend_from_slice(&chunk);
+        connection.retain_stream_tail(tail);
+    }
+
+    let response = Response::new(streamed);
+    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.child_text("version").as_deref(), Some("22.5"));
+    assert_eq!(get_version(&mut connection).await.status_code(), Some(200));
+    connection.disconnect().await.expect("disconnect");
     server.shutdown().await;
 }
 

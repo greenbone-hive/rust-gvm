@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::connection::{write_all_and_flush_with_timeout, GvmConnection};
+use crate::connection::{
+    prepend_pending, write_all_and_flush_with_timeout, GvmConnection, GvmStreamingConnection,
+};
 use crate::error::{ConnectionError, Result};
 use russh::client;
 use russh::keys::agent::client::AgentClient;
@@ -858,6 +860,86 @@ impl GvmConnection for SshConnection {
     }
 }
 
+#[async_trait::async_trait]
+impl GvmStreamingConnection for SshConnection {
+    fn response_timeout(&self) -> Duration {
+        self.config.timeout
+    }
+
+    fn max_response_bytes(&self) -> Option<usize> {
+        self.config.max_response_bytes
+    }
+
+    async fn read_stream_chunk(&mut self, deadline: tokio::time::Instant) -> Result<Vec<u8>> {
+        if self.channel.is_none() {
+            return Err(ConnectionError::NotConnected);
+        }
+        if !self.pending_read.is_empty() {
+            let split_at = self
+                .config
+                .read_buffer_size
+                .max(1)
+                .min(self.pending_read.len());
+            let suffix = self.pending_read.split_off(split_at);
+            return Ok(std::mem::replace(&mut self.pending_read, suffix));
+        }
+
+        loop {
+            let wait_result = {
+                let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
+                tokio::time::timeout_at(deadline, channel.wait()).await
+            };
+            let message = match wait_result {
+                Ok(message) => message,
+                Err(_) => {
+                    self.invalidate_connection();
+                    return Err(ConnectionError::Timeout(self.config.timeout));
+                }
+            };
+
+            match message {
+                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    let mut bytes = data.to_vec();
+                    let chunk_size = self.config.read_buffer_size.max(1);
+                    if bytes.len() > chunk_size {
+                        self.pending_read = bytes.split_off(chunk_size);
+                    }
+                    return Ok(bytes);
+                }
+                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
+                    self.invalidate_connection();
+                    return Err(ConnectionError::ReadFailed(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "ssh channel closed",
+                    )));
+                }
+                Some(ChannelMsg::OpenFailure(error)) => {
+                    let error = Self::read_error(format!("{error:?}"));
+                    self.invalidate_connection();
+                    return Err(error);
+                }
+                Some(
+                    ChannelMsg::WindowAdjusted { .. } | ChannelMsg::Success | ChannelMsg::Failure,
+                ) => {}
+                Some(other) => {
+                    let error =
+                        Self::read_error(format!("unexpected ssh channel message: {other:?}"));
+                    self.invalidate_connection();
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    fn retain_stream_tail(&mut self, tail: Vec<u8>) {
+        prepend_pending(&mut self.pending_read, tail);
+    }
+
+    fn invalidate_stream(&mut self) {
+        self.invalidate_connection();
+    }
+}
+
 fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
     ConnectionError::ReadFailed(std::io::Error::new(
         std::io::ErrorKind::InvalidData,
@@ -1259,5 +1341,15 @@ mod tests {
         let error = trust_on_first_use_path("scanner.example", 22, &key, &path)
             .expect_err("unsafe update must fail");
         assert!(matches!(error, keys::Error::IO(_)));
+    }
+
+    #[test]
+    fn streaming_tail_precedes_transport_buffered_bytes() {
+        let mut connection = SshConnection::new(SshConfig::default());
+        connection.pending_read.extend_from_slice(b"later");
+
+        connection.retain_stream_tail(b"tail".to_vec());
+
+        assert_eq!(connection.pending_read, b"taillater");
     }
 }

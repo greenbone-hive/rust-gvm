@@ -20,7 +20,7 @@ pub mod ssh;
 #[cfg(feature = "tls")]
 pub mod tls;
 
-pub use connection::GvmConnection;
+pub use connection::{GvmConnection, GvmStreamingConnection};
 pub use error::{ConnectionError, Result};
 
 #[cfg(feature = "unix")]

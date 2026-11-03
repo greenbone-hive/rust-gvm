@@ -16,7 +16,9 @@ use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
-use crate::connection::{write_all_and_flush_with_timeout, GvmConnection};
+use crate::connection::{
+    prepend_pending, write_all_and_flush_with_timeout, GvmConnection, GvmStreamingConnection,
+};
 use crate::error::{ConnectionError, Result};
 
 const DEFAULT_GVM_PORT: u16 = 9390;
@@ -410,6 +412,60 @@ impl GvmConnection for TlsConnection {
     }
 }
 
+#[async_trait::async_trait]
+impl GvmStreamingConnection for TlsConnection {
+    fn response_timeout(&self) -> Duration {
+        self.config.timeout
+    }
+
+    fn max_response_bytes(&self) -> Option<usize> {
+        self.config.max_response_bytes
+    }
+
+    async fn read_stream_chunk(&mut self, deadline: tokio::time::Instant) -> Result<Vec<u8>> {
+        if self.stream.is_none() {
+            return Err(ConnectionError::NotConnected);
+        }
+        if !self.pending_read.is_empty() {
+            return Ok(std::mem::take(&mut self.pending_read));
+        }
+
+        let mut buffer = vec![0_u8; self.config.read_buffer_size.max(1)];
+        let read_result = {
+            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
+            tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await
+        };
+        let read = match read_result {
+            Ok(Ok(read)) => read,
+            Ok(Err(error)) => {
+                self.invalidate_connection();
+                return Err(ConnectionError::ReadFailed(error));
+            }
+            Err(_) => {
+                self.invalidate_connection();
+                return Err(ConnectionError::Timeout(self.config.timeout));
+            }
+        };
+        if read == 0 {
+            self.invalidate_connection();
+            return Err(ConnectionError::ReadFailed(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "TLS connection closed before a complete response",
+            )));
+        }
+        buffer.truncate(read);
+        Ok(buffer)
+    }
+
+    fn retain_stream_tail(&mut self, tail: Vec<u8>) {
+        prepend_pending(&mut self.pending_read, tail);
+    }
+
+    fn invalidate_stream(&mut self) {
+        self.invalidate_connection();
+    }
+}
+
 fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
     ConnectionError::ReadFailed(std::io::Error::new(
         std::io::ErrorKind::InvalidData,
@@ -521,6 +577,16 @@ mod tests {
         TlsConfig::default()
             .client_config()
             .expect("platform trust store should contain usable roots");
+    }
+
+    #[test]
+    fn streaming_tail_precedes_transport_buffered_bytes() {
+        let mut connection = TlsConnection::new(TlsConfig::default());
+        connection.pending_read.extend_from_slice(b"later");
+
+        connection.retain_stream_tail(b"tail".to_vec());
+
+        assert_eq!(connection.pending_read, b"taillater");
     }
 
     #[test]

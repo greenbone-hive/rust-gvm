@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::time::Instant;
 
 use crate::error::ConnectionError;
 
@@ -48,6 +49,53 @@ pub trait GvmConnection: Send + Sync {
 
     /// Check if currently connected.
     fn is_connected(&self) -> bool;
+}
+
+/// Raw, bounded response reads used by capability-gated GMP streaming.
+///
+/// Implementations return transport bytes without XML reconstruction. The
+/// caller incrementally frames one response and returns any bytes after that
+/// frame through [`Self::retain_stream_tail`]. A streaming response owns an
+/// exclusive mutable borrow of the connection until it completes or
+/// invalidates the transport.
+#[async_trait]
+pub trait GvmStreamingConnection: GvmConnection {
+    /// Return the total deadline duration for receiving one response.
+    fn response_timeout(&self) -> Duration;
+
+    /// Return the configured maximum size of one XML response frame.
+    fn max_response_bytes(&self) -> Option<usize>;
+
+    /// Read one bounded raw response chunk before `deadline`.
+    ///
+    /// Implementations must invalidate the active transport before returning
+    /// a timeout, EOF, or transport read error.
+    ///
+    /// # Errors
+    /// Returns an error if the transport is disconnected, the total deadline
+    /// expires, or reading fails.
+    async fn read_stream_chunk(&mut self, deadline: Instant) -> crate::Result<Vec<u8>>;
+
+    /// Preserve bytes read after the end of the current XML response.
+    ///
+    /// These bytes must be returned before later transport reads and remain
+    /// subject to the next response's independent frame-size limit.
+    fn retain_stream_tail(&mut self, tail: Vec<u8>);
+
+    /// Make the active transport unusable after an incomplete streamed response.
+    fn invalidate_stream(&mut self);
+}
+
+pub(crate) fn prepend_pending(pending: &mut Vec<u8>, mut prefix: Vec<u8>) {
+    if prefix.is_empty() {
+        return;
+    }
+    if pending.is_empty() {
+        *pending = prefix;
+        return;
+    }
+    prefix.extend_from_slice(pending);
+    *pending = prefix;
 }
 
 pub(crate) async fn write_all_and_flush_with_timeout<W>(
