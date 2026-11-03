@@ -1508,7 +1508,7 @@ compatibility path. Unsupported `sync_config` and its deprecated per-config
 delegate are absent.
 
 The final [convergence audit](canonical-request-convergence-audit.md) also
-locks the 1,038-row disposition inventory, retained-construction rationales,
+locks the 1,039-row disposition inventory, retained-construction rationales,
 v0.6.0 removal mappings, raw escape hatches, and reproducible regeneration.
 
 The existing rust-gvm GMP ticket surface is frozen: it remains supported for

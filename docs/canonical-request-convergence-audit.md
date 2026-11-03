@@ -7,17 +7,18 @@ comparison baseline is tag `v0.6.0` at
 
 ## Final surface
 
-The checked disposition inventory has exactly 1,038 rows:
+The checked disposition inventory, including the additive #762 native-page
+request, has exactly 1,039 rows:
 
 | Disposition | Rows |
 | --- | ---: |
-| `canonical-request` | 421 |
+| `canonical-request` | 422 |
 | `removed` | 475 |
 | `retained-construction` | 130 |
 | `frozen-ticket` | 12 |
 | `transitional` | 0 |
 
-The 421 canonical rows comprise 286 complete request values and 135 typed
+The 422 canonical rows comprise 287 complete request values and 135 typed
 facades. The retained rows comprise 129 request-by-value facade spellings and
 one reusable nested value, `AgentConfigOpts`. Each retained facade accepts a
 canonical request unchanged; source inspection and the enforced facade test

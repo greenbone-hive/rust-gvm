@@ -23,6 +23,7 @@ pub mod group;
 pub mod host;
 pub mod integration_config;
 pub mod license;
+pub mod native_report_page;
 pub mod note;
 pub mod nvt;
 pub mod oci_image_target;
@@ -116,6 +117,9 @@ pub use integration_config::{
 };
 pub use license::{
     GetLicenseResponse, License, LicenseAppliance, LicenseContent, LicenseMeta, LicenseNamedValue,
+};
+pub use native_report_page::{
+    NativeReportPageDecoder, NativeReportPageResponse, NativeReportResultCount,
 };
 pub use note::{
     CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse, Note,

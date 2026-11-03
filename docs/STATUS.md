@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-11-02
+Last updated: 2026-11-03
 
 ## Support Direction
 
@@ -23,12 +23,17 @@ split into private resource-family modules without changing public paths. See
 compatibility, and release adoption are summarized in the
 [migration notes](typed-execution-migration.md).
 
-Issue #4 adds the generic large-response streaming foundation without adding a
-native report-page command. `GmpStreamingResponse` is an explicit compile-time
-opt-in on a request's associated response, and `GmpClient::execute_stream`
-returns an exclusively borrowed, caller-driven exact-byte stream. The shared
-incremental framer validates one response with bounded retained parsing state;
-successful completion returns the observed byte count and small typed metadata.
+Issue #4 adds the generic large-response streaming foundation.
+`GmpStreamingResponse` is an explicit compile-time opt-in on a request's
+associated response, and `GmpClient::execute_stream` returns an exclusively
+borrowed, caller-driven exact-byte stream. Issue #762 adds the first production
+opt-in: `GetNativeReportPageRequest` delegates to the canonical report command
+while enforcing explicit result filtering, pagination, and output choices, and
+`NativeReportPageResponse` consumes validated events and retains only bounded
+metadata-path state plus small identity/status/filter/window/count metadata,
+including the number of direct result elements actually returned. The
+shared incremental framer owns token validation and bounds; successful
+completion returns the observed byte count.
 Unix, TLS, and SSH expose equivalent bounded raw-chunk, total-deadline, tail,
 and invalidation semantics. Incomplete drop/cancellation and transport,
 framing, decoder, or sink failures invalidate the connection, while successful
@@ -39,7 +44,7 @@ The canonical-request program in issue #602 is complete. [ADR 0002](adr/0002-can
 separates fallible typed validation/encoding from raw `Request` and fixes
 execution precedence as validate → semantic support → encode → transport →
 decode. Issue #678 audits the complete exported surface: the checked
-[surface disposition ledger](canonical-request-disposition.md) contains 1,038
+[surface disposition ledger](canonical-request-disposition.md) contains 1,039
 classified rows with zero transitional entries, and all 267 public typed
 facades are enforced as 264 canonical `execute` delegates plus three frozen
 ticket raw paths. The [convergence audit](canonical-request-convergence-audit.md)
@@ -200,10 +205,9 @@ records those contracts. Issue #639 documents why the legacy delete-user
 [v0.7 user/group migration mapping](v0.7.0-migration.md#users-and-groups).
 
 The report-configuration, report-format, TLS-certificate, bounded NVT/SecInfo,
-report retrieval, structured projection, and export families are complete.
-Alert-selected report generation, typed asynchronous export state/subtype
-fields, and native report-page integration over the generic streaming
-foundation remain separately tracked work.
+report retrieval, native report-page streaming, structured projection, and
+export families are complete. Alert-selected report generation and typed
+asynchronous export state/subtype fields remain separately tracked work.
 
 The sections below retain the bounded delivery history for each migrated
 family. They are milestone snapshots, so transitional phrases such as
@@ -473,9 +477,9 @@ commands require a GMP 22.7 lower bound plus positive XML-help discovery. Duplic
 vulnerability names, `_parsed` suffixes, raw projection facades, and forwarding
 option variants are removed. Operating-system projection rows decode gvmd's
 `best_os_cpe`, `best_os_txt`, and typed `hosts_count` fields rather than a
-generic summary. Alert-selected generation, typed export state/subtype fields,
-and native report-page integration over the generic streaming foundation remain
-separate work. See the
+generic summary. Alert-selected generation and typed export state/subtype fields
+remain separate work. Native report pages use the generic streaming foundation
+with explicit result windows and bounded metadata decoding. See the
 [report evidence](report-request-gvmd-evidence.md) and
 [asynchronous lifecycle evidence](report-export-lifecycle-gvmd-evidence.md).
 

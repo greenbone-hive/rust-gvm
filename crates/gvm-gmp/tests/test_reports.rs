@@ -7,7 +7,7 @@ mod common;
 
 use common::id;
 use gvm_gmp::commands::reports::*;
-use gvm_gmp::{GmpRequestCodec, GmpVersion};
+use gvm_gmp::{GmpRequestCodec, GmpRequestError, GmpVersion};
 
 #[test]
 fn test_import_report_basic() {
@@ -131,6 +131,105 @@ fn test_report_list_and_detail_own_every_source_query_control() {
     assert_eq!(
         String::from_utf8(detail.encode(GmpVersion(22, 6)).unwrap()).unwrap(),
         "<get_reports details=\"0\" filt_id=\"result-filter\" filter=\"levels=hm rows=10\" ignore_pagination=\"1\" lean=\"1\" notes_details=\"0\" overrides_details=\"1\" report_id=\"report\" result_tags=\"0\" usage_type=\"scan\"/>"
+    );
+}
+
+#[test]
+fn test_native_report_page_encodes_explicit_invariants_through_canonical_report_request() {
+    let options = NativeReportPageOptions {
+        lean: true,
+        notes_details: false,
+        overrides_details: true,
+        result_tags: false,
+    };
+    let request = GetNativeReportPageRequest::new(
+        id("report"),
+        "severity>5 sort-reverse=severity",
+        11,
+        25,
+        options,
+    )
+    .unwrap();
+
+    assert_eq!(request.report_id().as_str(), "report");
+    assert_eq!(request.result_filter(), "severity>5 sort-reverse=severity");
+    assert_eq!(request.first(), 11);
+    assert_eq!(request.rows(), 25);
+    assert_eq!(request.options(), options);
+    assert_eq!(
+        request
+            .command()
+            .and_then(gvm_gmp::GmpCommand::semantic_name),
+        Some("get_report")
+    );
+    assert_eq!(
+        String::from_utf8(request.encode(GmpVersion(22, 6)).unwrap()).unwrap(),
+        "<get_reports details=\"1\" filter=\"severity&gt;5 sort-reverse=severity first=11 rows=25\" ignore_pagination=\"0\" lean=\"1\" notes_details=\"0\" overrides_details=\"1\" report_id=\"report\" result_tags=\"0\" usage_type=\"scan\"/>"
+    );
+
+    let legacy =
+        GetNativeReportPageRequest::new(id("report"), "", 1, 1, NativeReportPageOptions::default())
+            .unwrap();
+    assert_eq!(
+        String::from_utf8(legacy.encode(GmpVersion(22, 5)).unwrap()).unwrap(),
+        "<get_reports details=\"1\" filter=\"first=1 rows=1\" ignore_pagination=\"0\" lean=\"0\" notes_details=\"0\" overrides_details=\"0\" report_id=\"report\" result_tags=\"0\"/>"
+    );
+}
+
+#[test]
+fn test_native_report_page_rejects_invalid_or_conflicting_window_inputs() {
+    let options = NativeReportPageOptions::default();
+    for (filter, first, rows, field) in [
+        ("severity>5", 0, 10, "first"),
+        ("severity>5", -1, 10, "first"),
+        ("severity>5", 1, 0, "rows"),
+        ("severity>5", 1, -1, "rows"),
+    ] {
+        assert!(matches!(
+            GetNativeReportPageRequest::new(id("report"), filter, first, rows, options),
+            Err(GmpRequestError::InvalidField { field: actual, .. }) if actual == field
+        ));
+    }
+
+    for (filter, expected) in [
+        ("severity>5 first=20", "first"),
+        ("(ROWS = 20) severity>5", "ROWS"),
+    ] {
+        assert!(matches!(
+            GetNativeReportPageRequest::new(id("report"), filter, 1, 10, options),
+            Err(GmpRequestError::FilterFragment {
+                field: "result_filter",
+                source: gvm_gmp::FilterFragmentError::ReservedTerm { term },
+            }) if term == expected
+        ));
+    }
+
+    assert!(matches!(
+        GetNativeReportPageRequest::new(id("report"), "severity=5\0", 1, 10, options),
+        Err(GmpRequestError::InvalidField {
+            field: "filter_string",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn test_native_report_page_accepts_signed_int_upper_boundary() {
+    let request = GetNativeReportPageRequest::new(
+        id("report"),
+        "",
+        i32::MAX,
+        i32::MAX,
+        NativeReportPageOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(request.first(), i32::MAX);
+    assert_eq!(request.rows(), i32::MAX);
+    assert!(
+        String::from_utf8(request.encode(GmpVersion(22, 8)).unwrap())
+            .unwrap()
+            .contains("filter=\"first=2147483647 rows=2147483647\"")
     );
 }
 

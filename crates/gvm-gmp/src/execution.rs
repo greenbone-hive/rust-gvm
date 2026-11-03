@@ -9,9 +9,10 @@ use crate::{responses::ParseError, GmpVersion};
 
 /// Failure while validating or encoding a semantic GMP request.
 ///
-/// Reasons are static by design: errors identify the invalid field or field
-/// combination without retaining caller-provided values that may be secret.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// Errors identify the invalid field or field combination without retaining
+/// caller-provided values that may be secret. Filter-fragment failures retain
+/// only the exact reserved key that conflicted with request-owned behavior.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum GmpRequestError {
     /// One field in the final semantic request violates an input constraint.
@@ -29,6 +30,15 @@ pub enum GmpRequestError {
         fields: &'static [&'static str],
         /// Value-independent explanation of the violated constraint.
         reason: &'static str,
+    },
+    /// A caller-authored filter contains a request-owned term.
+    #[error("invalid request field '{field}': {source}")]
+    FilterFragment {
+        /// Stable field name containing the filter fragment.
+        field: &'static str,
+        /// Source error retaining the exact reserved term that was found.
+        #[source]
+        source: crate::FilterFragmentError,
     },
     /// A valid semantic value cannot be represented for the negotiated version.
     #[error("request encoding failed for GMP {version}: {reason}")]

@@ -20,7 +20,7 @@ pub struct Pagination {
 impl Pagination {
     /// Create a pagination descriptor from a page/per-page pair.
     #[must_use]
-    pub fn new(page: usize, per_page: usize) -> Self {
+    pub const fn new(page: usize, per_page: usize) -> Self {
         Self { page, per_page }
     }
 
@@ -32,6 +32,15 @@ impl Pagination {
             .saturating_add(1);
         (first, self.per_page)
     }
+
+    pub(crate) const fn direct_window(first: i32, rows: i32) -> DirectPaginationWindow {
+        DirectPaginationWindow { first, rows }
+    }
+}
+
+pub(crate) struct DirectPaginationWindow {
+    first: i32,
+    rows: i32,
 }
 
 /// A validated caller-owned gvmd filter fragment.
@@ -173,6 +182,12 @@ impl PaginatedFilter {
     #[must_use]
     pub fn with_pagination(mut self, pagination: Pagination) -> Self {
         let (first, rows) = pagination.gvmd_window();
+        self.clauses.push(format!("first={first} rows={rows}"));
+        self
+    }
+
+    pub(crate) fn with_direct_window(mut self, window: DirectPaginationWindow) -> Self {
+        let DirectPaginationWindow { first, rows } = window;
         self.clauses.push(format!("first={first} rows={rows}"));
         self
     }

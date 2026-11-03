@@ -16,11 +16,12 @@ use gvm_client::{
     GmpClient, GmpStreamCopyError, GvmError, StreamOptions, StreamingXmlEvent, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, GvmStreamingConnection};
+use gvm_gmp::commands::reports::{GetNativeReportPageRequest, NativeReportPageOptions};
 use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::responses::ParseError;
 use gvm_gmp::{
-    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse, GmpStreamDecoder,
-    GmpStreamingResponse, GmpVersion,
+    EntityId, GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse,
+    GmpStreamDecoder, GmpStreamingResponse, GmpVersion,
 };
 use gvm_protocol::Response;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -252,6 +253,7 @@ struct TestConnection {
     reads: Arc<AtomicUsize>,
     invalidations: Arc<AtomicUsize>,
     sent: Arc<AtomicUsize>,
+    sent_bytes: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 
 impl TestConnection {
@@ -264,6 +266,7 @@ impl TestConnection {
             reads: Arc::new(AtomicUsize::new(0)),
             invalidations: Arc::new(AtomicUsize::new(0)),
             sent: Arc::new(AtomicUsize::new(0)),
+            sent_bytes: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -280,11 +283,15 @@ impl GvmConnection for TestConnection {
         Ok(())
     }
 
-    async fn send(&mut self, _data: &[u8]) -> gvm_connection::Result<()> {
+    async fn send(&mut self, data: &[u8]) -> gvm_connection::Result<()> {
         if !self.connected {
             return Err(ConnectionError::NotConnected);
         }
         self.sent.fetch_add(1, Ordering::SeqCst);
+        self.sent_bytes
+            .lock()
+            .expect("sent bytes lock")
+            .push(data.to_vec());
         Ok(())
     }
 
@@ -884,4 +891,247 @@ async fn wire_trace_uses_omission_marker_instead_of_streamed_response_bytes() {
     assert!(events
         .iter()
         .all(|event| !String::from_utf8_lossy(&event.bytes).contains("do-not-log")));
+}
+
+const NATIVE_REPORT_ID: &str = "11111111-1111-1111-1111-111111111111";
+const NATIVE_TASK_ID: &str = "22222222-2222-2222-2222-222222222222";
+
+fn native_request(first: i32, rows: i32) -> GetNativeReportPageRequest {
+    GetNativeReportPageRequest::new(
+        EntityId::new(NATIVE_REPORT_ID).expect("report id"),
+        "severity>5",
+        first,
+        rows,
+        NativeReportPageOptions {
+            lean: true,
+            ..NativeReportPageOptions::default()
+        },
+    )
+    .expect("native page request")
+}
+
+fn native_response(
+    first: i32,
+    requested_rows: i32,
+    returned_max: i32,
+    total: u64,
+    returned_results: usize,
+    padding: usize,
+) -> Vec<u8> {
+    let padding = "x".repeat(padding);
+    let result = (0..returned_results)
+        .map(|index| {
+            if index == 0 {
+                format!(
+                    r#"<result id="result-{index}"><description>{padding}</description></result>"#
+                )
+            } else if index % 2 == 0 {
+                format!(r#"<result id="result-{index}"/>"#)
+            } else {
+                format!(r#"<result id="result-{index}"><description/></result>"#)
+            }
+        })
+        .collect::<String>();
+    format!(
+        r#"<get_reports_response status="200" status_text="OK"><report id="{NATIVE_REPORT_ID}"><task id="{NATIVE_TASK_ID}"/><report id="{NATIVE_REPORT_ID}"><filters id=""><term>severity&gt;5 first={first} rows={requested_rows}</term><keywords><keyword><column>first</column><relation>=</relation><value>{first}</value></keyword><keyword><column>rows</column><relation>=</relation><value>{requested_rows}</value></keyword></keywords></filters><scan_run_status>Done</scan_run_status><task id="{NATIVE_TASK_ID}"/><results start="{first}" max="{returned_max}">{result}</results><result_count>{total}<full>{total}</full><filtered>{total}</filtered></result_count></report></report><report_count>1<filtered>1</filtered><page>1</page></report_count></get_reports_response>"#
+    )
+    .into_bytes()
+}
+
+#[tokio::test]
+async fn native_report_page_copy_preserves_complete_envelope_and_metadata() {
+    let response = native_response(11, 25, 25, 80, 3, 257);
+    let (mut client, _reads, invalidations) = client(chunks(&response, &[1, 17, 2, 31, 5])).await;
+    let mut sink = RecordingSink::default();
+
+    let completion = client
+        .execute_stream(native_request(11, 25))
+        .await
+        .expect("start native page stream")
+        .copy_to(&mut sink)
+        .await
+        .expect("copy native page");
+
+    assert_eq!(sink.0, response);
+    assert_eq!(completion.bytes_received, response.len() as u64);
+    assert_eq!(completion.metadata.status, 200);
+    assert_eq!(
+        completion.metadata.report_id.as_ref().map(EntityId::as_str),
+        Some(NATIVE_REPORT_ID)
+    );
+    assert_eq!(
+        completion.metadata.task_id.as_ref().map(EntityId::as_str),
+        Some(NATIVE_TASK_ID)
+    );
+    assert_eq!(completion.metadata.scan_run_status.as_deref(), Some("Done"));
+    assert_eq!(completion.metadata.page.start, Some(11));
+    assert_eq!(completion.metadata.page.max, Some(25));
+    assert_eq!(completion.metadata.returned_results, 3);
+    assert_eq!(
+        completion
+            .metadata
+            .result_count
+            .and_then(|count| count.filtered),
+        Some(80)
+    );
+    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn native_report_pages_complete_for_zero_results_and_multiple_windows() {
+    let zero = native_response(1, 20, 20, 0, 0, 0);
+    let later = native_response(21, 20, 20, 35, 15, 0);
+    let mut steps = chunks(&zero, &[3, 7, 19]);
+    steps.extend(chunks(&later, &[23, 2, 11]));
+    let (mut client, _reads, invalidations) = client(steps).await;
+
+    let first = client
+        .execute_stream(native_request(1, 20))
+        .await
+        .expect("zero page stream")
+        .finish()
+        .await
+        .expect("zero page completion");
+    assert_eq!(first.metadata.page.start, Some(1));
+    assert_eq!(first.metadata.returned_results, 0);
+    assert_eq!(
+        first.metadata.result_count.and_then(|count| count.filtered),
+        Some(0)
+    );
+
+    let second = client
+        .execute_stream(native_request(21, 20))
+        .await
+        .expect("later page stream")
+        .finish()
+        .await
+        .expect("later page completion");
+    assert_eq!(second.metadata.page.start, Some(21));
+    assert_eq!(second.metadata.page.max, Some(20));
+    assert_eq!(second.metadata.returned_results, 15);
+    assert_eq!(
+        second
+            .metadata
+            .filter
+            .as_ref()
+            .expect("filter metadata")
+            .keywords[0]
+            .value,
+        "21"
+    );
+    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn native_report_page_promotes_server_status_and_rejects_bad_frames() {
+    let cases = [
+        (
+            br#"<get_reports_response status="503" status_text="Unavailable"/>"#.to_vec(),
+            "server",
+        ),
+        (
+            br#"<get_reports_response status="200" status_text="OK"><report></wrong>"#.to_vec(),
+            "malformed",
+        ),
+        (
+            br#"<get_reports_response status="200" status_text="OK"><report>"#.to_vec(),
+            "truncated",
+        ),
+    ];
+
+    for (response, kind) in cases {
+        let (mut client, _reads, invalidations) = client([StreamStep::Bytes(response)]).await;
+        let error = client
+            .execute_stream(native_request(1, 10))
+            .await
+            .expect("start native page stream")
+            .finish()
+            .await
+            .expect_err("native page must fail");
+
+        match kind {
+            "server" => assert!(matches!(error, GvmError::Server { status: 503, .. })),
+            "malformed" => assert!(matches!(error, GvmError::Protocol(_))),
+            "truncated" => assert!(matches!(error, GvmError::Connection(_))),
+            _ => unreachable!(),
+        }
+        assert!(invalidations.load(Ordering::SeqCst) >= 1);
+    }
+}
+
+#[tokio::test]
+async fn capped_native_page_advances_by_actual_returned_results() {
+    let capped = native_response(1, 500, 2, 5, 2, 0);
+    let next = native_response(3, 500, 2, 5, 2, 0);
+    let mut steps = chunks(&capped, &[37, 11, 5]);
+    steps.extend(chunks(&next, &[7, 29, 3]));
+    let (mut client, _reads, invalidations) = client(steps).await;
+    let sent = Arc::clone(&client.connection().sent_bytes);
+
+    let first = client
+        .execute_stream(native_request(1, 500))
+        .await
+        .expect("capped page")
+        .finish()
+        .await
+        .expect("capped page completion");
+    assert_eq!(first.metadata.page.max, Some(2));
+    assert_eq!(first.metadata.returned_results, 2);
+
+    let next_first = i32::try_from(first.metadata.page.start.unwrap()).expect("small start")
+        + i32::try_from(first.metadata.returned_results).expect("small result count");
+    assert_eq!(next_first, 3);
+
+    let second = client
+        .execute_stream(native_request(next_first, 500))
+        .await
+        .expect("next page")
+        .finish()
+        .await
+        .expect("next page completion");
+    assert_eq!(second.metadata.page.start, Some(3));
+    assert_eq!(second.metadata.returned_results, 2);
+
+    let requests = sent
+        .lock()
+        .expect("sent bytes lock")
+        .iter()
+        .filter_map(|bytes| {
+            let text = std::str::from_utf8(bytes).ok()?;
+            text.starts_with("<get_reports").then(|| text.to_string())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].contains("first=1 rows=500"));
+    assert!(requests[1].contains("first=3 rows=500"));
+    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn large_completed_native_page_leaves_connection_reusable() {
+    let large = native_response(1, 1, 1, 1, 1, 2 * 1024 * 1024);
+    let following = native_response(2, 1, 1, 1, 0, 0);
+    let mut steps = chunks(&large, &[4093, 8191, 257]);
+    steps.extend(chunks(&following, &[13, 31]));
+    let (mut client, _reads, invalidations) = client(steps).await;
+
+    let first = client
+        .execute_stream(native_request(1, 1))
+        .await
+        .expect("large native page")
+        .finish()
+        .await
+        .expect("large page completion");
+    assert_eq!(first.bytes_received, large.len() as u64);
+    assert_eq!(first.metadata.returned_results, 1);
+
+    let second = client
+        .execute_stream(native_request(2, 1))
+        .await
+        .expect("following native page")
+        .finish()
+        .await
+        .expect("following page completion");
+    assert_eq!(second.metadata.returned_results, 0);
+    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
 }

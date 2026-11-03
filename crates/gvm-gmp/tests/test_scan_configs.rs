@@ -166,7 +166,7 @@ fn import_validation_rechecks_mutated_xml_and_keeps_errors_confidential() {
     request.xml =
         "<get_configs_response><config><name>secret</name></config></get_configs_response>".into();
     let error = request.validate().unwrap_err();
-    assert_eq!(request.encode(GmpVersion(22, 4)), Err(error));
+    assert_eq!(request.encode(GmpVersion(22, 4)), Err(error.clone()));
     assert!(!error.to_string().contains("secret"));
     assert!(!format!("{request:?}").contains("secret"));
 
