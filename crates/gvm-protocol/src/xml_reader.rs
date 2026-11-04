@@ -37,6 +37,11 @@ impl StreamingXmlElement {
 }
 
 /// A validated, bounded incremental XML event.
+///
+/// Selected character content is reported as ordered [`Self::Text`],
+/// [`Self::CData`], and [`Self::Reference`] fragments. A reference preserves
+/// its spelling without the surrounding `&` and `;`; it is not expanded into
+/// replacement text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum StreamingXmlEvent {
@@ -354,13 +359,15 @@ impl FrameProgress<'_, '_> {
             return Err(xml_parse_error("entity reference before root element"));
         }
         validate_reference(reference)?;
-        let depth = self.element_names.len();
-        self.push_event(|| {
-            Ok(StreamingXmlEvent::Reference {
-                reference: reference.as_ref().to_string(),
-                depth,
-            })
-        })?;
+        if self.wants_text() {
+            let depth = self.element_names.len();
+            self.push_event(|| {
+                Ok(StreamingXmlEvent::Reference {
+                    reference: reference.as_ref().to_string(),
+                    depth,
+                })
+            })?;
+        }
         Ok(())
     }
 
@@ -1238,11 +1245,14 @@ impl StreamingXmlReader {
     /// Validate bytes and return parsed events, selecting character content by
     /// its current element path.
     ///
-    /// Start, empty, end, and reference events are always returned. `Text` and
-    /// `CData` payloads are constructed only when `wants_text` returns true for
-    /// the path containing that content. The predicate is evaluated during XML
-    /// parsing, so it must base its answer on `element_path` rather than state
-    /// updated later while consuming the returned event batch.
+    /// Start, empty, and end events are always returned. Character content is
+    /// fragmented across `Text`, `CData`, and `Reference` events, whose payloads
+    /// are constructed only when `wants_text` returns true for the path
+    /// containing that content. References are still validated on unselected
+    /// paths. A `Reference` contains the spelling without `&` and `;` and is not
+    /// expanded text. The predicate is evaluated during XML parsing, so it must
+    /// base its answer on `element_path` rather than state updated later while
+    /// consuming the returned event batch.
     ///
     /// # Errors
     /// Returns an error for malformed XML, excessive nesting, or an exceeded
@@ -2175,8 +2185,8 @@ mod tests {
     }
 
     #[test]
-    fn streaming_reader_constructs_text_only_for_selected_paths() {
-        let response = b"<root><ignored>large body</ignored><metadata>small<![CDATA[value]]></metadata></root>";
+    fn streaming_reader_constructs_character_content_only_for_selected_paths() {
+        let response = b"<root><ignored>large &amp; body</ignored><metadata>small&amp;<![CDATA[value]]>&#65;</metadata></root>";
         let mut reader = StreamingXmlReader::new();
         let (_, events) = reader
             .feed_frame_events_with_text(
@@ -2188,15 +2198,26 @@ mod tests {
             .iter()
             .filter_map(|event| match event {
                 StreamingXmlEvent::Text { text, .. } | StreamingXmlEvent::CData { text, .. } => {
-                    Some(text.as_str())
+                    Some(text.clone())
                 }
+                StreamingXmlEvent::Reference { reference, .. } => Some(format!("&{reference};")),
                 _ => None,
             })
             .collect::<String>();
 
-        assert_eq!(content, "smallvalue");
+        assert_eq!(content, "small&amp;value&#65;");
+        assert_eq!(
+            events
+                .iter()
+                .filter_map(|event| match event {
+                    StreamingXmlEvent::Reference { reference, .. } => Some(reference.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            ["amp", "#65"]
+        );
         assert!(events.iter().all(|event| {
-            !matches!(event, StreamingXmlEvent::Text { text, .. } if text == "large body")
+            !matches!(event, StreamingXmlEvent::Text { text, .. } if text.contains("large"))
         }));
 
         let mut default_reader = StreamingXmlReader::new();
@@ -2205,8 +2226,20 @@ mod tests {
             .expect("valid XML");
         assert!(events.iter().all(|event| !matches!(
             event,
-            StreamingXmlEvent::Text { .. } | StreamingXmlEvent::CData { .. }
+            StreamingXmlEvent::Text { .. }
+                | StreamingXmlEvent::CData { .. }
+                | StreamingXmlEvent::Reference { .. }
         )));
+    }
+
+    #[test]
+    fn streaming_reader_validates_references_on_unselected_paths() {
+        let mut reader = StreamingXmlReader::new();
+        let error = reader
+            .feed_frame_events_with_text(b"<root><ignored>&bogus;</ignored></root>", |_| false)
+            .expect_err("unknown reference must remain invalid when text is unselected");
+
+        assert!(matches!(error, ProtocolError::XmlParse(_)));
     }
 
     #[test]

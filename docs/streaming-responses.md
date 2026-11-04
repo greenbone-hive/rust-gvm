@@ -44,16 +44,21 @@ need a second XML parser. The generic stream checks the root `status` before
 yielding the first byte and normalizes non-2xx statuses to the same server error
 semantics as buffered decoding. Event creation is lazy: buffered response
 validation does not build event payloads, and a streaming decoder receives no
-`Text` or `CData` strings unless its `wants_text(element_path)` implementation
-selects that path. The text-interest decision is made while each transport
-chunk is parsed, so it must depend on the supplied path rather than state that
-`feed` updates after the event batch has been returned.
+`Text`, `CData`, or `Reference` strings unless its
+`wants_text(element_path)` implementation selects that path. References on all
+paths are still validated. The character-content decision is made while each
+transport chunk is parsed, so it must depend on the supplied path rather than
+state that `feed` updates after the event batch has been returned.
 
-`Text` and `CData` events are content fragments, not complete logical XML text
-nodes. Feed and transport boundaries can split character data into several
-events, and CDATA can appear between ordinary text fragments. A decoder that
-selects text must accumulate all selected fragments until the matching `End`
-event instead of treating one event as the element's complete value.
+Selected character content is fragmented across `Text`, `CData`, and
+`Reference` events, not delivered as complete logical XML text nodes. Feed and
+transport boundaries can split ordinary text into several events, while CDATA
+and references can appear between those fragments. `Reference` contains the
+reference spelling without its `&` and `;` delimiters; it is not silently
+expanded text. A decoder that selects character content must handle and
+accumulate all three variants until the matching `End` event. For example, a
+decoder preserving the lexical XML content reconstructs `Reference("amp")` as
+`&amp;` rather than appending only `amp` or pretending the event contains `&`.
 
 ## Connection reuse and failures
 
@@ -110,8 +115,10 @@ successful validation, the trace receives a fixed
 
 A response opts in by implementing `GmpStreamingResponse` and selecting a
 `GmpStreamDecoder`. The decoder's `feed` method observes ordered validated XML
-events, while `wants_text` opts selected element paths into fragment delivery;
-`finish` returns small typed metadata only after the generic XML framer has
-validated the complete frame. This association is static through
-`GmpRequest::Response`, so non-opt-in response types fail to compile with
-`execute_stream` and no command-name matching is involved.
+events, while `wants_text` opts selected element paths into `Text`, `CData`, and
+`Reference` fragment delivery. An opted-in decoder must handle and accumulate
+all three character-content variants. `finish` returns small typed metadata
+only after the generic XML framer has validated the complete frame. This
+association is static through `GmpRequest::Response`, so non-opt-in response
+types fail to compile with `execute_stream` and no command-name matching is
+involved.

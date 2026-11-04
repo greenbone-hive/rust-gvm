@@ -66,14 +66,14 @@ impl GmpStreamingResponse for TestStreamingResponse {
 struct TestMetadata {
     status: u16,
     events: usize,
-    text_events: usize,
+    content_events: usize,
 }
 
 #[derive(Debug, Default)]
 struct TestDecoder {
     status: Option<u16>,
     events: usize,
-    text_events: usize,
+    content_events: usize,
 }
 
 impl GmpStreamDecoder for TestDecoder {
@@ -83,9 +83,11 @@ impl GmpStreamDecoder for TestDecoder {
         self.events += 1;
         if matches!(
             event,
-            StreamingXmlEvent::Text { .. } | StreamingXmlEvent::CData { .. }
+            StreamingXmlEvent::Text { .. }
+                | StreamingXmlEvent::CData { .. }
+                | StreamingXmlEvent::Reference { .. }
         ) {
-            self.text_events += 1;
+            self.content_events += 1;
         }
         if matches!(
             event,
@@ -115,7 +117,7 @@ impl GmpStreamDecoder for TestDecoder {
         Ok(TestMetadata {
             status,
             events: self.events,
-            text_events: self.text_events,
+            content_events: self.content_events,
         })
     }
 }
@@ -160,10 +162,21 @@ struct TextDecoder {
     status: Option<u16>,
     metadata: String,
     fragments: usize,
+    cdata_fragments: usize,
+    reference_fragments: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TextMetadata {
+    status: u16,
+    metadata: String,
+    fragments: usize,
+    cdata_fragments: usize,
+    reference_fragments: usize,
 }
 
 impl GmpStreamDecoder for TextDecoder {
-    type Completion = (u16, String, usize);
+    type Completion = TextMetadata;
 
     fn wants_text(&self, element_path: &[String]) -> bool {
         matches!(element_path, [root, metadata] if root == "test_stream_response" && metadata == "metadata")
@@ -177,9 +190,21 @@ impl GmpStreamDecoder for TextDecoder {
                     .attribute("status")
                     .and_then(|value| value.parse().ok());
             }
-            StreamingXmlEvent::Text { text, .. } | StreamingXmlEvent::CData { text, .. } => {
+            StreamingXmlEvent::Text { text, .. } => {
                 self.metadata.push_str(text);
                 self.fragments += 1;
+            }
+            StreamingXmlEvent::CData { text, .. } => {
+                self.metadata.push_str(text);
+                self.fragments += 1;
+                self.cdata_fragments += 1;
+            }
+            StreamingXmlEvent::Reference { reference, .. } => {
+                self.metadata.push('&');
+                self.metadata.push_str(reference);
+                self.metadata.push(';');
+                self.fragments += 1;
+                self.reference_fragments += 1;
             }
             _ => {}
         }
@@ -187,12 +212,15 @@ impl GmpStreamDecoder for TextDecoder {
     }
 
     fn finish(self) -> Result<Self::Completion, ParseError> {
-        Ok((
-            self.status
+        Ok(TextMetadata {
+            status: self
+                .status
                 .ok_or_else(|| ParseError::MissingElement("status".to_string()))?,
-            self.metadata,
-            self.fragments,
-        ))
+            metadata: self.metadata,
+            fragments: self.fragments,
+            cdata_fragments: self.cdata_fragments,
+            reference_fragments: self.reference_fragments,
+        })
     }
 }
 
@@ -376,36 +404,33 @@ async fn opt_in_response_streams_exact_bytes_with_backpressure_and_completion() 
     assert_eq!(completion.bytes_received, response.len() as u64);
     assert_eq!(completion.metadata.status, 200);
     assert!(completion.metadata.events > 0);
-    assert_eq!(completion.metadata.text_events, 0);
+    assert_eq!(completion.metadata.content_events, 0);
 }
 
 #[tokio::test]
-async fn text_is_skipped_by_default_and_path_opt_in_accumulates_fragments() {
-    let steps = [
-        StreamStep::Bytes(
-            br#"<test_stream_response status="200"><ignored>not copied</ignored><metadata>o"#
-                .to_vec(),
-        ),
-        StreamStep::Bytes(b"n".to_vec()),
-        StreamStep::Bytes(b"e<![CDATA[two]]>thr".to_vec()),
-        StreamStep::Bytes(b"ee</metadata></test_stream_response>".to_vec()),
-    ];
-    let (mut client, _reads, invalidations) = client(steps).await;
-    let completion = client
-        .execute_stream(TextStreamingRequest)
-        .await
-        .expect("start text stream")
-        .finish()
-        .await
-        .expect("finish text stream");
+async fn character_content_is_path_selected_and_accumulated_across_all_fragment_kinds() {
+    let response = br#"<test_stream_response status="200"><ignored>not &amp; copied</ignored><metadata>a &amp; b<![CDATA[ + c]]> tail</metadata></test_stream_response>"#;
 
-    assert_eq!(completion.metadata.0, 200);
-    assert_eq!(completion.metadata.1, "onetwothree");
-    assert!(
-        completion.metadata.2 >= 5,
-        "transport boundaries and CDATA must remain observable fragments"
-    );
-    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
+    for sizes in [&[1][..], &[2, 7, 3, 11][..], &[response.len()][..]] {
+        let (mut client, _reads, invalidations) = client(chunks(response, sizes)).await;
+        let completion = client
+            .execute_stream(TextStreamingRequest)
+            .await
+            .expect("start text stream")
+            .finish()
+            .await
+            .expect("finish text stream");
+
+        assert_eq!(completion.metadata.status, 200);
+        assert_eq!(completion.metadata.metadata, "a &amp; b + c tail");
+        assert_eq!(completion.metadata.cdata_fragments, 1);
+        assert_eq!(completion.metadata.reference_fragments, 1);
+        assert!(
+            completion.metadata.fragments >= 5,
+            "transport boundaries and mixed content must remain observable fragments"
+        );
+        assert_eq!(invalidations.load(Ordering::SeqCst), 0);
+    }
 }
 
 #[tokio::test]

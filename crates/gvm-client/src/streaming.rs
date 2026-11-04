@@ -80,6 +80,12 @@ where
     Failed,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TotalTimeout {
+    deadline: tokio::time::Instant,
+    duration: Duration,
+}
+
 /// Exclusive, backpressured stream of exact bytes for one GMP XML response.
 ///
 /// The stream borrows the active connection mutably, so no other request can
@@ -102,8 +108,7 @@ where
     state: StreamState<D>,
     framer: StreamingXmlReader,
     idle_timeout: Duration,
-    total_timeout: Option<Duration>,
-    total_deadline: Option<tokio::time::Instant>,
+    total_timeout: Option<TotalTimeout>,
     bytes_received: u64,
     held_prefix: Vec<u8>,
     max_retained_bytes: usize,
@@ -147,9 +152,10 @@ where
             .idle_timeout
             .unwrap_or_else(|| connection.response_timeout());
         let now = tokio::time::Instant::now();
-        let total_deadline = options
-            .total_timeout
-            .map(|timeout| deadline_after(now, timeout));
+        let total_timeout = options.total_timeout.map(|duration| TotalTimeout {
+            deadline: deadline_after(now, duration),
+            duration,
+        });
         Self {
             connection,
             state: StreamState::Streaming(decoder),
@@ -159,8 +165,7 @@ where
                 DEFAULT_MAX_DEPTH,
             ),
             idle_timeout,
-            total_timeout: options.total_timeout,
-            total_deadline,
+            total_timeout,
             bytes_received: 0,
             held_prefix: Vec::new(),
             max_retained_bytes: options.max_retained_bytes,
@@ -237,22 +242,13 @@ where
 
     async fn read_transport_chunk(&mut self) -> Result<Vec<u8>, GvmError> {
         let started = tokio::time::Instant::now();
-        if self
-            .total_deadline
-            .is_some_and(|deadline| deadline <= started)
-        {
+        if let Some(total) = self.total_timeout.filter(|total| total.deadline <= started) {
             self.invalidate();
-            return Err(ConnectionError::Timeout(
-                self.total_timeout
-                    .expect("a total deadline always has a configured timeout"),
-            )
-            .into());
+            return Err(ConnectionError::Timeout(total.duration).into());
         }
         let idle_deadline = deadline_after(started, self.idle_timeout);
-        let (deadline, timeout_cause) = match (self.total_deadline, self.total_timeout) {
-            (Some(total_deadline), Some(total_timeout)) if total_deadline <= idle_deadline => {
-                (total_deadline, total_timeout)
-            }
+        let (deadline, timeout_cause) = match self.total_timeout {
+            Some(total) if total.deadline <= idle_deadline => (total.deadline, total.duration),
             _ => (idle_deadline, self.idle_timeout),
         };
         match tokio::time::timeout_at(deadline, self.connection.read_stream_chunk()).await {
