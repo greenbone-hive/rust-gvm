@@ -12,7 +12,9 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use gvm_client::{GmpClient, GmpStreamCopyError, GvmError, WireTraceEvent};
+use gvm_client::{
+    GmpClient, GmpStreamCopyError, GvmError, StreamOptions, StreamingXmlEvent, WireTraceEvent,
+};
 use gvm_connection::{ConnectionError, GvmConnection, GvmStreamingConnection};
 use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::responses::ParseError;
@@ -53,7 +55,6 @@ impl GmpResponse for TestStreamingResponse {
 }
 
 impl GmpStreamingResponse for TestStreamingResponse {
-    type Completion = TestMetadata;
     type Decoder = TestDecoder;
 
     fn stream_decoder(_version: GmpVersion) -> Self::Decoder {
@@ -64,38 +65,32 @@ impl GmpStreamingResponse for TestStreamingResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TestMetadata {
     status: u16,
-    chunks: usize,
+    events: usize,
 }
 
 #[derive(Debug, Default)]
 struct TestDecoder {
-    header: Vec<u8>,
     status: Option<u16>,
-    chunks: usize,
+    events: usize,
 }
 
 impl GmpStreamDecoder for TestDecoder {
     type Completion = TestMetadata;
 
-    fn feed(&mut self, chunk: &[u8]) -> Result<(), ParseError> {
-        self.chunks += 1;
-        if chunk
-            .windows(b"decoder-error".len())
-            .any(|part| part == b"decoder-error")
-        {
+    fn feed(&mut self, event: &StreamingXmlEvent) -> Result<(), ParseError> {
+        self.events += 1;
+        if matches!(event, StreamingXmlEvent::Text { text, .. } if text.contains("decoder-error")) {
             return Err(ParseError::InvalidValue {
                 field: "stream".to_string(),
                 value: "decoder-error".to_string(),
             });
         }
-        if self.status.is_none() {
-            let remaining = 512_usize.saturating_sub(self.header.len());
-            self.header
-                .extend_from_slice(&chunk[..chunk.len().min(remaining)]);
-            if self.header.contains(&b'>') {
-                self.status = Some(status(&self.header)?);
-                self.header.clear();
-            }
+        if let StreamingXmlEvent::Start { element, depth: 1 }
+        | StreamingXmlEvent::Empty { element, depth: 1 } = event
+        {
+            self.status = element
+                .attribute("status")
+                .and_then(|value| value.parse().ok());
         }
         Ok(())
     }
@@ -104,15 +99,9 @@ impl GmpStreamDecoder for TestDecoder {
         let status = self
             .status
             .ok_or_else(|| ParseError::MissingElement("status".to_string()))?;
-        if !(200..300).contains(&status) {
-            return Err(ParseError::ServerError {
-                status,
-                message: "streaming test status".to_string(),
-            });
-        }
         Ok(TestMetadata {
             status,
-            chunks: self.chunks,
+            events: self.events,
         })
     }
 }
@@ -132,6 +121,7 @@ fn status(bytes: &[u8]) -> Result<u16, ParseError> {
 
 enum StreamStep {
     Bytes(Vec<u8>),
+    Delay(Duration, Vec<u8>),
     Error,
     Pending,
 }
@@ -144,7 +134,6 @@ struct TestConnection {
     reads: Arc<AtomicUsize>,
     invalidations: Arc<AtomicUsize>,
     sent: Arc<AtomicUsize>,
-    max_response_bytes: Option<usize>,
 }
 
 impl TestConnection {
@@ -157,7 +146,6 @@ impl TestConnection {
             reads: Arc::new(AtomicUsize::new(0)),
             invalidations: Arc::new(AtomicUsize::new(0)),
             sent: Arc::new(AtomicUsize::new(0)),
-            max_response_bytes: Some(1024 * 1024),
         }
     }
 }
@@ -208,17 +196,14 @@ impl GvmStreamingConnection for TestConnection {
         Duration::from_secs(5)
     }
 
-    fn max_response_bytes(&self) -> Option<usize> {
-        self.max_response_bytes
-    }
-
-    async fn read_stream_chunk(
-        &mut self,
-        _deadline: tokio::time::Instant,
-    ) -> gvm_connection::Result<Vec<u8>> {
+    async fn read_stream_chunk(&mut self) -> gvm_connection::Result<Vec<u8>> {
         self.reads.fetch_add(1, Ordering::SeqCst);
         match self.stream.pop_front() {
             Some(StreamStep::Bytes(bytes)) => Ok(bytes),
+            Some(StreamStep::Delay(delay, bytes)) => {
+                tokio::time::sleep(delay).await;
+                Ok(bytes)
+            }
             Some(StreamStep::Error) => {
                 self.invalidate_stream();
                 Err(ConnectionError::ReadFailed(io::Error::other(
@@ -296,14 +281,14 @@ async fn opt_in_response_streams_exact_bytes_with_backpressure_and_completion() 
     while let Some(chunk) = stream.next_chunk().await.expect("next chunk") {
         yielded_chunks += 1;
         observed.extend_from_slice(&chunk);
-        assert_eq!(reads.load(Ordering::SeqCst), yielded_chunks);
+        assert!(reads.load(Ordering::SeqCst) >= yielded_chunks);
     }
     let completion = stream.finish().await.expect("finish stream");
 
     assert_eq!(observed, response);
-    assert_eq!(completion.bytes_received, response.len());
+    assert_eq!(completion.bytes_received, response.len() as u64);
     assert_eq!(completion.metadata.status, 200);
-    assert_eq!(completion.metadata.chunks, yielded_chunks);
+    assert!(completion.metadata.events >= yielded_chunks);
 }
 
 #[tokio::test]
@@ -320,7 +305,7 @@ async fn completed_stream_preserves_tail_for_follow_up_request() {
         .finish()
         .await
         .expect("drain and finish");
-    assert_eq!(completion.bytes_received, response.len());
+    assert_eq!(completion.bytes_received, response.len() as u64);
     let version = client
         .execute(GetVersionRequest::new())
         .await
@@ -473,7 +458,7 @@ async fn copy_adapter_writes_exact_bytes_and_returns_completion() {
     let completion = stream.copy_to(&mut sink).await.expect("copy stream");
 
     assert_eq!(sink.0, response);
-    assert_eq!(completion.bytes_received, response.len());
+    assert_eq!(completion.bytes_received, response.len() as u64);
     assert_eq!(completion.metadata.status, 200);
     assert_eq!(invalidations.load(Ordering::SeqCst), 0);
 }
@@ -504,7 +489,7 @@ async fn copy_adapter_supports_durable_file_acquisition() {
         tokio::fs::read(path).await.expect("read response file"),
         response
     );
-    assert_eq!(completion.bytes_received, response.len());
+    assert_eq!(completion.bytes_received, response.len() as u64);
     assert_eq!(completion.metadata.status, 200);
     assert_eq!(invalidations.load(Ordering::SeqCst), 0);
 }
@@ -539,6 +524,157 @@ async fn non_success_completion_is_a_server_error_and_invalidates_connection() {
         .expect_err("server status must fail");
 
     assert!(matches!(error, GvmError::Server { status: 503, .. }));
+    assert!(invalidations.load(Ordering::SeqCst) >= 1);
+}
+
+#[tokio::test]
+async fn non_success_status_is_rejected_before_the_first_sink_write() {
+    let response = br#"<test_stream_response status="503" status_text="Unavailable"><large>error body</large></test_stream_response>"#;
+    let (mut client, _reads, invalidations) = client(chunks(response, &[1, 2, 3])).await;
+    let mut sink = RecordingSink::default();
+    let error = client
+        .execute_stream(TestStreamingRequest)
+        .await
+        .expect("start stream")
+        .copy_to(&mut sink)
+        .await
+        .expect_err("server status must fail before writing");
+
+    assert!(matches!(
+        error,
+        GmpStreamCopyError::Stream(GvmError::Server { status: 503, .. })
+    ));
+    assert!(sink.0.is_empty());
+    assert!(invalidations.load(Ordering::SeqCst) >= 1);
+}
+
+#[tokio::test]
+async fn per_call_total_size_limit_is_independent_and_uses_u64_counts() {
+    let response =
+        br#"<test_stream_response status="200"><body>large</body></test_stream_response>"#;
+    let (mut client, _reads, invalidations) = client(chunks(response, &[7])).await;
+    let options = StreamOptions {
+        max_bytes: Some((response.len() - 1) as u64),
+        ..StreamOptions::default()
+    };
+    let error = client
+        .execute_stream_with(TestStreamingRequest, options)
+        .await
+        .expect("start stream")
+        .finish()
+        .await
+        .expect_err("size limit must fail");
+
+    assert!(matches!(
+        error,
+        GvmError::Protocol(gvm_protocol::ProtocolError::StreamSizeLimit { max })
+            if max == (response.len() - 1) as u64
+    ));
+    assert!(invalidations.load(Ordering::SeqCst) >= 1);
+}
+
+#[tokio::test]
+async fn retained_token_limit_is_independent_of_total_stream_size() {
+    let response = format!(
+        "<test_stream_response status=\"200\" value=\"{}\"/>",
+        "x".repeat(128)
+    );
+    let (mut client, _reads, invalidations) = client(chunks(response.as_bytes(), &[8])).await;
+    let options = StreamOptions {
+        max_retained_bytes: 32,
+        ..StreamOptions::default()
+    };
+    let error = client
+        .execute_stream_with(TestStreamingRequest, options)
+        .await
+        .expect("start stream")
+        .finish()
+        .await
+        .expect_err("retained token limit must fail");
+
+    assert!(matches!(
+        error,
+        GvmError::Protocol(gvm_protocol::ProtocolError::StreamRetainedLimit { max: 32 })
+    ));
+    assert!(invalidations.load(Ordering::SeqCst) >= 1);
+}
+
+#[tokio::test]
+async fn retained_limit_also_bounds_the_withheld_pre_root_prefix() {
+    let response = "<!--12345678--><!--abcdefgh--><test_stream_response status=\"200\"/>";
+    let (mut client, _reads, invalidations) = client(chunks(response.as_bytes(), &[8])).await;
+    let options = StreamOptions {
+        max_retained_bytes: 20,
+        ..StreamOptions::default()
+    };
+    let error = client
+        .execute_stream_with(TestStreamingRequest, options)
+        .await
+        .expect("start stream")
+        .finish()
+        .await
+        .expect_err("withheld prefix limit must fail");
+
+    assert!(matches!(
+        error,
+        GvmError::Protocol(gvm_protocol::ProtocolError::StreamRetainedLimit { max: 20 })
+    ));
+    assert!(invalidations.load(Ordering::SeqCst) >= 1);
+}
+
+#[tokio::test]
+async fn idle_timeout_resets_after_caller_backpressure() {
+    let first = br#"<test_stream_response status="200"><body>"#.to_vec();
+    let second = br#"data</body></test_stream_response>"#.to_vec();
+    let (mut client, _reads, invalidations) = client([
+        StreamStep::Delay(Duration::from_millis(5), first),
+        StreamStep::Delay(Duration::from_millis(5), second),
+    ])
+    .await;
+    let options = StreamOptions {
+        idle_timeout: Some(Duration::from_millis(20)),
+        ..StreamOptions::default()
+    };
+    let mut stream = client
+        .execute_stream_with(TestStreamingRequest, options)
+        .await
+        .expect("start stream");
+
+    assert!(stream.next_chunk().await.expect("first chunk").is_some());
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    let completion = stream
+        .finish()
+        .await
+        .expect("caller pause is not idle time");
+
+    let _: u64 = completion.bytes_received;
+    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn optional_total_timeout_still_bounds_the_complete_operation() {
+    let first = br#"<test_stream_response status="200"><body>"#.to_vec();
+    let second = br#"data</body></test_stream_response>"#.to_vec();
+    let (mut client, _reads, invalidations) =
+        client([StreamStep::Bytes(first), StreamStep::Bytes(second)]).await;
+    let options = StreamOptions {
+        idle_timeout: Some(Duration::from_secs(1)),
+        total_timeout: Some(Duration::from_millis(10)),
+        ..StreamOptions::default()
+    };
+    let mut stream = client
+        .execute_stream_with(TestStreamingRequest, options)
+        .await
+        .expect("start stream");
+
+    assert!(stream.next_chunk().await.expect("first chunk").is_some());
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let error = stream
+        .finish()
+        .await
+        .expect_err("total timeout must expire");
+
+    assert!(matches!(error, GvmError::Timeout(_)));
     assert!(invalidations.load(Ordering::SeqCst) >= 1);
 }
 

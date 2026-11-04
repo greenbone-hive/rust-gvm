@@ -3,7 +3,7 @@
 
 //! Statically associated GMP request and response contracts.
 
-use gvm_protocol::{Request, Response};
+use gvm_protocol::{Request, Response, StreamingXmlEvent};
 
 use crate::{responses::ParseError, GmpVersion};
 
@@ -255,27 +255,25 @@ pub trait GmpResponse: Sized {
 
 /// Incremental decoder for the small typed result of a streamed GMP response.
 ///
-/// The client supplies the exact response bytes in wire order. Implementations
-/// should retain only the bounded state needed for completion metadata; the
-/// potentially large response body belongs to the caller's byte stream.
+/// The client supplies validated XML events in wire order. Implementations
+/// retain only the small state needed for completion metadata; parsing and
+/// token-memory bounds remain centralized in the generic stream framer.
 pub trait GmpStreamDecoder: Send {
     /// Small typed metadata returned after the complete response is validated.
     type Completion: Send;
 
-    /// Observe one exact, ordered response chunk.
+    /// Observe one validated, ordered XML event.
     ///
     /// # Errors
     /// Returns a response-model error when incremental decoding cannot continue.
-    fn feed(&mut self, chunk: &[u8]) -> Result<(), ParseError>;
+    fn feed(&mut self, event: &StreamingXmlEvent) -> Result<(), ParseError>;
 
     /// Complete decoding after the XML framer validates exactly one response.
     ///
-    /// Implementations must reject non-success GMP statuses consistently with
-    /// [`GmpResponse::decode`].
-    ///
     /// # Errors
-    /// Returns a response-model or server-status error when completion metadata
-    /// is absent, malformed, or reports a non-success status.
+    /// Returns a response-model error when completion metadata is absent or
+    /// malformed. Root GMP status is checked generically before any bytes are
+    /// yielded to the caller.
     fn finish(self) -> Result<Self::Completion, ParseError>;
 }
 
@@ -286,11 +284,8 @@ pub trait GmpStreamDecoder: Send {
 /// associated response implements this trait, preventing runtime command-name
 /// or response-type switches.
 pub trait GmpStreamingResponse: GmpResponse {
-    /// Small typed metadata returned at successful stream completion.
-    type Completion: Send;
-
     /// Incremental decoder used for this response model.
-    type Decoder: GmpStreamDecoder<Completion = Self::Completion>;
+    type Decoder: GmpStreamDecoder;
 
     /// Start response-specific incremental decoding for a negotiated GMP version.
     fn stream_decoder(version: GmpVersion) -> Self::Decoder;

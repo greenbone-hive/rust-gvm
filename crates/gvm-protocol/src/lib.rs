@@ -24,4 +24,4 @@ pub use error::ProtocolError;
 pub use request::Request;
 pub use response::Response;
 pub use xml_command::XmlCommand;
-pub use xml_reader::{StreamingXmlReader, XmlReader};
+pub use xml_reader::{StreamingXmlElement, StreamingXmlEvent, StreamingXmlReader, XmlReader};

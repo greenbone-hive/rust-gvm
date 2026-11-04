@@ -17,6 +17,73 @@ const DEFAULT_MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_DEPTH: usize = 256;
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 
+/// One validated XML element exposed to incremental response decoders.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamingXmlElement {
+    /// Element name exactly as received.
+    pub name: String,
+    /// Normalized attributes in wire order.
+    pub attributes: Vec<(String, String)>,
+}
+
+impl StreamingXmlElement {
+    /// Return a named attribute value.
+    #[must_use]
+    pub fn attribute(&self, name: &str) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find_map(|(key, value)| (key == name).then_some(value.as_str()))
+    }
+}
+
+/// A validated, bounded incremental XML event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StreamingXmlEvent {
+    /// Opening element at the reported one-based depth.
+    Start {
+        /// Parsed element name and attributes.
+        element: StreamingXmlElement,
+        /// One-based element depth; the response root is depth one.
+        depth: usize,
+    },
+    /// Self-closing element at the reported one-based depth.
+    Empty {
+        /// Parsed element name and attributes.
+        element: StreamingXmlElement,
+        /// One-based element depth; the response root is depth one.
+        depth: usize,
+    },
+    /// Closing element at the reported one-based depth.
+    End {
+        /// Closing element name.
+        name: String,
+        /// One-based element depth before the element is closed.
+        depth: usize,
+    },
+    /// Character data inside the reported element depth.
+    Text {
+        /// Validated XML character data as received, before entity expansion.
+        text: String,
+        /// Current element depth.
+        depth: usize,
+    },
+    /// CDATA content inside the reported element depth.
+    CData {
+        /// Validated CDATA content.
+        text: String,
+        /// Current element depth.
+        depth: usize,
+    },
+    /// A general entity or character reference inside the reported depth.
+    Reference {
+        /// Reference text without `&` and `;` delimiters.
+        reference: String,
+        /// Current element depth.
+        depth: usize,
+    },
+}
+
 #[derive(Debug)]
 enum PendingToken {
     Tag {
@@ -142,12 +209,19 @@ struct FrameProgress<'a> {
     trailing_text_brackets: &'a mut u8,
     pending_token: &'a mut Option<PendingToken>,
     discarded_len: usize,
+    events: Option<&'a mut Vec<StreamingXmlEvent>>,
 }
 
 impl FrameProgress<'_> {
     fn accept_start(&mut self, element: &BytesStart<'_>) -> Result<(), ProtocolError> {
         *self.trailing_text_brackets = 0;
-        open_element(element, self.seen_start, self.element_names, self.max_depth)
+        open_element(element, self.seen_start, self.element_names, self.max_depth)?;
+        let depth = self.element_names.len();
+        self.push_event(StreamingXmlEvent::Start {
+            element: streaming_element(element)?,
+            depth,
+        });
+        Ok(())
     }
 
     fn accept_end(
@@ -157,17 +231,20 @@ impl FrameProgress<'_> {
         parsed_len: usize,
     ) -> Result<bool, ProtocolError> {
         *self.trailing_text_brackets = 0;
+        let depth = self.element_names.len();
+        let name = element.name().as_ref().to_string();
         let Some(end) = closing_frame_end(
             element,
             self.element_names,
             buffer,
             *self.resume_offset,
             parsed_len,
-            self.discarded_len,
         )?
         else {
+            self.push_event(StreamingXmlEvent::End { name, depth });
             return Ok(false);
         };
+        self.push_event(StreamingXmlEvent::End { name, depth });
         *self.complete = true;
         *self.frame_end = Some(end);
         Ok(true)
@@ -180,6 +257,7 @@ impl FrameProgress<'_> {
         parsed_len: usize,
     ) -> Result<bool, ProtocolError> {
         *self.trailing_text_brackets = 0;
+        let depth = self.element_names.len().saturating_add(1);
         let Some(end) = empty_frame_end(
             element,
             *self.seen_start,
@@ -188,11 +266,18 @@ impl FrameProgress<'_> {
             buffer,
             *self.resume_offset,
             parsed_len,
-            self.discarded_len,
         )?
         else {
+            self.push_event(StreamingXmlEvent::Empty {
+                element: streaming_element(element)?,
+                depth,
+            });
             return Ok(false);
         };
+        self.push_event(StreamingXmlEvent::Empty {
+            element: streaming_element(element)?,
+            depth,
+        });
         *self.seen_start = true;
         *self.complete = true;
         *self.frame_end = Some(end);
@@ -202,18 +287,19 @@ impl FrameProgress<'_> {
     fn accept_text(
         &mut self,
         text: &BytesText<'_>,
-        parsed_len: usize,
+        _parsed_len: usize,
     ) -> Result<bool, ProtocolError> {
-        if !validate_text(
+        validate_text(
             text,
             *self.seen_start,
             self.declaration_allowed,
             self.trailing_text_brackets,
-        )? {
-            return Ok(false);
-        }
-        *self.resume_offset += parsed_len;
-        Ok(true)
+        )?;
+        self.push_event(StreamingXmlEvent::Text {
+            text: text.as_ref().to_string(),
+            depth: self.element_names.len(),
+        });
+        Ok(false)
     }
 
     fn accept_declaration(&mut self, declaration: &BytesDecl<'_>) -> Result<(), ProtocolError> {
@@ -236,7 +322,28 @@ impl FrameProgress<'_> {
         if !*self.seen_start {
             return Err(xml_parse_error("entity reference before root element"));
         }
-        validate_reference(reference)
+        validate_reference(reference)?;
+        self.push_event(StreamingXmlEvent::Reference {
+            reference: reference.as_ref().to_string(),
+            depth: self.element_names.len(),
+        });
+        Ok(())
+    }
+
+    fn accept_cdata(&mut self, data: &str) -> Result<(), ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        validate_cdata(data, *self.seen_start)?;
+        self.push_event(StreamingXmlEvent::CData {
+            text: data.to_string(),
+            depth: self.element_names.len(),
+        });
+        Ok(())
+    }
+
+    fn push_event(&mut self, event: StreamingXmlEvent) {
+        if let Some(events) = &mut self.events {
+            events.push(event);
+        }
     }
 
     fn suspend_eof(&mut self, parsed_len: usize) {
@@ -379,6 +486,22 @@ impl XmlReader {
     /// or exceeds the configured buffer limit. Reset the reader before reuse
     /// after an error.
     pub fn feed_frame(&mut self, data: &[u8]) -> Result<usize, ProtocolError> {
+        self.feed_frame_internal(data, None)
+    }
+
+    fn feed_frame_with_events(
+        &mut self,
+        data: &[u8],
+        events: &mut Vec<StreamingXmlEvent>,
+    ) -> Result<usize, ProtocolError> {
+        self.feed_frame_internal(data, Some(events))
+    }
+
+    fn feed_frame_internal(
+        &mut self,
+        data: &[u8],
+        mut events: Option<&mut Vec<StreamingXmlEvent>>,
+    ) -> Result<usize, ProtocolError> {
         if self.complete {
             return Ok(0);
         }
@@ -386,7 +509,7 @@ impl XmlReader {
         // `take_frame` can leave an already-buffered tail from `feed`. Parse
         // that tail before consuming any new bytes so mixed API use cannot
         // discard a complete buffered frame.
-        self.check_complete()?;
+        self.check_complete_with(events.as_deref_mut())?;
         if self.complete {
             return Ok(0);
         }
@@ -400,7 +523,7 @@ impl XmlReader {
         };
 
         self.buffer.extend_from_slice(&data[..accepted]);
-        self.check_complete()?;
+        self.check_complete_with(events)?;
 
         if let Some(frame_end) = self.frame_end {
             let consumed = frame_end.saturating_sub(previous_len);
@@ -495,7 +618,10 @@ impl XmlReader {
         self.discarded_len = 0;
     }
 
-    fn frame_progress(&mut self) -> (&[u8], FrameProgress<'_>) {
+    fn frame_progress<'a>(
+        &'a mut self,
+        events: Option<&'a mut Vec<StreamingXmlEvent>>,
+    ) -> (&'a [u8], FrameProgress<'a>) {
         let Self {
             buffer,
             max_depth,
@@ -523,11 +649,19 @@ impl XmlReader {
                 trailing_text_brackets,
                 pending_token,
                 discarded_len: *discarded_len,
+                events,
             },
         )
     }
 
     fn check_complete(&mut self) -> Result<(), ProtocolError> {
+        self.check_complete_with(None)
+    }
+
+    fn check_complete_with(
+        &mut self,
+        events: Option<&mut Vec<StreamingXmlEvent>>,
+    ) -> Result<(), ProtocolError> {
         if self.complete {
             return Ok(());
         }
@@ -539,7 +673,7 @@ impl XmlReader {
             self.pending_token = None;
         }
 
-        let (buffer, mut progress) = self.frame_progress();
+        let (buffer, mut progress) = self.frame_progress(events);
         let unparsed = &buffer[*progress.resume_offset..];
         let bom_len = usize::from(
             progress.discarded_len == 0
@@ -579,8 +713,7 @@ impl XmlReader {
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::CData(data)) => {
-                    *progress.trailing_text_brackets = 0;
-                    validate_cdata(data.as_ref(), *progress.seen_start)?;
+                    progress.accept_cdata(data.as_ref())?;
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::DocType(_)) => {
@@ -731,10 +864,9 @@ fn closing_frame_end(
     buffer: &[u8],
     resume_offset: usize,
     parsed_len: usize,
-    discarded_len: usize,
 ) -> Result<Option<usize>, ProtocolError> {
     close_element(element, element_names)?
-        .then(|| validated_frame_end(buffer, resume_offset, parsed_len, discarded_len))
+        .then(|| validated_frame_end(buffer, resume_offset, parsed_len))
         .transpose()
 }
 
@@ -760,11 +892,10 @@ fn empty_frame_end(
     buffer: &[u8],
     resume_offset: usize,
     parsed_len: usize,
-    discarded_len: usize,
 ) -> Result<Option<usize>, ProtocolError> {
     validate_empty_element(element, current_depth, max_depth)?;
     (!seen_start)
-        .then(|| validated_frame_end(buffer, resume_offset, parsed_len, discarded_len))
+        .then(|| validated_frame_end(buffer, resume_offset, parsed_len))
         .transpose()
 }
 
@@ -804,6 +935,23 @@ fn validate_start(element: &BytesStart<'_>) -> Result<(), ProtocolError> {
         validate_xml_chars(&value)?;
     }
     Ok(())
+}
+
+fn streaming_element(element: &BytesStart<'_>) -> Result<StreamingXmlElement, ProtocolError> {
+    let attributes = element
+        .attributes()
+        .map(|attribute| {
+            let attribute = attribute.map_err(xml_parse_error)?;
+            let value = attribute
+                .normalized_value(XmlVersion::Implicit1_0)
+                .map_err(xml_parse_error)?;
+            Ok((attribute.key.as_ref().to_string(), value.into_owned()))
+        })
+        .collect::<Result<Vec<_>, ProtocolError>>()?;
+    Ok(StreamingXmlElement {
+        name: element.name().as_ref().to_string(),
+        attributes,
+    })
 }
 
 fn validate_declaration(declaration: &BytesDecl<'_>) -> Result<(), ProtocolError> {
@@ -895,14 +1043,9 @@ fn validated_frame_end(
     buffer: &[u8],
     resume_offset: usize,
     parsed_len: usize,
-    discarded_len: usize,
 ) -> Result<usize, ProtocolError> {
     let frame_end = resume_offset + parsed_len;
-    if discarded_len == 0 {
-        validate_frame(&buffer[..frame_end])?;
-    } else {
-        validate_xml_bytes(&buffer[..frame_end])?;
-    }
+    validate_frame(&buffer[..frame_end])?;
     Ok(frame_end)
 }
 
@@ -970,10 +1113,14 @@ impl Default for XmlReader {
 /// current XML token. The caller remains responsible for forwarding the exact
 /// `data[..consumed]` bytes returned by [`Self::feed_frame`].
 ///
-/// A configured byte limit applies to the total frame, including discarded
-/// prefixes, rather than only to the retained parsing window.
+/// Total frame size and retained parsing-window limits are independent. This
+/// lets callers stream very large documents while still bounding an unfinished
+/// attribute, CDATA section, comment, or other single XML token.
 pub struct StreamingXmlReader {
     reader: XmlReader,
+    max_frame_bytes: Option<u64>,
+    max_retained_bytes: usize,
+    frame_bytes: u64,
 }
 
 impl std::fmt::Debug for StreamingXmlReader {
@@ -981,7 +1128,9 @@ impl std::fmt::Debug for StreamingXmlReader {
         formatter
             .debug_struct("StreamingXmlReader")
             .field("buffered_len", &self.reader.buffer.len())
-            .field("frame_len", &self.reader.frame_len())
+            .field("frame_len", &self.frame_len())
+            .field("max_frame_bytes", &self.max_frame_bytes)
+            .field("max_retained_bytes", &self.max_retained_bytes)
             .field("complete", &self.reader.is_complete())
             .finish()
     }
@@ -991,24 +1140,21 @@ impl StreamingXmlReader {
     /// Create a streaming reader with the default frame-size and nesting limits.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            reader: XmlReader::new(),
-        }
+        Self::with_limits(None, DEFAULT_MAX_BUFFER_BYTES, DEFAULT_MAX_DEPTH)
     }
 
-    /// Create a streaming reader with an optional total frame-size limit.
+    /// Create a streaming reader with independent total and retained limits.
     #[must_use]
-    pub fn with_buffer_limit(max_buffer_bytes: Option<usize>) -> Self {
+    pub fn with_limits(
+        max_frame_bytes: Option<u64>,
+        max_retained_bytes: usize,
+        max_depth: usize,
+    ) -> Self {
         Self {
-            reader: XmlReader::with_buffer_limit(max_buffer_bytes),
-        }
-    }
-
-    /// Create a streaming reader with total frame-size and nesting limits.
-    #[must_use]
-    pub fn with_limits(max_buffer_bytes: Option<usize>, max_depth: usize) -> Self {
-        Self {
-            reader: XmlReader::with_limits(max_buffer_bytes, max_depth),
+            reader: XmlReader::with_limits(None, max_depth),
+            max_frame_bytes,
+            max_retained_bytes,
+            frame_bytes: 0,
         }
     }
 
@@ -1019,14 +1165,60 @@ impl StreamingXmlReader {
     /// to a later frame and must not be yielded as part of the current response.
     ///
     /// # Errors
-    /// Returns an error for malformed XML, excessive nesting, or a frame that
-    /// exceeds the configured total byte limit.
+    /// Returns an error for malformed XML, excessive nesting, or an exceeded
+    /// total-frame or retained-token limit.
     pub fn feed_frame(&mut self, data: &[u8]) -> Result<usize, ProtocolError> {
-        let consumed = self.reader.feed_frame(data)?;
+        self.feed_frame_events(data).map(|(consumed, _)| consumed)
+    }
+
+    /// Validate bytes and return the ordered parsed events completed by them.
+    ///
+    /// Event storage is bounded by the input chunk and retained-token limits;
+    /// already parsed response prefixes are not accumulated. This is the
+    /// reusable decoder interface for streamed typed responses.
+    ///
+    /// # Errors
+    /// Returns an error for malformed XML, excessive nesting, or an exceeded
+    /// total-frame or retained-token limit.
+    pub fn feed_frame_events(
+        &mut self,
+        data: &[u8],
+    ) -> Result<(usize, Vec<StreamingXmlEvent>), ProtocolError> {
+        let accepted = match self.max_frame_bytes {
+            Some(max) => {
+                let remaining = max.saturating_sub(self.frame_bytes);
+                data.len()
+                    .min(usize::try_from(remaining).unwrap_or(usize::MAX))
+            }
+            None => data.len(),
+        };
+        let mut events = Vec::new();
+        let consumed = self
+            .reader
+            .feed_frame_with_events(&data[..accepted], &mut events)?;
+        self.frame_bytes += consumed as u64;
         if !self.reader.is_complete() {
             self.reader.discard_parsed_prefix();
+            if self.reader.buffer.len() > self.max_retained_bytes {
+                return Err(ProtocolError::StreamRetainedLimit {
+                    max: self.max_retained_bytes,
+                });
+            }
+            if accepted < data.len() {
+                return Err(ProtocolError::StreamSizeLimit {
+                    max: self.max_frame_bytes.unwrap_or_default(),
+                });
+            }
+            if self
+                .max_frame_bytes
+                .is_some_and(|max| self.frame_bytes >= max)
+            {
+                return Err(ProtocolError::StreamSizeLimit {
+                    max: self.max_frame_bytes.unwrap_or_default(),
+                });
+            }
         }
-        Ok(consumed)
+        Ok((consumed, events))
     }
 
     /// Return whether exactly one complete XML frame has been validated.
@@ -1037,22 +1229,19 @@ impl StreamingXmlReader {
 
     /// Return the total validated frame length after completion.
     #[must_use]
-    pub fn frame_len(&self) -> Option<usize> {
-        self.reader.frame_len()
+    pub fn frame_len(&self) -> Option<u64> {
+        self.reader.is_complete().then_some(self.frame_bytes)
     }
 
-    /// Return the retained parsing-window size.
-    ///
-    /// This is primarily useful for diagnostics and bounded-memory tests. It
-    /// never includes already validated and discarded response prefixes.
-    #[must_use]
-    pub fn buffered_len(&self) -> usize {
+    #[cfg(test)]
+    fn buffered_len(&self) -> usize {
         self.reader.buffer.len()
     }
 
     /// Reset the validator for a new response frame.
     pub fn reset(&mut self) {
         self.reader.reset();
+        self.frame_bytes = 0;
     }
 }
 
@@ -1864,7 +2053,8 @@ mod tests {
         wire.extend_from_slice(b"<next/>");
 
         for chunk_size in 1..=response.len() + 3 {
-            let mut reader = StreamingXmlReader::with_buffer_limit(Some(response.len()));
+            let mut reader =
+                StreamingXmlReader::with_limits(Some(response.len() as u64), 1024, 256);
             let mut yielded = Vec::new();
             let mut offset = 0;
             while !reader.is_complete() {
@@ -1877,7 +2067,7 @@ mod tests {
             }
 
             assert_eq!(yielded, response, "chunk size {chunk_size}");
-            assert_eq!(reader.frame_len(), Some(response.len()));
+            assert_eq!(reader.frame_len(), Some(response.len() as u64));
             assert_eq!(&wire[offset..], b"<next/>", "chunk size {chunk_size}");
         }
     }
@@ -1886,7 +2076,7 @@ mod tests {
     fn streaming_reader_discards_large_parsed_body_prefixes() {
         let body = "x".repeat(1024 * 1024);
         let response = format!("<root><data>{body}</data></root>");
-        let mut reader = StreamingXmlReader::with_buffer_limit(Some(response.len()));
+        let mut reader = StreamingXmlReader::with_limits(Some(response.len() as u64), 1024, 256);
         let mut max_buffered = 0;
 
         for chunk in response.as_bytes().chunks(31) {
@@ -1895,7 +2085,7 @@ mod tests {
         }
 
         assert!(reader.is_complete());
-        assert_eq!(reader.frame_len(), Some(response.len()));
+        assert_eq!(reader.frame_len(), Some(response.len() as u64));
         assert!(
             max_buffered < 128,
             "retained {max_buffered} bytes while streaming a 1 MiB body"
@@ -1905,7 +2095,8 @@ mod tests {
     #[test]
     fn streaming_reader_enforces_total_limit_after_discarding_prefixes() {
         let response = format!("<root>{}</root>", "x".repeat(4096));
-        let mut reader = StreamingXmlReader::with_buffer_limit(Some(response.len() - 1));
+        let mut reader =
+            StreamingXmlReader::with_limits(Some((response.len() - 1) as u64), 1024, 256);
         let mut error = None;
 
         for chunk in response.as_bytes().chunks(23) {
@@ -1917,7 +2108,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            Some(ProtocolError::BufferOverflow { max }) if max == response.len() - 1
+            Some(ProtocolError::StreamSizeLimit { max }) if max == (response.len() - 1) as u64
         ));
     }
 

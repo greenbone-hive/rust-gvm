@@ -17,7 +17,8 @@ use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
 use crate::connection::{
-    prepend_pending, write_all_and_flush_with_timeout, GvmConnection, GvmStreamingConnection,
+    prepend_pending, take_bounded_pending, write_all_and_flush_with_timeout, GvmConnection,
+    GvmStreamingConnection,
 };
 use crate::error::{ConnectionError, Result};
 
@@ -89,7 +90,7 @@ pub struct TlsConfig {
     pub port: u16,
     /// DNS name or IP address required in the server certificate SAN.
     pub server_name: String,
-    /// TCP connect, TLS handshake, and request-write/flush timeout, plus total response deadline.
+    /// Operation timeout; also the default idle timeout for streamed reads.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -177,7 +178,7 @@ impl TlsConfig {
         self
     }
 
-    /// Set the transport operation timeout and total response-read deadline.
+    /// Set the operation timeout and default streamed-read idle timeout.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -418,32 +419,28 @@ impl GvmStreamingConnection for TlsConnection {
         self.config.timeout
     }
 
-    fn max_response_bytes(&self) -> Option<usize> {
-        self.config.max_response_bytes
-    }
-
-    async fn read_stream_chunk(&mut self, deadline: tokio::time::Instant) -> Result<Vec<u8>> {
+    async fn read_stream_chunk(&mut self) -> Result<Vec<u8>> {
         if self.stream.is_none() {
             return Err(ConnectionError::NotConnected);
         }
-        if !self.pending_read.is_empty() {
-            return Ok(std::mem::take(&mut self.pending_read));
+        if let Some(bytes) =
+            take_bounded_pending(&mut self.pending_read, self.config.read_buffer_size)
+        {
+            return Ok(bytes);
         }
 
         let mut buffer = vec![0_u8; self.config.read_buffer_size.max(1)];
-        let read_result = {
-            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
-            tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await
-        };
-        let read = match read_result {
-            Ok(Ok(read)) => read,
-            Ok(Err(error)) => {
+        let read = match self
+            .stream
+            .as_mut()
+            .ok_or(ConnectionError::NotConnected)?
+            .read(&mut buffer)
+            .await
+        {
+            Ok(read) => read,
+            Err(error) => {
                 self.invalidate_connection();
                 return Err(ConnectionError::ReadFailed(error));
-            }
-            Err(_) => {
-                self.invalidate_connection();
-                return Err(ConnectionError::Timeout(self.config.timeout));
             }
         };
         if read == 0 {
@@ -454,6 +451,7 @@ impl GvmStreamingConnection for TlsConnection {
             )));
         }
         buffer.truncate(read);
+        buffer.shrink_to_fit();
         Ok(buffer)
     }
 

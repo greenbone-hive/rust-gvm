@@ -705,9 +705,11 @@ the template count is not the number of GMP commands supported by other modes.
 | `is_connected()` | ✅ | Synchronous check |
 
 `GvmStreamingConnection` is the additive raw-chunk extension used by
-`GmpClient::execute_stream`. It exposes the transport's total response timeout
-and frame limit, bounded caller-driven reads, exact tail retention, and explicit
-invalidation without changing existing custom `GvmConnection` implementations.
+`GmpClient::execute_stream`. It exposes a default idle timeout, bounded
+caller-driven reads, exact tail retention, and explicit invalidation without
+changing existing custom `GvmConnection` implementations. Per-stream total and
+retained-memory limits are owned by `StreamOptions`, independently of buffered
+transport limits.
 
 ### Transports
 
@@ -722,7 +724,7 @@ invalidation without changing existing custom `GvmConnection` implementations.
 | Field | Default | Notes |
 |-------|---------|-------|
 | `path` | `/run/gvmd/gvmd.sock` | Configurable |
-| `timeout` | 60s | Connect and request write/flush timeout; total deadline for one complete response |
+| `timeout` | 60s | Connect and request write/flush timeout; total deadline for a buffered response and default per-read idle timeout for a stream |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 
@@ -735,7 +737,7 @@ invalidation without changing existing custom `GvmConnection` implementations.
 | `username` | `root` | SSH user |
 | `auth` | `Agent` | `Password`, `PrivateKey { key_path, passphrase }`, or `Agent` |
 | `remote_socket` | `/run/gvmd/gvmd.sock` | Path to gvmd socket on remote host |
-| `timeout` | 60s | Connect/auth/channel and request write/flush timeout; total deadline for one complete response |
+| `timeout` | 60s | Connect/auth/channel and request write/flush timeout; total deadline for a buffered response and default per-read idle timeout for a stream |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 | `host_key_policy` | `KnownHosts` | Standard or custom `known_hosts`, pinned SHA-256 fingerprint, or explicit insecure opt-out |
@@ -757,7 +759,7 @@ The same timeout covers session opening and exec acknowledgement.
 | `use_native_roots` | `true` | Platform trust store; disabling does not disable verification |
 | custom roots | None | PEM roots can be supplied in memory or from a file |
 | client identity | None | Optional PEM certificate chain plus unencrypted private key for mTLS |
-| `timeout` | 60s | TCP connect, TLS handshake, and request write/flush timeout; total deadline for one complete response |
+| `timeout` | 60s | TCP connect, TLS handshake, and request write/flush timeout; total deadline for a buffered response and default per-read idle timeout for a stream |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 
 ### Error Types

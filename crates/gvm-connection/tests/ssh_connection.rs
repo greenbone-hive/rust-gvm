@@ -73,7 +73,6 @@ fn test_not_connected_initially() {
     let mut conn = SshConnection::new(SshConfig::default());
     assert!(!conn.is_connected());
     assert_eq!(conn.response_timeout(), Duration::from_secs(60));
-    assert_eq!(conn.max_response_bytes(), Some(64 * 1024 * 1024));
     conn.invalidate_stream();
     assert!(!conn.is_connected());
     assert_eq!(

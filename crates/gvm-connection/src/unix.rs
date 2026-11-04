@@ -10,7 +10,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 use crate::connection::{
-    prepend_pending, write_all_and_flush_with_timeout, GvmConnection, GvmStreamingConnection,
+    prepend_pending, take_bounded_pending, write_all_and_flush_with_timeout, GvmConnection,
+    GvmStreamingConnection,
 };
 use crate::error::{ConnectionError, Result};
 
@@ -19,7 +20,7 @@ use crate::error::{ConnectionError, Result};
 pub struct UnixSocketConfig {
     /// Path to the Unix socket.
     pub path: PathBuf,
-    /// Connect and request-write/flush timeout, and total response-read deadline.
+    /// Operation timeout; also the default idle timeout for streamed reads.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -48,7 +49,7 @@ impl UnixSocketConfig {
         }
     }
 
-    /// Set the transport operation timeout and total response-read deadline.
+    /// Set the operation timeout and default streamed-read idle timeout.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -239,32 +240,28 @@ impl GvmStreamingConnection for UnixSocketConnection {
         self.config.timeout
     }
 
-    fn max_response_bytes(&self) -> Option<usize> {
-        self.config.max_response_bytes
-    }
-
-    async fn read_stream_chunk(&mut self, deadline: tokio::time::Instant) -> Result<Vec<u8>> {
+    async fn read_stream_chunk(&mut self) -> Result<Vec<u8>> {
         if self.stream.is_none() {
             return Err(ConnectionError::NotConnected);
         }
-        if !self.pending_read.is_empty() {
-            return Ok(std::mem::take(&mut self.pending_read));
+        if let Some(bytes) =
+            take_bounded_pending(&mut self.pending_read, self.config.read_buffer_size)
+        {
+            return Ok(bytes);
         }
 
         let mut buffer = vec![0_u8; self.config.read_buffer_size.max(1)];
-        let read_result = {
-            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
-            tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await
-        };
-        let read = match read_result {
-            Ok(Ok(read)) => read,
-            Ok(Err(error)) => {
+        let read = match self
+            .stream
+            .as_mut()
+            .ok_or(ConnectionError::NotConnected)?
+            .read(&mut buffer)
+            .await
+        {
+            Ok(read) => read,
+            Err(error) => {
                 self.invalidate_connection();
                 return Err(ConnectionError::ReadFailed(error));
-            }
-            Err(_) => {
-                self.invalidate_connection();
-                return Err(ConnectionError::Timeout(self.config.timeout));
             }
         };
         if read == 0 {
@@ -275,6 +272,7 @@ impl GvmStreamingConnection for UnixSocketConnection {
             )));
         }
         buffer.truncate(read);
+        buffer.shrink_to_fit();
         Ok(buffer)
     }
 
@@ -380,14 +378,10 @@ mod tests {
         connection.connect().await.expect("connect");
         connection.send(b"<first/>").await.expect("send first");
 
-        let deadline = tokio::time::Instant::now() + connection.response_timeout();
-        let mut framer = StreamingXmlReader::with_buffer_limit(connection.max_response_bytes());
+        let mut framer = StreamingXmlReader::with_limits(None, 1024 * 1024, 256);
         let mut observed = Vec::new();
         while !framer.is_complete() {
-            let mut chunk = connection
-                .read_stream_chunk(deadline)
-                .await
-                .expect("stream chunk");
+            let mut chunk = connection.read_stream_chunk().await.expect("stream chunk");
             let consumed = framer.feed_frame(&chunk).expect("valid frame");
             let tail = chunk.split_off(consumed);
             observed.extend_from_slice(&chunk);

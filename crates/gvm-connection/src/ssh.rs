@@ -11,7 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::connection::{
-    prepend_pending, write_all_and_flush_with_timeout, GvmConnection, GvmStreamingConnection,
+    prepend_pending, take_bounded_pending, write_all_and_flush_with_timeout, GvmConnection,
+    GvmStreamingConnection,
 };
 use crate::error::{ConnectionError, Result};
 use russh::client;
@@ -33,7 +34,7 @@ pub struct SshConfig {
     pub auth: SshAuth,
     /// Remote gvmd Unix socket path.
     pub remote_socket: String,
-    /// Connect/auth/channel/write timeout and total response-read deadline.
+    /// Operation timeout; also the default idle timeout for streamed reads.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -101,7 +102,7 @@ impl SshConfig {
         self
     }
 
-    /// Set the operation timeout and total response-read deadline.
+    /// Set the operation timeout and default streamed-read idle timeout.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -866,45 +867,37 @@ impl GvmStreamingConnection for SshConnection {
         self.config.timeout
     }
 
-    fn max_response_bytes(&self) -> Option<usize> {
-        self.config.max_response_bytes
-    }
-
-    async fn read_stream_chunk(&mut self, deadline: tokio::time::Instant) -> Result<Vec<u8>> {
+    async fn read_stream_chunk(&mut self) -> Result<Vec<u8>> {
         if self.channel.is_none() {
             return Err(ConnectionError::NotConnected);
         }
-        if !self.pending_read.is_empty() {
-            let split_at = self
-                .config
-                .read_buffer_size
-                .max(1)
-                .min(self.pending_read.len());
-            let suffix = self.pending_read.split_off(split_at);
-            return Ok(std::mem::replace(&mut self.pending_read, suffix));
+        if let Some(bytes) =
+            take_bounded_pending(&mut self.pending_read, self.config.read_buffer_size)
+        {
+            return Ok(bytes);
         }
 
         loop {
-            let wait_result = {
-                let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
-                tokio::time::timeout_at(deadline, channel.wait()).await
-            };
-            let message = match wait_result {
-                Ok(message) => message,
-                Err(_) => {
-                    self.invalidate_connection();
-                    return Err(ConnectionError::Timeout(self.config.timeout));
-                }
-            };
+            let message = self
+                .channel
+                .as_mut()
+                .ok_or(ConnectionError::NotConnected)?
+                .wait()
+                .await;
 
             match message {
-                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                Some(ChannelMsg::Data { data }) => {
                     let mut bytes = data.to_vec();
                     let chunk_size = self.config.read_buffer_size.max(1);
                     if bytes.len() > chunk_size {
                         self.pending_read = bytes.split_off(chunk_size);
                     }
                     return Ok(bytes);
+                }
+                Some(ChannelMsg::ExtendedData { .. }) => {
+                    let error = Self::read_error("ssh stderr received while streaming GMP XML");
+                    self.invalidate_connection();
+                    return Err(error);
                 }
                 Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
                     self.invalidate_connection();

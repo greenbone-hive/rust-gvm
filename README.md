@@ -683,9 +683,10 @@ let mut client = GmpClient::connect(conn).await?;
 
 Client certificates are optional. Disabling platform roots never disables
 verification; configure at least one custom root when platform roots are off.
-For Unix, TLS, and SSH transports, the configured timeout is a total deadline
-for receiving one complete XML response; periodic response chunks do not reset
-that deadline.
+For buffered reads on Unix, TLS, and SSH, the configured timeout is a total
+deadline for one complete XML response. Capability-gated streaming instead
+uses that value as the default idle timeout for each transport read; callers
+can independently set a per-stream total deadline with `StreamOptions`.
 
 ### Mock Server (library usage)
 

@@ -188,12 +188,11 @@ async fn verified_tls_streaming_chunks_complete_and_leave_connection_reusable() 
         .await
         .expect("send streamed get_version");
 
-    let deadline = tokio::time::Instant::now() + connection.response_timeout();
-    let mut framer = StreamingXmlReader::with_buffer_limit(connection.max_response_bytes());
+    let mut framer = StreamingXmlReader::with_limits(None, 1024 * 1024, 256);
     let mut streamed = Vec::new();
     while !framer.is_complete() {
         let mut chunk = connection
-            .read_stream_chunk(deadline)
+            .read_stream_chunk()
             .await
             .expect("TLS stream chunk");
         let consumed = framer.feed_frame(&chunk).expect("valid XML frame");

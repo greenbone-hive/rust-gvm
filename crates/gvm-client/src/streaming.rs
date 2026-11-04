@@ -5,21 +5,54 @@
 
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
-use gvm_connection::GvmStreamingConnection;
+use gvm_connection::{ConnectionError, GvmStreamingConnection};
+use gvm_gmp::responses::ParseError;
 use gvm_gmp::GmpStreamDecoder;
-use gvm_protocol::StreamingXmlReader;
+use gvm_protocol::{ProtocolError, StreamingXmlElement, StreamingXmlEvent, StreamingXmlReader};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{GvmError, WireTrace, WireTraceDirection, WireTraceEvent};
 
 const STREAMED_TRACE_MARKER: &[u8] = b"[streamed GMP response omitted]";
+const DEFAULT_MAX_RETAINED_BYTES: usize = 4 * 1024 * 1024;
+const DEFAULT_MAX_DEPTH: usize = 256;
+
+/// Per-operation policy for one streamed GMP response.
+///
+/// These limits are independent of the connection's buffered-response memory
+/// ceiling. The default permits an unbounded total stream, retains at most
+/// 4 MiB for one unfinished XML token, uses the connection timeout as a
+/// per-read idle timeout, and has no total deadline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamOptions {
+    /// Optional maximum total response-frame size.
+    pub max_bytes: Option<u64>,
+    /// Maximum bytes retained for the pre-root prefix or an incomplete token.
+    pub max_retained_bytes: usize,
+    /// Optional per-read idle timeout override.
+    pub idle_timeout: Option<Duration>,
+    /// Optional deadline for the complete stream, including caller pauses.
+    pub total_timeout: Option<Duration>,
+}
+
+impl Default for StreamOptions {
+    fn default() -> Self {
+        Self {
+            max_bytes: None,
+            max_retained_bytes: DEFAULT_MAX_RETAINED_BYTES,
+            idle_timeout: None,
+            total_timeout: None,
+        }
+    }
+}
 
 /// Successful completion of one streamed GMP response.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GmpStreamCompletion<M> {
     /// Exact number of response bytes observed and yielded for this XML frame.
-    pub bytes_received: usize,
+    pub bytes_received: u64,
     /// Small response-specific metadata produced by the incremental decoder.
     pub metadata: M,
 }
@@ -35,24 +68,27 @@ pub enum GmpStreamCopyError {
     Sink(#[source] io::Error),
 }
 
+enum StreamState<D>
+where
+    D: GmpStreamDecoder,
+{
+    Streaming(D),
+    Complete(GmpStreamCompletion<D::Completion>),
+    Failed,
+}
+
 /// Exclusive, backpressured stream of exact bytes for one GMP XML response.
 ///
 /// The stream borrows the active connection mutably, so no other request can
-/// use it until this value is consumed or dropped. [`Self::next_chunk`] performs
-/// at most one bounded transport read and does not read ahead in a background
-/// task; caller demand therefore supplies backpressure.
+/// use it until this value is consumed or dropped. [`Self::next_chunk`] does
+/// not read ahead in a background task; caller demand therefore supplies
+/// backpressure. Before the first yield it may perform multiple bounded reads
+/// to obtain and validate the complete root start tag. This ensures a non-2xx
+/// GMP response is rejected before any error body reaches the caller's sink.
 ///
-/// Call [`Self::finish`] for explicit success and typed completion metadata.
-/// `finish` also acts as the explicit drain-and-validate path if the caller no
-/// longer needs the remaining bytes. Dropping before a complete valid response,
-/// cancelling while dropping the stream, or encountering transport, framing,
-/// or decoder failure invalidates the connection. A fully validated response
-/// preserves any already-read bytes for the next frame and leaves the connection
-/// reusable.
-///
-/// Opt-in wire tracing never receives raw streamed response bytes. On success it
-/// receives a fixed omission marker so large or secret response bodies are not
-/// buffered or logged.
+/// Cancelling a `next_chunk` future while retaining the stream is safe because
+/// built-in transport reads are cancel-safe and framing state changes only
+/// after a read completes. Dropping the incomplete stream remains fail-closed.
 #[must_use = "dropping an incomplete GMP response stream invalidates the connection"]
 pub struct GmpResponseStream<'a, C, D>
 where
@@ -60,13 +96,14 @@ where
     D: GmpStreamDecoder,
 {
     connection: &'a mut C,
-    decoder: Option<D>,
+    state: StreamState<D>,
     framer: StreamingXmlReader,
-    deadline: tokio::time::Instant,
-    bytes_received: usize,
-    completion: Option<GmpStreamCompletion<D::Completion>>,
-    validated: bool,
-    failed: bool,
+    idle_timeout: Duration,
+    total_deadline: Option<tokio::time::Instant>,
+    bytes_received: u64,
+    held_prefix: Vec<u8>,
+    max_retained_bytes: usize,
+    root_validated: bool,
     wire_trace: Option<Arc<dyn WireTrace>>,
 }
 
@@ -76,11 +113,16 @@ where
     D: GmpStreamDecoder,
 {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state = match self.state {
+            StreamState::Streaming(_) => "streaming",
+            StreamState::Complete(_) => "complete",
+            StreamState::Failed => "failed",
+        };
         formatter
             .debug_struct("GmpResponseStream")
             .field("bytes_received", &self.bytes_received)
-            .field("complete", &self.validated)
-            .field("failed", &self.failed)
+            .field("state", &state)
+            .field("root_validated", &self.root_validated)
             .field("wire_trace_enabled", &self.wire_trace.is_some())
             .finish()
     }
@@ -95,18 +137,30 @@ where
         connection: &'a mut C,
         decoder: D,
         wire_trace: Option<Arc<dyn WireTrace>>,
+        options: StreamOptions,
     ) -> Self {
-        let framer = StreamingXmlReader::with_buffer_limit(connection.max_response_bytes());
-        let deadline = tokio::time::Instant::now() + connection.response_timeout();
+        let idle_timeout = options
+            .idle_timeout
+            .unwrap_or_else(|| connection.response_timeout());
+        let now = tokio::time::Instant::now();
+        let total_deadline = options.total_timeout.map(|timeout| {
+            now.checked_add(timeout)
+                .unwrap_or_else(|| now + Duration::from_secs(u32::MAX.into()))
+        });
         Self {
             connection,
-            decoder: Some(decoder),
-            framer,
-            deadline,
+            state: StreamState::Streaming(decoder),
+            framer: StreamingXmlReader::with_limits(
+                options.max_bytes,
+                options.max_retained_bytes,
+                DEFAULT_MAX_DEPTH,
+            ),
+            idle_timeout,
+            total_deadline,
             bytes_received: 0,
-            completion: None,
-            validated: false,
-            failed: false,
+            held_prefix: Vec::new(),
+            max_retained_bytes: options.max_retained_bytes,
+            root_validated: false,
             wire_trace,
         }
     }
@@ -114,115 +168,46 @@ where
     /// Read and validate the next exact response-byte chunk.
     ///
     /// `Ok(None)` means the full XML response and response-specific completion
-    /// metadata are valid. Call [`Self::finish`] to retrieve the byte count and
-    /// metadata. The returned chunk size is bounded by the transport's read
-    /// configuration, and another transport read does not occur until this
-    /// method is awaited again.
+    /// metadata are valid. Call [`Self::finish`] to retrieve them. Returned
+    /// chunks are bounded by the transport read configuration except that the
+    /// first chunk may combine several reads needed to validate the root tag;
+    /// that prefix is bounded by `StreamOptions::max_retained_bytes`.
     ///
     /// # Errors
-    /// Returns a transport, framing, or incremental response-decoding error and
-    /// invalidates the connection.
+    /// Returns a transport, framing, root-status, or incremental decoding error
+    /// and invalidates the connection.
     pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, GvmError> {
-        if self.completion.is_some() {
-            return Ok(None);
-        }
-        if self.failed {
-            return Err(GvmError::InvalidState(
-                "streamed response has already failed".to_string(),
-            ));
-        }
-
-        let mut bytes = match self.connection.read_stream_chunk(self.deadline).await {
-            Ok(bytes) if !bytes.is_empty() => bytes,
-            Ok(_) => {
-                self.invalidate();
-                return Err(GvmError::InvalidState(
-                    "streaming transport returned an empty response chunk".to_string(),
-                ));
+        match self.state {
+            StreamState::Complete(_) => return Ok(None),
+            StreamState::Failed => {
+                return Err(ConnectionError::NotConnected.into());
             }
-            Err(error) => {
-                self.failed = true;
-                return Err(error.into());
-            }
-        };
-
-        let consumed = match self.framer.feed_frame(&bytes) {
-            Ok(consumed) => consumed,
-            Err(error) => {
-                self.invalidate();
-                return Err(GvmError::Protocol(error));
-            }
-        };
-        let tail = bytes.split_off(consumed);
-        if let Some(decoder) = self.decoder.as_mut() {
-            if let Err(error) = decoder.feed(&bytes) {
-                self.invalidate();
-                return Err(error.into());
-            }
-        }
-        self.bytes_received = match self.bytes_received.checked_add(bytes.len()) {
-            Some(total) => total,
-            None => {
-                self.invalidate();
-                return Err(GvmError::InvalidState(
-                    "streamed response byte count overflowed usize".to_string(),
-                ));
-            }
-        };
-
-        if self.framer.is_complete() {
-            self.connection.retain_stream_tail(tail);
-            let decoder = self.decoder.take().ok_or_else(|| {
-                GvmError::InvalidState("streaming decoder is unavailable".to_string())
-            })?;
-            match decoder.finish() {
-                Ok(metadata) => {
-                    self.validated = true;
-                    self.completion = Some(GmpStreamCompletion {
-                        bytes_received: self.bytes_received,
-                        metadata,
-                    });
-                    if let Some(wire_trace) = &self.wire_trace {
-                        wire_trace.trace(WireTraceEvent {
-                            direction: WireTraceDirection::Response,
-                            bytes: STREAMED_TRACE_MARKER.to_vec(),
-                        });
-                    }
-                }
-                Err(error) => {
-                    self.invalidate();
-                    return Err(error.into());
-                }
-            }
-        } else {
-            debug_assert!(tail.is_empty());
+            StreamState::Streaming(_) => {}
         }
 
-        Ok(Some(bytes))
+        loop {
+            let bytes = self.read_transport_chunk().await?;
+            if let Some(output) = self.accept_chunk(&bytes)? {
+                return Ok(Some(output));
+            }
+        }
     }
 
     /// Drain and validate the response, returning explicit completion details.
     ///
-    /// When called after manually consuming all chunks this returns immediately.
-    /// When called early it intentionally reads and validates the remainder
-    /// without yielding it, providing the only connection-preserving early-stop
-    /// path.
-    ///
     /// # Errors
-    /// Returns a transport, framing, or response-specific decoding error. The
+    /// Returns a transport, framing, status, or response-decoding error. The
     /// connection is invalidated on every error.
     pub async fn finish(mut self) -> Result<GmpStreamCompletion<D::Completion>, GvmError> {
         while self.next_chunk().await?.is_some() {}
-        self.completion.take().ok_or_else(|| {
-            GvmError::InvalidState("stream completed without completion metadata".to_string())
-        })
+        self.take_completion()
     }
 
     /// Copy exact response bytes into an async sink and return completion details.
     ///
-    /// This adapter does not flush or shut down the sink. A sink write error is
-    /// reported separately and invalidates the connection, even when the final
-    /// XML bytes had already arrived, so callers get deterministic retry rules.
+    /// A non-success root status is rejected before the first sink write. This
+    /// adapter does not flush or shut down the sink; durable callers should use
+    /// a temporary file, then flush, sync, and atomically rename after success.
     ///
     /// # Errors
     /// Returns [`GmpStreamCopyError::Stream`] for response lifecycle failures or
@@ -240,19 +225,145 @@ where
                 return Err(GmpStreamCopyError::Sink(error));
             }
         }
-        self.completion.take().ok_or_else(|| {
-            GmpStreamCopyError::Stream(GvmError::InvalidState(
-                "stream completed without completion metadata".to_string(),
-            ))
-        })
+        self.take_completion().map_err(GmpStreamCopyError::Stream)
+    }
+
+    async fn read_transport_chunk(&mut self) -> Result<Vec<u8>, GvmError> {
+        let started = tokio::time::Instant::now();
+        if self
+            .total_deadline
+            .is_some_and(|deadline| deadline <= started)
+        {
+            self.invalidate();
+            return Err(ConnectionError::Timeout(Duration::ZERO).into());
+        }
+        let idle_deadline = started
+            .checked_add(self.idle_timeout)
+            .unwrap_or_else(|| started + Duration::from_secs(u32::MAX.into()));
+        let deadline = self
+            .total_deadline
+            .map_or(idle_deadline, |total| total.min(idle_deadline));
+        let waited = deadline.saturating_duration_since(started);
+        match tokio::time::timeout_at(deadline, self.connection.read_stream_chunk()).await {
+            Ok(Ok(bytes)) if !bytes.is_empty() => Ok(bytes),
+            Ok(Ok(_)) => {
+                debug_assert!(false, "streaming transport returned an empty chunk");
+                self.invalidate();
+                Err(ConnectionError::ReadFailed(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "streaming transport returned an empty response chunk",
+                ))
+                .into())
+            }
+            Ok(Err(error)) => {
+                self.state = StreamState::Failed;
+                Err(error.into())
+            }
+            Err(_) => {
+                self.invalidate();
+                Err(ConnectionError::Timeout(waited).into())
+            }
+        }
+    }
+
+    fn accept_chunk(&mut self, bytes: &[u8]) -> Result<Option<Vec<u8>>, GvmError> {
+        let (consumed, events) = self.framer.feed_frame_events(bytes).map_err(|error| {
+            self.invalidate();
+            GvmError::Protocol(error)
+        })?;
+        let (frame, tail) = bytes.split_at(consumed);
+        self.hold_pre_root_prefix(frame)?;
+        self.feed_events(&events)?;
+        self.bytes_received += consumed as u64;
+
+        if self.framer.is_complete() {
+            self.complete(tail)?;
+        } else {
+            debug_assert!(tail.is_empty());
+        }
+
+        Ok(self.root_validated.then(|| {
+            if self.held_prefix.is_empty() {
+                frame.to_vec()
+            } else {
+                std::mem::take(&mut self.held_prefix)
+            }
+        }))
+    }
+
+    fn hold_pre_root_prefix(&mut self, frame: &[u8]) -> Result<(), GvmError> {
+        if self.root_validated {
+            return Ok(());
+        }
+        self.held_prefix.extend_from_slice(frame);
+        if self.held_prefix.len() <= self.max_retained_bytes {
+            return Ok(());
+        }
+        let error = ProtocolError::StreamRetainedLimit {
+            max: self.max_retained_bytes,
+        };
+        self.invalidate();
+        Err(GvmError::Protocol(error))
+    }
+
+    fn feed_events(&mut self, events: &[StreamingXmlEvent]) -> Result<(), GvmError> {
+        for event in events {
+            if !self.root_validated {
+                if let Some(root) = root_element(event) {
+                    validate_root_status(root).inspect_err(|_| self.invalidate())?;
+                    self.root_validated = true;
+                }
+            }
+            let StreamState::Streaming(decoder) = &mut self.state else {
+                return Err(ConnectionError::NotConnected.into());
+            };
+            decoder.feed(event).map_err(|error| {
+                self.invalidate();
+                GvmError::from(error)
+            })?;
+        }
+        Ok(())
+    }
+
+    fn complete(&mut self, tail: &[u8]) -> Result<(), GvmError> {
+        self.connection.retain_stream_tail(tail.to_vec());
+        let state = std::mem::replace(&mut self.state, StreamState::Failed);
+        let StreamState::Streaming(decoder) = state else {
+            return Err(ConnectionError::NotConnected.into());
+        };
+        let metadata = decoder.finish().map_err(|error| {
+            self.invalidate();
+            GvmError::from(error)
+        })?;
+        self.state = StreamState::Complete(GmpStreamCompletion {
+            bytes_received: self.bytes_received,
+            metadata,
+        });
+        if let Some(wire_trace) = &self.wire_trace {
+            wire_trace.trace(WireTraceEvent {
+                direction: WireTraceDirection::Response,
+                bytes: STREAMED_TRACE_MARKER.to_vec(),
+            });
+        }
+        Ok(())
+    }
+
+    fn take_completion(&mut self) -> Result<GmpStreamCompletion<D::Completion>, GvmError> {
+        let state = std::mem::replace(&mut self.state, StreamState::Failed);
+        match state {
+            StreamState::Complete(completion) => Ok(completion),
+            StreamState::Streaming(decoder) => {
+                self.state = StreamState::Streaming(decoder);
+                Err(ConnectionError::NotConnected.into())
+            }
+            StreamState::Failed => Err(ConnectionError::NotConnected.into()),
+        }
     }
 
     fn invalidate(&mut self) {
         self.connection.invalidate_stream();
-        self.failed = true;
-        self.validated = false;
-        self.completion = None;
-        self.decoder = None;
+        self.state = StreamState::Failed;
+        self.held_prefix.clear();
     }
 }
 
@@ -262,8 +373,36 @@ where
     D: GmpStreamDecoder,
 {
     fn drop(&mut self) {
-        if !self.validated || self.failed {
+        if matches!(self.state, StreamState::Streaming(_)) {
             self.connection.invalidate_stream();
         }
     }
+}
+
+fn root_element(event: &StreamingXmlEvent) -> Option<&StreamingXmlElement> {
+    match event {
+        StreamingXmlEvent::Start { element, depth: 1 }
+        | StreamingXmlEvent::Empty { element, depth: 1 } => Some(element),
+        _ => None,
+    }
+}
+
+fn validate_root_status(root: &StreamingXmlElement) -> Result<(), GvmError> {
+    let value = root
+        .attribute("status")
+        .ok_or_else(|| ParseError::MissingElement("status".to_string()))?;
+    let status = value.parse::<u16>().map_err(|_| ParseError::InvalidValue {
+        field: "status".to_string(),
+        value: value.to_string(),
+    })?;
+    if (200..300).contains(&status) {
+        return Ok(());
+    }
+    Err(GvmError::Server {
+        status,
+        message: root
+            .attribute("status_text")
+            .unwrap_or("Unknown error")
+            .to_string(),
+    })
 }

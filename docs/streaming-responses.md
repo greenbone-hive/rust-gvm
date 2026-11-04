@@ -1,6 +1,6 @@
 # Streaming Large GMP Responses
 
-`GmpClient::execute_stream` is the generic foundation for GMP responses that
+`GmpClient::execute_stream` and `execute_stream_with` are the generic foundation for GMP responses that
 can be too large to buffer comfortably. It is intentionally capability-gated:
 a request is accepted only when its associated response implements
 `GmpStreamingResponse`. Ordinary `GmpResponse` implementations continue to use
@@ -18,26 +18,30 @@ check, version-aware encoding, redacted request tracing, and transport send as
 `execute`. It then returns a `GmpResponseStream` that mutably borrows the active
 connection.
 
-- `next_chunk().await` reads at most one transport chunk and returns the exact
-  received bytes belonging to the current response. Bytes are never rebuilt or
+- `next_chunk().await` returns exact received bytes belonging to the current
+  response. Before its first yield it may combine multiple bounded reads until
+  the root start tag is complete and its GMP status has been accepted. Later
+  calls perform one bounded transport read. Bytes are never rebuilt or
   reserialized.
 - No background reader or unbounded channel is created. The caller's next
   `next_chunk` call is the backpressure signal.
 - The incremental XML framer validates exactly one XML 1.0 root, the configured
-  nesting limit, and the transport's configured total response-byte limit. It
-  discards parsed prefixes and retains only incomplete token state.
+  nesting limit, a per-call optional total-byte limit, and an independent
+  retained-token limit. It discards parsed prefixes and retains only incomplete
+  token state.
 - `finish().await` returns `GmpStreamCompletion { bytes_received, metadata }`.
   Calling it early deliberately drains and validates the remainder without
   yielding those remaining bytes.
 - `copy_to(&mut sink).await` is the convenience `AsyncWrite` adapter. It writes
   each exact chunk with `write_all` and returns the same completion value. It
   does not flush or shut down the caller-owned sink. For durable acquisition,
-  pass a `tokio::fs::File`, then explicitly call `flush` and `sync_all` after
-  successful completion before publishing the file.
+  pass a temporary `tokio::fs::File`, then explicitly call `flush` and
+  `sync_all` after successful completion before atomically publishing the file.
 
-The response-specific incremental decoder receives the same exact chunks and
-keeps only the small state needed to produce completion metadata. It is also
-responsible for normalizing non-2xx response status to the same server error
+The response-specific incremental decoder receives ordered, already validated
+`StreamingXmlEvent` values from the same generic framer. It therefore does not
+need a second XML parser. The generic stream checks the root `status` before
+yielding the first byte and normalizes non-2xx statuses to the same server error
 semantics as buffered decoding.
 
 ## Connection reuse and failures
@@ -51,8 +55,8 @@ The connection is invalidated in each of these cases:
 
 - transport error, timeout, or EOF before completion;
 - malformed, truncated, oversized, or excessively nested XML;
-- response-specific incremental decoding failure, including a non-success GMP
-  status;
+- a non-success or malformed GMP root status;
+- response-specific incremental decoding failure;
 - dropping the stream before full validation;
 - cancelling an in-progress operation and then dropping the stream;
 - an `AsyncWrite` sink error in `copy_to`.
@@ -64,16 +68,19 @@ dropping the stream never starts hidden background draining.
 
 ## Memory and limits
 
-Transport chunks are bounded by each built-in transport's `read_buffer_size`.
-The streaming XML reader normally retains only a partial XML token plus nesting
-state. An adversarial single unfinished token can grow until the configured
-`max_response_bytes`, so deployments should keep a finite limit appropriate to
-their protocol policy. Set or raise that existing transport limit explicitly
-when legitimate responses exceed its default; this foundation introduces no
-report-specific threshold.
+Transport chunks are bounded consistently by each built-in transport's
+`read_buffer_size`. `StreamOptions::max_retained_bytes` defaults to 4 MiB and
+bounds the held pre-root prefix plus an unfinished attribute, CDATA section,
+comment, or other single token.
+`StreamOptions::max_bytes` is an optional `u64` total-frame limit. Neither
+setting changes the connection's `max_response_bytes`, which remains the
+buffered path's in-memory response ceiling.
 
-Unix, verified TLS, and SSH use the same streaming transport contract and keep
-one total response deadline: receiving periodic chunks does not reset it.
+Unix, verified TLS, and SSH use the same timeout model. The connection timeout
+is the default idle timeout for each stream read, so time spent in the caller's
+sink or between `next_chunk` calls is not charged to the server. A caller can
+override `idle_timeout` and set an optional `total_timeout` per operation.
+Completion byte counts are `u64`.
 
 ## Tracing and secrets
 
@@ -86,8 +93,8 @@ successful validation, the trace receives a fixed
 ## Implementing an opt-in response
 
 A response opts in by implementing `GmpStreamingResponse` and selecting a
-`GmpStreamDecoder`. The decoder's `feed` method observes ordered exact chunks;
-`finish` returns small typed metadata only after the generic XML framer has
-validated the complete frame. This association is static through
+`GmpStreamDecoder`. The decoder's `feed` method observes ordered validated XML
+events; `finish` returns small typed metadata only after the generic XML framer
+has validated the complete frame. This association is static through
 `GmpRequest::Response`, so non-opt-in response types fail to compile with
 `execute_stream` and no command-name matching is involved.

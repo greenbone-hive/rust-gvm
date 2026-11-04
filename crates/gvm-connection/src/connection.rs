@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tokio::time::Instant;
 
 use crate::error::ConnectionError;
 
@@ -58,23 +57,22 @@ pub trait GvmConnection: Send + Sync {
 /// frame through [`Self::retain_stream_tail`]. A streaming response owns an
 /// exclusive mutable borrow of the connection until it completes or
 /// invalidates the transport.
+#[doc(hidden)]
 #[async_trait]
 pub trait GvmStreamingConnection: GvmConnection {
-    /// Return the total deadline duration for receiving one response.
+    /// Return the default maximum idle period for one response read.
     fn response_timeout(&self) -> Duration;
 
-    /// Return the configured maximum size of one XML response frame.
-    fn max_response_bytes(&self) -> Option<usize>;
-
-    /// Read one bounded raw response chunk before `deadline`.
+    /// Read one bounded raw response chunk.
     ///
-    /// Implementations must invalidate the active transport before returning
-    /// a timeout, EOF, or transport read error.
+    /// Implementations never return an empty successful chunk. Timeouts are
+    /// imposed by the client so caller backpressure is not counted
+    /// as server idle time. Implementations invalidate the active transport
+    /// before returning EOF or a transport read error.
     ///
     /// # Errors
-    /// Returns an error if the transport is disconnected, the total deadline
-    /// expires, or reading fails.
-    async fn read_stream_chunk(&mut self, deadline: Instant) -> crate::Result<Vec<u8>>;
+    /// Returns an error if the transport is disconnected or reading fails.
+    async fn read_stream_chunk(&mut self) -> crate::Result<Vec<u8>>;
 
     /// Preserve bytes read after the end of the current XML response.
     ///
@@ -84,6 +82,14 @@ pub trait GvmStreamingConnection: GvmConnection {
 
     /// Make the active transport unusable after an incomplete streamed response.
     fn invalidate_stream(&mut self);
+}
+
+pub(crate) fn take_bounded_pending(pending: &mut Vec<u8>, max: usize) -> Option<Vec<u8>> {
+    if pending.is_empty() {
+        return None;
+    }
+    let split_at = max.max(1).min(pending.len());
+    Some(pending.drain(..split_at).collect())
 }
 
 pub(crate) fn prepend_pending(pending: &mut Vec<u8>, mut prefix: Vec<u8>) {
