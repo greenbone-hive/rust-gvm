@@ -42,7 +42,18 @@ The response-specific incremental decoder receives ordered, already validated
 `StreamingXmlEvent` values from the same generic framer. It therefore does not
 need a second XML parser. The generic stream checks the root `status` before
 yielding the first byte and normalizes non-2xx statuses to the same server error
-semantics as buffered decoding.
+semantics as buffered decoding. Event creation is lazy: buffered response
+validation does not build event payloads, and a streaming decoder receives no
+`Text` or `CData` strings unless its `wants_text(element_path)` implementation
+selects that path. The text-interest decision is made while each transport
+chunk is parsed, so it must depend on the supplied path rather than state that
+`feed` updates after the event batch has been returned.
+
+`Text` and `CData` events are content fragments, not complete logical XML text
+nodes. Feed and transport boundaries can split character data into several
+events, and CDATA can appear between ordinary text fragments. A decoder that
+selects text must accumulate all selected fragments until the matching `End`
+event instead of treating one event as the element's complete value.
 
 ## Connection reuse and failures
 
@@ -70,8 +81,13 @@ dropping the stream never starts hidden background draining.
 
 Transport chunks are bounded consistently by each built-in transport's
 `read_buffer_size`. `StreamOptions::max_retained_bytes` defaults to 4 MiB and
-bounds the held pre-root prefix plus an unfinished attribute, CDATA section,
-comment, or other single token.
+bounds the held prefix only while the root start tag has not yet been validated,
+as well as an unfinished attribute, CDATA section, comment, or other single
+token. The bounded transport read that completes and validates the root is
+emitted in full, even when a large body shares that read. Consequently the
+first emitted chunk may exceed `max_retained_bytes` by up to one bounded
+transport read; declarations, comments, and other exact pre-root bytes remain
+preserved in that chunk.
 `StreamOptions::max_bytes` is an optional `u64` total-frame limit. Neither
 setting changes the connection's `max_response_bytes`, which remains the
 buffered path's in-memory response ceiling.
@@ -94,7 +110,8 @@ successful validation, the trace receives a fixed
 
 A response opts in by implementing `GmpStreamingResponse` and selecting a
 `GmpStreamDecoder`. The decoder's `feed` method observes ordered validated XML
-events; `finish` returns small typed metadata only after the generic XML framer
-has validated the complete frame. This association is static through
+events, while `wants_text` opts selected element paths into fragment delivery;
+`finish` returns small typed metadata only after the generic XML framer has
+validated the complete frame. This association is static through
 `GmpRequest::Response`, so non-opt-in response types fail to compile with
 `execute_stream` and no command-name matching is involved.

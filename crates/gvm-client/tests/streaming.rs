@@ -66,12 +66,14 @@ impl GmpStreamingResponse for TestStreamingResponse {
 struct TestMetadata {
     status: u16,
     events: usize,
+    text_events: usize,
 }
 
 #[derive(Debug, Default)]
 struct TestDecoder {
     status: Option<u16>,
     events: usize,
+    text_events: usize,
 }
 
 impl GmpStreamDecoder for TestDecoder {
@@ -79,7 +81,18 @@ impl GmpStreamDecoder for TestDecoder {
 
     fn feed(&mut self, event: &StreamingXmlEvent) -> Result<(), ParseError> {
         self.events += 1;
-        if matches!(event, StreamingXmlEvent::Text { text, .. } if text.contains("decoder-error")) {
+        if matches!(
+            event,
+            StreamingXmlEvent::Text { .. } | StreamingXmlEvent::CData { .. }
+        ) {
+            self.text_events += 1;
+        }
+        if matches!(
+            event,
+            StreamingXmlEvent::Start { element, .. }
+                | StreamingXmlEvent::Empty { element, .. }
+                if element.name == "decoder-error"
+        ) {
             return Err(ParseError::InvalidValue {
                 field: "stream".to_string(),
                 value: "decoder-error".to_string(),
@@ -102,7 +115,84 @@ impl GmpStreamDecoder for TestDecoder {
         Ok(TestMetadata {
             status,
             events: self.events,
+            text_events: self.text_events,
         })
+    }
+}
+
+#[derive(Debug)]
+struct TextStreamingRequest;
+
+impl GmpRequestCodec for TextStreamingRequest {
+    fn command(&self) -> Option<GmpCommand> {
+        Some(GmpCommand::new("test_stream"))
+    }
+
+    fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        Ok(b"<test_stream/>".to_vec())
+    }
+}
+
+impl GmpRequest for TextStreamingRequest {
+    type Response = TextStreamingResponse;
+}
+
+#[derive(Debug)]
+struct TextStreamingResponse;
+
+impl GmpResponse for TextStreamingResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        status(response.data())?;
+        Ok(Self)
+    }
+}
+
+impl GmpStreamingResponse for TextStreamingResponse {
+    type Decoder = TextDecoder;
+
+    fn stream_decoder(_version: GmpVersion) -> Self::Decoder {
+        TextDecoder::default()
+    }
+}
+
+#[derive(Debug, Default)]
+struct TextDecoder {
+    status: Option<u16>,
+    metadata: String,
+    fragments: usize,
+}
+
+impl GmpStreamDecoder for TextDecoder {
+    type Completion = (u16, String, usize);
+
+    fn wants_text(&self, element_path: &[String]) -> bool {
+        matches!(element_path, [root, metadata] if root == "test_stream_response" && metadata == "metadata")
+    }
+
+    fn feed(&mut self, event: &StreamingXmlEvent) -> Result<(), ParseError> {
+        match event {
+            StreamingXmlEvent::Start { element, depth: 1 }
+            | StreamingXmlEvent::Empty { element, depth: 1 } => {
+                self.status = element
+                    .attribute("status")
+                    .and_then(|value| value.parse().ok());
+            }
+            StreamingXmlEvent::Text { text, .. } | StreamingXmlEvent::CData { text, .. } => {
+                self.metadata.push_str(text);
+                self.fragments += 1;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<Self::Completion, ParseError> {
+        Ok((
+            self.status
+                .ok_or_else(|| ParseError::MissingElement("status".to_string()))?,
+            self.metadata,
+            self.fragments,
+        ))
     }
 }
 
@@ -204,12 +294,9 @@ impl GvmStreamingConnection for TestConnection {
                 tokio::time::sleep(delay).await;
                 Ok(bytes)
             }
-            Some(StreamStep::Error) => {
-                self.invalidate_stream();
-                Err(ConnectionError::ReadFailed(io::Error::other(
-                    "injected transport error",
-                )))
-            }
+            Some(StreamStep::Error) => Err(ConnectionError::ReadFailed(io::Error::other(
+                "injected transport error",
+            ))),
             Some(StreamStep::Pending) => std::future::pending().await,
             None => {
                 self.invalidate_stream();
@@ -268,7 +355,7 @@ fn chunks(bytes: &[u8], sizes: &[usize]) -> Vec<StreamStep> {
 
 #[tokio::test]
 async fn opt_in_response_streams_exact_bytes_with_backpressure_and_completion() {
-    let response = r#"<test_stream_response status="200" status_text="OK"><body>Grüße &amp; data</body></test_stream_response>"#.as_bytes();
+    let response = r#"<test_stream_response status="200" status_text="OK"><body>Grüße &amp; data<![CDATA[raw]]></body></test_stream_response>"#.as_bytes();
     let (mut client, reads, _invalidations) = client(chunks(response, &[1, 2, 7, 3, 11])).await;
     let mut stream = client
         .execute_stream(TestStreamingRequest)
@@ -288,7 +375,37 @@ async fn opt_in_response_streams_exact_bytes_with_backpressure_and_completion() 
     assert_eq!(observed, response);
     assert_eq!(completion.bytes_received, response.len() as u64);
     assert_eq!(completion.metadata.status, 200);
-    assert!(completion.metadata.events >= yielded_chunks);
+    assert!(completion.metadata.events > 0);
+    assert_eq!(completion.metadata.text_events, 0);
+}
+
+#[tokio::test]
+async fn text_is_skipped_by_default_and_path_opt_in_accumulates_fragments() {
+    let steps = [
+        StreamStep::Bytes(
+            br#"<test_stream_response status="200"><ignored>not copied</ignored><metadata>o"#
+                .to_vec(),
+        ),
+        StreamStep::Bytes(b"n".to_vec()),
+        StreamStep::Bytes(b"e<![CDATA[two]]>thr".to_vec()),
+        StreamStep::Bytes(b"ee</metadata></test_stream_response>".to_vec()),
+    ];
+    let (mut client, _reads, invalidations) = client(steps).await;
+    let completion = client
+        .execute_stream(TextStreamingRequest)
+        .await
+        .expect("start text stream")
+        .finish()
+        .await
+        .expect("finish text stream");
+
+    assert_eq!(completion.metadata.0, 200);
+    assert_eq!(completion.metadata.1, "onetwothree");
+    assert!(
+        completion.metadata.2 >= 5,
+        "transport boundaries and CDATA must remain observable fragments"
+    );
+    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -379,28 +496,34 @@ async fn malformed_and_truncated_xml_invalidate_connection() {
 }
 
 #[tokio::test]
-async fn transport_and_incremental_decoder_errors_invalidate_connection() {
-    for steps in [
-        vec![StreamStep::Error],
-        vec![StreamStep::Bytes(
-            br#"<test_stream_response status="200">decoder-error</test_stream_response>"#.to_vec(),
-        )],
-    ] {
-        let (mut client, _reads, invalidations) = client(steps).await;
-        let error = client
-            .execute_stream(TestStreamingRequest)
-            .await
-            .expect("start stream")
-            .finish()
-            .await
-            .expect_err("stream must fail");
+async fn transport_read_error_is_explicitly_invalidated_by_the_stream() {
+    let (mut client, _reads, invalidations) = client([StreamStep::Error]).await;
+    let error = client
+        .execute_stream(TestStreamingRequest)
+        .await
+        .expect("start stream")
+        .finish()
+        .await
+        .expect_err("stream must fail");
 
-        assert!(matches!(
-            error,
-            GvmError::Connection(_) | GvmError::Parse(_)
-        ));
-        assert!(invalidations.load(Ordering::SeqCst) >= 1);
-    }
+    assert!(matches!(error, GvmError::Connection(_)));
+    assert_eq!(invalidations.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn incremental_decoder_errors_invalidate_connection() {
+    let response = br#"<test_stream_response status="200"><decoder-error/></test_stream_response>"#;
+    let (mut client, _reads, invalidations) = client([StreamStep::Bytes(response.to_vec())]).await;
+    let error = client
+        .execute_stream(TestStreamingRequest)
+        .await
+        .expect("start stream")
+        .finish()
+        .await
+        .expect_err("stream must fail");
+
+    assert!(matches!(error, GvmError::Parse(_)));
+    assert!(invalidations.load(Ordering::SeqCst) >= 1);
 }
 
 struct FailingSink;
@@ -600,6 +723,33 @@ async fn retained_token_limit_is_independent_of_total_stream_size() {
 }
 
 #[tokio::test]
+async fn root_and_large_body_in_first_read_do_not_count_as_retained_prefix() {
+    let body = "x".repeat(4 * 1024);
+    let response = format!(
+        "<?xml version=\"1.0\"?>\n<!--preserved--><test_stream_response status=\"200\"><body>{body}</body></test_stream_response>"
+    );
+    let (mut client, _reads, invalidations) = client(chunks(response.as_bytes(), &[1024])).await;
+    let options = StreamOptions {
+        max_retained_bytes: 256,
+        ..StreamOptions::default()
+    };
+    let mut stream = client
+        .execute_stream_with(TestStreamingRequest, options)
+        .await
+        .expect("start stream");
+    let mut observed = Vec::new();
+
+    while let Some(chunk) = stream.next_chunk().await.expect("next chunk") {
+        observed.extend_from_slice(&chunk);
+    }
+    let completion = stream.finish().await.expect("finish stream");
+
+    assert_eq!(observed, response.as_bytes());
+    assert_eq!(completion.bytes_received, response.len() as u64);
+    assert_eq!(invalidations.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn retained_limit_also_bounds_the_withheld_pre_root_prefix() {
     let response = "<!--12345678--><!--abcdefgh--><test_stream_response status=\"200\"/>";
     let (mut client, _reads, invalidations) = client(chunks(response.as_bytes(), &[8])).await;
@@ -674,7 +824,10 @@ async fn optional_total_timeout_still_bounds_the_complete_operation() {
         .await
         .expect_err("total timeout must expire");
 
-    assert!(matches!(error, GvmError::Timeout(_)));
+    assert!(matches!(
+        error,
+        GvmError::Timeout(duration) if duration == Duration::from_millis(10)
+    ));
     assert!(invalidations.load(Ordering::SeqCst) >= 1);
 }
 

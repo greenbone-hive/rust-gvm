@@ -67,8 +67,9 @@ pub trait GvmStreamingConnection: GvmConnection {
     ///
     /// Implementations never return an empty successful chunk. Timeouts are
     /// imposed by the client so caller backpressure is not counted
-    /// as server idle time. Implementations invalidate the active transport
-    /// before returning EOF or a transport read error.
+    /// as server idle time. Built-in transports invalidate themselves before
+    /// returning EOF or a read error; the streaming client also invalidates
+    /// defensively when any implementation returns an error.
     ///
     /// # Errors
     /// Returns an error if the transport is disconnected or reading fails.

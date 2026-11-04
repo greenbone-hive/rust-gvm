@@ -28,8 +28,8 @@ pub enum ProtocolError {
         max: u64,
     },
 
-    /// An incomplete streamed XML token exceeded the retained-memory limit.
-    #[error("streamed XML token exceeded retained-memory limit of {max} bytes")]
+    /// A pre-root prefix or incomplete XML token exceeded the retained-memory limit.
+    #[error("streamed XML retained data exceeded configured limit of {max} bytes")]
     StreamRetainedLimit {
         /// The configured retained parsing-window limit in bytes.
         max: usize,

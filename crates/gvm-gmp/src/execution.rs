@@ -262,7 +262,24 @@ pub trait GmpStreamDecoder: Send {
     /// Small typed metadata returned after the complete response is validated.
     type Completion: Send;
 
+    /// Return whether character content at `element_path` is needed.
+    ///
+    /// The default is `false`, so `Text` and `CData` event payloads are not
+    /// allocated for metadata decoders that only inspect elements and
+    /// attributes. This method is called while the XML batch is parsed, before
+    /// [`Self::feed`] observes events from that batch; implementations must
+    /// therefore decide from `element_path` rather than feed-updated state.
+    fn wants_text(&self, element_path: &[String]) -> bool {
+        let _ = element_path;
+        false
+    }
+
     /// Observe one validated, ordered XML event.
+    ///
+    /// `Text` and `CData` carry fragments, not guaranteed whole logical text
+    /// nodes. Transport/feed boundaries and CDATA sections can produce multiple
+    /// events for one element's content. Decoders interested in text must
+    /// accumulate selected fragments until the matching `End` event.
     ///
     /// # Errors
     /// Returns a response-model error when incremental decoding cannot continue.

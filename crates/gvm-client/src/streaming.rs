@@ -29,7 +29,10 @@ const DEFAULT_MAX_DEPTH: usize = 256;
 pub struct StreamOptions {
     /// Optional maximum total response-frame size.
     pub max_bytes: Option<u64>,
-    /// Maximum bytes retained for the pre-root prefix or an incomplete token.
+    /// Maximum bytes retained while waiting for the root or an incomplete token.
+    ///
+    /// The read that validates the root may make the first emitted chunk exceed
+    /// this value by up to one bounded transport read.
     pub max_retained_bytes: usize,
     /// Optional per-read idle timeout override.
     pub idle_timeout: Option<Duration>,
@@ -99,6 +102,7 @@ where
     state: StreamState<D>,
     framer: StreamingXmlReader,
     idle_timeout: Duration,
+    total_timeout: Option<Duration>,
     total_deadline: Option<tokio::time::Instant>,
     bytes_received: u64,
     held_prefix: Vec<u8>,
@@ -143,10 +147,9 @@ where
             .idle_timeout
             .unwrap_or_else(|| connection.response_timeout());
         let now = tokio::time::Instant::now();
-        let total_deadline = options.total_timeout.map(|timeout| {
-            now.checked_add(timeout)
-                .unwrap_or_else(|| now + Duration::from_secs(u32::MAX.into()))
-        });
+        let total_deadline = options
+            .total_timeout
+            .map(|timeout| deadline_after(now, timeout));
         Self {
             connection,
             state: StreamState::Streaming(decoder),
@@ -156,6 +159,7 @@ where
                 DEFAULT_MAX_DEPTH,
             ),
             idle_timeout,
+            total_timeout: options.total_timeout,
             total_deadline,
             bytes_received: 0,
             held_prefix: Vec::new(),
@@ -171,7 +175,10 @@ where
     /// metadata are valid. Call [`Self::finish`] to retrieve them. Returned
     /// chunks are bounded by the transport read configuration except that the
     /// first chunk may combine several reads needed to validate the root tag;
-    /// that prefix is bounded by `StreamOptions::max_retained_bytes`.
+    /// the withheld prefix is bounded by `StreamOptions::max_retained_bytes`
+    /// while the root remains incomplete. When a read validates the root, the
+    /// first emitted chunk includes that complete bounded read and can exceed
+    /// `max_retained_bytes` by up to one transport read.
     ///
     /// # Errors
     /// Returns a transport, framing, root-status, or incremental decoding error
@@ -235,15 +242,19 @@ where
             .is_some_and(|deadline| deadline <= started)
         {
             self.invalidate();
-            return Err(ConnectionError::Timeout(Duration::ZERO).into());
+            return Err(ConnectionError::Timeout(
+                self.total_timeout
+                    .expect("a total deadline always has a configured timeout"),
+            )
+            .into());
         }
-        let idle_deadline = started
-            .checked_add(self.idle_timeout)
-            .unwrap_or_else(|| started + Duration::from_secs(u32::MAX.into()));
-        let deadline = self
-            .total_deadline
-            .map_or(idle_deadline, |total| total.min(idle_deadline));
-        let waited = deadline.saturating_duration_since(started);
+        let idle_deadline = deadline_after(started, self.idle_timeout);
+        let (deadline, timeout_cause) = match (self.total_deadline, self.total_timeout) {
+            (Some(total_deadline), Some(total_timeout)) if total_deadline <= idle_deadline => {
+                (total_deadline, total_timeout)
+            }
+            _ => (idle_deadline, self.idle_timeout),
+        };
         match tokio::time::timeout_at(deadline, self.connection.read_stream_chunk()).await {
             Ok(Ok(bytes)) if !bytes.is_empty() => Ok(bytes),
             Ok(Ok(_)) => {
@@ -256,25 +267,40 @@ where
                 .into())
             }
             Ok(Err(error)) => {
-                self.state = StreamState::Failed;
+                self.invalidate();
                 Err(error.into())
             }
             Err(_) => {
                 self.invalidate();
-                Err(ConnectionError::Timeout(waited).into())
+                Err(ConnectionError::Timeout(timeout_cause).into())
             }
         }
     }
 
     fn accept_chunk(&mut self, bytes: &[u8]) -> Result<Option<Vec<u8>>, GvmError> {
-        let (consumed, events) = self.framer.feed_frame_events(bytes).map_err(|error| {
+        let result = {
+            let (framer, state) = (&mut self.framer, &self.state);
+            let StreamState::Streaming(decoder) = state else {
+                unreachable!("chunks are accepted only while streaming");
+            };
+            framer.feed_frame_events_with_text(bytes, |path| decoder.wants_text(path))
+        };
+        let (consumed, events) = result.map_err(|error| {
             self.invalidate();
             GvmError::Protocol(error)
         })?;
         let (frame, tail) = bytes.split_at(consumed);
-        self.hold_pre_root_prefix(frame)?;
+        let root_was_validated = self.root_validated;
         self.feed_events(&events)?;
         self.bytes_received += consumed as u64;
+
+        if self.root_validated {
+            if !root_was_validated {
+                self.held_prefix.extend_from_slice(frame);
+            }
+        } else {
+            self.hold_pre_root_prefix(frame)?;
+        }
 
         if self.framer.is_complete() {
             self.complete(tail)?;
@@ -315,7 +341,7 @@ where
                 }
             }
             let StreamState::Streaming(decoder) = &mut self.state else {
-                return Err(ConnectionError::NotConnected.into());
+                unreachable!("events are fed only while streaming");
             };
             decoder.feed(event).map_err(|error| {
                 self.invalidate();
@@ -329,7 +355,7 @@ where
         self.connection.retain_stream_tail(tail.to_vec());
         let state = std::mem::replace(&mut self.state, StreamState::Failed);
         let StreamState::Streaming(decoder) = state else {
-            return Err(ConnectionError::NotConnected.into());
+            unreachable!("a response completes only from the streaming state");
         };
         let metadata = decoder.finish().map_err(|error| {
             self.invalidate();
@@ -352,11 +378,9 @@ where
         let state = std::mem::replace(&mut self.state, StreamState::Failed);
         match state {
             StreamState::Complete(completion) => Ok(completion),
-            StreamState::Streaming(decoder) => {
-                self.state = StreamState::Streaming(decoder);
-                Err(ConnectionError::NotConnected.into())
+            StreamState::Streaming(_) | StreamState::Failed => {
+                unreachable!("completion is taken only after successful validation")
             }
-            StreamState::Failed => Err(ConnectionError::NotConnected.into()),
         }
     }
 
@@ -405,4 +429,10 @@ fn validate_root_status(root: &StreamingXmlElement) -> Result<(), GvmError> {
             .unwrap_or("Unknown error")
             .to_string(),
     })
+}
+
+fn deadline_after(start: tokio::time::Instant, timeout: Duration) -> tokio::time::Instant {
+    start
+        .checked_add(timeout)
+        .unwrap_or_else(|| start + Duration::from_secs(u32::MAX.into()))
 }
