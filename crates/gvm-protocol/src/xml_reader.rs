@@ -101,17 +101,15 @@ pub enum StreamingXmlEvent {
 /// numeric reference, or a value that is not an XML character.
 pub fn resolve_xml_reference(reference: &str) -> Result<String, ProtocolError> {
     let character = if let Some(value) = reference.strip_prefix("#x") {
-        value
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
-            .then(|| u32::from_str_radix(value, 16).ok().and_then(char::from_u32))
-            .flatten()
+        if !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(xml_parse_error("invalid character reference"));
+        }
+        u32::from_str_radix(value, 16).ok().and_then(char::from_u32)
     } else if let Some(value) = reference.strip_prefix('#') {
-        value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
-            .then(|| value.parse::<u32>().ok().and_then(char::from_u32))
-            .flatten()
+        if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(xml_parse_error("invalid character reference"));
+        }
+        value.parse::<u32>().ok().and_then(char::from_u32)
     } else {
         return resolve_xml_entity(reference)
             .map(ToString::to_string)

@@ -32,15 +32,17 @@ impl Pagination {
             .saturating_add(1);
         (first, self.per_page)
     }
-
-    pub(crate) const fn direct_window(first: i32, rows: i32) -> DirectPaginationWindow {
-        DirectPaginationWindow { first, rows }
-    }
 }
 
 pub(crate) struct DirectPaginationWindow {
     first: i32,
     rows: i32,
+}
+
+impl DirectPaginationWindow {
+    pub(crate) const fn new(first: i32, rows: i32) -> Self {
+        Self { first, rows }
+    }
 }
 
 /// A validated caller-owned gvmd filter fragment.
@@ -186,10 +188,10 @@ impl PaginatedFilter {
         self
     }
 
-    pub(crate) fn with_direct_window(mut self, window: DirectPaginationWindow) -> Self {
+    pub(crate) fn build_with_direct_window(mut self, window: DirectPaginationWindow) -> String {
         let DirectPaginationWindow { first, rows } = window;
         self.clauses.push(format!("first={first} rows={rows}"));
-        self
+        self.clauses.join(" ")
     }
 
     /// Render the composed filter string, or `None` when no clauses were added.

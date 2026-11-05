@@ -11,6 +11,7 @@ use quick_xml::Reader;
 
 use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, bool_str, set_optional_bool_attr};
+use crate::filtering::DirectPaginationWindow;
 use crate::responses::{
     CancelReportExportResponse, CreateReportResponse, DeleteReportResponse,
     DownloadReportExportResponse, ExportAuditReportResponse, ExportDeltaAuditReportResponse,
@@ -23,8 +24,8 @@ use crate::responses::{
 };
 use crate::types::EntityId;
 use crate::{
-    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, PaginatedFilter,
-    Pagination,
+    FilterFragmentError, GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion,
+    PaginatedFilter,
 };
 
 /// Request for importing one XML report into an existing import task.
@@ -323,15 +324,27 @@ impl GetNativeReportPageRequest {
         let result_filter = result_filter.into();
         let filter_string = PaginatedFilter::new()
             .try_with_filter_string(Some(&result_filter), &[])
-            .map_err(|source| GmpRequestError::FilterFragment {
-                field: "result_filter",
-                source,
+            .map_err(|error| match error {
+                FilterFragmentError::ReservedTerm { term }
+                    if term.eq_ignore_ascii_case("first") =>
+                {
+                    GmpRequestError::FilterFragment {
+                        field: "result_filter",
+                        term: "first",
+                    }
+                }
+                FilterFragmentError::ReservedTerm { term } if term.eq_ignore_ascii_case("rows") => {
+                    GmpRequestError::FilterFragment {
+                        field: "result_filter",
+                        term: "rows",
+                    }
+                }
+                FilterFragmentError::ReservedTerm { .. } => GmpRequestError::invalid_field(
+                    "result_filter",
+                    "contains an unexpected reserved term",
+                ),
             })?
-            .with_direct_window(Pagination::direct_window(first, rows))
-            .build()
-            .ok_or_else(|| {
-                GmpRequestError::invalid_field("result_filter", "pagination window must be present")
-            })?;
+            .build_with_direct_window(DirectPaginationWindow::new(first, rows));
 
         let request = GetReportRequest {
             report_id,

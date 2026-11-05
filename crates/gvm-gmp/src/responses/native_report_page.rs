@@ -287,7 +287,7 @@ impl NativeReportPageDecoder {
         }
 
         if empty {
-            self.end_element(name, depth)?;
+            self.end_element(depth)?;
         }
         Ok(())
     }
@@ -346,7 +346,7 @@ impl NativeReportPageDecoder {
         parse_entity_id(value, field).map(Some)
     }
 
-    fn end_element(&mut self, _name: &str, depth: usize) -> Result<(), ParseError> {
+    fn end_element(&mut self, depth: usize) -> Result<(), ParseError> {
         if let Some(result_depth) = self.skipped_result_depth {
             if depth == result_depth {
                 self.skipped_result_depth = None;
@@ -489,7 +489,7 @@ impl GmpStreamDecoder for NativeReportPageDecoder {
             StreamingXmlEvent::Empty { element, depth } => {
                 self.start_element(element, *depth, true)
             }
-            StreamingXmlEvent::End { name, depth } => self.end_element(name, *depth),
+            StreamingXmlEvent::End { depth, .. } => self.end_element(*depth),
             StreamingXmlEvent::Text { text, depth } | StreamingXmlEvent::CData { text, depth } => {
                 self.process_text(*depth, text)
             }
