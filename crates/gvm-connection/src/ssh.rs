@@ -10,7 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::connection::{write_all_and_flush_with_timeout, GvmConnection};
+use crate::connection::{
+    prepend_pending, take_bounded_pending, write_all_and_flush_with_timeout, GvmConnection,
+    GvmStreamingConnection,
+};
 use crate::error::{ConnectionError, Result};
 use russh::client;
 use russh::keys::agent::client::AgentClient;
@@ -31,7 +34,7 @@ pub struct SshConfig {
     pub auth: SshAuth,
     /// Remote gvmd Unix socket path.
     pub remote_socket: String,
-    /// Connect/auth/channel/write timeout and total response-read deadline.
+    /// Operation timeout; also the default idle timeout for streamed reads.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -99,7 +102,7 @@ impl SshConfig {
         self
     }
 
-    /// Set the operation timeout and total response-read deadline.
+    /// Set the operation timeout and default streamed-read idle timeout.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -858,6 +861,78 @@ impl GvmConnection for SshConnection {
     }
 }
 
+#[async_trait::async_trait]
+impl GvmStreamingConnection for SshConnection {
+    fn response_timeout(&self) -> Duration {
+        self.config.timeout
+    }
+
+    async fn read_stream_chunk(&mut self) -> Result<Vec<u8>> {
+        if self.channel.is_none() {
+            return Err(ConnectionError::NotConnected);
+        }
+        if let Some(bytes) =
+            take_bounded_pending(&mut self.pending_read, self.config.read_buffer_size)
+        {
+            return Ok(bytes);
+        }
+
+        loop {
+            let message = self
+                .channel
+                .as_mut()
+                .ok_or(ConnectionError::NotConnected)?
+                .wait()
+                .await;
+
+            match message {
+                Some(ChannelMsg::Data { data }) => {
+                    let mut bytes = data.to_vec();
+                    let chunk_size = self.config.read_buffer_size.max(1);
+                    if bytes.len() > chunk_size {
+                        self.pending_read = bytes.split_off(chunk_size);
+                    }
+                    return Ok(bytes);
+                }
+                Some(ChannelMsg::ExtendedData { .. }) => {
+                    let error = Self::read_error("ssh stderr received while streaming GMP XML");
+                    self.invalidate_connection();
+                    return Err(error);
+                }
+                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
+                    self.invalidate_connection();
+                    return Err(ConnectionError::ReadFailed(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "ssh channel closed",
+                    )));
+                }
+                Some(ChannelMsg::OpenFailure(error)) => {
+                    let error = Self::read_error(format!("{error:?}"));
+                    self.invalidate_connection();
+                    return Err(error);
+                }
+                Some(
+                    ChannelMsg::WindowAdjusted { .. } | ChannelMsg::Success | ChannelMsg::Failure,
+                ) => {}
+                Some(other) => {
+                    let error =
+                        Self::read_error(format!("unexpected ssh channel message: {other:?}"));
+                    self.invalidate_connection();
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    fn retain_stream_tail(&mut self, tail: Vec<u8>) {
+        prepend_pending(&mut self.pending_read, tail);
+    }
+
+    fn invalidate_stream(&mut self) {
+        self.invalidate_connection();
+    }
+}
+
 fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
     ConnectionError::ReadFailed(std::io::Error::new(
         std::io::ErrorKind::InvalidData,
@@ -1259,5 +1334,15 @@ mod tests {
         let error = trust_on_first_use_path("scanner.example", 22, &key, &path)
             .expect_err("unsafe update must fail");
         assert!(matches!(error, keys::Error::IO(_)));
+    }
+
+    #[test]
+    fn streaming_tail_precedes_transport_buffered_bytes() {
+        let mut connection = SshConnection::new(SshConfig::default());
+        connection.pending_read.extend_from_slice(b"later");
+
+        connection.retain_stream_tail(b"tail".to_vec());
+
+        assert_eq!(connection.pending_read, b"taillater");
     }
 }

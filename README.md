@@ -351,6 +351,22 @@ absence of unsupported configuration synchronization. See the
 [canonical-request convergence audit](docs/canonical-request-convergence-audit.md)
 and the complete [v0.6.0 to v0.7.0 migration guide](docs/v0.7.0-migration.md).
 
+#### Capability-gated response streaming
+
+`GmpClient::execute_stream` provides the generic foundation for response types
+that explicitly opt in through their statically associated response capability.
+The borrowed response stream yields exact received XML bytes with caller-driven
+backpressure, validates exactly one frame incrementally, and returns an observed
+byte count plus small typed completion metadata. Full validation leaves the
+connection reusable; transport/framing/decoder failure or incomplete drop makes
+it unusable until reconnect. An `AsyncWrite` copy adapter and an explicit
+drain-and-validate completion path are included.
+
+No current report command opts in yet, and this layer contains no native
+report-page request or pagination policy. See
+[Streaming Large GMP Responses](docs/streaming-responses.md) for ownership,
+memory limits, cancellation, sink-error, tracing, and reuse semantics.
+
 NVT and SecInfo discovery follows the same request-by-value rule:
 
 ```rust
@@ -667,9 +683,10 @@ let mut client = GmpClient::connect(conn).await?;
 
 Client certificates are optional. Disabling platform roots never disables
 verification; configure at least one custom root when platform roots are off.
-For Unix, TLS, and SSH transports, the configured timeout is a total deadline
-for receiving one complete XML response; periodic response chunks do not reset
-that deadline.
+For buffered reads on Unix, TLS, and SSH, the configured timeout is a total
+deadline for one complete XML response. Capability-gated streaming instead
+uses that value as the default idle timeout for each transport read; callers
+can independently set a per-stream total deadline with `StreamOptions`.
 
 ### Mock Server (library usage)
 
@@ -909,6 +926,7 @@ Start with the documents that describe the current implementation:
 - [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) — qualified GMP versions and command gates
 - [`ROADMAP.md`](docs/ROADMAP.md) — support direction and current follow-up work
 - [`typed-execution.md`](docs/typed-execution.md) — current typed request/response model
+- [`streaming-responses.md`](docs/streaming-responses.md) — capability-gated exact-byte response streaming
 - [`v0.9.0-migration.md`](docs/v0.9.0-migration.md) — migration from the v0.8 release surface
 - [`v0.8.0-migration.md`](docs/v0.8.0-migration.md) — migration from the v0.7 release surface
 - [`v0.7.0-migration.md`](docs/v0.7.0-migration.md) — migration from the v0.6 request surface

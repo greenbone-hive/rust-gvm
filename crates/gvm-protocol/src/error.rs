@@ -21,6 +21,20 @@ pub enum ProtocolError {
         max: usize,
     },
 
+    /// A streamed XML frame exceeded its per-operation total byte limit.
+    #[error("streamed XML response exceeded configured limit of {max} bytes")]
+    StreamSizeLimit {
+        /// The configured total streamed response limit in bytes.
+        max: u64,
+    },
+
+    /// A pre-root prefix or incomplete XML token exceeded the retained-memory limit.
+    #[error("streamed XML retained data exceeded configured limit of {max} bytes")]
+    StreamRetainedLimit {
+        /// The configured retained parsing-window limit in bytes.
+        max: usize,
+    },
+
     /// Server returned an error status.
     #[error("Server error (status {status}): {message}")]
     ServerError {

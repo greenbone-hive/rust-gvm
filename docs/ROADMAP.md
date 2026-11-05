@@ -96,8 +96,10 @@ Open work:
   session/shell mode; shell and exec are not treated as interchangeable.
 - [#417](https://github.com/greenbone-hive/rust-gvm/issues/417) tracks replacing
   the temporary `wnaf` Cargo Vet exemption.
-- [#4](https://github.com/greenbone-hive/rust-gvm/issues/4) tracks a streaming
-  design for very large report responses.
+- [#4](https://github.com/greenbone-hive/rust-gvm/issues/4) provides the generic,
+  capability-gated streaming foundation for large GMP responses. Native
+  report-page request/response and pagination policy remain separate follow-up
+  work.
 - [#9](https://github.com/greenbone-hive/rust-gvm/issues/9) tracks possible
   mock-server record-and-replay support.
 
@@ -114,7 +116,8 @@ items.
    `rust-gvm-e2e-tests#231`.
 3. Keep protected-`main` downstream dispatch pinned to the exact successful
    rust-gvm commit SHA and preserve immutable runtime evidence.
-4. Address the remaining transport, dependency-vetting, and large-response
-   work tracked by #524, #417, and #4.
+4. Address the remaining transport and dependency-vetting work tracked by #524
+   and #417, then layer native report-page behavior on the completed generic
+   large-response streaming foundation.
 5. Expand real-gvmd conformance and python-gvm migration documentation as new
    protocol differences are discovered.

@@ -3,7 +3,7 @@
 
 //! Statically associated GMP request and response contracts.
 
-use gvm_protocol::{Request, Response};
+use gvm_protocol::{Request, Response, StreamingXmlEvent};
 
 use crate::{responses::ParseError, GmpVersion};
 
@@ -251,4 +251,62 @@ pub trait GmpResponse: Sized {
     /// # Errors
     /// Returns the response model's existing parse or server-status error.
     fn decode(response: &Response, version: GmpVersion) -> Result<Self, ParseError>;
+}
+
+/// Incremental decoder for the small typed result of a streamed GMP response.
+///
+/// The client supplies validated XML events in wire order. Implementations
+/// retain only the small state needed for completion metadata; parsing and
+/// token-memory bounds remain centralized in the generic stream framer.
+pub trait GmpStreamDecoder: Send {
+    /// Small typed metadata returned after the complete response is validated.
+    type Completion: Send;
+
+    /// Return whether character content at `element_path` is needed.
+    ///
+    /// The default is `false`, so `Text`, `CData`, and `Reference` event
+    /// payloads are not allocated for metadata decoders that only inspect
+    /// elements and attributes. This method is called while the XML batch is
+    /// parsed, before [`Self::feed`] observes events from that batch;
+    /// implementations must therefore decide from `element_path` rather than
+    /// feed-updated state.
+    fn wants_text(&self, element_path: &[String]) -> bool {
+        let _ = element_path;
+        false
+    }
+
+    /// Observe one validated, ordered XML event.
+    ///
+    /// Selected character content is fragmented across `Text`, `CData`, and
+    /// `Reference` events, not delivered as whole logical text nodes.
+    /// Transport/feed boundaries can produce multiple events for one element's
+    /// content. `Reference` carries its spelling without `&` and `;`, not
+    /// expanded text. Decoders interested in character content must handle and
+    /// accumulate all three variants until the matching `End` event.
+    ///
+    /// # Errors
+    /// Returns a response-model error when incremental decoding cannot continue.
+    fn feed(&mut self, event: &StreamingXmlEvent) -> Result<(), ParseError>;
+
+    /// Complete decoding after the XML framer validates exactly one response.
+    ///
+    /// # Errors
+    /// Returns a response-model error when completion metadata is absent or
+    /// malformed. Root GMP status is checked generically before any bytes are
+    /// yielded to the caller.
+    fn finish(self) -> Result<Self::Completion, ParseError>;
+}
+
+/// Opt-in capability for responses that support exact-byte streaming.
+///
+/// Merely implementing [`GmpResponse`] does not enable streaming. A request can
+/// be passed to the client's streaming entry point only when its statically
+/// associated response implements this trait, preventing runtime command-name
+/// or response-type switches.
+pub trait GmpStreamingResponse: GmpResponse {
+    /// Incremental decoder used for this response model.
+    type Decoder: GmpStreamDecoder;
+
+    /// Start response-specific incremental decoding for a negotiated GMP version.
+    fn stream_decoder(version: GmpVersion) -> Self::Decoder;
 }

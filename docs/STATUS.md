@@ -23,6 +23,18 @@ split into private resource-family modules without changing public paths. See
 compatibility, and release adoption are summarized in the
 [migration notes](typed-execution-migration.md).
 
+Issue #4 adds the generic large-response streaming foundation without adding a
+native report-page command. `GmpStreamingResponse` is an explicit compile-time
+opt-in on a request's associated response, and `GmpClient::execute_stream`
+returns an exclusively borrowed, caller-driven exact-byte stream. The shared
+incremental framer validates one response with bounded retained parsing state;
+successful completion returns the observed byte count and small typed metadata.
+Unix, TLS, and SSH expose equivalent bounded raw-chunk, total-deadline, tail,
+and invalidation semantics. Incomplete drop/cancellation and transport,
+framing, decoder, or sink failures invalidate the connection, while successful
+completion or explicit drain-and-validate preserves reuse. See
+[streaming-responses.md](streaming-responses.md).
+
 The canonical-request program in issue #602 is complete. [ADR 0002](adr/0002-canonical-request-ownership.md)
 separates fallible typed validation/encoding from raw `Request` and fixes
 execution precedence as validate → semantic support → encode → transport →
@@ -190,7 +202,8 @@ records those contracts. Issue #639 documents why the legacy delete-user
 The report-configuration, report-format, TLS-certificate, bounded NVT/SecInfo,
 report retrieval, structured projection, and export families are complete.
 Alert-selected report generation, typed asynchronous export state/subtype
-fields, and a streaming redesign remain separately tracked work.
+fields, and native report-page integration over the generic streaming
+foundation remain separately tracked work.
 
 The sections below retain the bounded delivery history for each migrated
 family. They are milestone snapshots, so transitional phrases such as
@@ -461,17 +474,18 @@ vulnerability names, `_parsed` suffixes, raw projection facades, and forwarding
 option variants are removed. Operating-system projection rows decode gvmd's
 `best_os_cpe`, `best_os_txt`, and typed `hosts_count` fields rather than a
 generic summary. Alert-selected generation, typed export state/subtype fields,
-and streaming redesign remain separate work. See the
+and native report-page integration over the generic streaming foundation remain
+separate work. See the
 [report evidence](report-request-gvmd-evidence.md) and
 [asynchronous lifecycle evidence](report-export-lifecycle-gvmd-evidence.md).
 
 | Crate | Status | Description |
 |-------|--------|-------------|
-| `gvm-protocol` | ✅ Implemented | XML command construction, response parsing, and bounded streaming framing |
+| `gvm-protocol` | ✅ Implemented | XML command construction, response parsing, buffered framing, and prefix-discarding streamed framing |
 | `gvm-mock-server` | ✅ Implemented | Programmable mock GMP server for library and standalone use |
-| `gvm-connection` | ✅ Implemented | Async Unix socket, verified TLS/mTLS, and SSH transports behind crate features |
+| `gvm-connection` | ✅ Implemented | Async Unix socket, verified TLS/mTLS, and SSH transports with buffered and bounded streaming reads |
 | `gvm-gmp` | ✅ Implemented | Canonical complete requests, response models, codecs, and semantic metadata |
-| `gvm-client` | ✅ Implemented | High-level async client with version negotiation, capability checks, and typed execution |
+| `gvm-client` | ✅ Implemented | High-level async client with version negotiation, capability checks, typed execution, and capability-gated response streaming |
 
 Source and test counts change frequently; the workspace manifests and the
 checked inventories are authoritative instead of frozen totals in this page.
@@ -546,6 +560,7 @@ de-duplication without rewriting otherwise valid host spellings.
 | Nesting limit | ✅ | 256 elements per frame by default; configurable |
 | Strict XML 1.0 checks | ✅ | Reject malformed declarations, names, references, and forbidden literals |
 | Reset for reuse | ✅ | `reader.reset()` |
+| Prefix-discarding streamed validation | ✅ | `StreamingXmlReader` retains incomplete token state while counting the full frame |
 
 ---
 
@@ -689,6 +704,13 @@ the template count is not the number of GMP commands supported by other modes.
 | `read() -> Vec<u8>` | ✅ | Uses `XmlReader` for frame detection |
 | `is_connected()` | ✅ | Synchronous check |
 
+`GvmStreamingConnection` is the additive raw-chunk extension used by
+`GmpClient::execute_stream`. It exposes a default idle timeout, bounded
+caller-driven reads, exact tail retention, and explicit invalidation without
+changing existing custom `GvmConnection` implementations. Per-stream total and
+retained-memory limits are owned by `StreamOptions`, independently of buffered
+transport limits.
+
 ### Transports
 
 | Transport | Status | Feature Flag | Notes |
@@ -702,7 +724,7 @@ the template count is not the number of GMP commands supported by other modes.
 | Field | Default | Notes |
 |-------|---------|-------|
 | `path` | `/run/gvmd/gvmd.sock` | Configurable |
-| `timeout` | 60s | Connect and request write/flush timeout; total deadline for one complete response |
+| `timeout` | 60s | Connect and request write/flush timeout; total deadline for a buffered response and default per-read idle timeout for a stream |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 
@@ -715,7 +737,7 @@ the template count is not the number of GMP commands supported by other modes.
 | `username` | `root` | SSH user |
 | `auth` | `Agent` | `Password`, `PrivateKey { key_path, passphrase }`, or `Agent` |
 | `remote_socket` | `/run/gvmd/gvmd.sock` | Path to gvmd socket on remote host |
-| `timeout` | 60s | Connect/auth/channel and request write/flush timeout; total deadline for one complete response |
+| `timeout` | 60s | Connect/auth/channel and request write/flush timeout; total deadline for a buffered response and default per-read idle timeout for a stream |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 | `host_key_policy` | `KnownHosts` | Standard or custom `known_hosts`, pinned SHA-256 fingerprint, or explicit insecure opt-out |
@@ -737,7 +759,7 @@ The same timeout covers session opening and exec acknowledgement.
 | `use_native_roots` | `true` | Platform trust store; disabling does not disable verification |
 | custom roots | None | PEM roots can be supplied in memory or from a file |
 | client identity | None | Optional PEM certificate chain plus unencrypted private key for mTLS |
-| `timeout` | 60s | TCP connect, TLS handshake, and request write/flush timeout; total deadline for one complete response |
+| `timeout` | 60s | TCP connect, TLS handshake, and request write/flush timeout; total deadline for a buffered response and default per-read idle timeout for a stream |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 
 ### Error Types
@@ -871,6 +893,7 @@ versions 22.4 through 22.8 (with later versions routed to `GmpNext`), retain raw
 | `client.discover_commands()` | Explicitly cache the server's XML-help command inventory |
 | `client.send(request)` | Send request, return raw `Response` |
 | `client.call(request)` | Send request, raise `GvmError::Server` on non-2xx |
+| `client.execute_stream(request)` | Stream one exact response only when its associated response opts in |
 | `client.disconnect()` | Graceful transport shutdown |
 | `client.connection()` / `connection_mut()` | Borrow underlying transport |
 | `client.into_inner()` | Consume client, return transport |

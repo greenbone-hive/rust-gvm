@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod streaming;
 mod typed;
 mod version;
 mod wire_trace;
@@ -22,7 +23,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 
-use gvm_connection::GvmConnection;
+use gvm_connection::{GvmConnection, GvmStreamingConnection};
 use gvm_gmp::commands::agent_groups::{
     CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
     GetAgentGroupsRequest, ModifyAgentGroupRequest,
@@ -98,7 +99,12 @@ pub use gvm_gmp::commands::aggregates::{AggregateMode, AggregateSort, AggregateS
 pub use gvm_gmp::commands::help::HelpMode;
 pub use gvm_gmp::commands::usage_type::UsageType;
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
-pub use gvm_gmp::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse};
+pub use gvm_gmp::{
+    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse, GmpStreamDecoder,
+    GmpStreamingResponse,
+};
+pub use gvm_protocol::{StreamingXmlElement, StreamingXmlEvent};
+pub use streaming::{GmpResponseStream, GmpStreamCompletion, GmpStreamCopyError, StreamOptions};
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,
@@ -394,16 +400,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// transmission, or typed response decoding fails.
     pub async fn execute<R: GmpRequest>(&mut self, request: R) -> Result<R::Response, GvmError> {
         let version = self.version;
-        request.validate()?;
-        let command = request.command();
-        if let Some(command) = command {
-            self.ensure_typed_command_supported(command)?;
-        }
-        let legacy_semantic_command_name = request.legacy_semantic_command_name();
-        let request_bytes = request.encode(version)?;
-        if command.is_none() {
-            self.ensure_command_supported(&request_bytes, legacy_semantic_command_name)?;
-        }
+        let request_bytes = self.prepare_typed_request(&request)?;
         let response = Self::send_on_bytes(
             &mut self.connection,
             request_bytes,
@@ -411,6 +408,90 @@ impl<C: GvmConnection> GmpClient<C> {
         )
         .await?;
         R::Response::decode(&response, version).map_err(GvmError::from)
+    }
+
+    /// Execute a capability-gated request and stream one exact GMP XML response.
+    ///
+    /// This method exists for every client transport that implements
+    /// [`GvmStreamingConnection`], but a request is accepted only when its
+    /// statically associated response opts in through [`GmpStreamingResponse`].
+    /// There are no runtime command-name or response-type switches.
+    ///
+    /// The returned [`GmpResponseStream`] exclusively borrows this client. It
+    /// reads only in response to caller demand, validates one XML frame across
+    /// arbitrary chunk boundaries, yields the exact received bytes, and returns
+    /// a byte count plus response-specific small metadata from `finish` or
+    /// `copy_to`. See that type's documentation for cancellation, sink-error,
+    /// and connection-reuse rules.
+    ///
+    /// Ordinary buffered response types cannot use this operation:
+    ///
+    /// ```compile_fail
+    /// use gvm_client::GmpClient;
+    /// use gvm_connection::GvmStreamingConnection;
+    /// use gvm_gmp::commands::version::GetVersionRequest;
+    ///
+    /// async fn cannot_stream_buffered<C: GvmStreamingConnection>(client: &mut GmpClient<C>) {
+    ///     let _ = client.execute_stream(GetVersionRequest::new()).await;
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// Returns an error if request validation/encoding, command support checks,
+    /// or transmission fails before streaming begins. Later failures are
+    /// returned by the response stream and invalidate the connection.
+    pub async fn execute_stream<R>(
+        &mut self,
+        request: R,
+    ) -> Result<GmpResponseStream<'_, C, <R::Response as GmpStreamingResponse>::Decoder>, GvmError>
+    where
+        C: GvmStreamingConnection,
+        R: GmpRequest,
+        R::Response: GmpStreamingResponse,
+    {
+        self.execute_stream_with(request, StreamOptions::default())
+            .await
+    }
+
+    /// Execute a streamed request with per-operation size and timeout policy.
+    ///
+    /// The options affect only this stream. In particular, `max_bytes` does not
+    /// raise the connection's buffered-response memory ceiling.
+    ///
+    /// # Errors
+    /// Returns an error if request validation/encoding, command support checks,
+    /// or transmission fails before streaming begins. Later failures are
+    /// returned by the response stream and invalidate the connection.
+    pub async fn execute_stream_with<R>(
+        &mut self,
+        request: R,
+        options: StreamOptions,
+    ) -> Result<GmpResponseStream<'_, C, <R::Response as GmpStreamingResponse>::Decoder>, GvmError>
+    where
+        C: GvmStreamingConnection,
+        R: GmpRequest,
+        R::Response: GmpStreamingResponse,
+    {
+        if options.max_retained_bytes == 0 {
+            return Err(GvmError::InvalidState(
+                "stream max_retained_bytes must be greater than zero".to_string(),
+            ));
+        }
+        let version = self.version;
+        let request_bytes = self.prepare_typed_request(&request)?;
+        Self::send_request_bytes(
+            &mut self.connection,
+            &request_bytes,
+            self.wire_trace.as_deref(),
+        )
+        .await?;
+        let decoder = R::Response::stream_decoder(version);
+        Ok(GmpResponseStream::new(
+            &mut self.connection,
+            decoder,
+            self.wire_trace.clone(),
+            options,
+        ))
     }
 
     /// Send a request and raise a server error on non-2xx responses.
@@ -455,11 +536,34 @@ impl<C: GvmConnection> GmpClient<C> {
         request_bytes: Vec<u8>,
         wire_trace: Option<&dyn WireTrace>,
     ) -> Result<Response, GvmError> {
-        emit_wire_trace(wire_trace, WireTraceDirection::Request, &request_bytes);
-        connection.send(&request_bytes).await?;
+        Self::send_request_bytes(connection, &request_bytes, wire_trace).await?;
         let bytes = connection.read().await?;
         emit_wire_trace(wire_trace, WireTraceDirection::Response, &bytes);
         Ok(Response::new(bytes))
+    }
+
+    async fn send_request_bytes(
+        connection: &mut C,
+        request_bytes: &[u8],
+        wire_trace: Option<&dyn WireTrace>,
+    ) -> Result<(), GvmError> {
+        emit_wire_trace(wire_trace, WireTraceDirection::Request, request_bytes);
+        connection.send(request_bytes).await?;
+        Ok(())
+    }
+
+    fn prepare_typed_request<R: GmpRequest>(&self, request: &R) -> Result<Vec<u8>, GvmError> {
+        request.validate()?;
+        let command = request.command();
+        if let Some(command) = command {
+            self.ensure_typed_command_supported(command)?;
+        }
+        let legacy_semantic_command_name = request.legacy_semantic_command_name();
+        let request_bytes = request.encode(self.version)?;
+        if command.is_none() {
+            self.ensure_command_supported(&request_bytes, legacy_semantic_command_name)?;
+        }
+        Ok(request_bytes)
     }
 
     fn ensure_command_supported(

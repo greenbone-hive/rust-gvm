@@ -9,6 +9,7 @@ use gvm_connection::ConnectionError;
 use gvm_gmp::responses::ParseError;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::GmpRequestError;
+use gvm_protocol::ProtocolError;
 use thiserror::Error;
 
 /// High-level client errors.
@@ -17,6 +18,10 @@ pub enum GvmError {
     /// Transport-level failure.
     #[error("connection error: {0}")]
     Connection(#[source] ConnectionError),
+
+    /// Incremental XML response framing failed.
+    #[error("protocol error: {0}")]
+    Protocol(#[source] ProtocolError),
 
     /// Malformed or uninterpretable response-model failure.
     #[error("parse error: {0}")]

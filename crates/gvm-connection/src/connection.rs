@@ -50,6 +50,61 @@ pub trait GvmConnection: Send + Sync {
     fn is_connected(&self) -> bool;
 }
 
+/// Raw, bounded response reads used by capability-gated GMP streaming.
+///
+/// Implementations return transport bytes without XML reconstruction. The
+/// caller incrementally frames one response and returns any bytes after that
+/// frame through [`Self::retain_stream_tail`]. A streaming response owns an
+/// exclusive mutable borrow of the connection until it completes or
+/// invalidates the transport.
+#[doc(hidden)]
+#[async_trait]
+pub trait GvmStreamingConnection: GvmConnection {
+    /// Return the default maximum idle period for one response read.
+    fn response_timeout(&self) -> Duration;
+
+    /// Read one bounded raw response chunk.
+    ///
+    /// Implementations never return an empty successful chunk. Timeouts are
+    /// imposed by the client so caller backpressure is not counted
+    /// as server idle time. Built-in transports invalidate themselves before
+    /// returning EOF or a read error; the streaming client also invalidates
+    /// defensively when any implementation returns an error.
+    ///
+    /// # Errors
+    /// Returns an error if the transport is disconnected or reading fails.
+    async fn read_stream_chunk(&mut self) -> crate::Result<Vec<u8>>;
+
+    /// Preserve bytes read after the end of the current XML response.
+    ///
+    /// These bytes must be returned before later transport reads and remain
+    /// subject to the next response's independent frame-size limit.
+    fn retain_stream_tail(&mut self, tail: Vec<u8>);
+
+    /// Make the active transport unusable after an incomplete streamed response.
+    fn invalidate_stream(&mut self);
+}
+
+pub(crate) fn take_bounded_pending(pending: &mut Vec<u8>, max: usize) -> Option<Vec<u8>> {
+    if pending.is_empty() {
+        return None;
+    }
+    let split_at = max.max(1).min(pending.len());
+    Some(pending.drain(..split_at).collect())
+}
+
+pub(crate) fn prepend_pending(pending: &mut Vec<u8>, mut prefix: Vec<u8>) {
+    if prefix.is_empty() {
+        return;
+    }
+    if pending.is_empty() {
+        *pending = prefix;
+        return;
+    }
+    prefix.extend_from_slice(pending);
+    *pending = prefix;
+}
+
 pub(crate) async fn write_all_and_flush_with_timeout<W>(
     writer: &mut W,
     data: &[u8],
