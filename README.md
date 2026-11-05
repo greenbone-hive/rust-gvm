@@ -344,7 +344,7 @@ let targets = client
     .await?;
 ```
 
-The final convergence audit classifies all 1,038 request-surface rows and all
+The final convergence audit classifies all 1,039 request-surface rows and all
 267 public typed facade helpers. It enforces 264 canonical `execute` delegates,
 only three frozen ticket raw paths, zero transitional rows, and the continued
 absence of unsupported configuration synchronization. See the
@@ -362,10 +362,17 @@ connection reusable; transport/framing/decoder failure or incomplete drop makes
 it unusable until reconnect. An `AsyncWrite` copy adapter and an explicit
 drain-and-validate completion path are included.
 
-No current report command opts in yet, and this layer contains no native
-report-page request or pagination policy. See
-[Streaming Large GMP Responses](docs/streaming-responses.md) for ownership,
-memory limits, cancellation, sink-error, tracing, and reuse semantics.
+`GetNativeReportPageRequest` is the first production opt-in. It requires an
+explicit report ID, pagination-free result filter, 1-based `first`, positive
+`rows`, and named lean/note-detail/override-detail/result-tag choices. It
+streams one complete unchanged native `get_reports_response` through the generic
+`execute_stream` API while retaining only bounded decoder state and small IDs,
+status, filter/window, result totals, and the actual number of returned results.
+Use that returned count—not requested `rows`—to continue after gvmd caps a
+page. Buffered execution returns the same small metadata but deliberately does
+not retain the native XML bytes. See [Streaming Large GMP
+Responses](docs/streaming-responses.md) for pagination, memory limits,
+cancellation, sink-error, tracing, and reuse semantics.
 
 NVT and SecInfo discovery follows the same request-by-value rule:
 

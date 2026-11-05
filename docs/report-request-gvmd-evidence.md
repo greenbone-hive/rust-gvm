@@ -108,6 +108,63 @@ with a different response association and is modeled by
 documented in [report-export lifecycle evidence](report-export-lifecycle-gvmd-evidence.md);
 synchronous delta generation and alert selection remain separate work.
 
+## Native XML report pages
+
+Issue #762 adds a distinct `GetNativeReportPageRequest` for complete native XML
+`get_reports_response` pages. It is not a parallel XML builder: the request
+constructs and delegates to the canonical `GetReportRequest`, preserving its
+validation, `get_report` semantic capability identity, shared report command,
+and version-aware scan-usage selector.
+
+The constructor requires the report ID, caller-authored result filter, 1-based
+`first`, positive `rows`, and named lean, note-detail, override-detail, and
+result-tag choices. Signed `i32` values match gvmd's filter integers and the
+signed `ReportPage::max` response model; non-positive values are rejected for
+this intentionally page-specific request. It reserves the pagination keywords
+against the caller filter, preserving the exact conflicting term in validation
+errors, then uses `PaginatedFilter` and `Pagination` to append exactly one
+`first`/`rows` pair. It fixes `details=1` and `ignore_pagination=0`; saved
+filters and omitted/default paging are intentionally absent.
+
+The native response shape is the ordinary nested XML report envelope. The outer
+`report` carries resource/task identity; its nested `report` carries the native
+body, including scan status, resolved result-filter metadata, a `results`
+start/max window, and result counts. Response-level `filters`, `reports`, and
+`report_count` describe the outer report selection and remain distinct from the
+nested result selection. `NativeReportPageResponse` therefore retains available
+outer/nested report IDs, task ID, nested scan status/filter/window/result counts,
+the number of direct `<result>` children actually returned, and outer report
+counts while discarding the large result body incrementally.
+
+gvmd documents **Max Rows Per Page** as an upper bound for every GMP GET,
+regardless of a larger `rows` filter value. Consequently requested `rows` and
+the response's signed `results.max` window metadata are not valid advancement
+counts. After a non-empty completed page, the next 1-based index is the returned
+`results.start` plus the actual direct-result count. A zero-result page stops
+the traversal rather than repeating the same index. When the nested
+`result_count.filtered` total is available, a computed next index beyond that
+total also completes traversal. See pinned gvmd's
+[`INSTALL.md`](https://github.com/greenbone/gvmd/blob/864aa1b89ade61a2c2615c0946a69abc163dbc19/INSTALL.md#changing-the-maximum-number-of-rows-per-page)
+for the administrator setting.
+
+The pinned get/report/filter paths do not establish a multi-request snapshot or
+a stable total ordering for tied sort values. Results in a running or otherwise
+mutable report can shift between windows, and an explicit sort does not make
+ties stable. Restricting traversal to a completed, unchanging report removes
+the mutation race, but the library still cannot promise a total order for tied
+keys. No unsupported compound-filter syntax is imposed here.
+
+The associated decoder is the first production `GmpStreamingResponse` opt-in.
+The generic `GmpClient::execute_stream` framer validates and yields the exact
+envelope bytes, validates root status before yielding, and supplies selected
+validated events without a second parser. The report decoder caps retained
+metadata text and keyword count, and skips result bodies by depth. Its buffered
+response association preserves `ParseError::ServerError` for non-2xx status
+but deliberately returns metadata without retaining the XML bytes. Zero-result
+pages use the same complete envelope and completion path. Streaming callers can
+use `StreamOptions::max_bytes` to cap an individual response; smaller positive
+`rows` generally produce smaller pages.
+
 ## Deletion
 
 Pinned `delete_report_data_t` calls its permanence integer a dummy field, and

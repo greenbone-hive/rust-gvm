@@ -20,7 +20,7 @@ pub struct Pagination {
 impl Pagination {
     /// Create a pagination descriptor from a page/per-page pair.
     #[must_use]
-    pub fn new(page: usize, per_page: usize) -> Self {
+    pub const fn new(page: usize, per_page: usize) -> Self {
         Self { page, per_page }
     }
 
@@ -31,6 +31,17 @@ impl Pagination {
             .saturating_mul(self.per_page)
             .saturating_add(1);
         (first, self.per_page)
+    }
+}
+
+pub(crate) struct DirectPaginationWindow {
+    first: i32,
+    rows: i32,
+}
+
+impl DirectPaginationWindow {
+    pub(crate) const fn new(first: i32, rows: i32) -> Self {
+        Self { first, rows }
     }
 }
 
@@ -175,6 +186,12 @@ impl PaginatedFilter {
         let (first, rows) = pagination.gvmd_window();
         self.clauses.push(format!("first={first} rows={rows}"));
         self
+    }
+
+    pub(crate) fn build_with_direct_window(mut self, window: DirectPaginationWindow) -> String {
+        let DirectPaginationWindow { first, rows } = window;
+        self.clauses.push(format!("first={first} rows={rows}"));
+        self.clauses.join(" ")
     }
 
     /// Render the composed filter string, or `None` when no clauses were added.

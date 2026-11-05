@@ -90,6 +90,37 @@ pub enum StreamingXmlEvent {
     },
 }
 
+/// Resolve one validated XML entity or character reference.
+///
+/// `reference` is the spelling carried by [`StreamingXmlEvent::Reference`],
+/// without surrounding `&` and `;` delimiters.
+///
+/// # Errors
+///
+/// Returns [`ProtocolError::XmlParse`] for an unknown entity, an invalid
+/// numeric reference, or a value that is not an XML character.
+pub fn resolve_xml_reference(reference: &str) -> Result<String, ProtocolError> {
+    let character = if let Some(value) = reference.strip_prefix("#x") {
+        if !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(xml_parse_error("invalid character reference"));
+        }
+        u32::from_str_radix(value, 16).ok().and_then(char::from_u32)
+    } else if let Some(value) = reference.strip_prefix('#') {
+        if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(xml_parse_error("invalid character reference"));
+        }
+        value.parse::<u32>().ok().and_then(char::from_u32)
+    } else {
+        return resolve_xml_entity(reference)
+            .map(ToString::to_string)
+            .ok_or_else(|| xml_parse_error("unknown entity reference"));
+    };
+
+    let character = character.ok_or_else(|| xml_parse_error("invalid character reference"))?;
+    validate_xml_chars(&character.to_string())?;
+    Ok(character.to_string())
+}
+
 #[derive(Debug)]
 enum PendingToken {
     Tag {
@@ -1078,13 +1109,7 @@ fn validate_character_data(data: &[u8], trailing_brackets: &mut u8) -> Result<()
 }
 
 fn validate_reference(reference: &BytesRef<'_>) -> Result<(), ProtocolError> {
-    if let Some(character) = reference.resolve_char_ref().map_err(xml_parse_error)? {
-        return validate_xml_chars(&character.to_string());
-    }
-    if resolve_xml_entity(reference.as_ref()).is_none() {
-        return Err(xml_parse_error("unknown entity reference"));
-    }
-    Ok(())
+    resolve_xml_reference(reference.as_ref()).map(drop)
 }
 
 fn validate_frame(frame: &[u8]) -> Result<(), ProtocolError> {
@@ -1375,6 +1400,61 @@ fn is_partial_markup_opener(input: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolves_streaming_xml_references() {
+        assert_eq!(resolve_xml_reference("amp").unwrap(), "&");
+        assert_eq!(resolve_xml_reference("#62").unwrap(), ">");
+        assert_eq!(resolve_xml_reference("#x3e").unwrap(), ">");
+        assert!(matches!(
+            resolve_xml_reference("unknown"),
+            Err(ProtocolError::XmlParse(_))
+        ));
+        assert!(matches!(
+            resolve_xml_reference("#x0"),
+            Err(ProtocolError::XmlParse(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_non_xml_numeric_reference_spellings() {
+        for reference in [
+            "#+62", "#x+3e", "#-62", "#x-3e", "#", "#x", "#X3e", "#١", "#x٣e",
+        ] {
+            assert!(matches!(
+                resolve_xml_reference(reference),
+                Err(ProtocolError::XmlParse(_))
+            ));
+        }
+
+        assert_eq!(resolve_xml_reference("#62").unwrap(), ">");
+        assert_eq!(resolve_xml_reference("#x3E").unwrap(), ">");
+    }
+
+    #[test]
+    fn buffered_reader_rejects_signed_numeric_references() {
+        for xml in [
+            b"<root>&#+62;</root>".as_slice(),
+            b"<root>&#x+3e;</root>".as_slice(),
+        ] {
+            let mut reader = XmlReader::new();
+            assert!(matches!(reader.feed(xml), Err(ProtocolError::XmlParse(_))));
+        }
+    }
+
+    #[test]
+    fn streaming_reader_rejects_signed_numeric_references() {
+        for xml in [
+            b"<root>&#+62;</root>".as_slice(),
+            b"<root>&#x+3e;</root>".as_slice(),
+        ] {
+            let mut reader = StreamingXmlReader::new();
+            assert!(matches!(
+                reader.feed_frame(xml),
+                Err(ProtocolError::XmlParse(_))
+            ));
+        }
+    }
 
     fn assert_rejected_single_and_byte_chunks(xml: &[u8]) {
         let mut single = XmlReader::new();

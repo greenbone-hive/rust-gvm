@@ -6,8 +6,8 @@
 use std::fmt;
 
 use base64::Engine as _;
-use gvm_protocol::{Request as _, XmlCommand};
-use quick_xml::events::{BytesRef, BytesStart, Event};
+use gvm_protocol::{resolve_xml_reference, Request as _, XmlCommand};
+use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 
 use crate::common::{add_filter_attrs, set_optional_bool_attr};
@@ -536,8 +536,8 @@ fn validate_import_envelope(xml: &str) -> Result<(), GmpRequestError> {
                 if state.stack.is_empty() {
                     return Err(import_error("must not contain references outside the root"));
                 }
-                let resolved = resolve_reference(&reference)
-                    .ok_or_else(|| import_error("contains an unsupported entity reference"))?;
+                let resolved = resolve_xml_reference(reference.as_ref())
+                    .map_err(|_| import_error("contains an unsupported entity reference"))?;
                 if import_name_path(&state.stack) {
                     state.format_name.push_str(&resolved);
                 }
@@ -702,13 +702,6 @@ fn import_name_path(stack: &[String]) -> bool {
         && stack[0] == "get_report_formats_response"
         && stack[1] == "report_format"
         && stack[2] == "name"
-}
-
-fn resolve_reference(reference: &BytesRef<'_>) -> Option<String> {
-    if let Some(character) = reference.resolve_char_ref().ok()? {
-        return is_xml_1_0_character(character).then(|| character.to_string());
-    }
-    quick_xml::escape::resolve_xml_entity(reference.as_ref()).map(ToString::to_string)
 }
 
 fn import_error(message: &'static str) -> GmpRequestError {

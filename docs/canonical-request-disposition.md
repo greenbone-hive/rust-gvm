@@ -47,8 +47,9 @@ surface without a row, and any removed symbol that reappears. It also requires
 the checked file to match reproducible key order, so regeneration produces no
 diff.
 
-After the final ordered #658–#664 family migration and #678 audit, the ledger contains exactly
-1038 rows: zero `transitional`, 421 `canonical-request`, 475 `removed`, 130
+After the final ordered #658–#664 family migration, #678 audit, and additive
+#762 native-page request, the ledger contains exactly 1039 rows: zero
+`transitional`, 422 `canonical-request`, 475 `removed`, 130
 `retained-construction`, and 12 `frozen-ticket`. The removed
 `RestoreFromTrashcanRequest` has an explicit audit row even though its former
 macro declaration was not discoverable by the source scanner. The inventory

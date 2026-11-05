@@ -6,10 +6,10 @@ a request is accepted only when its associated response implements
 `GmpStreamingResponse`. Ordinary `GmpResponse` implementations continue to use
 the existing buffered `execute`, `send`, and `call` paths.
 
-No response type on the current public command surface opts in yet. In
-particular, this foundation does not add a native report-page request, response,
-size policy, or pagination strategy. A future crate-owned response can opt in
-without adding a report-specific client method.
+`NativeReportPageResponse` is the first production opt-in. Its distinct
+`GetNativeReportPageRequest` retrieves one complete, explicitly windowed native
+XML `get_reports_response` through the generic operation; there is no
+report-specific client streaming method.
 
 ## Lifecycle
 
@@ -59,6 +59,85 @@ expanded text. A decoder that selects character content must handle and
 accumulate all three variants until the matching `End` event. For example, a
 decoder preserving the lexical XML content reconstructs `Reference("amp")` as
 `&amp;` rather than appending only `amp` or pretending the event contains `&`.
+
+## Native report pages
+
+`GetNativeReportPageRequest::new` requires a report ID, a caller-authored
+result filter, a 1-based `first`, positive `rows`, and four named output choices:
+lean output, note details, override details, and result tags. It rejects
+`first` or `rows` embedded in the result filter, including grouped, spaced, and
+case-varied forms. Empty filter text is an explicit unfiltered selection.
+
+The request always sends `details=1` and `ignore_pagination=0`. It has no saved
+filter input, default page size, or response-byte limit. Validation, semantic
+capability identity, and version-aware XML encoding delegate to the canonical
+`GetReportRequest`, including the GMP 22.6+ `usage_type=scan` behavior.
+
+```rust,ignore
+use gvm_gmp::commands::reports::{
+    GetNativeReportPageRequest, NativeReportPageOptions,
+};
+
+let request = GetNativeReportPageRequest::new(
+    report_id,
+    "severity>5 sort-reverse=severity",
+    1,
+    500,
+    NativeReportPageOptions {
+        lean: true,
+        ..NativeReportPageOptions::default()
+    },
+)?;
+let completion = client
+    .execute_stream(request)
+    .await?
+    .copy_to(&mut native_xml)
+    .await?;
+```
+
+The completion metadata contains available outer and nested report IDs, task
+ID, scan status, resolved nested result-filter term and keywords, the actual
+`results` start/max window, the number of direct result elements actually
+returned, total/full/filtered result counts, and the small outer report-count
+block. The decoder consumes the generic framer's validated events, caps
+accumulated metadata text at 256 KiB, and retains at most 256 filter keywords.
+It skips result subtrees by depth, so neither result-body names nor text are
+retained for metadata decoding. The generic framer independently bounds XML
+nesting, names, and incomplete tokens, validates the complete document, and
+supplies the exact response bytes and observed byte count.
+
+Buffered `execute` uses this same event decoder and validates the complete XML,
+but `NativeReportPageResponse` contains metadata only. The buffered response's
+native XML bytes are deliberately discarded. Call `execute_stream` when those
+bytes are the desired output.
+
+### Page continuation and limits
+
+gvmd's **Max Rows Per Page** setting is an upper bound regardless of the
+requested `rows`, so a request for 500 rows can return fewer. The response's
+`page.max` reports gvmd's window value; it is not the number of `<result>`
+elements present. Continue only from a successfully completed page:
+
+1. If `returned_results` is zero, stop. Advancing by zero would loop, even if
+   other count metadata changed concurrently.
+2. Otherwise compute the next `first` with checked signed arithmetic as
+   `page.start + returned_results`. Do not add the requested `rows`.
+3. When `result_count.filtered` is present, the traversal is complete once the
+   computed next `first` is greater than that count. Without it, request the
+   computed next page and stop on a zero-result page.
+
+A missing `page.start`, a value that cannot fit the signed GMP integer range,
+or inconsistent counts means there is no safe automatic continuation. Smaller
+positive `rows` generally produce smaller pages. `StreamOptions::max_bytes` can
+place a total-byte cap on any individual streamed response.
+
+Pagination is not a snapshot. A running or otherwise mutable report can gain,
+lose, or change results between requests, shifting later windows. gvmd filter
+sorting also does not provide a documented stable total order for tied values;
+an explicit sort therefore cannot guarantee gap-free traversal when sort keys
+tie. For correctness-sensitive multi-page reads, use a completed report that is
+not being mutated. The API remains intentionally page-specific: mandatory
+positive `rows` and `ignore_pagination=0` make that scope explicit.
 
 ## Connection reuse and failures
 

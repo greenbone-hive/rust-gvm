@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::str;
 
-use gvm_protocol::Response;
+use gvm_protocol::{ProtocolError, Response};
 use quick_xml::events::Event;
 use quick_xml::{Reader, XmlVersion};
 
@@ -28,6 +28,8 @@ pub enum ParseError {
     Utf8(#[from] str::Utf8Error),
     #[error("XML nesting exceeds configured limit of {max_depth}")]
     NestingLimitExceeded { max_depth: usize },
+    #[error("protocol error while parsing response: {0}")]
+    Protocol(#[from] ProtocolError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

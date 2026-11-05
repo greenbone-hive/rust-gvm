@@ -647,6 +647,23 @@ the duplicate `get_report_vulnerabilities` name are removed. Generic
 `send`/`call`, `XmlCommand`, and custom codecs remain available when callers
 need intentionally unmodeled report XML.
 
+### Native report-page streaming
+
+`GetNativeReportPageRequest` is a separate response association for one
+complete native XML `get_reports_response`. Its constructor requires an
+explicit report ID, pagination-free result filter, 1-based `first`, positive
+`rows`, and named lean/note-detail/override-detail/result-tag choices. The request
+then delegates validation, command identity, and version-aware wire encoding to
+`GetReportRequest`; it does not duplicate the report XML implementation.
+
+`NativeReportPageResponse` opts into `GmpStreamingResponse`. Use the generic
+`client.execute_stream(request)` operation when exact response bytes are
+required. Completion retains bounded identity, status, filter/window, result
+totals, and actual-returned-result metadata rather than the report/results body.
+Buffered `execute` validates the whole response but returns only that metadata;
+it does not preserve the native XML bytes. Page continuation and gvmd's rows cap
+are documented in [streaming-responses.md](streaming-responses.md).
+
 ## Report mutations
 
 Gvmd report creation is XML import. `ImportReportRequest` owns and validates one

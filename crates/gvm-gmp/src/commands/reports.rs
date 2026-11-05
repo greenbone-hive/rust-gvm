@@ -11,6 +11,7 @@ use quick_xml::Reader;
 
 use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, bool_str, set_optional_bool_attr};
+use crate::filtering::DirectPaginationWindow;
 use crate::responses::{
     CancelReportExportResponse, CreateReportResponse, DeleteReportResponse,
     DownloadReportExportResponse, ExportAuditReportResponse, ExportDeltaAuditReportResponse,
@@ -19,10 +20,12 @@ use crate::responses::{
     GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
     GetReportExportsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
     GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetScanReportResponse, ReportExport,
+    GetReportsResponse, GetScanReportResponse, NativeReportPageResponse, ReportExport,
 };
 use crate::types::EntityId;
-use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
+use crate::{
+    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, PaginatedFilter,
+};
 
 /// Request for importing one XML report into an existing import task.
 ///
@@ -250,6 +253,151 @@ impl GmpRequestCodec for GetReportRequest {
 
 impl GmpRequest for GetReportRequest {
     type Response = GetReportsResponse;
+}
+
+/// Explicit output choices for one native XML report page.
+///
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NativeReportPageOptions {
+    /// Whether gvmd may omit selected redundant report fields.
+    pub lean: bool,
+    /// Whether included notes use detailed output.
+    pub notes_details: bool,
+    /// Whether included overrides use detailed output.
+    pub overrides_details: bool,
+    /// Whether result tags are included.
+    pub result_tags: bool,
+}
+
+/// Request for one complete, explicitly windowed native XML report page.
+///
+/// The result filter is caller-authored, but `first` and `rows` are owned by
+/// this request and cannot be supplied through that filter. The constructor
+/// fixes `details=true` and `ignore_pagination=false`; it accepts no saved
+/// filter, implicit/default pagination, or response-byte limit.
+///
+/// Encoding delegates to [`GetReportRequest`], including its version-aware
+/// `usage_type` behavior and shared `get_reports` XML implementation.
+///
+/// Calling buffered [`crate::GmpResponse::decode`] for this request validates
+/// the complete XML and returns only [`NativeReportPageResponse`] metadata; it
+/// does not retain the report body bytes. Use streaming execution when the
+/// native XML bytes themselves are needed.
+#[derive(Debug, Clone)]
+pub struct GetNativeReportPageRequest {
+    request: GetReportRequest,
+    result_filter: String,
+    first: i32,
+    rows: i32,
+    options: NativeReportPageOptions,
+}
+
+impl GetNativeReportPageRequest {
+    /// Create an explicitly filtered and windowed native report-page request.
+    ///
+    /// An empty `result_filter` explicitly selects all results in the supplied
+    /// window. Pagination keywords inside `result_filter` are rejected even
+    /// when grouped, spaced, or differently cased.
+    ///
+    /// # Errors
+    /// Returns a request error when `first` is not 1-based, `rows` is zero, the
+    /// filter contains `first` or `rows`, or the filter contains a character
+    /// that XML 1.0 cannot represent.
+    pub fn new(
+        report_id: EntityId,
+        result_filter: impl Into<String>,
+        first: i32,
+        rows: i32,
+        options: NativeReportPageOptions,
+    ) -> Result<Self, GmpRequestError> {
+        if first <= 0 {
+            return Err(GmpRequestError::invalid_field(
+                "first",
+                "must be a 1-based result index",
+            ));
+        }
+        if rows <= 0 {
+            return Err(GmpRequestError::invalid_field("rows", "must be positive"));
+        }
+
+        let result_filter = result_filter.into();
+        let filter_string = PaginatedFilter::new()
+            .try_with_filter_string(Some(&result_filter), &[])
+            .map_err(|source| GmpRequestError::FilterFragment {
+                field: "result_filter",
+                source,
+            })?
+            .build_with_direct_window(DirectPaginationWindow::new(first, rows));
+
+        let request = GetReportRequest {
+            report_id,
+            filter_string: Some(filter_string),
+            filter_id: None,
+            details: Some(true),
+            ignore_pagination: Some(false),
+            lean: Some(options.lean),
+            notes_details: Some(options.notes_details),
+            overrides_details: Some(options.overrides_details),
+            result_tags: Some(options.result_tags),
+        };
+        request.validate()?;
+
+        Ok(Self {
+            request,
+            result_filter,
+            first,
+            rows,
+            options,
+        })
+    }
+
+    /// Return the selected report identifier.
+    #[must_use]
+    pub fn report_id(&self) -> &EntityId {
+        &self.request.report_id
+    }
+
+    /// Return the validated caller-authored result filter without pagination.
+    #[must_use]
+    pub fn result_filter(&self) -> &str {
+        &self.result_filter
+    }
+
+    /// Return the explicit 1-based first result index.
+    #[must_use]
+    pub const fn first(&self) -> i32 {
+        self.first
+    }
+
+    /// Return the explicit positive result window size.
+    #[must_use]
+    pub const fn rows(&self) -> i32 {
+        self.rows
+    }
+
+    /// Return the explicit native report-body output choices.
+    #[must_use]
+    pub const fn options(&self) -> NativeReportPageOptions {
+        self.options
+    }
+}
+
+impl GmpRequestCodec for GetNativeReportPageRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        self.request.validate()
+    }
+
+    fn command(&self) -> Option<GmpCommand> {
+        self.request.command()
+    }
+
+    fn encode(&self, version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.request.encode(version)
+    }
+}
+
+impl GmpRequest for GetNativeReportPageRequest {
+    type Response = NativeReportPageResponse;
 }
 
 /// Request for listing audit reports through the shared `get_reports` root.
@@ -1451,6 +1599,7 @@ mod tests {
         assert_associated_response::<DeleteAuditReportRequest, DeleteReportResponse>();
         assert_associated_response::<GetReportsRequest, GetReportsResponse>();
         assert_associated_response::<GetReportRequest, GetReportsResponse>();
+        assert_associated_response::<GetNativeReportPageRequest, NativeReportPageResponse>();
         assert_associated_response::<GetAuditReportsRequest, GetAuditReportsResponse>();
         assert_associated_response::<GetScanReportRequest, GetScanReportResponse>();
         assert_associated_response::<GetAuditReportRequest, GetAuditReportResponse>();

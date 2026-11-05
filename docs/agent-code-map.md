@@ -164,7 +164,7 @@ Changing client behavior:
 - `crates/gvm-client/src/error.rs`: high-level error variants and display behavior.
 - `crates/gvm-client/src/streaming.rs`: borrowed exact-byte response stream, completion, drain, copy-to-sink, and invalidation lifecycle.
 - Tests live under `crates/gvm-client/tests/`.
-- `canonical_request_surface_inventory.rs` protects the exact 1,038-row
+- `canonical_request_surface_inventory.rs` protects the exact 1,039-row
   disposition, retained rationale, removed-symbol, frozen-ticket, raw escape,
   and v0.6.0 mapping contracts.
 - `typed_facade_inventory.rs` parses every public typed helper and enforces the

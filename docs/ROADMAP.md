@@ -34,7 +34,7 @@ validation remains a separate follow-up.
 Release `v0.7.0` completed the SemVer-incompatible migration from the v0.6
 request surface. Issue #602 replaced temporary parallel
 options/builders/facade inputs with canonical complete request values, and
-issue #678 completed the final surface audit with 1,038 classified rows, zero
+issue #678 completed the final surface audit, now extended to 1,039 classified rows, zero
 transitional entries, and 267 typed facades. Current `main` is the
 post-`v0.7.0` Technology Preview line. See the
 [convergence audit](canonical-request-convergence-audit.md) and
@@ -96,17 +96,14 @@ Open work:
   session/shell mode; shell and exec are not treated as interchangeable.
 - [#417](https://github.com/greenbone-hive/rust-gvm/issues/417) tracks replacing
   the temporary `wnaf` Cargo Vet exemption.
-- [#4](https://github.com/greenbone-hive/rust-gvm/issues/4) provides the generic,
-  capability-gated streaming foundation for large GMP responses. Native
-  report-page request/response and pagination policy remain separate follow-up
-  work.
 - [#9](https://github.com/greenbone-hive/rust-gvm/issues/9) tracks possible
   mock-server record-and-replay support.
 
 The completed #523/#602 canonical-request program, #678 surface audit, and
-#172 protocol-gap program remain documented in [STATUS.md](STATUS.md), the
-ADRs, migration guide, and gvmd evidence documents rather than as open roadmap
-items.
+#172 protocol-gap program remain documented in [STATUS.md](STATUS.md), the ADRs,
+migration guide, and gvmd evidence documents rather than as open roadmap items.
+The completed #4 foundation and #762 native report-page integration likewise
+remain documented in [streaming-responses.md](streaming-responses.md).
 
 ## Near-Term Implementation Order
 
@@ -117,7 +114,6 @@ items.
 3. Keep protected-`main` downstream dispatch pinned to the exact successful
    rust-gvm commit SHA and preserve immutable runtime evidence.
 4. Address the remaining transport and dependency-vetting work tracked by #524
-   and #417, then layer native report-page behavior on the completed generic
-   large-response streaming foundation.
+   and #417.
 5. Expand real-gvmd conformance and python-gvm migration documentation as new
    protocol differences are discovered.

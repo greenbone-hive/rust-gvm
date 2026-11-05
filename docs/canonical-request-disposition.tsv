@@ -873,6 +873,7 @@ request	crates/gvm-gmp/src/commands/reports.rs	ExportScanReportRequest	canonical
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportHostsRequest	canonical-request	Complete 22.7 host-summary request owns audit identity, structured filters, details, lean behavior, and typed response.
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportRequest	canonical-request	Complete 22.7 structured audit request owns identity and filters with its distinct typed response.
 request	crates/gvm-gmp/src/commands/reports.rs	GetAuditReportsRequest	canonical-request	Complete 22.6 audit list request fixes usage_type=audit and has a distinct response association.
+request	crates/gvm-gmp/src/commands/reports.rs	GetNativeReportPageRequest	canonical-request	Owns explicit native result filtering, window, and expansion choices while delegating validation and version-aware encoding to GetReportRequest and associating bounded streaming metadata.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportApplicationsRequest	canonical-request	Owns the complete application projection and its GMP 22.8 typed response association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportClosedCvesRequest	canonical-request	Owns the complete closed-CVE projection and its GMP 22.8 typed response association.
 request	crates/gvm-gmp/src/commands/reports.rs	GetReportCvesRequest	canonical-request	Owns the complete CVE projection and its GMP 22.8 typed response association.
