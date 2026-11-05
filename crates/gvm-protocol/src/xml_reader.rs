@@ -101,9 +101,17 @@ pub enum StreamingXmlEvent {
 /// numeric reference, or a value that is not an XML character.
 pub fn resolve_xml_reference(reference: &str) -> Result<String, ProtocolError> {
     let character = if let Some(value) = reference.strip_prefix("#x") {
-        u32::from_str_radix(value, 16).ok().and_then(char::from_u32)
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+            .then(|| u32::from_str_radix(value, 16).ok().and_then(char::from_u32))
+            .flatten()
     } else if let Some(value) = reference.strip_prefix('#') {
-        value.parse::<u32>().ok().and_then(char::from_u32)
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then(|| value.parse::<u32>().ok().and_then(char::from_u32))
+            .flatten()
     } else {
         return resolve_xml_entity(reference)
             .map(ToString::to_string)
@@ -1408,6 +1416,46 @@ mod tests {
             resolve_xml_reference("#x0"),
             Err(ProtocolError::XmlParse(_))
         ));
+    }
+
+    #[test]
+    fn rejects_non_xml_numeric_reference_spellings() {
+        for reference in [
+            "#+62", "#x+3e", "#-62", "#x-3e", "#", "#x", "#X3e", "#١", "#x٣e",
+        ] {
+            assert!(matches!(
+                resolve_xml_reference(reference),
+                Err(ProtocolError::XmlParse(_))
+            ));
+        }
+
+        assert_eq!(resolve_xml_reference("#62").unwrap(), ">");
+        assert_eq!(resolve_xml_reference("#x3E").unwrap(), ">");
+    }
+
+    #[test]
+    fn buffered_reader_rejects_signed_numeric_references() {
+        for xml in [
+            b"<root>&#+62;</root>".as_slice(),
+            b"<root>&#x+3e;</root>".as_slice(),
+        ] {
+            let mut reader = XmlReader::new();
+            assert!(matches!(reader.feed(xml), Err(ProtocolError::XmlParse(_))));
+        }
+    }
+
+    #[test]
+    fn streaming_reader_rejects_signed_numeric_references() {
+        for xml in [
+            b"<root>&#+62;</root>".as_slice(),
+            b"<root>&#x+3e;</root>".as_slice(),
+        ] {
+            let mut reader = StreamingXmlReader::new();
+            assert!(matches!(
+                reader.feed_frame(xml),
+                Err(ProtocolError::XmlParse(_))
+            ));
+        }
     }
 
     fn assert_rejected_single_and_byte_chunks(xml: &[u8]) {
