@@ -24,8 +24,7 @@ use crate::responses::{
 };
 use crate::types::EntityId;
 use crate::{
-    FilterFragmentError, GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion,
-    PaginatedFilter,
+    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion, PaginatedFilter,
 };
 
 /// Request for importing one XML report into an existing import task.
@@ -324,25 +323,9 @@ impl GetNativeReportPageRequest {
         let result_filter = result_filter.into();
         let filter_string = PaginatedFilter::new()
             .try_with_filter_string(Some(&result_filter), &[])
-            .map_err(|error| match error {
-                FilterFragmentError::ReservedTerm { term }
-                    if term.eq_ignore_ascii_case("first") =>
-                {
-                    GmpRequestError::FilterFragment {
-                        field: "result_filter",
-                        term: "first",
-                    }
-                }
-                FilterFragmentError::ReservedTerm { term } if term.eq_ignore_ascii_case("rows") => {
-                    GmpRequestError::FilterFragment {
-                        field: "result_filter",
-                        term: "rows",
-                    }
-                }
-                FilterFragmentError::ReservedTerm { .. } => GmpRequestError::invalid_field(
-                    "result_filter",
-                    "contains an unexpected reserved term",
-                ),
+            .map_err(|source| GmpRequestError::FilterFragment {
+                field: "result_filter",
+                source,
             })?
             .build_with_direct_window(DirectPaginationWindow::new(first, rows));
 

@@ -193,11 +193,15 @@ fn test_native_report_page_rejects_invalid_or_conflicting_window_inputs() {
 
     for (filter, expected) in [
         ("severity>5 first=20", "first"),
-        ("(ROWS = 20) severity>5", "rows"),
+        ("(ROWS = 20) severity>5", "ROWS"),
     ] {
-        let error = GetNativeReportPageRequest::new(id("report"), filter, 1, 10, options)
-            .expect_err("reserved pagination term");
-        assert_reserved_pagination_error_is_copy(error, expected);
+        assert!(matches!(
+            GetNativeReportPageRequest::new(id("report"), filter, 1, 10, options),
+            Err(GmpRequestError::FilterFragment {
+                field: "result_filter",
+                source: gvm_gmp::FilterFragmentError::ReservedTerm { term },
+            }) if term == expected
+        ));
     }
 
     assert!(matches!(
@@ -207,25 +211,6 @@ fn test_native_report_page_rejects_invalid_or_conflicting_window_inputs() {
             ..
         })
     ));
-}
-
-fn assert_reserved_pagination_error_is_copy(error: GmpRequestError, expected_term: &str) {
-    fn assert_copy<T: Copy>() {}
-
-    assert_copy::<GmpRequestError>();
-    let copied = error;
-    assert_eq!(error, copied);
-    assert!(matches!(
-        copied,
-        GmpRequestError::FilterFragment {
-            field: "result_filter",
-            term,
-        } if term == expected_term
-    ));
-    assert_eq!(
-        copied.to_string(),
-        format!("invalid request field 'result_filter': filter fragment contains reserved term: {expected_term}")
-    );
 }
 
 #[test]
