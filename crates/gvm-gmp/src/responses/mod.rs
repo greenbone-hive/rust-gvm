@@ -100,7 +100,7 @@ pub use credential::{
     ModifyCredentialResponse, ModifyCredentialStoreResponse, VerifyCredentialStoreResponse,
 };
 pub use features::{Feature, GetFeaturesResponse};
-pub use feed::{Feed, GetFeedsResponse};
+pub use feed::{Feed, FeedSyncState, GetFeedsResponse};
 pub use filter::{
     CreateFilterResponse, DeleteFilterResponse, Filter, GetFiltersResponse, ModifyFilterResponse,
 };
