@@ -10,6 +10,59 @@ use crate::responses::common::{
 };
 use crate::{GmpResponse, GmpVersion};
 
+/// Typed interpretation of a feed's `currently_syncing` response element.
+///
+/// Current gvmd responses use a nested `timestamp` element. An empty nested
+/// timestamp still means that synchronization is active, but no usable
+/// timestamp is available. Legacy direct-text `0` and `1` values are also
+/// supported. Other direct-text values are preserved explicitly instead of
+/// being treated as timestamps.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum FeedSyncState {
+    /// The response omitted `currently_syncing`.
+    #[default]
+    Missing,
+    /// The legacy direct-text value `0` reported no active synchronization.
+    Inactive,
+    /// Synchronization is active, with an optional nested timestamp.
+    Active {
+        /// The non-empty nested timestamp, preserved exactly as received.
+        timestamp: Option<String>,
+    },
+    /// A direct-text value other than the supported legacy `0` or `1` flags.
+    UnsupportedDirectText {
+        /// The unsupported value, preserved exactly as received.
+        value: String,
+    },
+}
+
+impl FeedSyncState {
+    /// Return whether synchronization is active when the wire form is supported.
+    ///
+    /// Missing information and unsupported direct text return `None`.
+    #[must_use]
+    pub const fn is_active(&self) -> Option<bool> {
+        match self {
+            Self::Inactive => Some(false),
+            Self::Active { .. } => Some(true),
+            Self::Missing | Self::UnsupportedDirectText { .. } => None,
+        }
+    }
+
+    /// Return the usable nested synchronization timestamp, when present.
+    #[must_use]
+    pub fn timestamp(&self) -> Option<&str> {
+        match self {
+            Self::Active {
+                timestamp: Some(timestamp),
+            } => Some(timestamp),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -20,7 +73,11 @@ pub struct Feed {
     pub status: Option<String>,
     pub description: Option<String>,
     pub sync_not_available: Option<String>,
+    /// Raw nested timestamp or direct-text value retained for compatibility.
     pub currently_syncing: Option<String>,
+    /// Typed synchronization semantics derived from the original wire shape.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sync_state: FeedSyncState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,18 +99,28 @@ impl Feed {
             .child("sync_not_available")
             .map(|sync| sync.required_child_text("error"))
             .transpose()?;
-        let currently_syncing = node
-            .child("currently_syncing")
-            .map(|sync| {
-                if sync.child("timestamp").is_some() {
-                    sync.required_child_text("timestamp")
-                } else if !sync.text.is_empty() {
-                    Ok(sync.text.clone())
-                } else {
-                    Err(ParseError::MissingElement("timestamp".to_string()))
-                }
-            })
-            .transpose()?;
+        let (currently_syncing, sync_state) = match node.child("currently_syncing") {
+            Some(sync) if sync.child("timestamp").is_some() => {
+                let timestamp = sync.required_child_text("timestamp")?;
+                let state = FeedSyncState::Active {
+                    timestamp: (!timestamp.is_empty()).then(|| timestamp.clone()),
+                };
+                (Some(timestamp), state)
+            }
+            Some(sync) if !sync.text.is_empty() => {
+                let value = sync.text.clone();
+                let state = match value.as_str() {
+                    "0" => FeedSyncState::Inactive,
+                    "1" => FeedSyncState::Active { timestamp: None },
+                    _ => FeedSyncState::UnsupportedDirectText {
+                        value: value.clone(),
+                    },
+                };
+                (Some(value), state)
+            }
+            Some(_) => return Err(ParseError::MissingElement("timestamp".to_string())),
+            None => (None, FeedSyncState::Missing),
+        };
         Ok(Self {
             type_: node.required_child_text("type")?,
             name: node.required_child_text("name")?,
@@ -62,6 +129,7 @@ impl Feed {
             description: node.optional_child_text("description"),
             sync_not_available,
             currently_syncing,
+            sync_state,
         })
     }
 }
@@ -138,6 +206,12 @@ mod tests {
         assert_eq!(parsed.items[0].type_, "NVT");
         assert_eq!(parsed.items[0].currently_syncing.as_deref(), Some(""));
         assert_eq!(
+            parsed.items[0].sync_state,
+            FeedSyncState::Active { timestamp: None }
+        );
+        assert_eq!(parsed.items[0].sync_state.is_active(), Some(true));
+        assert_eq!(parsed.items[0].sync_state.timestamp(), None);
+        assert_eq!(
             parsed.items[1].sync_not_available.as_deref(),
             Some("Feed lock unavailable")
         );
@@ -199,6 +273,8 @@ mod tests {
         assert_eq!(feed.description, None);
         assert_eq!(feed.sync_not_available, None);
         assert_eq!(feed.currently_syncing, None);
+        assert_eq!(feed.sync_state, FeedSyncState::Missing);
+        assert_eq!(feed.sync_state.is_active(), None);
     }
 
     #[test]
@@ -228,9 +304,87 @@ mod tests {
         let parsed = GetFeedsResponse::from_response(&response).expect("legacy sync value parses");
 
         assert_eq!(parsed.items[0].currently_syncing.as_deref(), Some("0"));
+        assert_eq!(parsed.items[0].sync_state, FeedSyncState::Inactive);
+        assert_eq!(parsed.items[0].sync_state.is_active(), Some(false));
         assert_eq!(parsed.feed_owner_set, None);
         assert_eq!(parsed.feed_roles_set, None);
         assert_eq!(parsed.feed_resources_access, None);
+    }
+
+    #[test]
+    fn parses_populated_nested_sync_timestamp() {
+        let response = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed>
+                    <type>NVT</type>
+                    <name>NVT Feed</name>
+                    <version>202603260800</version>
+                    <currently_syncing><timestamp>2026-03-26T08:00:00Z</timestamp></currently_syncing>
+                </feed>
+            </get_feeds_response>"#,
+        );
+
+        let parsed = GetFeedsResponse::from_response(&response).expect("nested timestamp parses");
+        let feed = &parsed.items[0];
+
+        assert_eq!(
+            feed.currently_syncing.as_deref(),
+            Some("2026-03-26T08:00:00Z")
+        );
+        assert_eq!(
+            feed.sync_state,
+            FeedSyncState::Active {
+                timestamp: Some("2026-03-26T08:00:00Z".to_string())
+            }
+        );
+        assert_eq!(feed.sync_state.is_active(), Some(true));
+        assert_eq!(feed.sync_state.timestamp(), Some("2026-03-26T08:00:00Z"));
+    }
+
+    #[test]
+    fn parses_legacy_direct_active_sync_value() {
+        let response = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed>
+                    <type>NVT</type><name>NVT Feed</name><version>1</version>
+                    <currently_syncing>1</currently_syncing>
+                </feed>
+            </get_feeds_response>"#,
+        );
+
+        let parsed = GetFeedsResponse::from_response(&response).expect("legacy active flag parses");
+        let feed = &parsed.items[0];
+
+        assert_eq!(feed.currently_syncing.as_deref(), Some("1"));
+        assert_eq!(feed.sync_state, FeedSyncState::Active { timestamp: None });
+        assert_eq!(feed.sync_state.is_active(), Some(true));
+        assert_eq!(feed.sync_state.timestamp(), None);
+    }
+
+    #[test]
+    fn preserves_unsupported_direct_sync_value_explicitly() {
+        let response = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed>
+                    <type>NVT</type><name>NVT Feed</name><version>1</version>
+                    <currently_syncing>unknown</currently_syncing>
+                </feed>
+            </get_feeds_response>"#,
+        );
+
+        let parsed = GetFeedsResponse::from_response(&response)
+            .expect("unsupported direct text is retained");
+        let feed = &parsed.items[0];
+
+        assert_eq!(feed.currently_syncing.as_deref(), Some("unknown"));
+        assert_eq!(
+            feed.sync_state,
+            FeedSyncState::UnsupportedDirectText {
+                value: "unknown".to_string()
+            }
+        );
+        assert_eq!(feed.sync_state.is_active(), None);
+        assert_eq!(feed.sync_state.timestamp(), None);
     }
 
     #[test]

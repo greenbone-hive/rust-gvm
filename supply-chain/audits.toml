@@ -19,6 +19,30 @@ criteria = "safe-to-deploy"
 delta = "0.22.1 -> 0.23.1"
 notes = "Reviewed the full 0.22.1 -> 0.23.1 delta, including AVX2 and NEON unsafe kernels. Pointer loads and stores are guarded by explicit length bounds; safe runtime dispatch checks CPU support; unchecked AVX2 constructors document their caller precondition; no new ambient capabilities were introduced. Upstream all-features, alloc-only, and std-only test matrices passed, including exhaustive scalar and SIMD cases."
 
+[[audits.bit-set]]
+who = "Thoth"
+criteria = "safe-to-run"
+delta = "0.8.0 -> 0.11.1"
+notes = "Reviewed the complete source delta: moves the implementation into the bit-vec workspace, adds generic block and serialization support, and incorporates the 0.11.0 deserialization-soundness fix by validating storage length and trailing-bit invariants. Unsafe calls are confined to documented BitVec invariant-preserving operations; no ambient capabilities were added and MSRV 1.85 is below the workspace floor."
+
+[[audits.bit-vec]]
+who = "Thoth"
+criteria = "safe-to-run"
+delta = "0.8.0 -> 0.10.1"
+notes = "Reviewed the complete source delta: generalizes storage blocks, adds iterators and optional serialization formats, and validates deserialized storage length and unused trailing bits before constructing BitVec. Unsafe getters and storage mutation retain explicit caller/invariant preconditions; the crate is no_std and adds no ambient capabilities."
+
+[[audits.borsh]]
+who = "Thoth"
+criteria = "safe-to-run"
+version = "1.8.1"
+notes = "Reviewed the complete published crate. Runtime code implements bounded, caller-directed serialization/deserialization and schema support over supplied readers and writers; it contains no executable unsafe code and opens no files, processes, or network connections itself. The 1.8.1 release changes schema handling/tests and metadata without expanding ambient capabilities."
+
+[[audits.borsh-derive]]
+who = "Thoth"
+criteria = "safe-to-run"
+version = "1.8.1"
+notes = "Reviewed the complete published proc-macro crate. It parses derive input and emits Borsh serialization, deserialization, and schema implementations; it contains no unsafe code or ambient filesystem, process, or network capabilities. The 1.8.1 changes correct generic/schema handling for enum variants."
+
 [[audits.clap]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -61,6 +85,12 @@ criteria = "safe-to-deploy"
 delta = "4.6.4 -> 4.6.7"
 notes = "Reviewed the complete proc-macro delta: it validates the new defer attribute for Parser/Subcommand enums and emits deferred subcommand construction while preserving the surrounding augmentation order; other source edits are mechanical Self conversions. No unsafe code or ambient capabilities were added."
 
+[[audits.core_detect]]
+who = "Thoth"
+criteria = "safe-to-run"
+version = "1.0.0"
+notes = "Reviewed the complete published no_std crate. It caches x86/x86_64 CPU-feature bits obtained through guarded CPUID/XGETBV intrinsics; XGETBV is called only after CPU and OS XSAVE support checks, and no files, processes, network connections, or other ambient capabilities are used."
+
 [[audits.num-bigint]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -72,6 +102,12 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 version = "0.3.34"
 notes = "Reviewed the complete published crate. It contains no unsafe code; its advertised build-script capability reads target/configuration environment variables, invokes the selected pkg-config executable, parses bounded process output into link metadata, and emits Cargo directives. It adds no runtime capability to deployed artifacts."
+
+[[audits.proptest]]
+who = "Thoth"
+criteria = "safe-to-run"
+delta = "1.11.0 -> 1.12.0"
+notes = "Reviewed the complete source delta: updates to rand 0.10 and bit-set/bit-vec, fixes duration and float strategy panics, checks RDRAND support before use, synchronizes panic-hook initialization, and hardens forked failure persistence. The crate remains unsafe-free; its test-only persistence and subprocess capabilities stay explicitly configured by callers."
 
 [[audits.quick-xml]]
 who = "Thoth"
@@ -97,6 +133,12 @@ criteria = "safe-to-deploy"
 delta = "0.41.0 -> 0.42.0"
 notes = "Reviewed the complete 0.41.0 -> 0.42.0 delta: the release converts parser/event internals from byte buffers to UTF-8 strings, adds eager UTF-8 validation, and updates Serde/parser/writer APIs. There are no executable unsafe blocks, no new ambient network/process capabilities, and file access remains caller-directed reader construction. Upstream all-feature tests passed (1,614 passed, 12 ignored), and rust-gvm streaming, framing, parsing, and full-workspace all-feature tests pass after the API migration."
 
+[[audits.rand_xorshift]]
+who = "Thoth"
+criteria = "safe-to-run"
+delta = "0.4.0 -> 0.5.0"
+notes = "Reviewed the complete source delta: adapts the deterministic XorShift RNG to rand_core 0.10, updates edition/MSRV metadata, and retains the same small state transition implementation. It contains no unsafe code or ambient capabilities."
+
 [[audits.russh]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -120,6 +162,12 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.1.4 -> 1.1.5"
 notes = "Reviewed the complete source delta: it raises MSRV to 1.65, corrects target cfgs and platform types, adds Apple open flags, centralizes timeval rounding with carry and overflow checks, and limits build probing cleanup to its known OUT_DIR artifact. Unsafe code remains within the existing syscall and pointer abstractions, and no new ambient capability was added."
+
+[[audits.rustix]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.1.5 -> 1.1.6"
+notes = "Reviewed the complete source delta: bounds truncated ancillary-message parsing, separates zero-length extended-attribute queries from initialized-buffer APIs, selects correct 32-bit UID/GID syscalls, and corrects platform cfgs, termios layouts, and syscall wrappers. New unsafe blocks remain thin typed syscall calls with checked buffer lengths; no ambient capability beyond rustix's caller-directed OS APIs was added."
 
 [[audits.rustls]]
 who = "Thoth"
@@ -151,6 +199,12 @@ criteria = "safe-to-deploy"
 delta = "0.23.45 -> 0.23.46"
 notes = "Reviewed the complete security-release delta: redacts TLS master secrets and resumption PSKs from Debug output (RUSTSEC-2026-0346), prevents buffered application data escaping after ECH rejection (RUSTSEC-2026-0347), uses strict bounded Brotli certificate decompression (RUSTSEC-2026-0348), and stores key-exchange hints only after handshake authentication (RUSTSEC-2026-0349). It also hardens record limits, key updates, ECH/PSK invariants, and cache arithmetic. No unsafe code or ambient capabilities were added."
 
+[[audits.rustls-native-certs]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.8.4 -> 0.8.5"
+notes = "Reviewed the complete source delta: Unix certificate loading now reads each configured certificate file once and shares the bytes between PEM parsing and DER fallback, with error reporting preserved. No unsafe code or new ambient capability was added; filesystem access remains limited to caller/environment-selected trust-store paths."
+
 [[audits.rustls-webpki]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -174,6 +228,12 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.0.228 -> 1.0.229"
 notes = "Reviewed the complete proc-macro delta for the syn 3 migration. Changes adapt renamed/reshaped syntax nodes and replace iterator combinators with equivalent explicit loops; emitted serialization/deserialization control flow and error propagation remain equivalent. No unsafe code or ambient capabilities were added."
+
+[[audits.sha2]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.11.0 -> 0.11.1"
+notes = "Reviewed the complete source delta, including SHA-256/SHA-512 SIMD refactoring, RISC-V feature detection and unaligned-load changes, and the AArch64 round-constant aliasing fix. Runtime dispatch guards architecture-specific intrinsics, pointer reads remain within fixed-size input blocks, and no ambient capabilities were added; MSRV 1.88 is below the workspace's 1.89 floor."
 
 [[audits.thiserror]]
 who = "Thoth"
@@ -216,6 +276,12 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.53.1 -> 1.53.2"
 notes = "Reviewed the complete source delta: fixes mpsc index wraparound, semaphore cleanup across tracing panics, Windows child-handle teardown order, io_uring length/completion handling, timer and waker reentrancy, lock-order deadlocks, and shutdown/task-dump wakeups. Unsafe changes preserve existing pointer, queue, and OS-handle invariants, and no new ambient capabilities were added."
+
+[[audits.tokio]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.53.3 -> 1.54.1"
+notes = "Reviewed the complete 1.54.0/1.54.1 source delta across runtime scheduling, timers, I/O, synchronization, filesystem helpers, and blocking-pool shutdown. It adds opt-in APIs and fixes queue, semaphore, timer-wheel, readiness, and shutdown edge cases; 1.54.1 restores runtime-handle retention for timers. Unsafe changes preserve existing pinning, ownership, and OS-handle invariants, and no unrequested ambient capability was introduced; MSRV remains below the workspace floor."
 
 [[audits.tokio-macros]]
 who = "Thoth"
@@ -270,3 +336,9 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.26.1 -> 1.28.0"
 notes = "Reviewed the complete source delta: parsing accepts a case-insensitive fixed-length URN prefix, optional Serde adapters cover existing UUID representations, and version-7 context preserves monotonicity across regressed timestamps. No unsafe code or ambient capabilities were added; MSRV rises to 1.89, matching the workspace."
+
+[[audits.uuid]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.28.0 -> 1.29.0"
+notes = "Reviewed the complete source delta: adds NonNilUuid constructors and version-specific helpers while retaining the existing UUID byte representation and parsing/formatting paths. The new unchecked construction is used only after constructors establish the non-nil invariant; no ambient capabilities were added and MSRV remains 1.89."
