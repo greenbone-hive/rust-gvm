@@ -216,6 +216,28 @@ mod tests {
     }
 
     #[test]
+    fn classifies_permission_denied_create_scanner_response() {
+        let response = Response::from(
+            r#"<create_scanner_response status="400" status_text="Permission denied"/>"#,
+        );
+
+        let error = CreateScannerResponse::from_response(&response)
+            .expect_err("permission denial should be a server error");
+
+        assert_eq!(
+            error.server_error_kind(),
+            Some(crate::GmpServerErrorKind::PermissionDenied)
+        );
+        assert!(matches!(
+            error,
+            ParseError::ServerError {
+                status: 400,
+                message
+            } if message == "Permission denied"
+        ));
+    }
+
+    #[test]
     fn parses_missing_optional_scanner_fields() {
         let response = Response::from(
             r#"<get_scanners_response status="200" status_text="OK">

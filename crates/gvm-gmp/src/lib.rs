@@ -34,6 +34,8 @@ pub use execution::{
 };
 /// Re-exported gvmd filter helpers.
 pub use filtering::{FilterFragment, FilterFragmentError, PaginatedFilter, Pagination};
+/// Re-exported semantic GMP server-error classification.
+pub use responses::GmpServerErrorKind;
 /// Re-exported typed schedule values.
 pub use schedule::{
     ScheduleDefinition, ScheduleIcalendarError, ScheduleInput, ScheduleObservation,

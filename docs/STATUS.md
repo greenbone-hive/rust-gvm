@@ -926,7 +926,7 @@ versions 22.4 through 22.8 (with later versions routed to `GmpNext`), retain raw
 |---------|-------------|
 | `Connection(ConnectionError)` | Transport failure (preserves source chain) |
 | `Request(GmpRequestError)` | Canonical request validation or encoding failure |
-| `Server { status, message }` | Non-2xx GMP response |
+| `Server { status, message }` | Non-2xx GMP response; `server_error_kind()` provides shared GMP semantic classification while preserving both raw fields |
 | `XmlParse(String)` | Malformed version/response XML |
 | `Parse(ParseError)` | Typed response model parsing failure |
 | `UnsupportedVersion(major, minor)` | Server GMP version too old |

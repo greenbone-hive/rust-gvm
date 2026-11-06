@@ -48,6 +48,15 @@ behavior; consumers that matched
 `GvmError::Parse(ParseError::ServerError { .. })` must now match
 `GvmError::Server { .. }`.
 
+Consumers that need semantic handling can call `server_error_kind()` on either
+`GvmError` or `ParseError`. Both accessors return the shared
+`GmpServerErrorKind`: ordinary status-400 input errors remain `InvalidInput`,
+the exact normalized gvmd texts `Authentication failed` and `Permission denied`
+refine status 400, and explicit statuses 401 and 403 classify as
+`AuthenticationFailure` and `PermissionDenied`. Other statuses conservatively
+return `Unknown`. Classification never changes the original numeric status or
+message, and it does not use substring guessing or HTTP types.
+
 The typed contract is owned by `gvm-gmp` (`GmpRequestCodec`, `GmpRequest`, and
 `GmpResponse`) and `gvm-client` (`GmpClient::execute`). `gvm-client` re-exports
 those traits for ergonomic imports. `GmpRequestCodec` separates fallible final
