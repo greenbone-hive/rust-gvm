@@ -163,6 +163,12 @@ criteria = "safe-to-deploy"
 delta = "0.63.1 -> 0.63.3"
 notes = "Reviewed the complete security-release delta: bounds rekey-phase reply queues, rejects connection-layer traffic after peer KEXINIT, preserves packet ordering across rekeys, fixes Pageant response bounds and sensitive debug output, makes RSA-without-feature failure explicit, fixes PTY mode framing, and enforces inactivity timeouts during stalled writes and shutdown. Added network use is test-only, no executable unsafe blocks were added, and the existing transport capabilities are unchanged."
 
+[[audits.russh]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.63.3 -> 0.65.0"
+notes = "Reviewed the complete source delta under rust-gvm's no-RSA feature set: it bounds EXT_INFO, Pageant, certificate nesting, and zero-sized packet/window inputs; authenticates the server public-key callback only after signature verification; corrects channel-window accounting, pre-auth keepalive scheduling, partial authentication, and signer-failure recovery; and adds OpenSSH agent session binding. No executable unsafe blocks or ambient capabilities were added, and the MSRV remains 1.89."
+
 [[audits.rustix]]
 who = "Thoth"
 criteria = "safe-to-deploy"
