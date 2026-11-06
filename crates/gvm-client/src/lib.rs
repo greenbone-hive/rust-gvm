@@ -100,8 +100,8 @@ pub use gvm_gmp::commands::help::HelpMode;
 pub use gvm_gmp::commands::usage_type::UsageType;
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
 pub use gvm_gmp::{
-    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse, GmpStreamDecoder,
-    GmpStreamingResponse,
+    GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpResponse, GmpServerErrorKind,
+    GmpStreamDecoder, GmpStreamingResponse,
 };
 pub use gvm_protocol::{StreamingXmlElement, StreamingXmlEvent};
 pub use streaming::{GmpResponseStream, GmpStreamCompletion, GmpStreamCopyError, StreamOptions};
@@ -2035,6 +2035,36 @@ mod tests {
             .expect("send exposes raw non-success response");
         assert_eq!(raw.status_code(), Some(503));
         assert_eq!(raw.status_text().as_deref(), Some("backend unavailable"));
+    }
+
+    #[tokio::test]
+    async fn typed_scanner_execution_classifies_permission_denied() {
+        let mut client = connected_client_with_response(
+            r#"<create_scanner_response status="400" status_text="Permission denied"/>"#,
+        )
+        .await;
+
+        let error = client
+            .execute(gvm_gmp::commands::scanners::CreateScannerRequest::new(
+                "scanner",
+                "scanner.example",
+                9390,
+                gvm_gmp::ScannerType::OpenVasScanner,
+            ))
+            .await
+            .expect_err("permission denial should fail typed execution");
+
+        assert_eq!(
+            error.server_error_kind(),
+            Some(GmpServerErrorKind::PermissionDenied)
+        );
+        assert!(matches!(
+            error,
+            GvmError::Server {
+                status: 400,
+                message
+            } if message == "Permission denied"
+        ));
     }
 
     #[tokio::test]

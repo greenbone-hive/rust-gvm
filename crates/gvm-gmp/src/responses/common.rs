@@ -14,6 +14,55 @@ use crate::{EntityId, GmpResponse, GmpVersion};
 
 const DEFAULT_MAX_XML_DEPTH: usize = 256;
 
+/// Semantic classification of a non-success GMP server response.
+///
+/// GMP uses status `400` both for ordinary invalid input and for some
+/// authentication and authorization failures. Those exceptional outcomes are
+/// recognized only when the normalized status text exactly matches text
+/// emitted by gvmd. Statuses `401` and `403` are classified directly. All
+/// other unrecognized statuses conservatively use [`Self::Unknown`].
+///
+/// This type deliberately models GMP outcomes rather than HTTP status types.
+/// The original numeric status and message remain available on the error that
+/// produced this classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum GmpServerErrorKind {
+    /// The server rejected ordinary invalid request input.
+    InvalidInput,
+    /// Authentication failed or is required.
+    AuthenticationFailure,
+    /// The authenticated caller lacks permission for the operation.
+    PermissionDenied,
+    /// The outcome has no evidence-backed semantic classification.
+    Unknown,
+}
+
+impl GmpServerErrorKind {
+    /// Classify a raw GMP status and status-text pair.
+    ///
+    /// Status text is trimmed and compared without ASCII case differences, but
+    /// is never matched by substring. An unrecognized status `400` retains
+    /// GMP's ordinary invalid-input meaning; an unrecognized status outside
+    /// the explicit cases conservatively returns [`Self::Unknown`].
+    #[must_use]
+    pub fn classify(status: u16, message: &str) -> Self {
+        match status {
+            401 => Self::AuthenticationFailure,
+            403 => Self::PermissionDenied,
+            400 if message.trim().eq_ignore_ascii_case("Authentication failed") => {
+                Self::AuthenticationFailure
+            }
+            400 if message.trim().eq_ignore_ascii_case("Permission denied") => {
+                Self::PermissionDenied
+            }
+            400 => Self::InvalidInput,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error("invalid XML: {0}")]
@@ -30,6 +79,22 @@ pub enum ParseError {
     NestingLimitExceeded { max_depth: usize },
     #[error("protocol error while parsing response: {0}")]
     Protocol(#[from] ProtocolError),
+}
+
+impl ParseError {
+    /// Return the semantic kind of a GMP server error.
+    ///
+    /// Structural parsing failures return `None`. The original server status
+    /// and message remain intact in [`Self::ServerError`].
+    #[must_use]
+    pub fn server_error_kind(&self) -> Option<GmpServerErrorKind> {
+        match self {
+            Self::ServerError { status, message } => {
+                Some(GmpServerErrorKind::classify(*status, message))
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -601,6 +666,49 @@ pub(crate) fn parse_entity_meta_optional_name(node: &XmlNode) -> Result<EntityMe
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classifies_evidence_backed_server_outcomes() {
+        assert_eq!(
+            GmpServerErrorKind::classify(400, "invalid scanner port"),
+            GmpServerErrorKind::InvalidInput
+        );
+        assert_eq!(
+            GmpServerErrorKind::classify(400, " Authentication FAILED "),
+            GmpServerErrorKind::AuthenticationFailure
+        );
+        assert_eq!(
+            GmpServerErrorKind::classify(400, " permission DENIED "),
+            GmpServerErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            GmpServerErrorKind::classify(401, "backend-specific text"),
+            GmpServerErrorKind::AuthenticationFailure
+        );
+        assert_eq!(
+            GmpServerErrorKind::classify(403, "backend-specific text"),
+            GmpServerErrorKind::PermissionDenied
+        );
+    }
+
+    #[test]
+    fn classification_avoids_substrings_and_falls_back_conservatively() {
+        assert_eq!(
+            GmpServerErrorKind::classify(400, "request failed: Permission denied"),
+            GmpServerErrorKind::InvalidInput
+        );
+        assert_eq!(
+            GmpServerErrorKind::classify(500, "Permission denied"),
+            GmpServerErrorKind::Unknown
+        );
+        assert_eq!(
+            GmpServerErrorKind::classify(599, "unknown backend outcome"),
+            GmpServerErrorKind::Unknown
+        );
+
+        let structural = ParseError::MissingElement("status".to_string());
+        assert_eq!(structural.server_error_kind(), None);
+    }
 
     fn entity_node(id: Option<&str>, name: &str) -> XmlNode {
         let mut attributes = HashMap::new();

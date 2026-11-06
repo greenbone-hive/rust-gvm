@@ -8,7 +8,7 @@ use std::time::Duration;
 use gvm_connection::ConnectionError;
 use gvm_gmp::responses::ParseError;
 use gvm_gmp::types::GmpVersion;
-use gvm_gmp::GmpRequestError;
+use gvm_gmp::{GmpRequestError, GmpServerErrorKind};
 use gvm_protocol::ProtocolError;
 use thiserror::Error;
 
@@ -86,6 +86,22 @@ pub enum GvmError {
     Timeout(Duration),
 }
 
+impl GvmError {
+    /// Return the semantic kind of a non-success GMP server response.
+    ///
+    /// Non-server errors return `None`. The original numeric status and
+    /// message remain intact in [`Self::Server`].
+    #[must_use]
+    pub fn server_error_kind(&self) -> Option<GmpServerErrorKind> {
+        match self {
+            Self::Server { status, message } => {
+                Some(GmpServerErrorKind::classify(*status, message))
+            }
+            _ => None,
+        }
+    }
+}
+
 impl From<ConnectionError> for GvmError {
     fn from(value: ConnectionError) -> Self {
         match value {
@@ -118,6 +134,26 @@ mod tests {
         assert!(matches!(
             error,
             GvmError::Server { status: 409, message } if message == "conflict"
+        ));
+    }
+
+    #[test]
+    fn promoted_server_error_retains_semantic_classification() {
+        let error = GvmError::from(ParseError::ServerError {
+            status: 400,
+            message: "Permission denied".to_string(),
+        });
+
+        assert_eq!(
+            error.server_error_kind(),
+            Some(GmpServerErrorKind::PermissionDenied)
+        );
+        assert!(matches!(
+            error,
+            GvmError::Server {
+                status: 400,
+                message
+            } if message == "Permission denied"
         ));
     }
 
