@@ -261,13 +261,13 @@ impl server::Handler for MockSshHandler {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        public_key: &russh::keys::PublicKey,
+        public_key: russh::server::VerifiedPublicKey<'_>,
     ) -> Result<Auth, Self::Error> {
         if let Some(delay) = self.state.ssh_test.take_auth_delay() {
             tokio::time::sleep(delay).await;
         }
 
-        let public_key = public_key.to_openssh().ok();
+        let public_key = public_key.public_key.to_openssh().ok();
         let accepted =
             self.state
                 .ssh_test

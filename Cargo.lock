@@ -1399,9 +1399,9 @@ dependencies = [
 
 [[package]]
 name = "pageant"
-version = "0.2.1"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f3a5ae18f65a85c67a77d18d42d3606c07948e3c17c1e5f74852b26589e88a5"
+checksum = "f0786409b5aaa884655c9b4065681db0835db0cc185a6fb19fb17a5d38656866"
 dependencies = [
  "base16ct",
  "byteorder",
@@ -1730,9 +1730,9 @@ dependencies = [
 
 [[package]]
 name = "russh"
-version = "0.63.3"
+version = "0.65.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "036204edbd199552a5b3832f63c60dcdf395dc44c7f06b4af1c0e8139cc11bce"
+checksum = "3bb77a4b259312b2abbc541bca1c13cb4e9b61c560a7fd894068c3b92e0c9dc3"
 dependencies = [
  "aes",
  "aws-lc-rs",
@@ -2255,7 +2255,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.52.0",
