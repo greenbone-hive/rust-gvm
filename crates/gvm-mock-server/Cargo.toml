@@ -50,7 +50,6 @@ getrandom.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
-rstest.workspace = true
 tokio-test.workspace = true
 
 # `sha2` is a feature-only dependency: its `oid` feature lets the X.509

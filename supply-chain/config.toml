@@ -642,14 +642,6 @@ criteria = "safe-to-deploy"
 version = "0.17.14"
 criteria = "safe-to-deploy"
 
-[[exemptions.rstest]]
-version = "0.26.1"
-criteria = "safe-to-run"
-
-[[exemptions.rstest_macros]]
-version = "0.26.1"
-criteria = "safe-to-run"
-
 [[exemptions.russh]]
 version = "0.62.4"
 criteria = "safe-to-deploy"
