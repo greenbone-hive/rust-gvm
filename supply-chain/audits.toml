@@ -97,6 +97,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.6 -> 0.5.1"
 notes = "Reviewed the complete source delta through the 0.4.7 and 0.5.x changes: inline small-value storage, radix/division and arithmetic updates, split rand integrations, and the 0.5.1 Burnikel-Ziegler regression fix. The new mutable-byte-slice conversion is bounded by the preallocated BigDigit capacity; existing add/sub intrinsics retain their safety conditions, and no ambient capabilities were added."
 
+[[audits.pageant]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.2.1 -> 0.2.4"
+notes = "Reviewed the complete published source delta: fixes WM_COPYDATA framing and mapped-response bounds, replaces hand-built token security attributes with the process-token default descriptor, and adds a safely parsed GetUserNameA fallback for non-domain Windows systems. The bounds check narrows an existing unsafe mapped-memory read, no new unsafe blocks or ambient capabilities were added, and MSRV 1.89 matches the workspace."
+
 [[audits.pkg-config]]
 who = "Thoth"
 criteria = "safe-to-deploy"
