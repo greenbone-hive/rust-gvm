@@ -103,6 +103,12 @@ criteria = "safe-to-deploy"
 delta = "0.2.1 -> 0.2.4"
 notes = "Reviewed the complete published source delta: fixes WM_COPYDATA framing and mapped-response bounds, replaces hand-built token security attributes with the process-token default descriptor, and adds a safely parsed GetUserNameA fallback for non-domain Windows systems. The bounds check narrows an existing unsafe mapped-memory read, no new unsafe blocks or ambient capabilities were added, and MSRV 1.89 matches the workspace."
 
+[[audits.pageant]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.2.4 -> 0.2.5"
+notes = "Reviewed the complete published source delta: it rejects length-prefixed WM_COPYDATA requests larger than the fixed 8 KiB shared-memory mapping before buffering, using saturating arithmetic to avoid overflow. The remaining changes are manifest reordering and version metadata; no unsafe code or ambient capabilities were added."
+
 [[audits.pkg-config]]
 who = "Thoth"
 criteria = "safe-to-deploy"
