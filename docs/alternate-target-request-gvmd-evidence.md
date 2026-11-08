@@ -27,6 +27,19 @@ in the public gvmd source pinned by this repository:
   handlers preserve those fields and the `tasks` flag
   ([modify](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_web_application_targets.c#L508),
   [get](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_web_application_targets.c#L763)).
+- Issue #812 traced `exclude_urls` through the pinned revision and the
+  then-current upstream `main`
+  [`c11dc2e5adcfe97bb158ff73c51bd5dc5fee2935`](https://github.com/greenbone/gvmd/tree/c11dc2e5adcfe97bb158ff73c51bd5dc5fee2935)
+  (checked 2026-11-08). Omission leaves `target_data->exclude_urls` null,
+  while a present empty element supplies an empty string
+  ([pinned parser](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_web_application_targets.c#L517-L545),
+  [current parser](https://github.com/greenbone/gvmd/blob/c11dc2e5adcfe97bb158ff73c51bd5dc5fee2935/src/gmp_web_application_targets.c#L526-L545)).
+  The SQL modify path skips null, replaces non-empty text, and explicitly sets
+  `exclude_urls = NULL` for the empty string
+  ([pinned persistence](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/manage_sql_web_application_targets.c#L370-L402),
+  [current persistence](https://github.com/greenbone/gvmd/blob/c11dc2e5adcfe97bb158ff73c51bd5dc5fee2935/src/manage_sql_web_application_targets.c#L370-L402)).
+  Consequently omission preserves, non-empty text replaces, and
+  `<exclude_urls/>` is the supported clear form.
 - The central parser dispatches both delete roots through gvmd's resource
   deletion path
   ([OCI image](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp.c#L5302),
@@ -36,7 +49,9 @@ This source/schema evidence is intentionally separate from repository-local
 mock evidence:
 
 - the request-module tests assert independent exact XML for all twelve
-  semantic operations and verify their metadata and static response types;
+  semantic operations and verify their metadata and static response types; the
+  external `web_application_targets_test` sidecar separately asserts exact
+  preserve, replacement, and clear XML;
 - `gvm-client/tests/canonical_request_foundation.rs` proves every operation is
   rejected on GMP 22.7 with empty transport history;
 - `gvm-client/tests/typed_facade_coverage.rs` executes every operation on GMP

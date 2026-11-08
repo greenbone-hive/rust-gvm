@@ -56,13 +56,19 @@ three redundant options types and six free builders are removed. Its
 from mock-server validation. Issue #609 applies that contract to all twelve
 OCI-image and web-application target operations, removes their six redundant
 options types, twelve free builders, raw duplicate client signatures, and
-`_parsed` naming, and records separate
+`_parsed` naming. Issue #812 makes web-target excluded-URL modification
+explicitly preserve, replace, or clear; the clear element follows gvmd's SQL
+`NULL` branch. The family records separate
 [alternate-target gvmd evidence](alternate-target-request-gvmd-evidence.md).
 Issue #611 applies the same ownership contract to the six GMP 22.8 agent-group
 operations. Their complete requests now own filters, identifiers, scheduler
 data, repeated agent relationships, mutation fields, semantic aliases, and XML
 encoding. Three options types and six forwarding builders are removed; the six
-named client helpers accept the canonical requests unchanged. Independent
+named client helpers accept the canonical requests unchanged. Issue #812
+separates membership omission from non-empty replacement and rejects clear
+intent before transport because pinned and current gvmd preserve memberships
+for `<agents/>`; enabling clear requires an upstream parser/persistence change.
+Independent
 [agent-group gvmd evidence](agent-group-request-gvmd-evidence.md) records the
 server contract.
 

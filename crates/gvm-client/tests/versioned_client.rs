@@ -39,7 +39,7 @@ use gvm_gmp::commands::web_application_targets::{
     DeleteWebApplicationTargetRequest, GetWebApplicationTargetRequest,
     GetWebApplicationTargetsRequest, ModifyWebApplicationTargetRequest,
 };
-use gvm_gmp::{EntityId, GmpRequestCodec, GmpVersion};
+use gvm_gmp::{CollectionUpdate, EntityId, GmpRequestCodec, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 async fn stateful_server(version: MockVersion) -> Option<MockGmpServer> {
@@ -165,6 +165,35 @@ where
     );
     assert_eq!(task.target, None);
     task_id
+}
+
+async fn assert_agent_group_clear_fails_before_transport<C>(
+    client: &mut GmpNext<C>,
+    server: &MockGmpServer,
+    agent_group_id: &EntityId,
+) where
+    C: GvmConnection + Send,
+{
+    let history_len = server.command_history().len();
+    let mut unsupported_clear =
+        ModifyAgentGroupRequest::new(agent_group_id.clone(), "0 */10 * * *");
+    unsupported_clear.agent_ids = CollectionUpdate::Clear;
+    let clear_error = client
+        .modify_agent_group(unsupported_clear)
+        .await
+        .expect_err("gvmd cannot clear agent-group membership");
+    assert!(matches!(
+        clear_error,
+        GvmError::Request(gvm_gmp::GmpRequestError::InvalidField {
+            field: "agent_ids",
+            ..
+        })
+    ));
+    assert_eq!(
+        server.command_history().len(),
+        history_len,
+        "unsupported clear intent must fail before transport"
+    );
 }
 
 async fn assert_create_oci_image_target_task_round_trip<C>(
@@ -599,7 +628,8 @@ async fn next_client_agent_groups_round_trip() {
     let mut modify_request = ModifyAgentGroupRequest::new(agent_group_id.clone(), "0 */10 * * *");
     modify_request.name = Some("Updated Agent Group".into());
     modify_request.comment = Some("modified through client".into());
-    modify_request.agent_ids = vec![EntityId::new("agent-3").expect("valid id")];
+    modify_request.agent_ids =
+        CollectionUpdate::replace([EntityId::new("agent-3").expect("valid id")]);
     let modify_response = client
         .modify_agent_group(modify_request)
         .await
@@ -619,6 +649,8 @@ async fn next_client_agent_groups_round_trip() {
         updated_response.items[0].scheduler_cron_time.as_deref(),
         Some("0 */10 * * *")
     );
+
+    assert_agent_group_clear_fails_before_transport(&mut client, &server, &agent_group_id).await;
 
     delete_task(&server, &task_id).await;
     let delete_response = client
@@ -1091,7 +1123,7 @@ async fn next_client_web_application_targets_round_trip() {
             name: Some("Updated Web Target".into()),
             comment: Some("updated from versioned client".into()),
             urls: vec!["https://updated.example".into()],
-            exclude_urls: vec!["https://updated.example/logout".into()],
+            exclude_urls: CollectionUpdate::replace(["https://updated.example/logout".into()]),
             credential_id: Some(id("credential-web-2")),
         })
         .await

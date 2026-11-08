@@ -1634,8 +1634,10 @@ impl SessionHandler {
             if let Some(urls) = parse_element_text(raw_xml, "urls") {
                 resource.set_attr("urls", &urls);
             }
-            if let Some(exclude_urls) = parse_element_text(raw_xml, "exclude_urls") {
-                resource.set_attr("exclude_urls", &exclude_urls);
+            if let Some(exclude_urls) = element_text_including_empty(cmd, raw_xml, "exclude_urls") {
+                if !exclude_urls.is_empty() {
+                    resource.set_attr("exclude_urls", &exclude_urls);
+                }
             }
             if let Some(credential_id) = cmd.child_attr("credential", "id") {
                 resource.set_attr("credential_id", credential_id);
@@ -2473,7 +2475,7 @@ impl SessionHandler {
         };
         let new_image_references = parse_element_text(raw_xml, "image_references");
         let new_urls = parse_element_text(raw_xml, "urls");
-        let new_exclude_urls = parse_element_text(raw_xml, "exclude_urls");
+        let new_exclude_urls = element_text_including_empty(cmd, raw_xml, "exclude_urls");
         let new_status = parse_element_text(raw_xml, "status");
         let new_open_note = parse_element_text(raw_xml, "open_note");
         let new_fixed_note = parse_element_text(raw_xml, "fixed_note");
@@ -2880,7 +2882,11 @@ impl SessionHandler {
                     r.set_attr("urls", urls);
                 }
                 if let Some(ref exclude_urls) = new_exclude_urls {
-                    r.set_attr("exclude_urls", exclude_urls);
+                    if exclude_urls.is_empty() {
+                        r.remove_attr("exclude_urls");
+                    } else {
+                        r.set_attr("exclude_urls", exclude_urls);
+                    }
                 }
             }
             if let Some(ref nvt_oid) = new_nvt_oid {

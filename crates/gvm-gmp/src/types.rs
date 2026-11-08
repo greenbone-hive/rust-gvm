@@ -11,8 +11,9 @@ use std::str::FromStr;
 ///
 /// GMP distinguishes an omitted field (leave the current value unchanged),
 /// a non-empty replacement, and an explicit request to clear the collection.
-/// Command builders map [`Self::Clear`] to each command's gvmd-specific clear
-/// representation.
+/// Command codecs map [`Self::Clear`] to each command's gvmd-specific clear
+/// representation, or reject it during validation when gvmd has no effective
+/// clear wire form.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CollectionUpdate<T> {

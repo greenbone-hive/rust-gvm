@@ -12,7 +12,7 @@ use crate::responses::{
     CreateWebApplicationTargetResponse, DeleteWebApplicationTargetResponse,
     GetWebApplicationTargetsResponse, ModifyWebApplicationTargetResponse,
 };
-use crate::types::EntityId;
+use crate::types::{CollectionUpdate, EntityId};
 use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
 /// Semantic request for cloning a web application target.
@@ -167,8 +167,8 @@ pub struct ModifyWebApplicationTargetRequest {
     pub comment: Option<String>,
     /// URLs to scan. An empty list omits the element.
     pub urls: Vec<String>,
-    /// URLs to exclude from the scan. An empty list omits the element.
-    pub exclude_urls: Vec<String>,
+    /// Excluded-URL update: omit to preserve, replace with a non-empty list, or clear.
+    pub exclude_urls: CollectionUpdate<String>,
     /// Optional credential used for the target.
     pub credential_id: Option<EntityId>,
 }
@@ -182,7 +182,7 @@ impl ModifyWebApplicationTargetRequest {
             name: None,
             comment: None,
             urls: Vec::new(),
-            exclude_urls: Vec::new(),
+            exclude_urls: CollectionUpdate::Omitted,
             credential_id: None,
         }
     }
@@ -284,7 +284,7 @@ fn modify_web_application_target_command(
     add_text_element(&mut cmd, "comment", request.comment.as_deref());
     add_text_element(&mut cmd, "name", request.name.as_deref());
     add_string_list_text(&mut cmd, "urls", &request.urls);
-    add_string_list_text(&mut cmd, "exclude_urls", &request.exclude_urls);
+    add_string_list_update(&mut cmd, "exclude_urls", &request.exclude_urls);
     add_optional_id_element(&mut cmd, "credential", request.credential_id.as_ref());
     cmd
 }
@@ -305,6 +305,18 @@ fn add_string_list_text(cmd: &mut XmlCommand, name: &str, values: &[String]) {
         return;
     }
     cmd.add_element_with_text(name, &values.join(","));
+}
+
+fn add_string_list_update(cmd: &mut XmlCommand, name: &str, values: &CollectionUpdate<String>) {
+    match values {
+        CollectionUpdate::Omitted => {}
+        CollectionUpdate::Replace(values) if !values.is_empty() => {
+            cmd.add_element_with_text(name, &values.join(","));
+        }
+        CollectionUpdate::Replace(_) | CollectionUpdate::Clear => {
+            cmd.add_element(name);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -364,7 +376,7 @@ mod tests {
         modify.name = Some("updated".into());
         modify.comment = Some("changed".into());
         modify.urls = vec!["https://example.com".into()];
-        modify.exclude_urls = vec!["https://example.com/logout".into()];
+        modify.exclude_urls = CollectionUpdate::replace(["https://example.com/logout".into()]);
         modify.credential_id = Some(id("cred-1"));
         assert_eq!(
             request_xml(&modify),
