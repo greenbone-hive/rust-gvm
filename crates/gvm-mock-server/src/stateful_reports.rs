@@ -259,14 +259,15 @@ fn apply_report_filter(reports: &mut Vec<Resource>, filter: &str) {
     });
 }
 
-fn paginate(resources: &mut Vec<Resource>, filter: &str) {
-    let first = numeric_term(filter, "first").unwrap_or(1).max(1) - 1;
+fn paginate(resources: &mut Vec<Resource>, filter: &str) -> (usize, usize) {
+    let first = numeric_term(filter, "first").unwrap_or(1).max(1);
     let rows = numeric_term(filter, "rows").filter(|rows| *rows > 0);
-    let start = first.min(resources.len());
+    let start = (first - 1).min(resources.len());
     let end = rows.map_or(resources.len(), |rows| {
         start.saturating_add(rows).min(resources.len())
     });
     *resources = resources[start..end].to_vec();
+    (first, rows.unwrap_or(100))
 }
 
 fn numeric_term(filter: &str, name: &str) -> Option<usize> {
@@ -364,9 +365,11 @@ fn render_report_details(
             ordering
         }
     });
-    if !ignore_pagination {
-        paginate(&mut filtered, filter);
-    }
+    let (page_start, page_max) = if ignore_pagination {
+        (1, 100)
+    } else {
+        paginate(&mut filtered, filter)
+    };
     let results = filtered.iter().map(render_result).collect::<String>();
     let max_severity = all
         .iter()
@@ -384,7 +387,7 @@ fn render_report_details(
     format!(
         "<report id=\"{}\"><scan_start>{}</scan_start><scan_end>{}</scan_end>\
          <hosts><count>{hosts}</count></hosts>\
-         <results max=\"100\" start=\"1\">{results}</results>\
+         <results max=\"{page_max}\" start=\"{page_start}\">{results}</results>\
          <result_count><full>{}</full><filtered>{filtered_count}</filtered></result_count>\
          <severity><full>{max_severity:.1}</full><filtered>{filtered_severity:.1}</filtered></severity>\
          </report>",
