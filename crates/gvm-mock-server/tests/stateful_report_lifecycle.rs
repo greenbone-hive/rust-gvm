@@ -6,6 +6,7 @@
 #![cfg(feature = "unix-socket-tests")]
 #![allow(clippy::unwrap_used, missing_docs)]
 
+use gvm_gmp::{responses::NativeReportPageResponse, GmpResponse};
 use gvm_mock_server::{GmpVersion, MockGmpServer, Resource, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -133,6 +134,43 @@ async fn import_owns_task_payload_results_and_host_asset_behavior() {
         .as_str()
         .expect("UTF-8 filtered assets")
         .contains("<asset_count>2<filtered>1</filtered>"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn report_detail_non_default_page_metadata_matches_returned_results() {
+    let Some(server) = server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    let task_id = import_task(&mut stream).await;
+    let imported = send_recv(
+        &mut stream,
+        format!(
+            "<create_report><report><name>Paginated report</name><results>\
+             <result><name>Alpha</name></result><result><name>Beta</name></result>\
+             </results></report><task id=\"{task_id}\"/></create_report>"
+        ),
+    )
+    .await;
+    assert_eq!(imported.status_code(), Some(201));
+    let report_id = response_id(&imported);
+
+    let response = send_recv(
+        &mut stream,
+        format!(
+            "<get_reports report_id=\"{report_id}\" details=\"1\" \
+             filter=\"sort=name first=2 rows=1\" ignore_pagination=\"0\"/>"
+        ),
+    )
+    .await;
+    let page = NativeReportPageResponse::decode(&response, gvm_gmp::GmpVersion(22, 8))
+        .expect("native report page response");
+
+    assert_eq!(page.page.start, Some(2));
+    assert_eq!(page.page.max, Some(1));
+    assert_eq!(page.returned_results, 1);
 
     server.shutdown().await;
 }
