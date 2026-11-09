@@ -940,6 +940,7 @@ Start with the documents that describe the current implementation:
 - [`ROADMAP.md`](docs/ROADMAP.md) — support direction and current follow-up work
 - [`typed-execution.md`](docs/typed-execution.md) — current typed request/response model
 - [`streaming-responses.md`](docs/streaming-responses.md) — capability-gated exact-byte response streaming
+- [`v0.10.0-migration.md`](docs/v0.10.0-migration.md) — migration from the v0.9 release surface
 - [`v0.9.0-migration.md`](docs/v0.9.0-migration.md) — migration from the v0.8 release surface
 - [`v0.8.0-migration.md`](docs/v0.8.0-migration.md) — migration from the v0.7 release surface
 - [`v0.7.0-migration.md`](docs/v0.7.0-migration.md) — migration from the v0.6 request surface
