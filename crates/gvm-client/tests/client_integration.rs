@@ -5649,12 +5649,27 @@ async fn typed_web_application_target_lifecycle_succeeds() {
             name: Some("Web Target Updated".into()),
             comment: None,
             urls: vec!["https://example.com/app".into()],
-            exclude_urls: vec!["https://example.com/logout".into()],
+            exclude_urls: CollectionUpdate::replace(["https://example.com/logout".into()]),
             credential_id: None,
         })
         .await
         .expect("modify_web_application_target should succeed");
     assert_eq!(modified.status, 200);
+
+    let mut clear_exclude_urls = ModifyWebApplicationTargetRequest::new(created.id.clone());
+    clear_exclude_urls.exclude_urls = CollectionUpdate::Clear;
+    client
+        .modify_web_application_target(clear_exclude_urls)
+        .await
+        .expect("typed facade should clear excluded URLs without raw XML");
+    let cleared = client
+        .get_web_application_target(GetWebApplicationTargetRequest::new(created.id.clone()))
+        .await
+        .expect("cleared web application target should be readable");
+    assert!(
+        cleared.items[0].exclude_urls.is_empty(),
+        "empty exclude_urls must round-trip as gvmd SQL NULL"
+    );
 
     let cloned = client
         .clone_web_application_target(CloneWebApplicationTargetRequest::new(created.id.clone()))

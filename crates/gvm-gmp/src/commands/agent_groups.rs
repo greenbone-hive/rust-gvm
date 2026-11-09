@@ -10,7 +10,7 @@ use crate::responses::{
     CloneAgentGroupResponse, CreateAgentGroupResponse, DeleteAgentGroupResponse,
     GetAgentGroupsResponse, ModifyAgentGroupResponse,
 };
-use crate::types::EntityId;
+use crate::types::{CollectionUpdate, EntityId};
 use crate::{GmpCommand, GmpRequest, GmpRequestCodec, GmpRequestError, GmpVersion};
 
 /// Semantic request for cloning an agent group.
@@ -157,8 +157,13 @@ pub struct ModifyAgentGroupRequest {
     pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Agents assigned to the group. An empty list omits the element.
-    pub agent_ids: Vec<EntityId>,
+    /// Agent-membership update.
+    ///
+    /// Omission preserves membership and a non-empty replacement updates it.
+    /// Current gvmd cannot clear agent-group membership, so [`CollectionUpdate::Clear`]
+    /// is rejected during validation instead of being encoded as the server no-op
+    /// `<agents/>`.
+    pub agent_ids: CollectionUpdate<EntityId>,
 }
 
 impl ModifyAgentGroupRequest {
@@ -170,17 +175,30 @@ impl ModifyAgentGroupRequest {
             scheduler_cron_time: scheduler_cron_time.into(),
             name: None,
             comment: None,
-            agent_ids: Vec::new(),
+            agent_ids: CollectionUpdate::Omitted,
         }
     }
 }
 
 impl GmpRequestCodec for ModifyAgentGroupRequest {
+    fn validate(&self) -> Result<(), GmpRequestError> {
+        if matches!(self.agent_ids, CollectionUpdate::Clear)
+            || matches!(&self.agent_ids, CollectionUpdate::Replace(agent_ids) if agent_ids.is_empty())
+        {
+            return Err(GmpRequestError::invalid_field(
+                "agent_ids",
+                "gvmd does not support clearing agent-group membership",
+            ));
+        }
+        Ok(())
+    }
+
     fn command(&self) -> Option<GmpCommand> {
         Some(GmpCommand::new("modify_agent_group"))
     }
 
     fn encode(&self, _version: GmpVersion) -> Result<Vec<u8>, GmpRequestError> {
+        self.validate()?;
         Ok(modify_agent_group_command(self).to_bytes())
     }
 }
@@ -257,7 +275,9 @@ fn modify_agent_group_command(request: &ModifyAgentGroupRequest) -> XmlCommand {
     cmd.add_element_with_text("scheduler_cron_time", &request.scheduler_cron_time);
     add_text_element(&mut cmd, "name", request.name.as_deref());
     add_text_element(&mut cmd, "comment", request.comment.as_deref());
-    add_agent_elements(&mut cmd, &request.agent_ids);
+    if let CollectionUpdate::Replace(agent_ids) = &request.agent_ids {
+        add_agent_elements(&mut cmd, agent_ids);
+    }
     cmd
 }
 
@@ -329,7 +349,7 @@ mod tests {
         let mut modify = ModifyAgentGroupRequest::new(id("group-1"), "0 */10 * * *");
         modify.name = Some("updated".into());
         modify.comment = Some("changed".into());
-        modify.agent_ids = vec![id("agent-3")];
+        modify.agent_ids = CollectionUpdate::replace([id("agent-3")]);
         assert_eq!(
             request_xml(&modify),
             "<modify_agent_group agent_group_id=\"group-1\"><scheduler_cron_time>0 */10 * * *</scheduler_cron_time><name>updated</name><comment>changed</comment><agents><agent id=\"agent-3\"/></agents></modify_agent_group>"

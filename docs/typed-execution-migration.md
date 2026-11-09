@@ -134,6 +134,21 @@ let clone = client
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
+Web-application target modification uses `CollectionUpdate` for excluded URLs,
+so omission preserves the stored value, a non-empty replacement emits the
+comma-separated URL text, and `Clear` emits gvmd's empty element that resets
+the SQL value to `NULL`:
+
+```rust
+use gvm_gmp::commands::web_application_targets::ModifyWebApplicationTargetRequest;
+use gvm_gmp::CollectionUpdate;
+
+let mut modify = ModifyWebApplicationTargetRequest::new(target_id);
+modify.exclude_urls = CollectionUpdate::Clear;
+client.modify_web_application_target(modify).await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
 These operations require GMP 22.8. The client applies that gate from semantic
 metadata before encoding or transport, including detail and clone aliases.
 
@@ -147,6 +162,7 @@ the constructor; optional and mutable fields live on the same request value:
 use gvm_gmp::commands::agent_groups::{
     CreateAgentGroupRequest, ModifyAgentGroupRequest,
 };
+use gvm_gmp::CollectionUpdate;
 
 let mut create = CreateAgentGroupRequest::new(
     "scheduled agents",
@@ -159,10 +175,18 @@ let created = client.create_agent_group(create).await?;
 let mut modify =
     ModifyAgentGroupRequest::new(created.id, "0 */10 * * *");
 modify.name = Some("renamed agents".into());
-modify.agent_ids = vec![replacement_agent_id];
+modify.agent_ids = CollectionUpdate::replace([replacement_agent_id]);
 client.modify_agent_group(modify).await?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
+
+`CollectionUpdate::Omitted` preserves agent membership. Current gvmd supports
+non-empty replacement but has no effective membership-clear wire form:
+`<agents/>` is collapsed to the same null list as omission and leaves existing
+relationships in place. `CollectionUpdate::Clear` is therefore rejected as a
+typed request error before transport. Clearing can be enabled once gvmd
+distinguishes a present empty list from an omitted one in its parser and SQL
+mutation path.
 
 List requests implement `Default`; detail, clone, and delete requests use
 their resource identifier constructors. The six named client conveniences
