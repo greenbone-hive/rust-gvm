@@ -27,8 +27,10 @@ permissions:
   contents: read
 
 env:
+  CARGO_AUDIT_VERSION: "0.22.1"
   CARGO_CYCLONEDX_VERSION: "0.5.9"
   CARGO_GEIGER_VERSION: "0.14.0"
+  CARGO_MACHETE_VERSION: "0.9.1"
   CARGO_VET_VERSION: "0.10.3"
   SBOMQS_VERSION: "v2.0.5"
   SBOM_QUALITY_THRESHOLD: "8.3"
@@ -43,10 +45,14 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          tool: cargo-audit@0.22.1
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-security-audit-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_AUDIT_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-audit
+        run: cargo install cargo-audit@${{ env.CARGO_AUDIT_VERSION }} --locked
       - name: Run cargo-audit
         run: cargo audit
 
@@ -59,10 +65,14 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          tool: cargo-machete@0.9.1
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-security-machete-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_MACHETE_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-machete
+        run: cargo install cargo-machete@${{ env.CARGO_MACHETE_VERSION }} --locked
       - name: Run cargo-machete
         run: cargo machete
 
@@ -72,10 +82,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          tool: cargo-vet@${{ env.CARGO_VET_VERSION }}
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-security-vet-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_VET_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-vet
+        run: cargo install cargo-vet@${{ env.CARGO_VET_VERSION }} --locked
       - name: Run cargo-vet
         run: cargo vet
 
@@ -95,11 +109,14 @@ jobs:
         run: >-
           python -m pip install --require-hashes --only-binary=:all:
           -r .github/requirements/release.txt
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-security-sbom-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_CYCLONEDX_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }} --locked
 
       - name: Test SBOM and release policy helpers
         run: >-
@@ -150,10 +167,14 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          tool: cargo-geiger@${{ env.CARGO_GEIGER_VERSION }}
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-security-geiger-report-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_GEIGER_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-geiger
+        run: cargo install cargo-geiger@${{ env.CARGO_GEIGER_VERSION }} --locked
       - name: Generate geiger reports (all workspace crates)
         shell: bash
         run: |
@@ -179,10 +200,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          tool: cargo-geiger@${{ env.CARGO_GEIGER_VERSION }}
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-security-geiger-gate-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_GEIGER_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-geiger
+        run: cargo install cargo-geiger@${{ env.CARGO_GEIGER_VERSION }} --locked
       - name: Fail if workspace crates use unsafe
         run: python3 scripts/check_workspace_unsafe.py
 
@@ -223,17 +248,26 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          config: >-
-            p/rust
-            p/security-audit
-            p/secrets
-          generateSarif: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$PWD:/src:ro" \
+            --workdir /src \
+            semgrep/semgrep:1.176.1@sha256:34ab619bf1391a24bfda3f05debd0d8a6ce3093c2d5f9d39cfc00f83c1397823 \
+            semgrep scan --error \
+            --config p/rust \
+            --config p/security-audit \
+            --config p/secrets \
+            --sarif > semgrep.raw.sarif
+          jq '.runs[].tool.driver.name = "Semgrep"' \
+            semgrep.raw.sarif > semgrep.normalized.sarif
+          mv semgrep.normalized.sarif semgrep.sarif
       - name: Upload SARIF
         # Code scanning must be enabled for the repo for SARIF upload to work.
         # For private repos, this requires GitHub Advanced Security (GHAS).

@@ -38,7 +38,12 @@ jobs:
           ref: ${{ github.sha }}
           token: ${{ secrets.RELEASE_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
+        with:
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-release-orchestrated-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Set up Python and pontos
         uses: greenbone/actions/setup-pontos@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3.36.23
