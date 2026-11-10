@@ -10,6 +10,78 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
+SETUP_RUST_ACTION = (
+    "greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22"
+)
+SEMGREP_IMAGE = (
+    "semgrep/semgrep:1.176.1@"
+    "sha256:34ab619bf1391a24bfda3f05debd0d8a6ce3093c2d5f9d39cfc00f83c1397823"
+)
+BLOCKED_ACTIONS = (
+    "dtolnay/rust-toolchain@",
+    "returntocorp/semgrep-action@",
+    "swatinem/rust-cache@",
+    "taiki-e/install-action@",
+)
+CARGO_TOOL_CONTRACTS = (
+    ("ci.yml", "deny", "cargo-deny", "CARGO_DENY_VERSION", "0.20.2"),
+    (
+        "ci.yml",
+        "coverage",
+        "cargo-llvm-cov",
+        "CARGO_LLVM_COV_VERSION",
+        "0.9.1",
+    ),
+    (
+        "security.yml",
+        "cargo-audit",
+        "cargo-audit",
+        "CARGO_AUDIT_VERSION",
+        "0.22.1",
+    ),
+    (
+        "security.yml",
+        "cargo-machete",
+        "cargo-machete",
+        "CARGO_MACHETE_VERSION",
+        "0.9.1",
+    ),
+    (
+        "security.yml",
+        "cargo-vet",
+        "cargo-vet",
+        "CARGO_VET_VERSION",
+        "0.10.3",
+    ),
+    (
+        "security.yml",
+        "sbom-quality",
+        "cargo-cyclonedx",
+        "CARGO_CYCLONEDX_VERSION",
+        "0.5.9",
+    ),
+    (
+        "security.yml",
+        "cargo-geiger-report",
+        "cargo-geiger",
+        "CARGO_GEIGER_VERSION",
+        "0.14.0",
+    ),
+    (
+        "security.yml",
+        "cargo-geiger-workspace-gate",
+        "cargo-geiger",
+        "CARGO_GEIGER_VERSION",
+        "0.14.0",
+    ),
+    (
+        "release.yml",
+        "sbom",
+        "cargo-cyclonedx",
+        "CARGO_CYCLONEDX_VERSION",
+        "0.5.9",
+    ),
+)
 
 CI_GATES = (
     "fmt",
@@ -35,6 +107,13 @@ SECURITY_GATES = (
 
 def workflow(name: str) -> str:
     return (WORKFLOWS / name).read_text(encoding="utf-8")
+
+
+def workflow_sources() -> dict[str, str]:
+    paths = sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")))
+    if not paths:
+        raise AssertionError("repository has no workflow files")
+    return {path.name: path.read_text(encoding="utf-8") for path in paths}
 
 
 def trigger_block(source: str) -> str:
@@ -71,6 +150,32 @@ def job_block(source: str, job: str) -> str:
     if match is None:
         raise AssertionError(f"workflow has no {job} job")
     return match.group("body")
+
+
+def setup_rust_cache_key(source: str, job: str) -> str:
+    block = job_block(source, job)
+    self_uses = f"uses: {SETUP_RUST_ACTION}"
+    if block.count(self_uses) != 1:
+        raise AssertionError(f"workflow job {job} must use setup-rust exactly once")
+    setup_step = block.split(self_uses, 1)[1].split("\n      - ", 1)[0]
+    match = re.search(r"(?m)^          cache-key: (?P<key>.+)$", setup_step)
+    if match is None:
+        raise AssertionError(f"workflow job {job} setup-rust has no cache key")
+    return match.group("key")
+
+
+def workflow_env_version(source: str, variable: str) -> str:
+    declarations = re.findall(rf"(?m)^ +{re.escape(variable)}:", source)
+    if len(declarations) != 1:
+        raise AssertionError(
+            f"workflow must declare {variable} exactly once, found {len(declarations)}"
+        )
+    match = re.search(
+        rf'(?m)^  {re.escape(variable)}: "(?P<version>\d+\.\d+\.\d+)"$', source
+    )
+    if match is None:
+        raise AssertionError(f"workflow has no exact top-level {variable} version")
+    return match.group("version")
 
 
 def job_needs(source: str, job: str) -> tuple[str, ...]:
@@ -122,7 +227,142 @@ def aggregate_script(source: str, aggregate: str) -> str:
 
 
 class WorkflowPolicyTests(unittest.TestCase):
+    def test_every_external_action_is_full_sha_pinned_and_approved(self) -> None:
+        sources = workflow_sources()
+        all_workflows = "\n".join(sources.values())
+        uses = re.findall(
+            r"(?m)^\s*(?:-\s*)?uses:\s*([^\s#]+)", all_workflows
+        )
+        self.assertTrue(uses)
+        for action in uses:
+            with self.subTest(action=action):
+                if action.startswith("./"):
+                    continue
+                self.assertRegex(
+                    action,
+                    r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?@[0-9a-f]{40}$",
+                )
+
+        normalized = all_workflows.lower()
+        for blocked in BLOCKED_ACTIONS:
+            with self.subTest(blocked=blocked):
+                self.assertNotIn(blocked, normalized)
+
+    def test_setup_rust_inputs_and_cache_keys_are_fail_closed(self) -> None:
+        all_workflows = "\n".join(workflow_sources().values())
+        setup_count = all_workflows.count(f"uses: {SETUP_RUST_ACTION}")
+        rust_versions = re.findall(r"(?m)^\s+rust-version: (.+)$", all_workflows)
+        components = re.findall(r"(?m)^\s+components: (.+)$", all_workflows)
+        cache_keys = re.findall(r"(?m)^\s+cache-key: (.+)$", all_workflows)
+
+        self.assertGreater(setup_count, 0)
+        self.assertEqual(len(rust_versions), setup_count)
+        self.assertEqual(len(components), setup_count)
+        self.assertEqual(len(cache_keys), setup_count)
+        self.assertEqual(len(cache_keys), len(set(cache_keys)))
+        self.assertEqual(
+            set(rust_versions), {"stable", '"1.89.0"', "${{ matrix.rust }}"}
+        )
+        self.assertEqual(
+            set(components), {"rustfmt", "clippy", "llvm-tools-preview"}
+        )
+        self.assertEqual(components.count("clippy"), 1)
+        self.assertEqual(components.count("llvm-tools-preview"), 1)
+        for cache_key in cache_keys:
+            with self.subTest(cache_key=cache_key):
+                self.assertIn("${{ runner.os }}", cache_key)
+                self.assertIn("${{ runner.arch }}", cache_key)
+                self.assertIn("${{ hashFiles('**/Cargo.lock') }}", cache_key)
+
+        ci = workflow("ci.yml")
+        self.assertIn("RUSTUP_TOOLCHAIN: ${{ matrix.rust }}", job_block(ci, "test"))
+        self.assertIn('RUSTUP_TOOLCHAIN: "1.89.0"', job_block(ci, "msrv"))
+        self.assertIn("components: rustfmt", job_block(ci, "fmt"))
+        self.assertIn("components: clippy", job_block(ci, "clippy"))
+        self.assertIn(
+            "components: llvm-tools-preview", job_block(ci, "coverage")
+        )
+
+        sources = workflow_sources()
+        for workflow_name, job, _tool, tool_variable, _version in CARGO_TOOL_CONTRACTS:
+            with self.subTest(workflow=workflow_name, job=job):
+                self.assertIn(
+                    f"${{{{ env.{tool_variable} }}}}",
+                    setup_rust_cache_key(sources[workflow_name], job),
+                )
+
+    def test_release_matrix_installs_every_configured_rust_target(self) -> None:
+        source = workflow("release.yml")
+        build = job_block(source, "build")
+        targets = set(re.findall(r"(?m)^          - target: (.+)$", build))
+        self.assertEqual(
+            targets,
+            {
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu",
+                "x86_64-unknown-linux-musl",
+                "x86_64-apple-darwin",
+                "aarch64-apple-darwin",
+            },
+        )
+        self.assertIn('rustup target add "${{ matrix.target }}"', build)
+        self.assertIn("${{ matrix.target }}", build.split("cache-key:", 1)[1])
+        self.assertIn("${{ env.CROSS_REV }}", build.split("cache-key:", 1)[1])
+
+    def test_semgrep_uses_reviewed_immutable_image_and_sarif(self) -> None:
+        sources = workflow_sources()
+        all_workflows = "\n".join(sources.values())
+        images = re.findall(r"semgrep/semgrep:[^\s\\]+", all_workflows)
+        self.assertEqual(images, [SEMGREP_IMAGE])
+
+        semgrep = job_block(sources["security.yml"], "semgrep")
+        self.assertIn(
+            "uses: step-security/harden-runner@"
+            "1d88384fd173af6ecb012dfd0264a306b711241a",
+            semgrep,
+        )
+        self.assertIn('egress-policy: audit', semgrep)
+        self.assertIn('--volume "$PWD:/src:ro"', semgrep)
+        self.assertIn("--workdir /src", semgrep)
+        self.assertIn(SEMGREP_IMAGE, semgrep)
+        self.assertIn("semgrep scan --error", semgrep)
+        for config in ("p/rust", "p/security-audit", "p/secrets"):
+            with self.subTest(config=config):
+                self.assertIn(f"--config {config}", semgrep)
+        self.assertIn("--sarif > semgrep.raw.sarif", semgrep)
+        self.assertIn("jq '.runs[].tool.driver.name = \"Semgrep\"'", semgrep)
+        self.assertIn("semgrep.raw.sarif > semgrep.normalized.sarif", semgrep)
+        self.assertIn("mv semgrep.normalized.sarif semgrep.sarif", semgrep)
+        self.assertIn("sarif_file: semgrep.sarif", semgrep)
+
     def test_workflow_installed_tools_are_immutable_and_locked(self) -> None:
+        sources = workflow_sources()
+        all_workflows = "\n".join(sources.values())
+        expected_installs = []
+        for workflow_name, job, tool, variable, version in CARGO_TOOL_CONTRACTS:
+            with self.subTest(workflow=workflow_name, job=job, tool=tool):
+                source = sources[workflow_name]
+                self.assertEqual(workflow_env_version(source, variable), version)
+                install = f"cargo install {tool}@${{{{ env.{variable} }}}} --locked"
+                self.assertEqual(job_block(source, job).count(install), 1)
+                expected_installs.append(install)
+
+        selected_installs = re.findall(
+            r"(?m)^\s+run: (cargo install cargo-[a-z0-9-]+[^\n]*)$",
+            all_workflows,
+        )
+        self.assertEqual(
+            all_workflows.count("cargo install "),
+            len(CARGO_TOOL_CONTRACTS) + 1,
+        )
+        self.assertCountEqual(selected_installs, expected_installs)
+        for install in selected_installs:
+            with self.subTest(install=install):
+                self.assertRegex(
+                    install,
+                    r"^cargo install cargo-[a-z0-9-]+@\$\{\{ env\.CARGO_[A-Z0-9_]+_VERSION \}\} --locked$",
+                )
+
         release = workflow("release.yml")
         cross_install = re.search(
             r"(?ms)^      - name: Install cross\n(?P<step>.*?)(?=^      - name:)",
@@ -135,22 +375,26 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("--locked", cross_step)
         self.assertNotIn("--tag", cross_step)
 
-        ci = workflow("ci.yml")
-        self.assertRegex(ci, r'(?m)^  CARGO_DENY_VERSION: "\d+\.\d+\.\d+"$')
-        self.assertIn(
-            "cargo install cargo-deny@${{ env.CARGO_DENY_VERSION }} --locked",
-            ci,
-        )
-
         security = workflow("security.yml")
-        for tool in ("CARGO_VET_VERSION", "CARGO_GEIGER_VERSION"):
-            with self.subTest(tool=tool):
-                self.assertRegex(
-                    security, rf'(?m)^  {tool}: "\d+\.\d+\.\d+"$'
-                )
-        self.assertIn("cargo-vet@${{ env.CARGO_VET_VERSION }}", security)
+        security_cyclonedx = workflow_env_version(
+            security, "CARGO_CYCLONEDX_VERSION"
+        )
+        release_cyclonedx = workflow_env_version(
+            release, "CARGO_CYCLONEDX_VERSION"
+        )
+        self.assertEqual(security_cyclonedx, "0.5.9")
+        self.assertEqual(release_cyclonedx, security_cyclonedx)
         self.assertEqual(
-            security.count("cargo-geiger@${{ env.CARGO_GEIGER_VERSION }}"), 2
+            security.count(
+                "cargo install cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }} --locked"
+            ),
+            1,
+        )
+        self.assertEqual(
+            release.count(
+                "cargo install cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }} --locked"
+            ),
+            1,
         )
 
     def test_release_write_jobs_require_protected_main_qualification(self) -> None:
