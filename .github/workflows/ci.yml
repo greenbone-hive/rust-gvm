@@ -26,6 +26,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_DENY_VERSION: "0.20.2"
+  CARGO_LLVM_COV_VERSION: "0.9.1"
 
 jobs:
   fmt:
@@ -36,9 +37,12 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
+          rust-version: stable
           components: rustfmt
+          cache-key: cargo-ci-fmt-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -49,15 +53,20 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
+          rust-version: stable
           components: clippy
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+          cache-key: cargo-ci-clippy-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      # Override rust-toolchain.toml so the MSRV lane really uses 1.89.0.
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     strategy:
       matrix:
         rust: [stable, "1.89.0"]  # stable + MSRV
@@ -66,10 +75,12 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # master
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          toolchain: ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+          rust-version: ${{ matrix.rust }}
+          components: rustfmt
+          cache-key: cargo-ci-test-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo test --workspace
 
   test-features:
@@ -80,8 +91,12 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
+        with:
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-ci-test-features-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo test --workspace --all-features
 
   doc:
@@ -94,8 +109,12 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
+        with:
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-ci-doc-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo doc --workspace --all-features --no-deps
 
   deny:
@@ -106,6 +125,12 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
+        with:
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-ci-deny-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_DENY_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
       - name: Install cargo-deny
         run: cargo install cargo-deny@${{ env.CARGO_DENY_VERSION }} --locked
       - name: Run cargo deny
@@ -119,16 +144,17 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
+          rust-version: stable
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+          cache-key: cargo-ci-coverage-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_LLVM_COV_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
-        with:
-          tool: cargo-llvm-cov
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }} --locked
       - name: Verify the controlled coverage threshold regression
         run: make coverage-policy-test
       - name: Enforce Rust workspace coverage floor
@@ -181,8 +207,12 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
+        with:
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-ci-integration-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('**/Cargo.lock') }}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
@@ -195,15 +225,20 @@ jobs:
   msrv:
     name: MSRV Check
     runs-on: ubuntu-latest
+    env:
+      # Override rust-toolchain.toml so this gate really uses the MSRV.
+      RUSTUP_TOOLCHAIN: "1.89.0"
     steps:
       - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # master
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          toolchain: "1.89.0"
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+          rust-version: "1.89.0"
+          components: rustfmt
+          cache-key: cargo-ci-msrv-${{ runner.os }}-${{ runner.arch }}-1.89.0-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo check --workspace --all-features
 
   ci:

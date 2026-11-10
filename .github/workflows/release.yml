@@ -62,8 +62,12 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
+        with:
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-release-test-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo test --locked --workspace --all-features
 
   # Publish gvm-mock-server Docker image to GHCR
@@ -164,13 +168,15 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          targets: ${{ matrix.target }}
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-release-build-${{ runner.os }}-${{ runner.arch }}-stable-${{ matrix.target }}-${{ env.CROSS_REV }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
-        with:
-          key: ${{ matrix.target }}
+      - name: Install Rust target
+        run: rustup target add "${{ matrix.target }}"
 
       # Install cross-compilation tools for Linux ARM64
       - name: Install cross
@@ -235,12 +241,15 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
-
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      - name: Set up Rust
+        uses: greenbone/actions/setup-rust@d6d4c9500cb4e83f8a516ec1d40b04bcc720bd22 # v3
         with:
-          tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
+          rust-version: stable
+          components: rustfmt
+          cache-key: cargo-release-sbom-${{ runner.os }}-${{ runner.arch }}-stable-${{ env.CARGO_CYCLONEDX_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }} --locked
 
       - name: Generate CycloneDX SBOM (JSON)
         run: >-

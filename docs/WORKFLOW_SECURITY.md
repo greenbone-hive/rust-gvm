@@ -5,6 +5,8 @@ This document defines the security requirements and practices for GitHub Actions
 ## Action Pinning
 
 **All external actions MUST be pinned by full commit SHA**, not by tag or branch.
+The policy test scans every `.yml` and `.yaml` file in
+`.github/workflows`; adding a workflow cannot opt out of this check.
 
 ### Why?
 - Tags can be force-pushed (attacker replaces `v2` with malicious code)
@@ -27,6 +29,22 @@ When Dependabot proposes an action update:
 3. Check if the action has OpenSSF Scorecard results
 4. Merge only after validation
 
+The selected-actions policy does not allow `dtolnay/rust-toolchain`,
+`Swatinem/rust-cache`, `taiki-e/install-action`, or
+`returntocorp/semgrep-action`. Rust jobs use
+`greenbone/actions/setup-rust` pinned to the approved full SHA instead. Every
+use declares the Rust version, component input, and a unique cache key. Cache
+keys separate workflow/job purpose, toolchain, runner OS and architecture,
+relevant build target or Cargo tool version, and the content of every
+`Cargo.lock` file. The release workflow installs every matrix target explicitly
+because the approved setup action does not provide a target input.
+
+The CI matrix and dedicated MSRV gate also set `RUSTUP_TOOLCHAIN` explicitly so
+`rust-toolchain.toml` cannot silently turn the `1.89.0` lane back into stable.
+Formatting, Clippy, and coverage select `rustfmt`, `clippy`, and
+`llvm-tools-preview`, respectively; other Rust lanes retain the repository's
+baseline `rustfmt` component input required by the approved composite action.
+
 ## Tool Version Pinning
 
 Release and publication-critical tool installs must specify versions. Diagnostic
@@ -41,9 +59,7 @@ reproducible evidence.
 ### Format
 ```yaml
 # ✅ Correct - pinned versions
-- uses: taiki-e/install-action@<sha>
-  with:
-    tool: cargo-audit@0.22.1
+- run: cargo install cargo-audit@0.22.1 --locked
 
 - run: go install github.com/interlynk-io/sbomqs@v2.0.5
 
@@ -54,10 +70,20 @@ reproducible evidence.
 - run: go install github.com/example/tool@latest
 ```
 
-Current release tooling pins `cargo-cyclonedx`, `sbomqs`, and `cross`; CI pins
-`cargo-deny`; and Security pins `cargo-audit`, `cargo-machete`, `cargo-vet`, and
-`cargo-geiger`. Git-based Cargo installs use an immutable commit and the
-reviewed upstream lockfile.
+Current release tooling pins `cargo-cyclonedx` 0.5.9, `sbomqs` 2.0.5, and
+`cross` to an immutable Git revision. CI pins `cargo-deny` 0.20.2 and
+`cargo-llvm-cov` 0.9.1. Security pins `cargo-audit` 0.22.1, `cargo-machete`
+0.9.1, `cargo-vet` 0.10.3, `cargo-cyclonedx` 0.5.9, and `cargo-geiger` 0.14.0.
+All direct Cargo registry installs use an exact version plus `--locked`;
+Git-based Cargo installs use an immutable commit and the reviewed upstream
+lockfile. The policy test checks the complete install allowlist, so a new
+unpinned or unlocked direct Cargo tool install fails closed.
+
+Semgrep runs directly from the reviewed
+`semgrep/semgrep:1.176.1` image pinned by its full SHA-256 digest, with the
+workspace mounted read-only. The scan fails on findings and normalizes the
+SARIF driver name before upload; the excluded Semgrep action publisher must not
+be reintroduced.
 
 ## Runtime Monitoring
 
@@ -113,7 +139,8 @@ can succeed.
 
 Every tagged release includes CycloneDX 1.5 JSON and XML SBOMs:
 
-- generated with a pinned `cargo-cyclonedx` version;
+- generated with the same exact, locked `cargo-cyclonedx` version enforced by
+  the Security workflow;
 - JSON metadata post-processed and quality-scored with `sbomqs` (minimum
   8.3/10); and
 - packaged as `rust-gvm-sbom.tar.gz` with a checksum, quality report, and build
