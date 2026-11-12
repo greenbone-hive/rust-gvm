@@ -83,11 +83,19 @@ valid.
 
 The typed `ScanResult` projection retains result identity, host/port,
 task/report references, NVT fields including optional type-specific metadata,
-both supported CVE encodings, and optional shared EPSS metadata,
+generic NVT reference entries, both supported CVE encodings, and optional
+shared EPSS metadata,
 threat/severity, QoD, description, and counts. Nested note, override, ticket,
 detection, tag, delta, and original-severity payloads remain outside this
 bounded input-ownership slice. Their presence does not break parsing, but
 callers that need the complete expanded XML must use raw `send` or `call`.
+`NvtRef::refs` preserves each complete `<refs><ref type="..." id="..."/>`
+entry as open decoded strings; it does not normalize types, synthesize links,
+or reinterpret warning text in the container. Entries missing a non-empty
+`type` or `id` attribute are ignored rather than failing the result response.
+This additive projection does not change `NvtRef::cves`: direct `<cve>` text
+and lowercase `type="cve"` references retain their original ordering, ID
+precedence, text fallback, and advisory-type exclusion.
 The additive type-metadata projection is backed by the later current audit in
 [the #715 evidence](typed-schema-projections-gvmd-evidence.md#result-nvt-type-metadata).
 The later EPSS projection and backend-native percentile unit are backed by

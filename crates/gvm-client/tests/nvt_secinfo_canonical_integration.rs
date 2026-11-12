@@ -52,7 +52,7 @@ async fn epss_fixture() -> MockGmpServer {
         .override_response(
             "get_nvts",
             r#"<get_nvts_response status="200" status_text="OK">
-                <nvt oid="1.3.6.1.4.1.25623.1.0.1"><name>EPSS NVT</name><epss>
+                <nvt oid="1.3.6.1.4.1.25623.1.0.1"><name>EPSS NVT</name><refs><ref type="dfn-cert" id="DFN-CERT-2026-0002"/><ref type="unknown" id="opaque-catalog-ref"/></refs><epss>
                     <max_severity><score>0.12345</score><percentile>98.76500</percentile><cve id="CVE-2026-0001"><severity>9.8</severity></cve></max_severity>
                     <max_epss><score>0.54321</score><percentile>99.50000</percentile><cve id="CVE-2026-0002"/></max_epss>
                 </epss></nvt>
@@ -231,7 +231,12 @@ async fn typed_client_projects_present_and_absent_nvt_epss() {
     assert_eq!(epss.max_epss.cve.id, "CVE-2026-0002");
     assert_eq!(epss.max_epss.cve.severity, None);
     assert_eq!(epss.max_epss.score_value(), Some(0.54321));
+    assert_eq!(response.items[0].refs.len(), 2);
+    assert_eq!(response.items[0].refs[0].type_, "dfn-cert");
+    assert_eq!(response.items[0].refs[0].id, "DFN-CERT-2026-0002");
+    assert_eq!(response.items[0].refs[1].type_, "unknown");
     assert_eq!(response.items[1].epss, None);
+    assert!(response.items[1].refs.is_empty());
     server.shutdown().await;
 }
 

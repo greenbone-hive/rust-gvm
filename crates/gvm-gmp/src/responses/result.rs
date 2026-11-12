@@ -7,8 +7,8 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, optional_u32, parse_document_with_epss_raw_text, parse_entity_meta_optional_name,
-    parse_entity_ref, parse_epss, parse_score, status_from_response, CountInfo, EntityMeta, Epss,
-    NamedEntity, ParseError,
+    parse_entity_ref, parse_epss, parse_nvt_reference_entries, parse_score, status_from_response,
+    CountInfo, EntityMeta, Epss, NamedEntity, NvtReferenceEntry, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -37,6 +37,9 @@ pub struct NvtRef {
     pub family: Option<String>,
     pub cvss_base: Option<String>,
     pub cves: Vec<String>,
+    /// Generic NVT references with complete `type` and `id` attributes.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub refs: Vec<NvtReferenceEntry>,
     pub tags: Option<String>,
     /// Type-specific metadata emitted by gvmd, commonly a JSON object.
     pub type_metadata: Option<String>,
@@ -87,6 +90,7 @@ impl ScanResult {
                         family: nvt.optional_child_text("family"),
                         cvss_base: nvt.optional_child_text("cvss_base"),
                         cves: parse_nvt_cves(nvt),
+                        refs: parse_nvt_reference_entries(nvt),
                         tags: nvt.optional_child_text("tags"),
                         type_metadata: nvt.optional_child_text("type_metadata"),
                         epss: parse_epss(nvt)?,

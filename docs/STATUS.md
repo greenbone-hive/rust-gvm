@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-11-03
+Last updated: 2026-11-12
 
 ## Support Direction
 
@@ -871,6 +871,17 @@ non-finite values. An absent subtree remains `None` for older gvmd releases.
 `ReportVulnerability` remains unchanged because current gvmd does not emit
 EPSS on that response. See the
 [pinned EPSS evidence](epss-projection-gvmd-evidence.md).
+
+Issue #825 adds the reusable open-string `NvtReferenceEntry` projection and
+serde-defaulted `refs` collections to ordinary result `NvtRef` and dedicated
+catalog/detail `Nvt` responses. Complete `type`/`id` attribute pairs are
+preserved after XML decoding without normalization; malformed entries and
+warning-only container text are ignored. Existing direct and refs-based CVE
+extraction, including text fallback and advisory exclusion, is unchanged, and
+the aggregate `get_report_vulns` projection remains outside this change. The
+addition requires no request migration; legacy serialized response values
+without `refs` deserialize to empty collections. See the
+[typed projection evidence](typed-schema-projections-gvmd-evidence.md#generic-nvt-references).
 
 The crate exposes 45 command-family modules at this revision, plus shared
 request, response, capability, update, and type modules. Enums are defined both

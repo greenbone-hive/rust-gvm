@@ -121,6 +121,21 @@ pub struct NvtReference {
     pub type_: Option<String>,
 }
 
+/// One generic reference attached to an NVT.
+///
+/// Reference types are an open gvmd string vocabulary. The decoder preserves
+/// both attribute values after XML decoding without normalizing them. A
+/// malformed `<ref>` missing either non-empty `type` or `id` is ignored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct NvtReferenceEntry {
+    /// Open reference type from the `<ref type="...">` attribute.
+    pub type_: String,
+    /// Reference identifier from the `<ref id="...">` attribute.
+    pub id: String,
+}
+
 /// EPSS metadata for the highest-severity and highest-EPSS CVEs of an NVT.
 ///
 /// gvmd reports percentiles in its backend-native percentage unit. Callers
@@ -443,6 +458,24 @@ pub(crate) fn parse_nvt_reference(
             })
         })
         .transpose()
+}
+
+pub(crate) fn parse_nvt_reference_entries(node: &XmlNode) -> Vec<NvtReferenceEntry> {
+    node.child("refs")
+        .into_iter()
+        .flat_map(|refs| refs.children_named("ref"))
+        .filter_map(|reference| {
+            let type_ = reference.attr("type")?;
+            let id = reference.attr("id")?;
+            if type_.is_empty() || id.is_empty() {
+                return None;
+            }
+            Some(NvtReferenceEntry {
+                type_: type_.to_string(),
+                id: id.to_string(),
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn parse_epss(node: &XmlNode) -> Result<Option<Epss>, ParseError> {

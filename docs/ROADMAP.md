@@ -99,9 +99,10 @@ Open work:
 - [#9](https://github.com/greenbone-hive/rust-gvm/issues/9) tracks possible
   mock-server record-and-replay support.
 
-The completed #523/#602 canonical-request program, #678 surface audit, and
-#172 protocol-gap program remain documented in [STATUS.md](STATUS.md), the ADRs,
-migration guide, and gvmd evidence documents rather than as open roadmap items.
+The completed #523/#602 canonical-request program, #678 surface audit, #172
+protocol-gap program, and #825 generic NVT-reference projection remain
+documented in [STATUS.md](STATUS.md), the ADRs, migration guide, and gvmd
+evidence documents rather than as open roadmap items.
 The completed #4 foundation and #762 native report-page integration likewise
 remain documented in [streaming-responses.md](streaming-responses.md).
 

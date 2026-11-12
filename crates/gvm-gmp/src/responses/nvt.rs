@@ -7,7 +7,8 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, parse_bool, parse_document, parse_document_with_epss_raw_text, parse_epss,
-    parse_score, status_from_response, CountInfo, Epss, ParseError,
+    parse_nvt_reference_entries, parse_score, status_from_response, CountInfo, Epss,
+    NvtReferenceEntry, ParseError,
 };
 use crate::{GmpResponse, GmpVersion};
 
@@ -22,6 +23,9 @@ pub struct Nvt {
     pub severity: Option<String>,
     pub tags: Option<String>,
     pub solution_type: Option<String>,
+    /// Generic NVT references with complete `type` and `id` attributes.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub refs: Vec<NvtReferenceEntry>,
     /// Whether gvmd marks this NVT as a discovery NVT.
     pub discovery: Option<bool>,
     /// EPSS metadata when gvmd has EPSS data for this NVT.
@@ -85,6 +89,7 @@ impl Nvt {
                 .map(str::to_string)
                 // Explicit compatibility fallback for the historical mock shape.
                 .or_else(|| node.optional_child_text("solution_type")),
+            refs: parse_nvt_reference_entries(node),
             discovery: node
                 .child_text("discovery")
                 .map(|value| parse_bool(&value, "nvt.discovery"))
