@@ -51,6 +51,16 @@ percentage value. Compact responses and older gvmd releases omit the subtree
 and decode as `None`; see the
 [EPSS projection evidence](epss-projection-gvmd-evidence.md).
 
+Issue #825 additionally preserves generic `<refs><ref type="..." id="..."/>`
+entries on the dedicated catalog/detail `Nvt` response model and ordinary
+result `NvtRef`. Reference types remain an open string vocabulary so CVE,
+CERT-Bund, DFN-CERT, URL, and future values round trip after XML decoding
+without enum restriction or normalization. Warning text directly inside
+`<refs>` is not a reference. Incomplete entries without non-empty `type` and
+`id` attributes are ignored consistently instead of rejecting the enclosing
+response. Existing direct and refs-based result CVE extraction is unchanged,
+including its text fallback and exclusion of advisory reference types.
+
 ## Schema/source discrepancies
 
 The reviewed schema incorrectly requires an NVT OID even though gvmd supports

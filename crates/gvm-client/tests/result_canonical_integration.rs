@@ -21,6 +21,7 @@ const EPSS_RESULT_RESPONSE: &str = r#"<get_results_response status="200" status_
     <result id="result-epss">
         <nvt oid="1.3.6.1.4.1.25623.1.0.1">
             <name>EPSS finding</name>
+            <refs><ref type="cert-bund" id="WID-SEC-2026-0001"/><ref type="url" id="https://example.test/result"/></refs>
             <epss>
                 <max_severity><score>0.12345</score><percentile>98.76500</percentile><cve id="CVE-2026-0001"><severity>9.8</severity></cve></max_severity>
                 <max_epss><score>0.54321</score><percentile>99.50000</percentile><cve id="CVE-2026-0002"><severity>7.5</severity></cve></max_epss>
@@ -136,17 +137,17 @@ async fn typed_client_projects_present_and_absent_result_epss() {
         .get_results(GetResultsRequest::default())
         .await
         .expect("typed result execution succeeds");
-    let epss = response.items[0]
-        .nvt
-        .as_ref()
-        .and_then(|nvt| nvt.epss.as_ref())
-        .expect("EPSS is projected");
+    let result_nvt = response.items[0].nvt.as_ref().expect("NVT is projected");
+    let epss = result_nvt.epss.as_ref().expect("EPSS is projected");
 
     assert_eq!(epss.max_severity.cve.id, "CVE-2026-0001");
     assert_eq!(epss.max_severity.score_value(), Some(0.12345));
     assert_eq!(epss.max_severity.percentile_value(), Some(98.765));
     assert_eq!(epss.max_epss.cve.id, "CVE-2026-0002");
     assert_eq!(epss.max_epss.score_value(), Some(0.54321));
+    assert_eq!(result_nvt.refs.len(), 2);
+    assert_eq!(result_nvt.refs[0].type_, "cert-bund");
+    assert_eq!(result_nvt.refs[0].id, "WID-SEC-2026-0001");
     assert_eq!(
         response.items[1]
             .nvt
@@ -154,6 +155,12 @@ async fn typed_client_projects_present_and_absent_result_epss() {
             .and_then(|nvt| nvt.epss.as_ref()),
         None
     );
+    assert!(response.items[1]
+        .nvt
+        .as_ref()
+        .expect("legacy NVT is projected")
+        .refs
+        .is_empty());
     server.shutdown().await;
 }
 

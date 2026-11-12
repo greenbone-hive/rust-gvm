@@ -88,7 +88,7 @@ pub use audit_report::{
 pub use auth::AuthenticateResponse;
 pub use common::{
     ActionResponse, CountInfo, EntityMeta, Epss, EpssCve, EpssSelection, GmpServerErrorKind,
-    NamedEntity, NvtReference, Owner, ParseError,
+    NamedEntity, NvtReference, NvtReferenceEntry, Owner, ParseError,
 };
 pub use config::{
     ConfigUsageKind, CreateConfigResponse, DeleteConfigResponse, GenericConfig, GetConfigsResponse,

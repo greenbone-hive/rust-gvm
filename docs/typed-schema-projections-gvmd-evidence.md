@@ -73,6 +73,30 @@ enclosing item and puts the raw child name in `info_type`, with
 `GenericInfoPayload::Unknown`. Unknown fields alongside a recognized subtype
 remain ignored, preserving the response parser's additive-field tolerance.
 
+## Generic NVT references
+
+Issue #825 adds an additive raw-preserving projection for generic NVT
+references emitted under `<refs>`. Both ordinary result NVTs and dedicated
+catalog/detail NVT responses can carry repeated `<ref type="..." id="..."/>`
+children. The public `NvtReferenceEntry` value uses `String` for both fields:
+the vocabulary includes `cve`, `cert-bund`, `dfn-cert`, `url`, and values not
+known to this crate, while identifiers include WID-SEC, DFN-CERT, historical
+CB-K, URL, and other opaque forms.
+
+The decoder preserves attribute values after XML entity decoding. It does not
+case-fold or enum-restrict types, normalize identifiers, synthesize URLs, or
+interpret warning text in the `<refs>` container as a reference. A `<ref>`
+missing a non-empty `type` or `id` attribute is ignored so one malformed feed
+entry does not reject the enclosing result or NVT response. Result
+`NvtRef::cves` remains a separate compatibility projection: direct `<cve>`
+children and lowercase `type="cve"` references retain the existing ID-first,
+text-fallback behavior, while advisory references remain excluded.
+
+The new `refs` collections use serde defaults, allowing payloads serialized
+before the projection was added to deserialize as empty collections. This is
+an additive observation API; callers do not need to change requests, and
+`get_report_vulns` remains outside the projection.
+
 ## Deliberate boundary
 
 This #715 layer did not add EPSS projections, live-gvmd E2E coverage, or the
